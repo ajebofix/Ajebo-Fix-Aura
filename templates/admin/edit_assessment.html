@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vehicle Assessment — Advisor Workspace</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            max-width: 900px;
+            margin: 32px auto;
+            padding: 0 16px;
+            color: #111827;
+            line-height: 1.6;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        h2 {
+            margin-top: 28px;
+            margin-bottom: 8px;
+        }
+
+        .meta {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 24px;
+        }
+
+        .section {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 18px;
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            resize: vertical;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+
+        .actions {
+            margin-top: 32px;
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            padding: 12px 18px;
+            border-radius: 6px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button.save {
+            background: #111827;
+            color: #ffffff;
+        }
+
+        button.finalize {
+            background: #7c2d12;
+            color: #ffffff;
+        }
+
+        .warning {
+            font-size: 13px;
+            color: #92400e;
+            margin-top: 12px;
+        }
+
+        .lock-note {
+            margin-top: 32px;
+            font-size: 13px;
+            color: #374151;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Vehicle Assessment</h1>
+
+<p class="meta">
+    Advisor workspace — confidential professional assessment<br>
+    Vehicle: {{ assessment.car.brand }} {{ assessment.car.model }} {{ assessment.car.year }}<br>
+    VIN: {{ assessment.vin }} · Mileage: {{ assessment.mileage_at_assessment or "—" }}
+</p>
+
+<form method="post">
+
+    <div class="section">
+        <h2>1. Vehicle Overview</h2>
+        <label>Overview</label>
+        <textarea name="vehicle_overview">{{ assessment.vehicle_overview or "" }}</textarea>
+        <div class="hint">
+            Include model, year, engine/transmission, usage patterns, and ownership duration.
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>2. Current Health Status</h2>
+        <label>System Assessment</label>
+        <textarea name="current_health_status">{{ assessment.current_health_status or "" }}</textarea>
+        <div class="hint">
+            Use calm, professional language. No diagnoses. No assumptions.
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>3. Identified Risks</h2>
+        <label>Risk Analysis</label>
+        <textarea name="identified_risks">{{ assessment.identified_risks or "" }}</textarea>
+        <div class="hint">
+            For each risk: description, likely cause, potential consequence if ignored.
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>4. Urgency Classification</h2>
+        <label>Urgency</label>
+        <textarea name="urgency_classification">{{ assessment.urgency_classification or "" }}</textarea>
+    </div>
+
+    <div class="section">
+        <h2>5. Cost vs Consequence Analysis</h2>
+        <label>Professional Framing</label>
+        <textarea name="cost_vs_consequence">{{ assessment.cost_vs_consequence or "" }}</textarea>
+    </div>
+
+    <div class="section">
+        <h2>6. Recommended Treatment Paths</h2>
+        <label>Options</label>
+        <textarea name="treatment_options">{{ assessment.treatment_options or "" }}</textarea>
+        <div class="hint">
+            Option A (Conservative), Option B (Balanced), Option C (Long-term preventive)
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>7. Professional Recommendation</h2>
+        <label>Final Recommendation</label>
+        <textarea name="professional_recommendation">{{ assessment.professional_recommendation or "" }}</textarea>
+        <div class="hint">
+            End with one clear sentence. No debate language.
+        </div>
+    </div>
+
+    <div class="actions">
+        <button type="submit" class="save">Save Draft</button>
+
+        <form method="post" action="{{ url_for('admin.admin_finalize_assessment', assessment_id=assessment.id) }}">
+            <button type="submit" class="finalize">
+                Finalize Assessment
+            </button>
+        </form>
+    </div>
+
+    <div class="warning">
+        Finalizing locks this assessment permanently.
+    </div>
+
+</form>
+
+<div class="lock-note">
+    <strong>Internal Note</strong><br>
+    This assessment represents Ajebo Fix’s professional judgment.
+    Once finalized, it becomes the authoritative record.
+</div>
+
+</body>
+</html>

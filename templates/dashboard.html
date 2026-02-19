@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aura | Home</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 28px auto;
+            padding: 12px;
+            line-height: 1.6;
+            color: #111827;
+        }
+
+        h1 { margin-bottom: 4px; }
+
+        .subtitle {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 24px;
+        }
+
+        .flash {
+            padding: 10px;
+            margin-bottom: 16px;
+            border-radius: 6px;
+        }
+
+        .flash.success {
+            background: #e6fffa;
+            color: #065f46;
+        }
+
+        /* ==============================
+           VEHICLE CARD
+           ============================== */
+
+        .vehicle-card {
+            margin-bottom: 20px;
+            padding: 18px;
+            border-radius: 8px;
+            border: 2px solid #e5e7eb;
+            background: #fafafa;
+        }
+
+        .vehicle-card.active {
+            border-color: #2563eb;
+            background: #eef2ff;
+        }
+
+        .vehicle-name {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .meta {
+            font-size: 14px;
+            color: #374151;
+            margin-top: 6px;
+        }
+
+        .health {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .health.healthy { color: #065f46; }
+        .health.attention { color: #92400e; }
+        .health.critical { color: #991b1b; }
+
+        .reassurance {
+            margin-top: 12px;
+            font-size: 14px;
+            background: #ecfdf5;
+            color: #065f46;
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        .actions {
+            margin-top: 14px;
+        }
+
+        button {
+            padding: 10px 14px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 6px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            font-weight: bold;
+        }
+
+        button.secondary {
+            background: #6b7280;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 12px;
+            font-weight: bold;
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        hr { margin: 36px 0; }
+    </style>
+</head>
+<body>
+
+<h1>Aura</h1>
+<p class="subtitle">Your vehicle is under professional care.</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash {{ category }}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+{% if vehicles %}
+    {% for v in vehicles %}
+        <div class="vehicle-card {% if v.is_active %}active{% endif %}">
+            <div class="vehicle-name">{{ v.vehicle_identity }}</div>
+
+            <div class="meta">
+                Assigned Advisor: <strong>{{ v.advisor_name }}</strong>
+            </div>
+
+            <div class="health {{ v.health_status }}">
+                Health Status: {{ v.health_label }}
+            </div>
+
+            {% if v.last_assessed_at %}
+                <div class="meta">
+                    Last assessed on {{ v.last_assessed_at[:10] }}
+                </div>
+            {% endif %}
+
+            <div class="reassurance">
+                {{ v.reassurance }}
+            </div>
+
+            <div class="actions">
+                {% if not v.is_active %}
+                    <button onclick="selectVehicle({{ v.vehicle_id }})">
+                        Make this my active vehicle
+                    </button>
+                {% else %}
+                    <button class="secondary" disabled>
+                        Active vehicle
+                    </button>
+                {% endif %}
+            </div>
+
+            <a href="/cars/{{ v.vehicle_id }}">View full vehicle record →</a>
+        </div>
+    {% endfor %}
+
+    <a href="/cars/add">➕ Add another vehicle</a>
+{% else %}
+    <p>No vehicles have been added yet.</p>
+    <a href="/cars/add">➕ Add your first vehicle</a>
+{% endif %}
+
+<hr>
+
+<h2>Consult A.J. Rina</h2>
+<p class="subtitle">Rina responds based on your <strong>active vehicle</strong>.</p>
+
+{% include "components/rina_chat.html" %}
+
+<hr>
+
+<form action="{{ url_for('auth.logout') }}" method="POST">
+    <button type="submit">Sign out</button>
+</form>
+
+<script>
+function selectVehicle(vehicleId) {
+    fetch("/dashboard/select-vehicle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicle_id: vehicleId }),
+    }).then(() => window.location.reload());
+}
+</script>
+
+</body>
+</html>

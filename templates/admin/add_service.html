@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Record Service — Advisor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 24px auto;
+            padding: 0 16px;
+            color: #111827;
+            line-height: 1.6;
+        }
+
+        h1, h2 {
+            margin-bottom: 8px;
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        label {
+            display: block;
+            margin-top: 14px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            font-size: 14px;
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .actions {
+            margin-top: 24px;
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            background: #111827;
+            color: #ffffff;
+            border: none;
+            padding: 12px 18px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: #6b7280;
+        }
+
+        .disclaimer {
+            margin-top: 32px;
+            font-size: 13px;
+            color: #374151;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Record Service</h1>
+<p class="muted">
+    Advisor entry — recorded on behalf of client
+</p>
+
+<div class="card">
+    <h2>Vehicle Information</h2>
+
+    <p>
+        <strong>Vehicle:</strong>
+        {{ car.brand }} {{ car.model }} {{ car.year }}
+    </p>
+
+    <p>
+        <strong>VIN:</strong>
+        {{ car.vin or "—" }}
+    </p>
+
+    <p>
+        <strong>Current Recorded Mileage:</strong>
+        {{ car.current_mileage or "—" }}
+    </p>
+
+    <p>
+        <strong>Under Care Since:</strong>
+        {{ ownership.start_date.strftime("%Y-%m-%d") }}
+    </p>
+</div>
+
+<div class="card">
+    <h2>Service Details</h2>
+
+    <form method="post">
+
+        <label for="service_type">Service Type *</label>
+        <input
+            type="text"
+            id="service_type"
+            name="service_type"
+            placeholder="e.g. Engine oil service, Brake inspection"
+            required
+        >
+
+        <label for="mileage">Mileage at Service *</label>
+        <input
+            type="number"
+            id="mileage"
+            name="mileage"
+            min="0"
+            placeholder="Enter current odometer reading"
+            required
+        >
+
+        <label for="service_date">Service Date *</label>
+        <input
+            type="date"
+            id="service_date"
+            name="service_date"
+            required
+        >
+
+        <label for="description">Advisor Notes (Optional)</label>
+        <textarea
+            id="description"
+            name="description"
+            placeholder="Observations, parts replaced, recommendations, or follow-up notes"
+        ></textarea>
+
+        <div class="actions">
+            <button type="submit">
+                Save Service Record
+            </button>
+
+            <a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}">
+                <button type="button" class="secondary">
+                    Cancel
+                </button>
+            </a>
+        </div>
+
+    </form>
+</div>
+
+<div class="disclaimer">
+    <strong>Confidential — Internal Medical File</strong><br>
+    {{ disclaimer }}
+</div>
+
+</body>
+</html>

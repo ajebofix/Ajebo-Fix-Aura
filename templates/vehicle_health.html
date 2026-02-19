@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vehicle Health</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 28px auto;
+            padding: 12px;
+            color: #111827;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            color: #4b5563;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        .section {
+            margin-top: 28px;
+            padding: 18px;
+            border-radius: 8px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+        }
+
+        .section h2 {
+            margin-top: 0;
+            font-size: 16px;
+        }
+
+        ul {
+            margin-top: 10px;
+            padding-left: 18px;
+        }
+
+        /* =========================
+           STATUS STYLES
+           ========================= */
+
+        .calm {
+            background: #ecfdf5;
+            color: #065f46;
+            border-left: 4px solid #10b981;
+        }
+
+        .attention {
+            background: #fffbeb;
+            color: #92400e;
+            border-left: 4px solid #f59e0b;
+        }
+
+        .critical {
+            background: #fef2f2;
+            color: #991b1b;
+            border-left: 4px solid #ef4444;
+        }
+
+        .neutral {
+            background: #f3f4f6;
+            color: #374151;
+            border-left: 4px solid #9ca3af;
+        }
+
+        .reassurance {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #4b5563;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 32px;
+            font-weight: bold;
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ========================= -->
+<!-- HEADER -->
+<!-- ========================= -->
+
+<h1>{{ car.brand }} {{ car.model }}</h1>
+<p class="subtitle">
+    Vehicle Health Summary · Interpreted Overview
+</p>
+
+<!-- ========================= -->
+<!-- HEALTH OVERVIEW -->
+<!-- ========================= -->
+
+{% set status_class =
+    "calm" if health.status == "healthy"
+    else "attention" if health.status == "attention"
+    else "critical" if health.status == "critical"
+    else "neutral"
+%}
+
+<div class="section {{ status_class }}">
+    <h2>Health Overview</h2>
+    <p>{{ health.overview }}</p>
+
+    <div class="reassurance">
+        This summary is based on monitoring data and service history.
+        It is not a mechanical diagnosis.
+    </div>
+</div>
+
+<!-- ========================= -->
+<!-- ACTIVE RISKS -->
+<!-- ========================= -->
+
+{% if health.active_risks %}
+<div class="section attention">
+    <h2>Active Risks</h2>
+    <ul>
+        {% for risk in health.active_risks %}
+            <li>{{ risk }}</li>
+        {% endfor %}
+    </ul>
+
+    <div class="reassurance">
+        These items are being highlighted to help prevent escalation.
+    </div>
+</div>
+{% endif %}
+
+<!-- ========================= -->
+<!-- MONITORED ITEMS -->
+<!-- ========================= -->
+
+{% if health.monitored_items %}
+<div class="section">
+    <h2>Monitored Items</h2>
+    <ul>
+        {% for item in health.monitored_items %}
+            <li>{{ item }}</li>
+        {% endfor %}
+    </ul>
+
+    <div class="reassurance">
+        These observations are non-urgent and are being tracked over time.
+    </div>
+</div>
+{% endif %}
+
+<!-- ========================= -->
+<!-- PREVENTIVE GUIDANCE -->
+<!-- ========================= -->
+
+<div class="section calm">
+    <h2>Preventive Recommendations</h2>
+    <p>{{ health.preventive_guidance }}</p>
+</div>
+
+<!-- ========================= -->
+<!-- NAVIGATION -->
+<!-- ========================= -->
+
+<a href="/dashboard">← Back to Home</a>
+
+</body>
+</html>

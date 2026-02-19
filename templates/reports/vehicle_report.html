@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aura | Vehicle Medical File</title>
+    <style>
+        body { font-family: Arial; max-width: 900px; margin: 32px auto; }
+        h1, h2 { margin-bottom: 6px; }
+        .section { border:1px solid #e5e7eb; padding:16px; margin-top:20px; border-radius:8px; }
+        .muted { color:#6b7280; font-size:14px; }
+        .timeline li { margin-bottom:8px; }
+    </style>
+</head>
+<body>
+
+<h1>{{ report.vehicle.name }}</h1>
+<p class="muted">
+    VIN: {{ report.vehicle.vin }} <br>
+    Assigned Advisor: {{ report.vehicle.assigned_advisor }} <br>
+    Record generated: {{ report.vehicle.generated_at.strftime("%Y-%m-%d") }}
+</p>
+
+<div class="section">
+    <h2>Health Summary</h2>
+    <p>{{ report.health.overview }}</p>
+
+    {% if report.health.active_risks %}
+        <strong>What matters now:</strong>
+        <ul>
+            {% for r in report.health.active_risks %}
+                <li>{{ r }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Reported Concerns</h2>
+    {% if report.concerns %}
+        {% for c in report.concerns %}
+            <p>
+                <strong>{{ c.category|replace('_',' ')|title }}</strong> —
+                {{ c.description }}
+                <br><span class="muted">Status: {{ c.status }}</span>
+            </p>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No concerns reported.</p>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Treatment & Service Records</h2>
+    {% if report.treatments %}
+        {% for t in report.treatments %}
+            <p>
+                <strong>{{ t.title }}</strong> —
+                {{ t.description }}
+                <br><span class="muted">{{ t.date.strftime("%Y-%m-%d") }}</span>
+            </p>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No treatment records available.</p>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Timeline</h2>
+    <ul class="timeline">
+        {% for item in report.timeline %}
+            <li>
+                {{ item.date.strftime("%Y-%m-%d") }} —
+                {{ item.label }}
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<div class="section">
+    <h2>Professional Note</h2>
+    <p class="muted">
+        This record is observational and non-diagnostic.
+        It reflects monitoring and care under Ajebo Fix protocols.
+    </p>
+</div>
+
+<a href="/cars/{{ car.id }}/records/pdf">
+    📄 Download / Print Report
+</a>
+
+</body>
+</html>

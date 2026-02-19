@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aura | Vehicle Medical File</title>
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
+</head>
+<body>
+
+<h1>{{ report.vehicle.name }}</h1>
+<p class="muted">
+    VIN: {{ report.vehicle.vin }}<br>
+    Assigned Advisor: {{ report.vehicle.assigned_advisor }}<br>
+    Record generated: {{ report.vehicle.generated_at.strftime("%Y-%m-%d") }}
+</p>
+
+<section class="section">
+    <h2>Health Summary</h2>
+    <p>{{ report.health.overview }}</p>
+</section>
+
+<section class="section">
+    <h2>Reported Concerns</h2>
+    {% if report.concerns %}
+        {% for c in report.concerns %}
+            <p>
+                <strong>{{ c.category | replace('_',' ') | title }}</strong><br>
+                {{ c.description }}<br>
+                <span class="muted">
+                    Status: {{ c.status | replace('_',' ') | title }}
+                </span>
+            </p>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No concerns reported.</p>
+    {% endif %}
+</section>
+
+<section class="section">
+    <h2>Service Records</h2>
+    {% if report.treatments %}
+        {% for t in report.treatments %}
+            <p>
+                <strong>{{ t.title }}</strong><br>
+                {{ t.description }}<br>
+                <span class="muted">
+                    {{ t.date.strftime("%Y-%m-%d") }}
+                </span>
+            </p>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No service records available.</p>
+    {% endif %}
+</section>
+
+<a href="/cars/{{ car.id }}/records">← Back to Care History</a>
+
+</body>
+</html>

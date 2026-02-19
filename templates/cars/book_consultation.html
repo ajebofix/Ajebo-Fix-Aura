@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Book Consultation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 32px auto;
+            padding: 0 14px;
+            color: #111827;
+            line-height: 1.6;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        label {
+            display: block;
+            margin-top: 18px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            font-size: 14px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 24px;
+            border-radius: 6px;
+            border: none;
+            background: #111827;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .note {
+            font-size: 13px;
+            color: #4b5563;
+            background: #f3f4f6;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 18px;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Private Consultation</h1>
+
+<p class="subtitle">
+    {{ car.brand }} {{ car.model }} {{ car.year }}
+</p>
+
+<div class="card">
+    <p>
+        <strong>All vehicle care begins with a private consultation.</strong>
+    </p>
+
+    <p class="subtitle">
+        This allows Ajebo Fix to properly review your vehicle’s history,
+        observations, and current condition before any recommendations
+        or actions are taken.
+    </p>
+
+    <form method="POST">
+
+        <label for="preferred_time">
+            Preferred Consultation Time
+        </label>
+        <input
+            type="datetime-local"
+            id="preferred_time"
+            name="preferred_time"
+            required
+        >
+
+        <div class="note">
+            An advisor will review your request and confirm the consultation.
+            You will be notified once it is scheduled.
+        </div>
+
+        <button type="submit">
+            Request Consultation
+        </button>
+    </form>
+</div>
+
+<a href="{{ url_for('cars.car_detail', car_id=car.id) }}">
+    ← Back to Vehicle Profile
+</a>
+
+</body>
+</html>

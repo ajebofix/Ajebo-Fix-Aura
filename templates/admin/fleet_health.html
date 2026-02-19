@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura | Fleet Health Overview</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 32px auto;
+            padding: 0 12px;
+            line-height: 1.55;
+            color: #111827;
+        }
+
+        h1 { margin-bottom: 6px; }
+        h2 { margin-bottom: 10px; }
+
+        .subtitle {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 22px;
+        }
+
+        .summary span {
+            margin-right: 14px;
+            font-weight: bold;
+        }
+
+        hr { margin: 26px 0; }
+
+        .card {
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: #fafafa;
+        }
+
+        .red { border: 2px solid #dc2626; background: #fef2f2; }
+        .amber { border: 1px solid #f59e0b; background: #fffbeb; }
+        .green { border: 1px solid #16a34a; background: #ecfdf5; }
+
+        .vehicle-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .meta {
+            font-size: 14px;
+            color: #374151;
+            margin-top: 6px;
+        }
+
+        ul { margin: 10px 0 0 18px; }
+
+        .action {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .links a {
+            margin-right: 16px;
+            font-weight: bold;
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        .links a:hover { text-decoration: underline; }
+
+        .empty {
+            font-style: italic;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Fleet Health Overview</h1>
+<p class="subtitle">Clinical status overview of all vehicles under care</p>
+
+<div class="summary">
+    <span>Total: {{ summary.total }}</span>
+    <span>Stable: {{ summary.green }}</span>
+    <span>Under Observation: {{ summary.amber }}</span>
+    <span>Critical: {{ summary.red }}</span>
+</div>
+
+<hr>
+
+<!-- 🔴 CRITICAL -->
+<h2>Critical Review Required</h2>
+{% if grouped.red %}
+    {% for car in grouped.red %}
+        <div class="card red">
+            <div class="vehicle-name">{{ car.vehicle }}</div>
+
+            <div class="meta">
+                Client: {{ car.owner_name }}<br>
+                Mileage: {{ car.current_mileage }}<br>
+                Active Concerns: {{ car.active_concerns }}
+            </div>
+
+            {% if car.risk_reasons %}
+                <ul>
+                    {% for reason in car.risk_reasons %}
+                        <li>{{ reason }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            {% if car.next_action %}
+                <div class="action">
+                    Recommended Action: {{ car.next_action }}
+                </div>
+            {% endif %}
+
+            <div class="links">
+                <a href="{{ url_for('admin.admin_reported_concerns', car_id=car.id) }}">
+                    View Reported Concerns
+                </a>
+                <a href="{{ url_for('admin.admin_view_vehicle', car_id=car.id) }}">
+                    Open Vehicle Record
+                </a>
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <p class="empty">No vehicles currently require critical review.</p>
+{% endif %}
+
+<hr>
+
+<!-- 🟡 AMBER -->
+<h2>Under Observation</h2>
+{% if grouped.amber %}
+    {% for car in grouped.amber %}
+        <div class="card amber">
+            <div class="vehicle-name">{{ car.vehicle }}</div>
+
+            <div class="meta">
+                Client: {{ car.owner_name }}<br>
+                Mileage: {{ car.current_mileage }}<br>
+                Active Concerns: {{ car.active_concerns }}
+            </div>
+
+            {% if car.risk_reasons %}
+                <ul>
+                    {% for reason in car.risk_reasons %}
+                        <li>{{ reason }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            <div class="links">
+                <a href="{{ url_for('admin.admin_reported_concerns', car_id=car.id) }}">
+                    View Concerns
+                </a>
+                <a href="{{ url_for('admin.admin_view_vehicle', car_id=car.id) }}">
+                    Open Vehicle
+                </a>
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <p class="empty">No vehicles currently under observation.</p>
+{% endif %}
+
+<hr>
+
+<!-- 🟢 GREEN -->
+<h2>Stable</h2>
+{% if grouped.green %}
+    {% for car in grouped.green %}
+        <div class="card green">
+            <div class="vehicle-name">{{ car.vehicle }}</div>
+            <div class="meta">
+                Client: {{ car.owner_name }}
+            </div>
+
+            <div class="links">
+                <a href="{{ url_for('admin.admin_view_vehicle', car_id=car.id) }}">
+                    Open Vehicle
+                </a>
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <p class="empty">No vehicles currently classified as stable.</p>
+{% endif %}
+
+<hr>
+
+<a href="{{ url_for('admin.admin_dashboard') }}">
+    ← Return to Advisor Console
+</a>
+
+</body>
+</html>

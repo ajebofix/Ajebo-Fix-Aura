@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Complete Consultation</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 32px auto;
+            color: #111827;
+        }
+
+        h1 {
+            margin-bottom: 16px;
+        }
+
+        .card {
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-top: 16px;
+            margin-bottom: 6px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            resize: vertical;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        .actions {
+            margin-top: 24px;
+        }
+
+        button {
+            padding: 10px 16px;
+            font-size: 14px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            background: #111827;
+            color: white;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Complete Consultation</h1>
+
+<div class="card">
+    <p>
+        <strong>Vehicle:</strong>
+        {{ consultation.car.brand }} {{ consultation.car.model }} {{ consultation.car.year }}
+    </p>
+
+    <p>
+        <strong>Client:</strong>
+        {{ consultation.client.email }}
+    </p>
+
+    <form method="post">
+
+        <label for="summary">
+            Internal Consultation Summary
+        </label>
+        <textarea
+            id="summary"
+            name="summary"
+            placeholder="Professional observations, diagnostics, reasoning, internal notes…"
+            required
+        ></textarea>
+        <div class="hint">
+            Internal-only. Not visible to the client.
+        </div>
+
+        <label for="client_visible_summary">
+            Client-Facing Summary
+        </label>
+        <textarea
+            id="client_visible_summary"
+            name="client_visible_summary"
+            placeholder="Calm, non-diagnostic explanation of findings and next steps…"
+            required
+        ></textarea>
+        <div class="hint">
+            Visible to the client. Avoid technical diagnosis language.
+        </div>
+
+        <div class="actions">
+            <button type="submit">
+                Complete Consultation
+            </button>
+        </div>
+    </form>
+</div>
+
+</body>
+</html>

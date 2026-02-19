@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<div
+    style="
+        border: 1px solid #e5e7eb;
+        padding: 14px;
+        max-width: 100%;
+        border-radius: 8px;
+        background: #fafafa;
+    "
+>
+    <strong>💬 Private Consultation — A.J. Rina</strong>
+
+    <p style="font-size:14px; margin-top:6px; color:#4b5563;">
+        I help interpret vehicle health, reported concerns,
+        and recommended next steps — clearly and calmly.
+    </p>
+
+    <!-- ===================== -->
+    <!-- CONVERSATION WINDOW -->
+    <!-- ===================== -->
+    <div
+        id="rina-messages"
+        style="
+            height: 190px;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            padding: 10px;
+            margin-bottom: 12px;
+            background: #ffffff;
+            -webkit-overflow-scrolling: touch;
+            font-size: 14px;
+            line-height: 1.5;
+        "
+    >
+        <div>
+            <strong>Rina:</strong>
+            Welcome. How can I assist you with your vehicle today?
+        </div>
+    </div>
+
+    <!-- ===================== -->
+    <!-- INPUT ROW -->
+    <!-- ===================== -->
+    <div style="display:flex; gap:8px;">
+        <input
+            type="text"
+            id="rina-input"
+            placeholder="Ask about your vehicle’s condition or next steps…"
+            style="
+                flex: 1;
+                padding: 12px;
+                font-size: 15px;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+            "
+            onkeydown="if(event.key === 'Enter'){ sendToRina(); }"
+        />
+
+        <button
+            type="button"
+            onclick="sendToRina()"
+            style="
+                padding: 12px 16px;
+                font-size: 15px;
+                cursor: pointer;
+                border-radius: 6px;
+                border: none;
+                background: #2563eb;
+                color: white;
+                font-weight: bold;
+            "
+        >
+            Ask
+        </button>
+    </div>
+
+    <!-- ===================== -->
+    <!-- DISCLAIMER -->
+    <!-- ===================== -->
+    <p style="font-size:12px; color:#6b7280; margin-top:10px;">
+        Rina provides guidance based on recorded vehicle data.
+        She does not diagnose faults — physical inspection is required for confirmation.
+    </p>
+</div>
+
+<script>
+function sendToRina() {
+    const input = document.getElementById("rina-input");
+    const messages = document.getElementById("rina-messages");
+    const text = input.value.trim();
+
+    if (!text) return;
+
+    // -------------------------
+    // Show user message
+    // -------------------------
+    messages.innerHTML += `
+        <div>
+            <strong>You:</strong> ${text}
+        </div>
+    `;
+    messages.scrollTop = messages.scrollHeight;
+    input.value = "";
+
+    // -------------------------
+    // Thinking indicator
+    // -------------------------
+    const loadingId = "rina-loading";
+    messages.innerHTML += `
+        <div id="${loadingId}">
+            <em>Rina is reviewing the information…</em>
+        </div>
+    `;
+    messages.scrollTop = messages.scrollHeight;
+
+    // -------------------------
+    // Payload (vehicle authority stays server-side)
+    // -------------------------
+    const payload = { message: text };
+
+    // Optional context hint (non-authoritative)
+    if (window.CURRENT_CAR_ID) {
+        payload.car_id = window.CURRENT_CAR_ID;
+    }
+
+    // -------------------------
+    // Send to server
+    // -------------------------
+    fetch("/chat", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById(loadingId)?.remove();
+
+        messages.innerHTML += `
+            <div>
+                <strong>Rina:</strong> ${data.reply}
+            </div>
+        `;
+        messages.scrollTop = messages.scrollHeight;
+    })
+    .catch(() => {
+        document.getElementById(loadingId)?.remove();
+
+        messages.innerHTML += `
+            <div>
+                <strong>Rina:</strong>
+                I’m unable to respond at the moment.
+                Please try again shortly.
+            </div>
+        `;
+        messages.scrollTop = messages.scrollHeight;
+    });
+}
+</script>

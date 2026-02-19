@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vehicle Health & Risk Report</title>
+
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #111827;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        h1, h2, h3 {
+            margin-bottom: 6px;
+        }
+
+        h1 {
+            font-size: 26px;
+            margin-top: 0;
+        }
+
+        h2 {
+            font-size: 20px;
+            margin-top: 28px;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 6px;
+        }
+
+        h3 {
+            font-size: 16px;
+            margin-top: 18px;
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .section {
+            margin-top: 24px;
+        }
+
+        .box {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            padding: 14px;
+            border-radius: 6px;
+            margin-top: 12px;
+        }
+
+        ul {
+            padding-left: 18px;
+        }
+
+        .risk {
+            margin-bottom: 14px;
+        }
+
+        .footer {
+            margin-top: 50px;
+            font-size: 12px;
+            color: #6b7280;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ======================================
+     TITLE PAGE
+====================================== -->
+
+<h1>Vehicle Health & Risk Assessment</h1>
+
+<p class="muted">
+    Powered by <strong>Ajebo Fix</strong><br>
+    Issued on {{ report.title_page.issued_date.strftime("%Y-%m-%d") }}
+</p>
+
+<div class="box">
+    <strong>Vehicle VIN:</strong> {{ report.title_page.vehicle_vin }}<br>
+    <strong>Engine:</strong> {{ report.title_page.engine_number or "—" }}<br>
+    <strong>Recorded Mileage:</strong> {{ report.title_page.current_mileage or "—" }}
+</div>
+
+<!-- ======================================
+     SECTION 1 — VEHICLE OVERVIEW
+====================================== -->
+
+<div class="section">
+    <h2>1. Vehicle Overview</h2>
+
+    <div class="box">
+        <strong>Vehicle:</strong>
+        {{ report.vehicle_overview.brand }}
+        {{ report.vehicle_overview.model }}
+        {{ report.vehicle_overview.year }}<br>
+
+        <strong>Engine Type:</strong>
+        {{ report.vehicle_overview.engine_type or "—" }}<br>
+
+        <strong>Transmission:</strong>
+        {{ report.vehicle_overview.transmission or "—" }}<br>
+
+        <strong>Usage Pattern:</strong>
+        {{ report.vehicle_overview.usage_pattern or "—" }}<br>
+
+        <strong>Ownership Duration:</strong>
+        {{ report.vehicle_overview.ownership_duration }} days
+    </div>
+</div>
+
+<!-- ======================================
+     SECTION 2 — CURRENT HEALTH STATUS
+====================================== -->
+
+<div class="section">
+    <h2>2. Current Health Status</h2>
+
+    <ul>
+        <li><strong>Engine System:</strong> {{ report.current_health_status.engine_system }}</li>
+        <li><strong>Transmission System:</strong> {{ report.current_health_status.transmission_system }}</li>
+        <li><strong>Suspension & Steering:</strong> {{ report.current_health_status.suspension_and_steering }}</li>
+        <li><strong>Electrical & Control Systems:</strong> {{ report.current_health_status.electrical_and_controls }}</li>
+        <li><strong>Cooling & Lubrication:</strong> {{ report.current_health_status.cooling_and_lubrication }}</li>
+    </ul>
+
+    <p class="muted">
+        Health status reflects professional assessment and monitoring.
+        It does not constitute a mechanical diagnosis.
+    </p>
+</div>
+
+<!-- ======================================
+     SECTION 3 — IDENTIFIED RISKS
+====================================== -->
+
+<div class="section">
+    <h2>3. Identified Risks</h2>
+
+    {% if report.identified_risks %}
+        {% for risk in report.identified_risks %}
+            <div class="risk">
+                <strong>Description:</strong> {{ risk.description }}<br>
+                <strong>Likely Cause:</strong> {{ risk.likely_cause }}<br>
+                <strong>Potential Consequence:</strong> {{ risk.potential_consequence }}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No immediate risks identified at this time.</p>
+    {% endif %}
+</div>
+
+<!-- ======================================
+     SECTION 4 — URGENCY CLASSIFICATION
+====================================== -->
+
+<div class="section">
+    <h2>4. Urgency Classification</h2>
+
+    <div class="box">
+        <strong>Immediate Attention:</strong>
+        {{ report.urgency_classification.immediate_attention | join(", ") or "None" }}<br><br>
+
+        <strong>Monitoring Closely:</strong>
+        {{ report.urgency_classification.monitoring_closely | join(", ") or "None" }}<br><br>
+
+        <strong>Preventive Recommendations:</strong>
+        {{ report.urgency_classification.preventive_recommendations | join(", ") or "None" }}
+    </div>
+</div>
+
+<!-- ======================================
+     SECTION 5 — COST VS CONSEQUENCE
+====================================== -->
+
+<div class="section">
+    <h2>5. Cost vs Consequence Analysis</h2>
+
+    <p>
+        {{ report.cost_vs_consequence.summary }}
+    </p>
+</div>
+
+<!-- ======================================
+     SECTION 6 — RECOMMENDED TREATMENT PATHS
+====================================== -->
+
+<div class="section">
+    <h2>6. Recommended Treatment Paths</h2>
+
+    <ul>
+        <li><strong>Option A (Conservative):</strong> {{ report.treatment_paths.option_a_conservative }}</li>
+        <li><strong>Option B (Balanced):</strong> {{ report.treatment_paths.option_b_balanced }}</li>
+        <li><strong>Option C (Preventive):</strong> {{ report.treatment_paths.option_c_preventive }}</li>
+    </ul>
+</div>
+
+<!-- ======================================
+     SECTION 7 — PROFESSIONAL RECOMMENDATION
+====================================== -->
+
+<div class="section">
+    <h2>7. Professional Recommendation</h2>
+
+    <p>
+        {{ report.professional_recommendation.statement }}
+    </p>
+
+    <p class="muted">
+        Advisor: {{ report.professional_recommendation.advisor }}
+    </p>
+</div>
+
+<!-- ======================================
+     FOOTER
+====================================== -->
+
+<div class="footer">
+    This report reflects professional assessment conducted by Ajebo Fix.
+    It is intended to support informed decision-making and long-term vehicle care.
+</div>
+
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Record Service</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 32px auto;
+            padding: 0 12px;
+            line-height: 1.5;
+            color: #111827;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtext {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 18px;
+            font-size: 14px;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            box-sizing: border-box;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            font-size: 14px;
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 24px;
+            font-size: 15px;
+            cursor: pointer;
+            border-radius: 6px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            font-weight: bold;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+
+        .vehicle-box {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border: 1px solid #e5e7eb;
+            font-size: 14px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<h1>🧾 Record Service</h1>
+
+<p class="subtext">
+    Use this form to document verified service work already performed.
+    All service actions are reviewed within your active Ajebo Fix consultation.
+</p>
+
+<div class="vehicle-box">
+    <strong>Vehicle on record:</strong><br>
+    {{ car.brand }} {{ car.model }} {{ car.year }}
+</div>
+
+{% if error %}
+    <div class="error"><strong>{{ error }}</strong></div>
+{% endif %}
+
+<form method="POST" novalidate>
+
+    <!-- SERVICE TYPE -->
+    <label for="service_type">Service Performed</label>
+    <input
+        type="text"
+        id="service_type"
+        name="service_type"
+        value="{{ request.form.service_type or '' }}"
+        placeholder="e.g. Engine oil and filter replacement"
+        required
+    >
+
+    <!-- MILEAGE -->
+    <label for="mileage">Mileage at Time of Service</label>
+    <input
+        type="number"
+        id="mileage"
+        name="mileage"
+        min="{{ car.current_mileage or 0 }}"
+        value="{{ request.form.mileage or car.current_mileage }}"
+        required
+    >
+    <div class="hint">
+        Mileage must not be lower than the vehicle’s current recorded mileage.
+    </div>
+
+    <!-- DESCRIPTION -->
+    <label for="description">Service Notes (Optional)</label>
+    <textarea
+        id="description"
+        name="description"
+        rows="3"
+        placeholder="Any notes you’d like Ajebo Fix to be aware of"
+    >{{ request.form.description or '' }}</textarea>
+
+    <!-- SERVICE DATE -->
+    <label for="service_date">Date of Service</label>
+    <input
+        type="date"
+        id="service_date"
+        name="service_date"
+        value="{{ request.form.service_date or '' }}"
+        required
+    >
+
+    <button type="submit">Save Service Record</button>
+</form>
+
+<br>
+
+<a href="{{ url_for('cars.car_detail', car_id=car.id) }}">
+    ← Back to Vehicle Profile
+</a>
+
+</body>
+</html>

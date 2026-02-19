@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Report a Concern</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 28px auto;
+            padding: 12px;
+            line-height: 1.55;
+            color: #111827;
+        }
+
+        h2 {
+            margin-bottom: 6px;
+        }
+
+        p.subtitle {
+            margin-top: 0;
+            color: #4b5563;
+            font-size: 14px;
+        }
+
+        label {
+            display: block;
+            margin-top: 18px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        select,
+        textarea,
+        button,
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 24px;
+            cursor: pointer;
+            border-radius: 6px;
+            border: none;
+            background: #111827;
+            color: white;
+            font-size: 15px;
+        }
+
+        .note {
+            font-size: 13px;
+            color: #4b5563;
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 18px;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 18px;
+            text-decoration: none;
+            color: #2563eb;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Report a Concern</h2>
+
+<p class="subtitle">
+    <strong>{{ car.brand }} {{ car.model }} {{ car.year }}</strong><br>
+    Share anything unusual you’ve observed.
+    This does not confirm a fault or diagnosis.
+</p>
+
+<form method="POST" novalidate>
+
+    <label for="category">Area of Concern</label>
+    <select id="category" name="category" required>
+        <option value="">Select area</option>
+        <option value="engine">Engine</option>
+        <option value="brakes">Brakes</option>
+        <option value="electrical">Electrical</option>
+        <option value="suspension">Suspension / Steering</option>
+        <option value="warning_light">Warning Indicator</option>
+        <option value="sound">Noise / Vibration</option>
+        <option value="other">Other</option>
+    </select>
+
+    <label for="description">What did you notice?</label>
+    <textarea
+        id="description"
+        name="description"
+        placeholder="Describe what you observed, when it occurred, and any patterns you noticed…"
+        required
+    ></textarea>
+
+    <div class="note">
+        This submission does not diagnose your vehicle.
+        It allows Ajebo Fix to review your observation professionally
+        and recommend appropriate next steps.
+    </div>
+
+    <button type="submit">Submit Observation</button>
+</form>
+
+<a href="{{ url_for('cars.car_detail', car_id=car.id) }}">
+    ← Back to Vehicle Profile
+</a>
+
+</body>
+</html>

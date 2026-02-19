@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Consultations — Advisor Console</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 32px auto;
+            color: #111827;
+        }
+
+        h1 {
+            margin-bottom: 24px;
+        }
+
+        h2 {
+            margin-bottom: 12px;
+            text-transform: capitalize;
+        }
+
+        .section {
+            margin-bottom: 32px;
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        .item {
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .item:last-child {
+            border-bottom: none;
+        }
+
+        .meta {
+            font-size: 14px;
+            color: #4b5563;
+            margin-top: 4px;
+        }
+
+        .actions {
+            margin-top: 10px;
+        }
+
+        a {
+            font-weight: bold;
+            color: #2563eb;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        form {
+            display: inline;
+        }
+
+        button {
+            padding: 6px 10px;
+            font-size: 13px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            background: #111827;
+            color: white;
+        }
+
+        button.secondary {
+            background: #374151;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .empty {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Consultation Queue</h1>
+
+{% if grouped %}
+    {% for status, items in grouped.items() %}
+        <div class="section">
+            <h2>{{ status.replace('_', ' ') }}</h2>
+
+            {% if items %}
+                {% for c in items %}
+                    <div class="item">
+                        <div>
+                            <strong>Vehicle:</strong>
+                            {{ c.car.brand if c.car else "—" }}
+                            {{ c.car.model if c.car else "" }}
+                            {{ c.car.year if c.car else "" }}
+                        </div>
+
+                        <div class="meta">
+                            <strong>Client:</strong>
+                            {{ c.client.email if c.client else "—" }}
+                        </div>
+
+                        <div class="meta">
+                            <strong>Scheduled:</strong>
+                            {% if c.scheduled_for %}
+                                {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </div>
+
+                        <div class="actions">
+                            <a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
+                                View Vehicle
+                            </a>
+
+                            {% if c.status == 'scheduled' %}
+                                <form
+                                    method="post"
+                                    action="{{ url_for('admin.admin_start_consultation', consultation_id=c.id) }}"
+                                >
+                                    <button type="submit">Start Consultation</button>
+                                </form>
+                            {% elif c.status == 'in_progress' %}
+                                <a href="{{ url_for('admin.admin_complete_consultation', consultation_id=c.id) }}">
+                                    Complete Consultation
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="empty">No consultations in this state.</p>
+            {% endif %}
+        </div>
+    {% endfor %}
+{% else %}
+    <p class="empty">No consultation data available.</p>
+{% endif %}
+
+</body>
+</html>

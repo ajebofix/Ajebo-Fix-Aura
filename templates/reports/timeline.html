@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vehicle Care History</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 32px auto;
+            color: #111827;
+            line-height: 1.6;
+        }
+
+        h1, h2 {
+            margin-bottom: 6px;
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .section {
+            border: 1px solid #e5e7eb;
+            padding: 18px;
+            margin-top: 22px;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        .pdf-banner {
+            border: 2px solid #111827;
+            padding: 14px;
+            margin-bottom: 24px;
+            background: #f8f8f8;
+            font-size: 13px;
+        }
+
+        .timeline {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .timeline-item {
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+
+        .timeline-service {
+            border-left: 4px solid #047857;
+        }
+
+        .timeline-concern {
+            border-left: 4px solid #b45309;
+        }
+
+        .admin-actions {
+            margin-top: 20px;
+            padding: 14px;
+            border: 1px dashed #9ca3af;
+            border-radius: 6px;
+            background: #f9fafb;
+        }
+
+        a {
+            color: #2563eb;
+            font-weight: bold;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        @media print {
+            a {
+                display: none;
+            }
+
+            body {
+                margin: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+{% if is_admin_view %}
+<div class="pdf-banner">
+    <strong>CONFIDENTIAL — INTERNAL MEDICAL FILE</strong>
+    Ajebo Fix Advisory Division<br>
+
+    {% if exported_by %}
+        Exported by: {{ exported_by }}<br>
+    {% endif %}
+
+    {% if exported_at %}
+        Exported on: {{ exported_at.strftime("%Y-%m-%d %H:%M UTC") }}<br>
+    {% endif %}
+
+    <span class="muted">
+        For internal professional use only. Observational and non-diagnostic.
+    </span>
+</div>
+{% endif %}
+
+<h1>Vehicle Care History</h1>
+<p class="muted">
+    {{ car.brand }} {{ car.model }} {{ car.year }}
+</p>
+
+<div class="section">
+    <h2>Health Snapshot</h2>
+    <p><strong>Status:</strong> {{ health.label }}</p>
+    <p><strong>Recommended Action:</strong> {{ health.next_action }}</p>
+</div>
+
+<div class="section">
+    <h2>Care Timeline</h2>
+
+    {% if services or concerns %}
+        <ul class="timeline">
+            {% for s in services %}
+                <li class="timeline-item timeline-service">
+                    <strong>Service:</strong> {{ s.title }}<br>
+                    <span class="muted">
+                        {{ s.created_at.strftime("%Y-%m-%d") }}
+                        · Mileage: {{ s.mileage or "—" }}
+                    </span>
+                </li>
+            {% endfor %}
+
+            {% for c in concerns %}
+                <li class="timeline-item timeline-concern">
+                    <strong>Reported Concern:</strong>
+                    {{ c.category | replace('_',' ') | title }}<br>
+                    <span class="muted">
+                        {{ c.created_at.strftime("%Y-%m-%d") }}
+                        · Status: {{ c.status | replace('_',' ') | title }}
+                    </span>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">No records have been logged yet.</p>
+    {% endif %}
+</div>
+
+{% if is_admin_view %}
+<div class="admin-actions">
+    <strong>Advisor Actions</strong><br><br>
+
+    <a href="{{ url_for('admin.admin_vehicle_records_pdf', car_id=car.id) }}">
+        🔒 Download Confidential Medical File (PDF)
+    </a>
+</div>
+{% endif %}
+
+<br>
+
+{% if is_admin_view %}
+    <a href="{{ url_for('admin.admin_view_vehicle', car_id=car.id) }}">
+        ← Back to Vehicle (Admin)
+    </a>
+{% else %}
+    <a href="{{ url_for('cars.car_detail', car_id=car.id) }}">
+        ← Back to Vehicle Profile
+    </a>
+{% endif %}
+
+</body>
+</html>

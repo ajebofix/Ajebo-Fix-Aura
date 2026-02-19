@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Record Observation — Advisor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 24px auto;
+            padding: 0 16px;
+            color: #111827;
+            line-height: 1.6;
+        }
+
+        h1, h2 {
+            margin-bottom: 8px;
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        label {
+            display: block;
+            margin-top: 14px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            font-size: 14px;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .actions {
+            margin-top: 24px;
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            background: #111827;
+            color: #ffffff;
+            border: none;
+            padding: 12px 18px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: #6b7280;
+        }
+
+        .disclaimer {
+            margin-top: 32px;
+            font-size: 13px;
+            color: #374151;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 14px;
+        }
+
+        a {
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Record Observation / Concern</h1>
+<p class="muted">
+    Advisor observation — documented on behalf of the client
+    during professional consultation.
+</p>
+
+<div class="card">
+    <h2>Vehicle Information</h2>
+
+    <p>
+        <strong>Vehicle:</strong>
+        {{ car.brand }} {{ car.model }} {{ car.year }}
+    </p>
+
+    <p>
+        <strong>VIN:</strong>
+        {{ car.vin or "—" }}
+    </p>
+
+    <p>
+        <strong>Current Recorded Mileage:</strong>
+        {{ car.current_mileage or "—" }}
+    </p>
+
+    <p>
+        <strong>Under Professional Care Since:</strong>
+        {{ ownership.start_date.strftime("%Y-%m-%d") }}
+    </p>
+</div>
+
+<div class="card">
+    <h2>Observation Details</h2>
+
+    <form method="POST">
+
+        <label for="category">Observation Category</label>
+        <select id="category" name="category">
+            <option value="engine">Engine</option>
+            <option value="transmission">Transmission</option>
+            <option value="brakes">Brakes</option>
+            <option value="suspension">Suspension / Steering</option>
+            <option value="electrical">Electrical / Electronics</option>
+            <option value="cooling">Cooling System</option>
+            <option value="body">Body / Exterior</option>
+            <option value="interior">Interior</option>
+            <option value="other" selected>Other</option>
+        </select>
+
+        <label for="observed_at">Date Observed (optional)</label>
+        <input
+            type="date"
+            id="observed_at"
+            name="observed_at"
+        >
+
+        <label for="description">Observation Description *</label>
+        <textarea
+            id="description"
+            name="description"
+            placeholder="Describe what was observed, symptoms noticed, or conditions requiring monitoring"
+            required
+        ></textarea>
+
+        <div class="actions">
+            <button type="submit">
+                Save Observation
+            </button>
+
+            <a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}">
+                <button type="button" class="secondary">
+                    Cancel
+                </button>
+            </a>
+        </div>
+
+    </form>
+</div>
+
+<div class="disclaimer">
+    <strong>Confidential — Internal Medical File</strong><br>
+    {{ disclaimer }}
+</div>
+
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Client Enrollment</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 420px;
+            margin: 20px auto;
+            padding: 12px;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtext {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-weight: bold;
+            display:block;
+            margin-top:14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            margin-top: 6px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+
+        .flash {
+            padding: 10px;
+            margin-bottom: 12px;
+            border-radius: 6px;
+        }
+
+        .flash.success {
+            background:#e6fffa;
+            color:#065f46;
+        }
+
+        .flash.error {
+            background:#fee2e2;
+            color:#991b1b;
+        }
+
+        .flash.info {
+            background:#eef2ff;
+            color:#1e3a8a;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .footer {
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        a {
+            color:#2563eb;
+            text-decoration:none;
+            font-weight: bold;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Client Enrollment</h1>
+<p class="subtext">
+    Begin your private vehicle health relationship with Ajebo Fix.
+</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash {{ category }}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+{% if error %}
+<div class="flash error">{{ error }}</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('auth.signup') }}">
+
+    <label>Full name</label>
+    <input type="text" name="name" required>
+
+    <label>Email address</label>
+    <input type="email" name="email" required>
+
+    <label>Phone number</label>
+    <input type="text" name="phone_number" required>
+    <div class="hint">
+        Used only for account support and important updates.
+    </div>
+
+    <label>Password</label>
+    <input type="password" name="password" id="password" required>
+
+    <label class="hint">
+        <input type="checkbox" onclick="togglePassword()"> Show password
+    </label>
+
+    <label>Admin access code (optional)</label>
+    <input type="text" name="admin_code">
+    <div class="hint">
+        Provided privately by Ajebo Fix.
+    </div>
+
+    <button type="submit">Continue Enrollment</button>
+</form>
+
+<div class="footer">
+    Already enrolled?
+    <a href="{{ url_for('auth.login') }}">Access your account</a>
+</div>
+
+<script>
+function togglePassword() {
+    const input = document.getElementById("password");
+    input.type = input.type === "password" ? "text" : "password";
+}
+</script>
+
+</body>
+</html>

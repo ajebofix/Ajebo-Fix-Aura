@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Aura | System Overview</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 32px auto;
+            padding: 0 12px;
+            line-height: 1.55;
+            color: #111827;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtext {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 22px;
+        }
+
+        .stats-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 18px;
+            background: #fafafa;
+        }
+
+        .stats-card h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+
+        ul {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+        }
+
+        li {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        li:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            font-weight: bold;
+        }
+
+        .note {
+            font-size: 13px;
+            color: #4b5563;
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 12px;
+        }
+
+        .nav-links {
+            margin-top: 26px;
+        }
+
+        .nav-links a {
+            display: inline-block;
+            margin-right: 14px;
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+
+        .empty {
+            color: #92400e;
+            background: #fff7ed;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>System Overview</h1>
+<p class="subtext">
+    High-level operational snapshot for Aura advisors.
+</p>
+
+{% if stats %}
+    <!-- PLATFORM OVERVIEW -->
+    <div class="stats-card">
+        <h3>Platform Overview</h3>
+        <ul>
+            <li>
+                <span class="stat-label">Registered Clients:</span>
+                {{ stats.users or 0 }}
+            </li>
+            <li>
+                <span class="stat-label">Vehicles Under Care:</span>
+                {{ stats.cars or 0 }}
+            </li>
+            <li>
+                <span class="stat-label">Active Care Assignments:</span>
+                {{ stats.active_ownerships or 0 }}
+            </li>
+        </ul>
+    </div>
+
+    <!-- ACTIVITY -->
+    <div class="stats-card">
+        <h3>Recorded Activity</h3>
+        <ul>
+            <li>
+                <span class="stat-label">Total Records:</span>
+                {{ stats.events.total if stats.events is defined else 0 }}
+            </li>
+            <li>
+                <span class="stat-label">Active Records:</span>
+                {{ stats.events.active if stats.events is defined else 0 }}
+            </li>
+            <li>
+                <span class="stat-label">Archived Records:</span>
+                {{ stats.events.deleted if stats.events is defined else 0 }}
+            </li>
+        </ul>
+
+        <div class="note">
+            Records include consultations, assessments, monitoring entries,
+            and treatment documentation. Figures are informational, not diagnostic.
+        </div>
+    </div>
+{% else %}
+    <div class="empty">
+        System data is currently unavailable.
+    </div>
+{% endif %}
+
+<hr>
+
+<div class="nav-links">
+    <a href="/admin/fleet/health">View Fleet Health Overview</a>
+    <a href="/dashboard">← Return to Client View</a>
+</div>
+
+</body>
+</html>

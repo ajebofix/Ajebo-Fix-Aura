@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Schedule Consultation</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 40px auto;
+            color: #111827;
+        }
+
+        h1 { margin-bottom: 12px; }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 16px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 12px;
+            width: 100%;
+            border-radius: 6px;
+            border: none;
+            background: #111827;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Schedule Consultation</h1>
+
+<p>
+    <strong>Vehicle:</strong>
+    {{ car.brand }} {{ car.model }} {{ car.year }}
+</p>
+
+<p>
+    <strong>Client:</strong>
+    {{ ownership.user.email }}
+</p>
+
+<form method="post">
+    <label>Consultation Date & Time</label>
+    <input type="datetime-local" name="scheduled_for" required>
+
+    <button type="submit">Schedule Consultation</button>
+</form>
+
+<p>
+<a href="{{ url_for('admin.admin_consultations', car_id=car.id) }}">
+            Check Scheduled Consultations
+</a>
+</p>
+
+</body>
+</html>

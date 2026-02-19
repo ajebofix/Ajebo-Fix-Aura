@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura | Reported Concerns</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 32px auto;
+            padding: 0 12px;
+            color: #111827;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 22px;
+        }
+
+        .concern {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: #fafafa;
+        }
+
+        .meta {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+
+        .reported { color: #92400e; }
+        .acknowledged { color: #1d4ed8; }
+        .resolved { color: #065f46; }
+
+        .actions {
+            margin-top: 12px;
+        }
+
+        form {
+            display: inline;
+        }
+
+        button {
+            padding: 8px 12px;
+            margin-right: 8px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-review { background: #fde68a; }
+        .btn-resolve { background: #bbf7d0; }
+
+        .note {
+            font-size: 13px;
+            color: #4b5563;
+            background: #f9fafb;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 24px;
+            text-decoration: none;
+            color: #2563eb;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Reported Concerns
+    {% if car %}
+        - {{ car.brand }} {{ car.model }}
+    {% endif %}
+</h1>
+<p class="subtitle">
+    Client-reported observations awaiting professional review
+</p>
+
+<!-- FLASH MESSAGES -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <p><strong>{{ message }}</strong></p>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+{% if faults %}
+    {% for fault in faults %}
+        <div class="concern">
+            <div class="meta">
+                <strong>Vehicle ID:</strong> {{ fault.car_id }} •
+                <strong>Category:</strong> {{ fault.category }} •
+                <strong>Severity:</strong> {{ fault.severity }} •
+                <span class="status {{ fault.status }}">
+                    {{ fault.status.replace('_', ' ')|title }}
+                </span>
+            </div>
+
+            <p>{{ fault.description }}</p>
+
+            <div class="note">
+                This is a reported concern, not a diagnosis.
+                Further assessment may be required.
+            </div>
+
+            <div class="actions">
+                {% if fault.status == "reported" %}
+                    <form method="POST"
+                          action="{{ url_for('admin.admin_review_concern', concern_id=fault.id) }}">
+                        <button class="btn-review">Mark Under Review</button>
+                    </form>
+                {% endif %}
+
+                {% if fault.status != "resolved" %}
+                    <form method="POST"
+                          action="{{ url_for('admin.admin_resolve_concern', concern_id=fault.id) }}">
+                        <button class="btn-resolve">Mark Resolved</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <p>No reported concerns at this time.</p>
+{% endif %}
+
+<a href="/admin/dashboard">← Return to Advisor Console</a>
+
+</body>
+</html>

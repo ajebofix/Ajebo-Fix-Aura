@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Aura | Register Vehicle</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 32px auto;
+            padding: 0 12px;
+            line-height: 1.55;
+            color: #111827;
+        }
+
+        h1 {
+            margin-bottom: 6px;
+        }
+
+        .subtext {
+            font-size: 14px;
+            color: #4b5563;
+            margin-bottom: 22px;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 22px;
+            font-size: 15px;
+            cursor: pointer;
+            border-radius: 6px;
+            border: none;
+            background: #111827;
+            color: white;
+        }
+
+        button:hover {
+            opacity: 0.95;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 18px;
+            font-size: 14px;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+
+        .note {
+            font-size: 13px;
+            color: #4b5563;
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 18px;
+        }
+
+        a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Register Vehicle</h1>
+
+<p class="subtext">
+    Add a vehicle to Aura to begin private health tracking,
+    assessments, and long-term care oversight.
+</p>
+
+{% if error %}
+    <div class="error">{{ error }}</div>
+{% endif %}
+
+<form method="POST" action="">
+
+    <!-- VEHICLE BRAND -->
+    <label>Manufacturer</label>
+    <input
+        type="text"
+        name="brand"
+        placeholder="Mercedes-Benz"
+        required
+    >
+
+    <!-- MODEL -->
+    <label>Model</label>
+    <input
+        type="text"
+        name="model"
+        placeholder="GLE 450"
+        required
+    >
+
+    <!-- YEAR -->
+    <label>Model Year</label>
+    <input
+        type="number"
+        name="year"
+        placeholder="2022"
+        min="1980"
+        max="2099"
+        required
+    >
+
+    <!-- VIN -->
+    <label>Vehicle Identification Number (VIN)</label>
+    <input
+        type="text"
+        name="vin"
+        placeholder="Optional but recommended"
+    >
+    <div class="hint">
+        Used to uniquely identify the vehicle and improve record accuracy.
+    </div>
+
+    <!-- PLATE NUMBER -->
+    <label>Registration Plate</label>
+    <input
+        type="text"
+        name="plate_number"
+        placeholder="ABC-123-XY"
+        required
+    >
+
+    <!-- COLOR -->
+    <label>Exterior Color</label>
+    <input
+        type="text"
+        name="color"
+        placeholder="Black, White, Silver…"
+    >
+
+    <!-- MILEAGE -->
+    <label>Current Mileage</label>
+    <input
+        type="number"
+        name="mileage_at_transfer"
+        placeholder="e.g. 85,000"
+        min="0"
+        required
+    >
+    <div class="hint">
+        This becomes the baseline for health assessment and monitoring.
+    </div>
+
+    <div class="note">
+        Aura does not diagnose vehicle conditions.
+        All insights are based on recorded data and professional review.
+    </div>
+
+    <button type="submit">Save Vehicle</button>
+</form>
+
+<br>
+
+<a href="/dashboard">← Return to Dashboard</a>
+
+</body>
+</html>

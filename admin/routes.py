@@ -12,6 +12,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 
 from models import (
+    VehicleAssessmentTreatmentOption,
     db,
     User,
     Car,
@@ -20,18 +21,23 @@ from models import (
     CarFault,
     Consultation,
     VehicleAssessment,
+    VehicleAssessmentRisk,
 )
 
-# from cars import routes
 from services.vehicle_intelligence import calculate_vehicle_health
 from .utils import advisor_required
 from services.consultation_guard import require_active_consultation
 from services.assessment_report_builder import build_assessment_report
 from services.assessment_pdf_renderer import render_assessment_pdf
+from services.assessment_risk_engine import calculate_assessment_risk
+from services.rina_escalation_engine import RinaEscalationEngine
+from services.rina_action_suggestions import RinaCareGuidanceEngine
+from services.rina_alert_awareness_service import RinaCareContextService
 
 from io import BytesIO
 from xhtml2pdf import pisa
 import hashlib
+from sqlalchemy import func
 
 
 # =====================================================
@@ -286,10 +292,33 @@ def admin_review_concern(concern_id):
     concern = CarFault.query.get_or_404(concern_id)
 
     if concern.status == "reported":
-        concern.status = "acknowledged"
+        concern.status = "under_review"
+        concern.reviewed_at = datetime.utcnow()
+        concern.reviewed_by = current_user.id
+
         db.session.commit()
 
         flash("Concern is now under professional review.", "success")
+
+    return redirect(request.referrer or url_for("admin.admin_reported_concerns"))
+
+
+# ===================================
+# ADMIN - MONITOR CONCERN
+# ===================================
+
+
+@admin_bp.route("/concerns/<int:concern_id>/monitor", methods=["POST"])
+@login_required
+@advisor_required
+def admin_monitor_concern(concern_id):
+    concern = CarFault.query.get_or_404(concern_id)
+
+    if concern.status in ("reported", "under_review"):
+        concern.status = "monitoring"
+        db.session.commit()
+
+        flash("Concern moved to monitoring.", "success")
 
     return redirect(request.referrer or url_for("admin.admin_reported_concerns"))
 
@@ -311,7 +340,7 @@ def admin_resolve_concern(concern_id):
         concern.resolved_by = current_user.id
         db.session.commit()
 
-        flash("Concern has been resolved and documented.", "success")
+        flash("Concern resolved.", "success")
 
     return redirect(request.referrer or url_for("admin.admin_reported_concerns"))
 
@@ -342,11 +371,29 @@ def admin_view_vehicle(car_id):
         }
     )
 
+    guidance = RinaCareGuidanceEngine.generate_guidance(car.id, ownership.user_id)
+
+    care_context = RinaCareContextService.get_active_care_context(car.id, ownership.user_id)
+
+    escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
+
+    consultations = Consultation.query.filter_by(car_id=car.id).all()
+
+    assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
+
+    has_active_consultation = any(c.status == "in_progress" for c in consultations)
+
     return render_template(
         "car_detail.html",
         car=car,
         ownership=ownership,
         health=health,
+        guidance=guidance,
+        care_context=care_context,
+        escalation=escalation,
+        consultations=consultations,
+        assessments=assessments,
+        has_active_consultation=has_active_consultation,
         disclaimer=CLINICAL_DISCLAIMER,
         is_admin_view=True,
     )
@@ -367,7 +414,7 @@ def admin_add_service(car_id):
         is_active=True,
     ).first_or_404()
 
-    # 🔒 AUTHORITY GATE
+    # AUTHORITY GATE
     try:
         require_active_consultation(car_id)
     except PermissionError as e:
@@ -415,7 +462,7 @@ def admin_add_service(car_id):
         db.session.add(event)
         db.session.commit()
 
-        flash("Service record added on behalf of client.", "success")
+        flash("Service record added.", "success")
         return redirect(url_for("admin.admin_vehicle_records", car_id=car.id))
 
     return render_template(
@@ -440,12 +487,7 @@ def admin_vehicle_records_pdf(car_id):
         is_active=True,
     ).first_or_404()
 
-    try:
-        require_active_consultation(car_id)
-    except PermissionError as e:
-        flash(str(e), "error")
-        return redirect(url_for("admin.admin_vehicle_records", car_id=car_id))
-
+    # AUTHORITY GATE
     car = ownership.car
     services = VehicleEvent.query.filter_by(
         car_id=car.id,
@@ -500,7 +542,7 @@ def admin_add_concern(car_id):
         is_active=True,
     ).first_or_404()
 
-    # 🔒 AUTHORITY GATE
+    # AUTHORITY GATE
     try:
         require_active_consultation(car_id)
     except PermissionError as e:
@@ -667,38 +709,39 @@ def admin_schedule_consultation(car_id):
 @login_required
 @advisor_required
 def admin_start_consultation(consultation_id):
+    """
+    Begin a scheduled consultation.
+    This route ONLY transitions the consultation to 'in_progress'.
+    It intentionally does NOT create a VehicleAssessment.
+    """
+
     consultation = Consultation.query.get_or_404(consultation_id)
 
+    # ------------------------------------------------
+    # Guard: Only scheduled consultations can start
+    # ------------------------------------------------
     if consultation.status != "scheduled":
         flash("Consultation cannot be started.", "error")
-        return redirect(request.referrer)
+        return redirect(url_for("admin.admin_consultations"))
 
+    # ------------------------------------------------
+    # Transition state
+    # ------------------------------------------------
     consultation.status = "in_progress"
     consultation.started_at = datetime.utcnow()
 
-    # Create assessment if it doesn't exist
-    existing_assessment = VehicleAssessment.query.filter_by(
-        consultation_id=consultation.id
-    ).first()
-
-    if not existing_assessment:
-        assessment = VehicleAssessment(
-            consultation_id=consultation.id,
-            car_id=consultation.car_id,
-            ownership_id=consultation.ownership_id,
-            advisor_id=current_user.id,
-            vin=consultation.car.vin,
-            mileage_at_assessment=consultation.car.mileage,
-            engine_number=consultation.car.engine_number,
-            engine_type=consultation.car.engine_type,
-            status="draft",
-        )
-    db.session.add(assessment)
-
-    db.session.commit()
+    # ------------------------------------------------
+    # Persist safely
+    # ------------------------------------------------
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("Failed to start consultation due to a system error.", "error")
+        return redirect(url_for("admin.admin_consultations"))
 
     flash("Consultation is now in progress.", "success")
-    return redirect(url_for("admin.admin_vehicle_records", car_id=consultation.car_id))
+    return redirect(url_for("admin.admin_consultations"))
 
 
 # ============================================
@@ -712,29 +755,72 @@ def admin_start_consultation(consultation_id):
 @login_required
 @advisor_required
 def admin_complete_consultation(consultation_id):
+    """
+    Complete a consultation.
+    Requires:
+      - consultation.status == "in_progress"
+      - a VehicleAssessment exists for this consultation and is finalized
+    If request.method == GET -> render the completion form.
+    If POST -> persist summary + complete consultation.
+    """
     consultation = Consultation.query.get_or_404(consultation_id)
 
     if consultation.status != "in_progress":
         flash("Only active consultations can be completed.", "error")
         return redirect(url_for("admin.admin_consultations"))
 
-    if request.method == "POST":
-        consultation.status = "completed"
-        consultation.completed_at = datetime.utcnow()
-        consultation.summary = request.form.get("summary", "").strip()
-        consultation.client_visible_summary = request.form.get(
-            "client_visible_summary", ""
-        ).strip()
+    # Find the assessment (there should be at most one because of unique constraint)
+    assessment = VehicleAssessment.query.filter_by(
+        consultation_id=consultation.id
+    ).first()
 
-        db.session.commit()
+    # If GET: render form (same behavior as you had before)
+    if request.method == "GET":
+        return render_template(
+            "admin/complete_consultation.html",
+            consultation=consultation,
+            assessment=assessment,
+        )
 
-        flash("Consultation completed and documented.", "success")
-        return redirect(url_for("admin.admin_view_vehicle", car_id=consultation.car_id))
+    # POST: validate assessment finalized state
+    # Use both status and is_finalized for safety
+    if not assessment:
+        flash(
+            "Cannot complete consultation: no assessment exists. Start and finalize an assessment first.",
+            "error",
+        )
+        return redirect(url_for("admin.admin_consultations"))
 
-    return render_template(
-        "admin/complete_consultation.html",
-        consultation=consultation,
+    if not (
+        assessment.is_finalized
+        or (assessment.status and assessment.status == "finalized")
+    ):
+        flash(
+            "Cannot complete consultation: the assessment must be finalized first.",
+            "error",
+        )
+        return redirect(url_for("admin.admin_consultations"))
+
+    # Persist completion data
+    consultation.status = "completed"
+    consultation.completed_at = datetime.utcnow()
+    consultation.summary = (
+        request.form.get("summary", "").strip() or consultation.summary
     )
+    consultation.client_visible_summary = (
+        request.form.get("client_visible_summary", "").strip()
+        or consultation.client_visible_summary
+    )
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash("Failed to complete consultation (database error).", "error")
+        return redirect(url_for("admin.admin_consultations"))
+
+    flash("Consultation completed.", "success")
+    return redirect(url_for("admin.admin_view_vehicle", car_id=consultation.car_id))
 
 
 # ===========================================
@@ -760,7 +846,7 @@ def admin_consultations():
     # --------------------------------------------------
     # Fetch consultations (latest first)
     # --------------------------------------------------
-    consultations = Consultation.query.order_by(Consultation.created_at.desc()).all()
+    consultations = Consultation.query.order_by(Consultation.scheduled_for.asc()).all()
 
     # --------------------------------------------------
     # Canonical grouping (DO NOT change keys)
@@ -791,6 +877,68 @@ def admin_consultations():
     )
 
 
+# ==========================================
+# ADMIN - START ASSESSMENT ROUTE
+# ==========================================
+
+
+@admin_bp.route(
+    "/consultations/<int:consultation_id>/assessment/start", methods=["POST"]
+)
+@login_required
+@advisor_required
+def admin_start_assessment(consultation_id):
+
+    consultation = Consultation.query.get_or_404(consultation_id)
+
+    if consultation.status != "in_progress":
+        flash("Consultation must be active first.", "error")
+        return redirect(url_for("admin.admin_consultations"))
+
+    assessment = VehicleAssessment.query.filter_by(
+        consultation_id=consultation.id
+    ).first()
+
+    # ----------------------------------
+    # If assessment exists
+    # ----------------------------------
+    if assessment:
+
+        if assessment.status == "draft":
+            flash("Continuing draft assessment.", "info")
+            return redirect(
+                url_for("admin.admin_edit_assessment", assessment_id=assessment.id)
+            )
+
+        if assessment.status == "finalized":
+            flash("Assessment already finalized.", "info")
+            return redirect(
+                url_for("admin.admin_view_vehicle", car_id=consultation.car_id)
+            )
+
+    # ----------------------------------
+    # Create new draft assessment
+    # ----------------------------------
+
+    assessment = VehicleAssessment(
+        consultation_id=consultation.id,
+        car_id=consultation.car_id,
+        advisor_id=current_user.id,
+        vin=consultation.car.vin,
+        mileage_at_assessment=consultation.car.current_mileage,
+        engine_number=consultation.car.engine_number,
+        engine_type=consultation.car.engine_type,
+        status="draft",
+    )
+
+    db.session.add(assessment)
+    db.session.commit()
+
+    flash("Assessment started.", "success")
+
+    return redirect(url_for("admin.admin_edit_assessment", assessment_id=assessment.id))
+
+
 # ============================================
 # ASSESSMENT EDIT ROUTE (DRAFT ONLY)
 # ============================================
@@ -798,28 +946,102 @@ def admin_consultations():
 @login_required
 @advisor_required
 def admin_edit_assessment(assessment_id):
+
     assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
     if assessment.status != "draft":
         abort(403)
 
     if request.method == "POST":
-        assessment.vehicle_overview = request.form.get("vehicle_overview")
-        assessment.current_health_status = request.form.get("current_health_status")
-        assessment.identified_risks = request.form.get("identified_risks")
-        assessment.urgency_classification = request.form.get("urgency_classification")
-        assessment.cost_vs_consequence = request.form.get("cost_vs_consequence")
-        assessment.treatment_options = request.form.get("treatment_options")
+
+        # -----------------------------------------------
+        # SAVE RISKS
+        # -----------------------------------------------
+        VehicleAssessmentRisk.query.filter_by(assessment_id=assessment.id).delete()
+
+        descriptions = request.form.getlist("risk_description")
+        causes = request.form.getlist("risk_cause")
+        consequences = request.form.getlist("risk_consequence")
+        urgencies = request.form.getlist("risk_urgency")
+
+        for description, cause, consequence, urgency in zip(
+            descriptions, causes, consequences, urgencies
+        ):
+
+            if description:
+
+                risk = VehicleAssessmentRisk(
+                    assessment_id=assessment.id,
+                    description=description,
+                    likely_cause=cause,
+                    consequence_if_ignored=consequence,
+                    urgency=urgency,
+                )
+
+                db.session.add(risk)
+
+        # -------------------------------
+        # SYSTEM STATUS (for risk engine)
+        # -------------------------------
+        assessment.engine_status = request.form.get("engine_status")
+        assessment.transmission_status = request.form.get("transmission_status")
+        assessment.suspension_status = request.form.get("suspension_status")
+        assessment.electrical_status = request.form.get("electrical_status")
+        assessment.cooling_status = request.form.get("cooling_status")
+
+        # -------------------------------
+        # COST VS CONSEQUENCE
+        # -------------------------------
+
+        assessment.cost_consequence_analysis = request.form.get(
+            "cost_vs_consequence_analysis"
+        )
+
+        # -------------------------------
+        # TREATMENT OPTIONS (supports A/B/C)
+        # -------------------------------
+
+        VehicleAssessmentTreatmentOption.query.filter_by(
+            assessment_id=assessment.id
+        ).delete()
+
+        titles = request.form.getlist("treatment_title")
+        descriptions = request.form.getlist("treatment_description")
+        codes = request.form.getlist("treatment_code")
+
+        for i in range(len(titles)):
+
+            if titles[i] and descriptions[i]:
+
+                option = VehicleAssessmentTreatmentOption(
+                    assessment_id=assessment.id,
+                    option_code=codes[i],
+                    title=titles[i],
+                    description=descriptions[i],
+                )
+
+                db.session.add(option)
+
+        # -------------------------------
+        # PROFESSIONAL RECOMMENDATION
+        # -------------------------------
         assessment.professional_recommendation = request.form.get(
             "professional_recommendation"
         )
 
         db.session.commit()
+
         flash("Assessment saved.", "success")
+
+    # -------------------------------
+    # Calculate risk after loading
+    # -------------------------------
+    risk = calculate_assessment_risk(assessment)
 
     return render_template(
         "admin/edit_assessment.html",
         assessment=assessment,
+        risk=risk,
     )
 
 
@@ -834,11 +1056,29 @@ def admin_edit_assessment(assessment_id):
 def admin_finalize_assessment(assessment_id):
     assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
+    if not assessment.engine_status:
+        flash("Engine status is required before finalizing.", "error")
+        return redirect(url_for("admin.admin_consultations"))
+
     if assessment.status != "draft":
         abort(403)
 
+    if not all(
+        [
+            assessment.engine_status,
+            assessment.transmission_status,
+            assessment.suspension_status,
+            assessment.electrical_status,
+            assessment.cooling_status,
+        ]
+    ):
+        flash("All system statuses are required before finalizing.", "error")
+        return redirect(url_for("admin.admin_consultations"))
+
     assessment.status = "finalized"
+    assessment.is_finalized = True
     assessment.finalized_at = datetime.utcnow()
+    assessment.finalized_by = current_user.id
 
     db.session.commit()
 
@@ -846,35 +1086,83 @@ def admin_finalize_assessment(assessment_id):
     return redirect(url_for("admin.admin_view_vehicle", car_id=assessment.car_id))
 
 
-# =====================================================
-# 🔒 ADMIN — DOWNLOAD ASSESSMENT PDF
-# =====================================================
+# ===========================================
+# ADVISOR CONTROL PANEL ROUTE
+# ===========================================
+@admin_bp.route("/control", methods=["GET"])
+@login_required
+@advisor_required
+def advisor_control_panel():
+
+    today = datetime.utcnow().date()
+
+    # consultations today
+    consultations_today = Consultation.query.filter(
+        func.date(Consultation.scheduled_for) == today
+    ).all()
+
+    # active consultations
+    active_consultations = Consultation.query.filter_by(status="in_progress").all()
+
+    # draft assessments
+    draft_assessments = (
+        VehicleAssessment.query.filter_by(status="draft")
+        .order_by(VehicleAssessment.created_at.asc())
+        .limit(10)
+        .all()
+    )
+
+    # vehicles needing attention
+    cars = Car.query.join(CarOwnership).filter(CarOwnership.is_active == (True)).all()
+
+    vehicles_at_risk = []
+
+    for car in cars:
+
+        ownership = CarOwnership.query.filter_by(car_id=car.id, is_active=True).first()
+
+        if not ownership:
+            continue
+
+        health = calculate_vehicle_health(car, ownership)
+
+        if health["health_status"] in ("critical", "attention"):
+            vehicles_at_risk.append({"car": car, "health": health})
+
+    return render_template(
+        "admin/control_panel.html",
+        consultations_today=consultations_today,
+        active_consultations=active_consultations,
+        draft_assessments=draft_assessments,
+        vehicles_at_risk=vehicles_at_risk,
+    )
 
 
-@admin_assessments_bp.route("/<int:assessment_id>/download", methods=["GET"])
+# ======================================
+# ADMIN DOWNLOAD ASSESSMENT PDF ROUTE
+# ======================================
+
+
+@admin_bp.route("/<int:assessment_id>/pdf", methods=["GET"])
 @login_required
 @advisor_required
 def admin_download_assessment_pdf(assessment_id):
+
     assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
     if not assessment.is_finalized:
-        flash("Assessment must be finalized before download.", "error")
-        return redirect(request.referrer)
+        abort(403)
 
-    # Build authoritative report data
-    report_data = build_assessment_report(assessment)
+    # Build structured report
+    report = build_assessment_report(assessment=assessment)
 
     # Render PDF
-    pdf = render_assessment_pdf(report_data=report_data)
-
-    filename = (
-        f"AJF_VEHICLE_ASSESSMENT_"
-        f"{assessment.car.vin}_"
-        f"{assessment.created_at.date()}.pdf"
-    )
+    pdf_file = render_assessment_pdf(report_data=report)
 
     return Response(
-        pdf.read(),
+        pdf_file.read(),
         mimetype="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": f"attachment; filename=AJF_ASSESSMENT_{assessment.id}.pdf"
+        },
     )

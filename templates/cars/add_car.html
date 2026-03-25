@@ -12,7 +12,7 @@
         body {
             font-family: Arial, sans-serif;
             max-width: 600px;
-            margin: 32px auto;
+            margin: 28px auto;
             padding: 0 12px;
             line-height: 1.55;
             color: #111827;
@@ -44,6 +44,7 @@
 
         button {
             width: 100%;
+            max-width: 320px;
             padding: 14px;
             margin-top: 22px;
             font-size: 15px;
@@ -92,36 +93,75 @@
         a:hover {
             text-decoration: underline;
         }
+
+        .flash{
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 14px;
+            font-size: 14px;
+            border: 1px solid transparent;
+        }
+
+        .flash.success{
+            background: #ecfdf5;
+            border: 1px solid #bbf7d0;
+        }
+
+        .flash.error{
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+        }
+
+        .flash.warning{
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+        }
+
+        .flash.info{
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+        }
+
     </style>
 </head>
 <body>
 
 <h1>Register Vehicle</h1>
 
-<p class="subtext">
-    Add a vehicle to Aura to begin private health tracking,
-    assessments, and long-term care oversight.
-</p>
+<!-- FLASH MESSAGES -->
+ {% with messages = get_flashed_messages(with_categories=true) %}
+ {% if messages %}
+ {% for category, message in messages %}
+ <div class="flash {{ category }}">
+    {{ message }}
+ </div>
+ {% endfor %}
+ {% endif %}
+ {% endwith %}
 
-{% if error %}
-    <div class="error">{{ error }}</div>
-{% endif %}
+
+<p class="subtext">
+    Add a vehicle to Aura to begin private health tracking
+    and long-term care oversight.
+</p>
 
 <form method="POST" action="">
 
     <!-- VEHICLE BRAND -->
-    <label>Manufacturer</label>
+    <label for="brand">Manufacturer</label>
     <input
         type="text"
+        id="brand"
         name="brand"
         placeholder="Mercedes-Benz"
         required
     >
 
     <!-- MODEL -->
-    <label>Model</label>
+    <label for="model">Model</label>
     <input
         type="text"
+        id="model"
         name="model"
         placeholder="GLE 450"
         required
@@ -132,7 +172,7 @@
     <input
         type="number"
         name="year"
-        placeholder="2022"
+        placeholder="2026"
         min="1980"
         max="2099"
         required
@@ -143,10 +183,43 @@
     <input
         type="text"
         name="vin"
-        placeholder="Optional but recommended"
+        placeholder="WDD10NG454GHCGH4CG"
     >
+
     <div class="hint">
         Used to uniquely identify the vehicle and improve record accuracy.
+    </div>
+
+    <!-- ENGINE NUMBER -->
+    <label>Engine Number</label>
+    <input
+        type="text"
+        name="engine_number"
+        placeholder="M278"
+    >
+
+    <div class="hint">
+        Used to identify the vehicle's engine and improve record accuracy.
+    </div>
+
+    <!-- ENGINE TYPE -->
+    <label>Engine Type</label>
+    <input
+        type="text"
+        name="engine_type"
+        placeholder="e.g. Diesel, Petrol"
+    >
+
+    <!-- TRANSMISSION -->
+    <label>Transmission</label>
+    <input
+        type="text"
+        name="transmission"
+        placeholder="e.g. Automatic, Manual"
+    >
+
+    <div class="hint">
+        Used to identify the type of transmission and improve record accuracy.
     </div>
 
     <!-- PLATE NUMBER -->
@@ -171,7 +244,7 @@
     <input
         type="number"
         name="mileage_at_transfer"
-        placeholder="e.g. 85,000"
+        placeholder="85,000"
         min="0"
         required
     >
@@ -181,7 +254,7 @@
 
     <div class="note">
         Aura does not diagnose vehicle conditions.
-        All insights are based on recorded data and professional review.
+        Insights are based on recorded data and professional review.
     </div>
 
     <button type="submit">Save Vehicle</button>
@@ -189,7 +262,7 @@
 
 <br>
 
-<a href="/dashboard">← Return to Dashboard</a>
+<a href="{{ url_for('dashboard.aura_home') }}">← Return to Dashboard</a>
 
 </body>
 </html>

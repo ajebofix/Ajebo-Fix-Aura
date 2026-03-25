@@ -1,209 +1,178 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aura | Advisor Console</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 32px auto;
-            padding: 0 12px;
-            line-height: 1.5;
-            color: #111827;
-        }
+<title>Aura | Advisor Console</title>
 
-        h1 {
-            margin-bottom: 4px;
-        }
+<style>
 
-        .subtitle {
-            font-size: 14px;
-            color: #4b5563;
-            margin-bottom: 24px;
-        }
+body{
+font-family: Arial, sans-serif;
+max-width:900px;
+margin:32px auto;
+padding:0 12px;
+color:#111827;
+line-height:1.5;
+}
 
-        .flash {
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 16px;
-        }
+h1{
+margin-bottom:4px;
+}
 
-        .flash.success {
-            background: #ecfdf5;
-            color: #065f46;
-            border: 1px solid #10b981;
-        }
+.subtitle{
+font-size:14px;
+color:#6b7280;
+margin-bottom:28px;
+}
 
-        .flash.error {
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #ef4444;
-        }
+.flash{
+padding:12px;
+border-radius:6px;
+margin-bottom:16px;
+font-size:14px;
+}
 
-        .card {
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 16px;
-            margin-bottom: 22px;
-            background: #fafafa;
-        }
+.flash.success{
+background:#ecfdf5;
+border:1px solid #10b981;
+}
 
-        .card h2 {
-            margin-top: 0;
-            font-size: 17px;
-            font-weight: bold;
-        }
+.flash.error{
+background:#fee2e2;
+border:1px solid #ef4444;
+}
 
-        ul {
-            margin: 0;
-            padding-left: 18px;
-        }
+.card{
+border:1px solid #e5e7eb;
+border-radius:6px;
+padding:16px;
+margin-bottom:22px;
+background:#fafafa;
+}
 
-        li {
-            margin-bottom: 6px;
-        }
+.card h2{
+margin-top:0;
+font-size:16px;
+}
 
-        .metric {
-            font-weight: bold;
-        }
+ul{
+margin:0;
+padding-left:18px;
+}
 
-        .note {
-            font-size: 13px;
-            color: #4b5563;
-            background: #f9fafb;
-            padding: 12px;
-            border-radius: 6px;
-            margin-top: 10px;
-        }
+li{
+margin-bottom:6px;
+}
 
-        .warning {
-            background: #fffbeb;
-            border: 1px solid #f59e0b;
-            padding: 12px;
-            border-radius: 6px;
-            color: #92400e;
-        }
+.metric{
+font-weight:bold;
+}
 
-        .actions {
-            margin-top: 32px;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 14px;
-        }
+.actions{
+margin-top:30px;
+display:grid;
+grid-template-columns:1fr;
+gap:14px;
+}
 
-        .btn {
-            display: block;
-            text-align: center;
-            padding: 14px;
-            border-radius: 6px;
-            font-weight: bold;
-            text-decoration: none;
-            color: white;
-        }
+.btn{
+display:block;
+text-align:center;
+padding:16px;
+border-radius:6px;
+font-weight:bold;
+text-decoration:none;
+color:white;
+}
 
-        .btn-primary { background: #2563eb; }
-        .btn-secondary { background: #059669; }
-        .btn-neutral { background: #6b7280; }
-        .btn-attention { background: #d97706; }
+.btn-primary{background:#2563eb;}
+.btn-secondary{background:#059669;}
+.btn-attention{background:#d97706;}
+.btn-neutral{background:#6b7280;}
 
-        .btn:hover { opacity: 0.92; }
+.btn:hover{
+opacity:.92;
+}
 
-        button {
-            padding: 12px;
-            font-size: 14px;
-            cursor: pointer;
-            width: 100%;
-            border-radius: 6px;
-            border: none;
-            margin-top: 22px;
-        }
-    </style>
+.logout{
+margin-top:28px;
+}
+
+.logout button{
+padding:14px;
+width:100%;
+border:none;
+border-radius:6px;
+background:#111827;
+color:white;
+cursor:pointer;
+}
+
+</style>
 </head>
+
 <body>
 
-<h1>Aura — Advisor Console</h1>
-<p class="subtitle">
-    Private automotive health oversight & clinical control panel
-</p>
+<h1>Aura</h1>
+<p class="subtitle">Advisor Console</p>
 
-<!-- FLASH MESSAGES -->
 {% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, message in messages %}
-      <div class="flash {{ category }}">{{ message }}</div>
-    {% endfor %}
-  {% endif %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash {{ category }}">{{ message }}</div>
+{% endfor %}
+{% endif %}
 {% endwith %}
 
 {% if stats %}
-    <div class="card">
-        <h2>System Overview</h2>
-        <ul>
-            <li>
-                <span class="metric">Registered Clients:</span>
-                {{ stats.clients }}
-            </li>
-            <li>
-                <span class="metric">Vehicles Under Care:</span>
-                {{ stats.vehicles }}
-            </li>
-            <li>
-                <span class="metric">Active Care Assignments:</span>
-                {{ stats.active_assignments }}
-            </li>
-        </ul>
 
-        <div class="note">
-            These figures reflect vehicles currently enrolled under Aura monitoring.
-        </div>
-    </div>
-
-    <div class="card">
-        <h2>Vehicle Records Activity</h2>
-        <ul>
-            <li>
-                <span class="metric">Total Records Logged:</span>
-                {{ stats.events.total }}
-            </li>
-            <li>
-                <span class="metric">Active Records:</span>
-                {{ stats.events.active }}
-            </li>
-            <li>
-                <span class="metric">Archived Records:</span>
-                {{ stats.events.archived }}
-            </li>
-        </ul>
-    </div>
-{% else %}
-    <div class="warning">
-        Advisor metrics are temporarily unavailable.
-    </div>
-{% endif %}
-
-<!-- ADVISOR ACTIONS -->
-<div class="actions">
-    <!-- ⚠️ /admin/stats DOES NOT EXIST → REMOVED -->
-
-    <a href="{{ url_for('admin.admin_fleet_health') }}" class="btn btn-primary">
-        Fleet Health Overview
-    </a>
-
-    <a href="{{ url_for('admin.admin_reported_concerns') }}" class="btn btn-attention">
-        Review Reported Concerns
-    </a>
-
-    <a href="{{ url_for('dashboard.aura_home') }}" class="btn btn-neutral">
-        Switch to Client View
-    </a>
+<div class="card">
+<h2>System</h2>
+<ul>
+<li><span class="metric">Clients:</span> {{ stats.clients }}</li>
+<li><span class="metric">Vehicles:</span> {{ stats.vehicles }}</li>
+<li><span class="metric">Care Assignments:</span> {{ stats.active_care_assignments }}</li>
+</ul>
 </div>
 
+<div class="card">
+<h2>Records</h2>
+<ul>
+<li><span class="metric">Total:</span> {{ stats.events.total }}</li>
+<li><span class="metric">Active:</span> {{ stats.events.active }}</li>
+<li><span class="metric">Archived:</span> {{ stats.events.archived }}</li>
+</ul>
+</div>
+
+{% endif %}
+
+<div class="actions">
+
+<a href="{{ url_for('admin.advisor_control_panel') }}" class="btn btn-primary">
+Advisor Panel
+</a>
+
+<a href="{{ url_for('admin.admin_fleet_health') }}" class="btn btn-secondary">
+Fleet Health
+</a>
+
+<a href="{{ url_for('admin.admin_reported_concerns') }}" class="btn btn-attention">
+Concerns
+</a>
+
+<a href="{{ url_for('dashboard.aura_home') }}" class="btn btn-neutral">
+Client View
+</a>
+
+</div>
+
+<div class="logout">
 <form action="{{ url_for('auth.logout') }}" method="POST">
-    <button type="submit">Sign Out</button>
+<button type="submit">Sign Out</button>
 </form>
+</div>
 
 </body>
 </html>

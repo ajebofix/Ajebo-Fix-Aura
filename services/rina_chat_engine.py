@@ -1,37 +1,37 @@
 from typing import Dict, List, Optional
 
+from rina.memory import update_user_behavior, get_user_behavior_profile
+from rina.ai_brain import generate_rina_response
+
 
 class RinaChatEngine:
     """
-    Aura Assistant — Clinical Mode (STRICT & STATELESS)
+    Aura Assistant — Clinical Mode (ENHANCED + AI)
 
-    HARD RULES:
-    - Responds ONLY using the provided health context
-    - NEVER infers, guesses, or reuses previous vehicle data
-    - If vehicle_identity or score is missing → say so clearly
-    - No diagnosis, no commands, no urgency language
+    - Context aware
+    - Behavior-aware
+    - Urgency-aware
+    - AI-enhanced responses
     """
 
     @staticmethod
     def respond(message: str, health: Dict) -> str:
-        # =================================================
-        # INPUT NORMALIZATION
-        # =================================================
+
         message = (message or "").lower().strip()
 
-        # =================================================
-        # VEHICLE IDENTITY (MANDATORY)
-        # =================================================
-        vehicle_identity: str = health.get("vehicle_identity")
+        # =========================
+        # VEHICLE IDENTITY
+        # =========================
+        vehicle_identity: str = health.get("vehicle_identity") or ""
         if not vehicle_identity:
             return (
                 "I need to know which vehicle we’re discussing before I can help.\n\n"
                 "Please select a vehicle from your dashboard."
             )
 
-        # =================================================
-        # HEALTH SCORE — HARD LOCK (NO GUESSING)
-        # =================================================
+        # =========================
+        # SCORE
+        # =========================
         score: Optional[int] = None
 
         if isinstance(health.get("health_score"), (int, float)):
@@ -41,168 +41,138 @@ class RinaChatEngine:
 
         score_text = str(score) if score is not None else "unavailable"
 
-        # =================================================
-        # HEALTH STATUS & CONTEXT
-        # =================================================
+        # =========================
+        # CORE HEALTH DATA
+        # =========================
         status: str = health.get("health_status", "unknown")
-        label: str = health.get("label", "unavailable")
         reasons: List[str] = health.get("risk_reasons") or []
 
-        next_action = health.get("next_action")
-        if isinstance(next_action, dict):
-            next_action_text = next_action.get(
-                "message",
-                "A professional review by Ajebo Fix is advised.",
-            )
-        elif isinstance(next_action, str):
-            next_action_text = next_action
+        # =========================
+        # SYSTEM CONTEXT
+        # =========================
+        guidance = health.get("guidance") or {}
+        care_context = health.get("care_context") or {}
+        escalation = health.get("escalation") or {}
+
+        escalation_level = escalation.get("level", "monitor")
+
+        # =========================
+        # TIMELINE CONTROL SYSTEM
+        # =========================
+
+        if escalation_level == "critical":
+            timeline = "immediately"
+
+        elif status == "attention":
+            timeline = "within 48 hours"
+
+        elif status == "monitor":
+            timeline = "within 7 days"
+
         else:
-            next_action_text = "A professional review by Ajebo Fix is advised."
+            timeline = "routine schedule"
 
-        # =================================================
-        # INTENT DETECTION (SOFT, SAFE)
-        # =================================================
-        why_keywords = {"why", "cause", "what caused"}
-        detail_keywords = {"what exactly", "what is happening", "issue", "engine"}
-        drive_keywords = {"drive", "driving", "trip", "journey", "travel"}
-        reassurance_keywords = {"can i", "should i", "okay to", "safe"}
-        next_keywords = {"next step", "what should i do", "recommend", "recommendation"}
-        score_keywords = {"score", "health score", "rating"}
+        high_risk_keywords = [
+            "suspension low",
+            "car leaning",
+            "airmatic",
+            "brake failure",
+        ]
 
-        # =================================================
-        # SCORE QUESTIONS (EXPLICIT & SAFE)
-        # =================================================
-        if any(k in message for k in score_keywords):
-            if score is None:
-                return (
-                    f"The health score for {vehicle_identity} is currently unavailable.\n\n"
-                    "This can happen if there isn’t enough recorded data yet.\n\n"
-                    "Ajebo Fix can assist with a formal assessment if needed."
-                )
+        if any(k in message for k in high_risk_keywords):
+            timeline = "immediately"
 
-            return (
-                f"The current health score for {vehicle_identity} is {score}.\n\n"
-                "This score reflects recorded usage, service history, "
-                "and observed indicators — not a mechanical diagnosis."
-            )
+        # =========================
+        # INTENT DETECTION
+        # =========================
+        intent = "unknown"
 
-        # =================================================
-        # WHY / CAUSE QUESTIONS
-        # =================================================
-        if any(k in message for k in why_keywords):
-            if not reasons:
-                return (
-                    f"{vehicle_identity} is assessed using usage patterns, "
-                    "service history, and recorded observations.\n\n"
-                    "At this time, there are no specific monitored indicators "
-                    "requiring explanation."
-                )
+        if any(k in message for k in ["can i drive", "is it safe", "should i drive"]):
+            intent = "risk_check"
 
-            formatted = "\n".join(f"- {r}" for r in reasons)
-            return (
-                f"The current health context for {vehicle_identity} reflects:\n\n"
-                f"{formatted}\n\n"
-                "These are monitoring indicators — not a diagnosis. "
-                "A physical inspection is required for certainty."
-            )
+        elif any(k in message for k in ["what is wrong", "what caused", "why"]):
+            intent = "understanding"
 
-        # =================================================
-        # DETAIL QUESTIONS
-        # =================================================
-        if any(k in message for k in detail_keywords):
-            if not reasons:
-                return (
-                    f"There isn’t enough recorded data to describe "
-                    f"specific concerns for {vehicle_identity} yet.\n\n"
-                    "Ongoing monitoring or a formal assessment will improve clarity."
-                )
+        elif any(k in message for k in ["what should i do", "next step"]):
+            intent = "decision"
 
-            formatted = "\n".join(f"- {r}" for r in reasons)
-            return (
-                f"Here’s what is currently being observed for {vehicle_identity}:\n\n"
-                f"{formatted}\n\n"
-                "These observations do not confirm a fault."
-            )
+        elif any(k in message for k in ["book", "check", "inspection"]):
+            intent = "conversion"
 
-        # =================================================
-        # DRIVING / USAGE QUESTIONS
-        # =================================================
-        if any(k in message for k in drive_keywords):
-            if status == "critical":
-                return (
-                    f"{vehicle_identity} is currently under elevated observation "
-                    f"(health score: {score_text}).\n\n"
-                    "Extended use may increase exposure to avoidable issues.\n\n"
-                    "A professional review by Ajebo Fix is advised before prolonged use."
-                )
+        elif any(k in message for k in ["score", "rating"]):
+            intent = "score"
 
-            return (
-                f"No elevated risk signals are currently present for {vehicle_identity}.\n\n"
-                "Routine monitoring and professional oversight remain recommended."
-            )
+        # =========================
+        # URGENCY DETECTION
+        # =========================
+        urgency_keywords = ["now", "urgent", "asap", "immediately"]
+        hesitation_keywords = ["maybe", "not sure", "later", "thinking"]
 
-        # =================================================
-        # NEXT STEP QUESTIONS
-        # =================================================
-        if any(k in message for k in next_keywords):
-            return (
-                f"Based on the current profile for {vehicle_identity}, "
-                "the following step is advised:\n\n"
-                f"{next_action_text}\n\n"
-                "Ajebo Fix can assist whenever you’re ready."
-            )
+        urgency_state = "neutral"
 
-        # =================================================
-        # REASSURANCE QUESTIONS
-        # =================================================
-        if any(k in message for k in reassurance_keywords):
-            return (
-                f"{vehicle_identity} is currently assessed as {status} "
-                f"(health score: {score_text}).\n\n"
-                "No immediate action is enforced. "
-                "A professional assessment provides the highest confidence."
-            )
+        if any(k in message for k in urgency_keywords):
+            urgency_state = "urgent"
 
-        # =================================================
-        # STATUS-BASED CONTEXT (DEFAULT)
-        # =================================================
+        elif any(k in message for k in hesitation_keywords):
+            urgency_state = "hesitant"
+
+        # =========================
+        # MEMORY TRACKING
+        # =========================
+        update_user_behavior(intent)
+        behavior = get_user_behavior_profile()
+
+        dominant_behavior = max(behavior, key=behavior.get) if behavior else "neutral"
+
+        # =========================
+        # BUILD AI CONTEXT
+        # =========================
+        context = {
+            "vehicle": vehicle_identity,
+            "score": score_text,
+            "status": status,
+            "reasons": "\n".join(reasons) if reasons else "None",
+            "guidance": guidance.get("summary", ""),
+            "escalation": escalation_level,
+            "intent": intent,
+            "urgency": urgency_state,
+            "message": message,
+            "behavior": dominant_behavior,
+            "timeline": timeline,
+        }
+
+        # =========================
+        # AI RESPONSE (PRIMARY)
+        # =========================
+        try:
+            ai_response = generate_rina_response(context)
+            if ai_response:
+                return ai_response
+        except Exception as e:
+            print("AI ERROR:", e)
+
+        # =========================
+        # FALLBACK RESPONSE (SAFE)
+        # =========================
         if status == "critical":
-            context = (
-                "\n".join(f"- {r}" for r in reasons)
-                if reasons
-                else "- Multiple elevated monitoring indicators are present."
-            )
             return (
                 f"{vehicle_identity} is currently under elevated observation.\n\n"
-                f"{context}\n\n"
-                "This is not a diagnosis. "
-                "Ajebo Fix can review and advise appropriately."
+                "A professional review by Ajebo Fix is advised."
             )
 
         if status == "attention":
             return (
-                f"{vehicle_identity} is being actively monitored "
-                f"(health score: {score_text}).\n\n"
-                "No immediate concern, though follow-up is recommended.\n\n"
-                f"Suggested next step:\n{next_action_text}"
+                f"{vehicle_identity} is under observation (score: {score_text}).\n\n"
+                "A scheduled review is recommended."
             )
 
         if status == "healthy":
             return (
-                f"{vehicle_identity} is currently within a healthy operating range "
-                f"(health score: {score_text}).\n\n"
-                "Continued routine care is advised."
+                f"{vehicle_identity} is currently stable (score: {score_text}).\n\n"
+                "Routine monitoring remains appropriate."
             )
 
-        # =================================================
-        # FINAL FALLBACK (SAFE, GUIDED)
-        # =================================================
         return (
-            f"I can help you understand the current health context for "
-            f"{vehicle_identity}.\n\n"
-            "You may ask:\n"
-            "- What is the health score?\n"
-            "- What is being observed?\n"
-            "- Is continued use advisable?\n"
-            "- What is the recommended next step?"
+            f"I can help you understand {vehicle_identity}.\n\n"
+            "Ask about score, observations, or next steps."
         )

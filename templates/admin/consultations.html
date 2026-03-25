@@ -1,154 +1,272 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Consultations — Advisor Console</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aura | Consultation Queue</title>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1000px;
-            margin: 32px auto;
-            color: #111827;
-        }
+<style>
 
-        h1 {
-            margin-bottom: 24px;
-        }
+body{
+font-family:Arial,Helvetica,sans-serif;
+max-width:900px;
+margin:32px auto;
+padding:0 12px;
+color:#111827;
+}
 
-        h2 {
-            margin-bottom: 12px;
-            text-transform: capitalize;
-        }
+h1{
+margin-bottom:26px;
+}
 
-        .section {
-            margin-bottom: 32px;
-            padding: 16px;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            background: #fafafa;
-        }
+h2{
+margin-top:34px;
+margin-bottom:12px;
+font-size:17px;
+}
 
-        .item {
-            padding: 12px 0;
-            border-bottom: 1px solid #e5e7eb;
-        }
+.card{
+border:1px solid #e5e7eb;
+border-radius:6px;
+padding:14px;
+margin-bottom:12px;
+background:#fafafa;
+}
 
-        .item:last-child {
-            border-bottom: none;
-        }
+.meta{
+font-size:14px;
+color:#374151;
+margin-bottom:6px;
+}
 
-        .meta {
-            font-size: 14px;
-            color: #4b5563;
-            margin-top: 4px;
-        }
+.timestamp{
+font-size:13px;
+color:#6b7280;
+}
 
-        .actions {
-            margin-top: 10px;
-        }
+.actions{
+margin-top:10px;
+display:flex;
+flex-wrap:wrap;
+gap:6px;
+}
 
-        a {
-            font-weight: bold;
-            color: #2563eb;
-            text-decoration: none;
-            margin-right: 10px;
-        }
+form{
+display:inline;
+}
 
-        a:hover {
-            text-decoration: underline;
-        }
+button{
+padding:8px 12px;
+border-radius:4px;
+border:none;
+cursor:pointer;
+font-size:13px;
+}
 
-        form {
-            display: inline;
-        }
+.btn-start{
+background:#fde68a;
+}
 
-        button {
-            padding: 6px 10px;
-            font-size: 13px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
-            background: #111827;
-            color: white;
-        }
+.btn-assessment{
+background:#bfdbfe;
+}
 
-        button.secondary {
-            background: #374151;
-        }
+.btn-complete{
+background:#bbf7d0;
+}
 
-        button:hover {
-            opacity: 0.9;
-        }
+a{
+text-decoration:none;
+color:#2563eb;
+font-size:13px;
+}
 
-        .empty {
-            font-size: 14px;
-            color: #6b7280;
-            margin-top: 8px;
-        }
-    </style>
+a:hover{
+text-decoration:underline;
+}
+
+.empty{
+font-size:14px;
+color:#6b7280;
+}
+
+.flash{
+padding:12px;
+border-radius:6px;
+margin-bottom:16px;
+font-size:14px;
+}
+
+.flash.success{
+background:#ecfdf5;
+color:#065f46;
+border:1px solid #10b981;
+}
+
+.flash.error{
+background:#fee2e2;
+color:#991b1b;
+border:1px solid #ef4444;
+}
+
+</style>
 </head>
+
 <body>
 
 <h1>Consultation Queue</h1>
 
-{% if grouped %}
-    {% for status, items in grouped.items() %}
-        <div class="section">
-            <h2>{{ status.replace('_', ' ') }}</h2>
 
-            {% if items %}
-                {% for c in items %}
-                    <div class="item">
-                        <div>
-                            <strong>Vehicle:</strong>
-                            {{ c.car.brand if c.car else "—" }}
-                            {{ c.car.model if c.car else "" }}
-                            {{ c.car.year if c.car else "" }}
-                        </div>
-
-                        <div class="meta">
-                            <strong>Client:</strong>
-                            {{ c.client.email if c.client else "—" }}
-                        </div>
-
-                        <div class="meta">
-                            <strong>Scheduled:</strong>
-                            {% if c.scheduled_for %}
-                                {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
-                            {% else %}
-                                —
-                            {% endif %}
-                        </div>
-
-                        <div class="actions">
-                            <a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
-                                View Vehicle
-                            </a>
-
-                            {% if c.status == 'scheduled' %}
-                                <form
-                                    method="post"
-                                    action="{{ url_for('admin.admin_start_consultation', consultation_id=c.id) }}"
-                                >
-                                    <button type="submit">Start Consultation</button>
-                                </form>
-                            {% elif c.status == 'in_progress' %}
-                                <a href="{{ url_for('admin.admin_complete_consultation', consultation_id=c.id) }}">
-                                    Complete Consultation
-                                </a>
-                            {% endif %}
-                        </div>
-                    </div>
-                {% endfor %}
-            {% else %}
-                <p class="empty">No consultations in this state.</p>
-            {% endif %}
-        </div>
-    {% endfor %}
-{% else %}
-    <p class="empty">No consultation data available.</p>
+<!-- FLASH MESSAGES -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash {{ category }}">{{ message }}</div>
+{% endfor %}
 {% endif %}
+{% endwith %}
+
+
+
+<!-- ======================== -->
+<!-- SCHEDULED -->
+<!-- ======================== -->
+
+<h2>Scheduled</h2>
+
+{% if grouped.scheduled %}
+
+{% for c in grouped.scheduled %}
+
+<div class="card">
+
+<div class="meta">
+<strong>{{ c.car.display_name }}</strong> — {{ c.client.email }}
+</div>
+
+<div class="timestamp">
+Scheduled {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
+</div>
+
+<div class="actions">
+
+<form method="POST"
+action="{{ url_for('admin.admin_start_consultation', consultation_id=c.id) }}">
+<button class="btn-start">
+Start Consultation
+</button>
+</form>
+
+<a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
+View Vehicle
+</a>
+
+</div>
+
+</div>
+
+{% endfor %}
+
+{% else %}
+
+<p class="empty">None scheduled.</p>
+
+{% endif %}
+
+
+
+<!-- ======================== -->
+<!-- IN PROGRESS -->
+<!-- ======================== -->
+
+<h2>In Progress</h2>
+
+{% if grouped.in_progress %}
+
+{% for c in grouped.in_progress %}
+
+<div class="card">
+
+<div class="meta">
+<strong>{{ c.car.display_name }}</strong> — {{ c.client.email }}
+</div>
+
+<div class="timestamp">
+Started {{ c.started_at.strftime("%Y-%m-%d %H:%M") if c.started_at }}
+</div>
+
+<div class="actions">
+
+<form method="POST"
+action="{{ url_for('admin.admin_start_assessment', consultation_id=c.id) }}">
+<button class="btn-assessment">
+Continue Assessment
+</button>
+</form>
+
+<form method="POST"
+action="{{ url_for('admin.admin_complete_consultation', consultation_id=c.id) }}">
+<button class="btn-complete">
+Complete
+</button>
+</form>
+
+<a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
+View Vehicle
+</a>
+
+</div>
+
+</div>
+
+{% endfor %}
+
+{% else %}
+
+<p class="empty">None active.</p>
+
+{% endif %}
+
+
+
+<!-- ======================== -->
+<!-- COMPLETED -->
+<!-- ======================== -->
+
+<h2>Completed</h2>
+
+{% if grouped.completed %}
+
+{% for c in grouped.completed %}
+
+<div class="card">
+
+<div class="meta">
+<strong>{{ c.car.display_name }}</strong> — {{ c.client.email }}
+</div>
+
+<div class="timestamp">
+Completed {{ c.completed_at.strftime("%Y-%m-%d %H:%M") if c.completed_at }}
+</div>
+
+<div class="actions">
+
+<a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
+View Vehicle
+</a>
+
+</div>
+
+</div>
+
+{% endfor %}
+
+{% else %}
+
+<p class="empty">None completed.</p>
+
+{% endif %}
+
 
 </body>
 </html>

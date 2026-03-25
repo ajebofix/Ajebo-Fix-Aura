@@ -15,14 +15,17 @@ def get_admin_stats_data():
     Pure data. No presentation assumptions.
     """
 
+    total_events = VehicleEvent.query.count()
+    archived_events = VehicleEvent.query.filter_by(is_deleted=True).count()
+
     return {
         "clients": User.query.count(),
         "vehicles": Car.query.count(),
         "active_care_assignments": CarOwnership.query.filter_by(is_active=True).count(),
         "records": {
-            "total": VehicleEvent.query.count(),
-            "active": VehicleEvent.query.filter_by(is_deleted=False).count(),
-            "archived": VehicleEvent.query.filter_by(is_deleted=True).count(),
+            "total": total_events,
+            "active": total_events - archived_events,
+            "archived": archived_events,
         },
         "generated_at": datetime.utcnow().isoformat(),
     }
@@ -43,7 +46,12 @@ def get_fleet_health_data():
 
     fleet = []
 
-    cars = Car.query.order_by(Car.id.asc()).all()
+    cars = (
+        Car.query.join(CarOwnership)
+        .filter(CarOwnership.is_active.is_(True))
+        .order_by(Car.id.asc())
+        .all()
+    )
 
     for car in cars:
         ownership = CarOwnership.query.filter_by(car_id=car.id, is_active=True).first()

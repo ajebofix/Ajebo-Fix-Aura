@@ -80,6 +80,8 @@ class Car(db.Model):
 
     engine_type = db.Column(db.String(100), nullable=True)
 
+    transmission_type = db.Column(db.String(100), nullable=True)
+
     current_mileage = db.Column(db.Integer, nullable=True)
 
     color = db.Column(db.String(50), nullable=True)
@@ -183,6 +185,17 @@ class CarFault(db.Model):
         nullable=True,
     )
 
+    reviewed_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    reviewed_by = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=True
+    )
+
     # =====================================================
     # REPORTED CONCERN DETAILS
     # =====================================================
@@ -196,7 +209,7 @@ class CarFault(db.Model):
     category = db.Column(
         db.String(50),
         nullable=False,
-        default="other",
+        default="observation",
     )
     """
     engine & powertrain
@@ -223,7 +236,13 @@ class CarFault(db.Model):
     status = db.Column(
         db.String(20),
         nullable=False,
-        default="under_review",
+        default="reported",
+    )
+
+    source = db.Column(
+        db.String(32),
+        default="client",
+        nullable=False,
     )
     """
     under_review   → newly submitted, awaiting professional review
@@ -500,6 +519,8 @@ class Consultation(db.Model):
 
     car_id = db.Column(db.Integer, db.ForeignKey("cars.id"), nullable=False)
 
+    notes = db.Column(db.Text, nullable=True)
+
     ownership_id = db.Column(
         db.Integer,
         db.ForeignKey("car_ownership.id"),
@@ -509,7 +530,7 @@ class Consultation(db.Model):
     advisor_id = db.Column(
         db.Integer,
         db.ForeignKey("users.id"),
-        nullable=False,
+        nullable=True,
     )
     client_id = db.Column(
         db.Integer,
@@ -548,7 +569,7 @@ class Consultation(db.Model):
 
 # ======================================
 # VEHICLE ASSESSMENT (root document)
-# ========================================
+# ======================================
 
 
 class VehicleAssessment(db.Model):
@@ -578,6 +599,12 @@ class VehicleAssessment(db.Model):
         nullable=False,
     )
 
+    finalized_by = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=True,
+    )
+
     # ----------------------------
     # Lifecycle
     # ----------------------------
@@ -596,7 +623,6 @@ class VehicleAssessment(db.Model):
 
     is_finalized = db.Column(db.Boolean, default=False, nullable=False)
     finalized_at = db.Column(db.DateTime, nullable=True)
-    finalized_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
     # ----------------------------
     # SECTION 1 — Vehicle overview (frozen)
@@ -614,19 +640,19 @@ class VehicleAssessment(db.Model):
     # ----------------------------
     # SECTION 2 — Current health status
     # ----------------------------
-    engine_status = db.Column(db.String(30), nullable=False)
+    engine_status = db.Column(db.String(30), nullable=True)
     engine_note = db.Column(db.Text, nullable=True)
 
-    transmission_status = db.Column(db.String(30), nullable=False)
+    transmission_status = db.Column(db.String(30), nullable=True)
     transmission_note = db.Column(db.Text, nullable=True)
 
-    suspension_status = db.Column(db.String(30), nullable=False)
+    suspension_status = db.Column(db.String(30), nullable=True)
     suspension_note = db.Column(db.Text, nullable=True)
 
-    electrical_status = db.Column(db.String(30), nullable=False)
+    electrical_status = db.Column(db.String(30), nullable=True)
     electrical_note = db.Column(db.Text, nullable=True)
 
-    cooling_status = db.Column(db.String(30), nullable=False)
+    cooling_status = db.Column(db.String(30), nullable=True)
     cooling_note = db.Column(db.Text, nullable=True)
 
     # ----------------------------
@@ -637,14 +663,33 @@ class VehicleAssessment(db.Model):
     # ----------------------------
     # SECTION 7 — Professional recommendation
     # ----------------------------
-    professional_recommendation = db.Column(db.Text, nullable=False)
+    professional_recommendation = db.Column(db.Text, nullable=True)
 
     # ----------------------------
     # Relationships
     # ----------------------------
-    consultation = db.relationship("Consultation")
-    car = db.relationship("Car")
-    advisor = db.relationship("User")
+
+    consultation = db.relationship(
+        "Consultation",
+        backref=db.backref("assessment", uselist=False),
+    )
+
+    car = db.relationship(
+        "Car",
+        backref="assessments",
+    )
+
+    advisor = db.relationship(
+        "User",
+        foreign_keys=[advisor_id],
+        backref="assessments_created",
+    )
+
+    finalizer = db.relationship(
+        "User",
+        foreign_keys=[finalized_by],
+        backref="assessments_finalized",
+    )
 
     risks = db.relationship(
         "VehicleAssessmentRisk",

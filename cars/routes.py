@@ -22,14 +22,19 @@ from models import (
     EventAuditLog,
     CarFault,
     Consultation,
+    VehicleAssessment,
 )
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.report_builder import build_vehicle_report
 from services.consultation_guard import require_active_consultation
+from services.assessment_report_builder import build_assessment_report
+from services.rina_escalation_engine import RinaEscalationEngine
+from services.rina_alert_awareness_service import RinaCareContextService
+from services.rina_action_suggestions import RinaCareGuidanceEngine
+
+
 from io import BytesIO
 from xhtml2pdf import pisa
-
-print("cars.routes loaded")
 
 
 cars_bp = Blueprint("cars", __name__, url_prefix="/cars")
@@ -42,7 +47,11 @@ cars_bp = Blueprint("cars", __name__, url_prefix="/cars")
 @cars_bp.route("/", methods=["GET"])
 @login_required
 def get_cars():
-    ownerships = CarOwnership.query.filter_by(user_id=current_user.id).all()
+    ownerships = (
+        CarOwnership.query.join(Car)
+        .filter(CarOwnership.user_id == current_user.id)
+        .all()
+    )
 
     vehicles = []
     for o in ownerships:
@@ -77,6 +86,9 @@ def add_car():
         model = request.form.get("model", "").strip()
         year = request.form.get("year", type=int)
         vin = request.form.get("vin", "").strip().upper()
+        engine_number = request.form.get("engine_number", "").strip()
+        engine_type = request.form.get("engine_type", "").strip()
+        transmission_type = request.form.get("transmission", "").strip()
         plate_number = request.form.get("plate_number", "").strip()
         color = request.form.get("color", "").strip()
         mileage = request.form.get("mileage_at_transfer", type=int)
@@ -87,6 +99,17 @@ def add_car():
 
         try:
             car = Car.query.filter_by(vin=vin).first()
+            existing_owner = None
+
+            if car:
+                existing_owner = CarOwnership.query.filter_by(
+                    car_id=car.id,
+                    is_active=True,
+                ).first()
+
+            if existing_owner and existing_owner.user_id != current_user.id:
+                flash("This vehicle is already registered to another user.", "error")
+                return render_template("cars/add_car.html")
 
             if not car:
                 car = Car(
@@ -94,6 +117,9 @@ def add_car():
                     model=model,
                     year=year,
                     vin=vin,
+                    engine_number=engine_number,
+                    engine_type=engine_type,
+                    transmission_type=transmission_type,
                     color=color,
                     current_mileage=mileage,
                 )
@@ -124,7 +150,7 @@ def add_car():
 
             db.session.commit()
 
-            flash("Vehicle successfully added.", "success")
+            flash("Vehicle added.", "success")
             return redirect(url_for("dashboard.aura_home"))
 
         except IntegrityError:
@@ -149,13 +175,20 @@ def car_detail(car_id):
     ).first_or_404()
 
     car = ownership.car
-    health = calculate_vehicle_health(car, ownership)
+    health = calculate_vehicle_health(car, ownership) if ownership else {}
+
+    guidance = RinaCareGuidanceEngine.generate_guidance(car.id, current_user.id)
+    care_context = RinaCareContextService.get_active_care_context(car.id, current_user.id)
+    escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
 
     return render_template(
         "car_detail.html",
         car=car,
         ownership=ownership,
         health=health,
+        guidance=guidance,
+        care_context=care_context,
+        escalation=escalation,
     )
 
 
@@ -208,8 +241,9 @@ def add_service_record(ownership_id):
     ).first_or_404()
 
     car = ownership.car
+    # escalation = RinaEscalationEngine.evaluate(health, {}, {})
 
-    # 🔒 AUTHORITY GATE
+    # AUTHORITY GATE
     try:
         require_active_consultation(car.id)
     except PermissionError as e:
@@ -221,6 +255,7 @@ def add_service_record(ownership_id):
             create_service_event(
                 car=car,
                 ownership=ownership,
+                # escalation=escalation,
                 service_type=request.form["service_type"],
                 mileage=int(request.form["mileage"]),
                 description=request.form.get("description", ""),
@@ -250,22 +285,22 @@ def add_reported_concern(car_id):
         is_active=True,
     ).first_or_404()
 
-    # 🔒 AUTHORITY GATE
-    try:
-        require_active_consultation(car_id)
-    except PermissionError as e:
-        flash(str(e), "error")
-        return redirect(url_for("cars.car_detail", car_id=car_id))
-
     if request.method == "POST":
+        description = request.form.get("description", "").strip()
+
+        if not description:
+            flash("Please describe your concern.", "error")
+            return redirect(request.referrer)
+
         create_fault_record(
             car=ownership.car,
             category=request.form.get("category", "other"),
-            description=request.form["description"],
+            description=description,
             observed_at=None,
             reported_by=current_user.id,
             source="client",
         )
+
         flash("Concern recorded.", "success")
         return redirect(url_for("cars.car_detail", car_id=car_id))
 
@@ -316,12 +351,6 @@ def vehicle_records(car_id):
         is_active=True,
     ).first_or_404()
 
-    try:
-        require_active_consultation(car_id)
-    except PermissionError as e:
-        flash(str(e), "error")
-        return redirect(url_for("cars.car_detail", car_id=car_id))
-
     services = (
         VehicleEvent.query.filter_by(
             car_id=car_id,
@@ -365,12 +394,6 @@ def vehicle_records_pdf(car_id):
         is_active=True,
     ).first_or_404()
 
-    try:
-        require_active_consultation(car_id)
-    except PermissionError as e:
-        flash(str(e), "error")
-        return redirect(url_for("cars.vehicle_records", car_id=car_id))
-
     report = build_vehicle_report(ownership.car, ownership)
 
     html = render_template(
@@ -410,6 +433,8 @@ def book_consultation(car_id):
 
     if request.method == "POST":
         preferred_time = request.form.get("preferred_time")
+        description = request.form.get("description", "").strip()
+
         if not preferred_time:
             flash("Please select a preferred time.", "error")
             return redirect(request.referrer)
@@ -417,16 +442,20 @@ def book_consultation(car_id):
         consultation = Consultation(
             car_id=car_id,
             ownership_id=ownership.id,
-            advisor_id=current_user.id,
+            advisor_id=None,  # assigned later by admin
             client_id=current_user.id,
-            status="scheduled",
+            status="scheduled",  # scheduled until advisor confirms
             scheduled_for=datetime.fromisoformat(preferred_time),
+            notes=description if description else None,
         )
 
         db.session.add(consultation)
         db.session.commit()
 
-        flash("Consultation request submitted.", "success")
+        flash(
+            "Consultation requested",
+            "success",
+        )
         return redirect(url_for("cars.car_detail", car_id=car_id))
 
     return render_template(
@@ -452,6 +481,10 @@ def create_service_event(
     performed_by,
     source,
 ):
+
+    if mileage < (car.current_mileage or 0):
+        raise ValueError("Mileage cannot be lower than current vehicle mileage.")
+
     fingerprint = hashlib.sha256(
         f"{car.id}|{ownership.id}|{service_type}|{mileage}|{service_date}".encode()
     ).hexdigest()
@@ -493,7 +526,7 @@ def create_fault_record(
         title="Reported concern",
         category=category,
         description=description,
-        status="under_review",
+        status="reported",
         observed_at=observed_at,
         reported_by=reported_by,
         reported_at=datetime.utcnow(),
@@ -504,11 +537,52 @@ def create_fault_record(
     db.session.commit()
 
 
-# ======================
-# DEBUG ROUTE
-# ======================
-@cars_bp.route("/debug/routes")
-def debug_routes():
-    return "<br>".join(
-        f"{r.endpoint} → {r.rule}" for r in current_app.url_map.iter_rules()
+# =========================================================
+# CLIENT - VIEW FINALIZED ASSESSMENT REPORT
+# =========================================================
+
+
+@cars_bp.route("/<int:car_id>/assessment/report", methods=["GET"])
+@login_required
+def assessment_report(car_id):
+    ownership = CarOwnership.query.filter_by(
+        car_id=car_id,
+        user_id=current_user.id,
+        is_active=True,
+    ).first_or_404()
+
+    # get latest finalized assessment
+    assessment = (
+        VehicleAssessment.query.filter_by(
+            car_id=car_id,
+            is_finalized=True,
+        )
+        .order_by(VehicleAssessment.finalized_at.desc())
+        .first()
+    )
+
+    if not assessment:
+        flash("No assessment available.", "error")
+        return redirect(url_for("cars.car_detail", car_id=car_id))
+
+    report = build_assessment_report(assessment=assessment)
+
+    html = render_template(
+        "reports/assessment_report.html",
+        report=report,
+        car=ownership.car,
+        print_mode=request.args.get("print") == "1",
+        is_admin_view=False,
+    )
+
+    pdf_buffer = BytesIO()
+    pisa.CreatePDF(html, dest=pdf_buffer, encoding="UTF-8")
+    pdf_buffer.seek(0)
+
+    return Response(
+        pdf_buffer.read(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=assessment_{car_id}_report.pdf"
+        },
     )

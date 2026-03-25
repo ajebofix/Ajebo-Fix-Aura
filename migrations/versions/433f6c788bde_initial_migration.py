@@ -1,8 +1,8 @@
-"""initial schema
+"""initial migration
 
-Revision ID: 4b3a8b33bb51
+Revision ID: 433f6c788bde
 Revises: 
-Create Date: 2026-02-01 18:58:26.377119
+Create Date: 2026-02-27 11:24:39.950749
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import sqlite
 
 # revision identifiers, used by Alembic.
-revision = '4b3a8b33bb51'
+revision = '433f6c788bde'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -54,6 +54,7 @@ def upgrade():
     sa.Column('category', sa.String(length=50), nullable=False),
     sa.Column('description', sa.Text(), nullable=False),
     sa.Column('status', sa.String(length=20), nullable=False),
+    sa.Column('source', sa.String(length=32), nullable=False),
     sa.Column('observed_at', sa.DateTime(), nullable=True),
     sa.Column('reported_at', sa.DateTime(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),

@@ -70,13 +70,56 @@
             border-left: 4px solid #9ca3af;
         }
 
+        .badge {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 6px;
+        }
+
+        .badge.draft {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge.inprogress {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge.finalized {
+            background: #dcfce7;
+            color: #065f46;
+        }
+
         .reassurance {
             margin-top: 12px;
             font-size: 13px;
             color: #4b5563;
         }
 
-        a {
+        .report-download {
+            margin-top: 16px;
+        }
+
+        .report-download a {
+            font-weight: bold;
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        .report-download a:hover {
+            text-decoration: underline;
+        }
+
+        .muted {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        a.nav {
             display: inline-block;
             margin-top: 32px;
             font-weight: bold;
@@ -84,7 +127,7 @@
             text-decoration: none;
         }
 
-        a:hover {
+        a.nav:hover {
             text-decoration: underline;
         }
     </style>
@@ -97,8 +140,50 @@
 
 <h1>{{ car.brand }} {{ car.model }}</h1>
 <p class="subtitle">
-    Vehicle Health Summary · Interpreted Overview
+    Vehicle Health Summary · Professional Monitoring Overview
 </p>
+
+<!-- ========================= -->
+<!-- ASSESSMENT STATUS -->
+<!-- ========================= -->
+
+{% if assessment %}
+    {% if assessment.is_finalized %}
+        <div class="badge finalized">
+            Finalized Professional Assessment
+        </div>
+
+        <div class="report-download">
+            <a href="{{ url_for('car_assessments.client_download_assessment_pdf', assessment_id=assessment.id) }}">
+                Download Health & Risk Report (PDF)
+            </a>
+        </div>
+
+    {% elif consultation and consultation.status == "in_progress" %}
+        <div class="badge inprogress">
+            Assessment in Progress
+        </div>
+        <p class="muted">
+            A consultation is currently active. The full professional report
+            will be available once finalized.
+        </p>
+
+    {% else %}
+        <div class="badge draft">
+            Assessment Pending Finalization
+        </div>
+        <p class="muted">
+            A professional review has been conducted and is being prepared.
+        </p>
+    {% endif %}
+{% else %}
+    <div class="badge draft">
+        No Assessment Available
+    </div>
+    <p class="muted">
+        A consultation is required before a formal vehicle health report can be issued.
+    </p>
+{% endif %}
 
 <!-- ========================= -->
 <!-- HEALTH OVERVIEW -->
@@ -116,8 +201,8 @@
     <p>{{ health.overview }}</p>
 
     <div class="reassurance">
-        This summary is based on monitoring data and service history.
-        It is not a mechanical diagnosis.
+        This overview reflects monitoring data and recorded service history.
+        It does not constitute a mechanical diagnosis.
     </div>
 </div>
 
@@ -135,7 +220,7 @@
     </ul>
 
     <div class="reassurance">
-        These items are being highlighted to help prevent escalation.
+        These items are highlighted to reduce the likelihood of escalation.
     </div>
 </div>
 {% endif %}
@@ -145,7 +230,7 @@
 <!-- ========================= -->
 
 {% if health.monitored_items %}
-<div class="section">
+<div class="section neutral">
     <h2>Monitored Items</h2>
     <ul>
         {% for item in health.monitored_items %}
@@ -166,13 +251,19 @@
 <div class="section calm">
     <h2>Preventive Recommendations</h2>
     <p>{{ health.preventive_guidance }}</p>
+
+    <div class="reassurance">
+        Preventive planning helps preserve long-term vehicle integrity and resale value.
+    </div>
 </div>
 
 <!-- ========================= -->
 <!-- NAVIGATION -->
 <!-- ========================= -->
 
-<a href="/dashboard">← Back to Home</a>
+<a href="{{ url_for('dashboard.aura_home') }}" class="nav">
+    ← Back to Dashboard
+</a>
 
 </body>
 </html>

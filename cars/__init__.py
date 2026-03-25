@@ -1,4 +1,4 @@
-from .routes.assessments import cars_assessments_bp
+from .modules.assessments import cars_assessments_bp
 
 
 def register_cars_blueprints(app):

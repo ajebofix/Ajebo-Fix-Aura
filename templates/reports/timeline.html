@@ -159,6 +159,13 @@
         🔒 Download Confidential Medical File (PDF)
     </a>
 </div>
+{% else %}
+<div class="admin-actions">
+    <strong>Client Actions</strong><br><br>
+    <a href="{{ url_for('cars.vehicle_records_pdf', car_id=car.id) }}">
+        🔒 Download Confidential Medical File (PDF)
+    </a>
+</div>
 {% endif %}
 
 <br>

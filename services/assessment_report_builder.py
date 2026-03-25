@@ -1,4 +1,7 @@
 from datetime import datetime
+from services.assessment_risk_engine import calculate_assessment_risk
+from models import CarOwnership
+from models import User
 
 # =====================================================
 # VEHICLE ASSESSMENT REPORT BUILDER
@@ -38,9 +41,20 @@ def build_assessment_report(*, assessment):
         )
 
     car = assessment.car
-    ownership = assessment.ownership
+
+    ownership = CarOwnership.query.filter_by(
+        car_id=assessment.car_id,
+        is_active=True,
+    ).first()
+
     consultation = assessment.consultation
-    advisor = assessment.finalized_by_user
+
+    advisor = None
+
+    if assessment.finalized_by:
+        advisor = User.query.get(assessment.finalized_by)
+
+    risk = calculate_assessment_risk(assessment)
 
     # -------------------------------------------------
     # SECTION 0 — TITLE PAGE
@@ -61,7 +75,7 @@ def build_assessment_report(*, assessment):
         "model": car.model,
         "year": car.year,
         "engine_type": getattr(car, "engine_type", None),
-        "transmission": assessment.transmission_type,
+        "transmission": getattr(car, "transmission", None),
         "usage_pattern": assessment.usage_pattern,
         "ownership_duration": (
             (datetime.utcnow() - ownership.start_date).days
@@ -73,12 +87,13 @@ def build_assessment_report(*, assessment):
     # -------------------------------------------------
     # SECTION 2 — CURRENT HEALTH STATUS
     # -------------------------------------------------
+
     current_health_status = {
-        "engine_system": assessment.engine_health_statement,
-        "transmission_system": assessment.transmission_health_statement,
-        "suspension_and_steering": assessment.suspension_health_statement,
-        "electrical_and_controls": assessment.electrical_health_statement,
-        "cooling_and_lubrication": assessment.cooling_health_statement,
+        "engine_system": assessment.engine_status,
+        "transmission_system": assessment.transmission_status,
+        "suspension_and_steering": assessment.suspension_status,
+        "electrical_and_controls": assessment.electrical_status,
+        "cooling_and_lubrication": assessment.cooling_status,
     }
 
     # -------------------------------------------------
@@ -86,51 +101,72 @@ def build_assessment_report(*, assessment):
     # -------------------------------------------------
     identified_risks = []
 
-    for risk in assessment.identified_risks or []:
+    for item in getattr(assessment, "risks", []) or []:
         identified_risks.append(
             {
-                "description": risk.get("description"),
-                "likely_cause": risk.get("likely_cause"),
-                "potential_consequence": risk.get("potential_consequence"),
+                "description": item.description,
+                "likely_cause": item.likely_cause,
+                "potential_consequence": item.consequence_if_ignored,
             }
         )
-
     # -------------------------------------------------
     # SECTION 4 — URGENCY CLASSIFICATION
     # -------------------------------------------------
+    immediate = []
+    monitoring = []
+    preventive = []
+
+    for risk in getattr(assessment, "risks", []) or []:
+
+        if risk.urgency == "immediate":
+            immediate.append(risk.description)
+
+        elif risk.urgency == "monitoring":
+            monitoring.append(risk.description)
+
+        elif risk.urgency == "preventive":
+            preventive.append(risk.description)
+
     urgency_classification = {
-        "immediate_attention": assessment.immediate_attention_items or [],
-        "monitoring_closely": assessment.monitoring_items or [],
-        "preventive_recommendations": assessment.preventive_items or [],
+        "immediate_attention": immediate,
+        "monitoring_closely": monitoring,
+        "preventive_recommendations": preventive,
     }
 
     # -------------------------------------------------
     # SECTION 5 — COST VS CONSEQUENCE (LOGIC FRAME)
     # -------------------------------------------------
     cost_vs_consequence = {
-        "summary": (
-            "Addressing the identified issues at this stage significantly reduces "
-            "the likelihood of major component failure, extended downtime, and "
-            "substantially higher repair costs in the future."
-        )
+        "summary": assessment.cost_consequence_analysis
     }
 
     # -------------------------------------------------
     # SECTION 6 — RECOMMENDED TREATMENT PATHS
     # -------------------------------------------------
-    treatment_paths = {
-        "option_a_conservative": assessment.treatment_option_a,
-        "option_b_balanced": assessment.treatment_option_b,
-        "option_c_preventive": assessment.treatment_option_c,
-    }
+    treatment_paths = []
+
+    for option in getattr(assessment, "treatment_options", []) or []:
+        treatment_paths.append(
+            {
+                "option_code": option.option_code,
+                "title": option.title,
+                "description": option.description,
+            }
+        )
 
     # -------------------------------------------------
     # SECTION 7 — PROFESSIONAL RECOMMENDATION
     # -------------------------------------------------
     professional_recommendation = {
-        "statement": assessment.professional_recommendation,
-        "recommended_option": assessment.recommended_option,
-        "advisor": advisor.full_name if advisor else None,
+        "statement": getattr(assessment, "professional_recommendation", None),
+        "recommended_option": getattr(assessment, "recommended_option", None),
+        "advisor": (
+            getattr(advisor, "full_name", None)
+            or getattr(advisor, "name", None)
+            or getattr(advisor, "email", None)
+            if advisor
+            else None
+        ),
     }
 
     # -------------------------------------------------
@@ -145,6 +181,7 @@ def build_assessment_report(*, assessment):
         "title_page": title_page,
         "vehicle_overview": vehicle_overview,
         "current_health_status": current_health_status,
+        "risk": risk,
         "identified_risks": identified_risks,
         "urgency_classification": urgency_classification,
         "cost_vs_consequence": cost_vs_consequence,

@@ -134,6 +134,16 @@
     </p>
 </div>
 
+
+<div class="section">
+    <h2>Vehicle Risk Score</h2>
+
+    <div class="box">
+        <strong>Risk Level:</strong> {{ report.risk.level }}<br>
+        <strong>Risk Score:</strong> {{ report.risk.score }}/100
+    </div>
+</div>
+
 <!-- ======================================
      SECTION 3 — IDENTIFIED RISKS
 ====================================== -->
@@ -143,10 +153,15 @@
 
     {% if report.identified_risks %}
         {% for risk in report.identified_risks %}
-            <div class="risk">
-                <strong>Description:</strong> {{ risk.description }}<br>
-                <strong>Likely Cause:</strong> {{ risk.likely_cause }}<br>
-                <strong>Potential Consequence:</strong> {{ risk.potential_consequence }}
+            <div class="box">
+                <strong>Description</strong><br>
+                {{ risk.description }}<br><br>
+
+                <strong>Likely Cause</strong><br>
+                {{ risk.likely_cause }}<br><br>
+
+                <strong>Potential Consequence</strong><br>
+                {{ risk.potential_consequence }}
             </div>
         {% endfor %}
     {% else %}
@@ -192,11 +207,18 @@
 <div class="section">
     <h2>6. Recommended Treatment Paths</h2>
 
-    <ul>
-        <li><strong>Option A (Conservative):</strong> {{ report.treatment_paths.option_a_conservative }}</li>
-        <li><strong>Option B (Balanced):</strong> {{ report.treatment_paths.option_b_balanced }}</li>
-        <li><strong>Option C (Preventive):</strong> {{ report.treatment_paths.option_c_preventive }}</li>
-    </ul>
+    {% if report.treatment_paths %}
+        <ul>
+        {% for option in report.treatment_paths %}
+            <li>
+                <strong>Option {{ option.option_code }}:</strong>
+                {{ option.title }} — {{ option.description }}
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">No treatment paths documented.</p>
+    {% endif %}
 </div>
 
 <!-- ======================================

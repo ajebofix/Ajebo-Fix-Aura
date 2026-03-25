@@ -1,4 +1,4 @@
-from .routes.assessments import admin_assessments_bp
+from .modules.assessments import admin_assessments_bp
 
 
 def register_admin_blueprints(app):

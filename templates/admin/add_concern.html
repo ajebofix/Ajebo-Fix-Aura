@@ -28,8 +28,8 @@
             background: #f9fafb;
             border: 1px solid #e5e7eb;
             border-radius: 8px;
-            padding: 20px;
-            margin-top: 20px;
+            padding: 18px;
+            margin-top: 18px;
         }
 
         label {
@@ -71,6 +71,11 @@
 
         button.secondary {
             background: #6b7280;
+            color: #ffffff;
+            padding: 12px 18px;
+            border-radius: 6px;
+            font-size: 14px;
+            display: inline-block;
         }
 
         .disclaimer {
@@ -84,14 +89,53 @@
         a {
             text-decoration: none;
         }
+
+        .flash{
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 14px;
+            font-size: 14px;
+        }
+
+        .flash.success{
+            background: #ecfdf5;
+            border: 1px solid #bbf7d0;
+        }
+
+        .flash.error{
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+        }
+
+        .flash.warning{
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+        }
+
+        .flash.info{
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+        }
     </style>
 </head>
 <body>
 
-<h1>Record Observation / Concern</h1>
+<h1>Record Observation</h1>
+
+<!-- FLASH MESSAGES -->
+ {% with messages = get_flashed_messages(with_categories=true) %}
+ {% if messages %}
+ {% for category, message in messages %}
+ <div class="flash {{ category }}">
+    {{ message }}
+ </div>
+ {% endfor %}
+ {% endif %}
+ {% endwith %}
+
+
 <p class="muted">
-    Advisor observation — documented on behalf of the client
-    during professional consultation.
+    Advisor observation recorded during consultation.
 </p>
 
 <div class="card">
@@ -114,7 +158,7 @@
 
     <p>
         <strong>Under Professional Care Since:</strong>
-        {{ ownership.start_date.strftime("%Y-%m-%d") }}
+        {{ ownership.start_date.strftime("%Y-%m-%d") if ownership.start_date else "-" }}
     </p>
 </div>
 
@@ -128,8 +172,8 @@
             <option value="engine">Engine</option>
             <option value="transmission">Transmission</option>
             <option value="brakes">Brakes</option>
-            <option value="suspension">Suspension / Steering</option>
-            <option value="electrical">Electrical / Electronics</option>
+            <option value="suspension">Suspension & Steering</option>
+            <option value="electrical">Electrical</option>
             <option value="cooling">Cooling System</option>
             <option value="body">Body / Exterior</option>
             <option value="interior">Interior</option>
@@ -147,7 +191,7 @@
         <textarea
             id="description"
             name="description"
-            placeholder="Describe what was observed, symptoms noticed, or conditions requiring monitoring"
+            placeholder="Describe the observation or symptoms noticed"
             required
         ></textarea>
 

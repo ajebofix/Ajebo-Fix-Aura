@@ -43,7 +43,8 @@
         }
 
         .reported { color: #92400e; }
-        .acknowledged { color: #1d4ed8; }
+        .under_review { color: #1d4ed8; }
+        .monitoring { color: #7c3aed; }
         .resolved { color: #065f46; }
 
         .actions {
@@ -64,6 +65,7 @@
         }
 
         .btn-review { background: #fde68a; }
+        .btn-monitor { background: #ddd6fe; }
         .btn-resolve { background: #bbf7d0; }
 
         .note {
@@ -73,6 +75,12 @@
             padding: 10px;
             border-radius: 6px;
             margin-top: 10px;
+        }
+
+        .audit {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 8px;
         }
 
         a {
@@ -94,6 +102,7 @@
         - {{ car.brand }} {{ car.model }}
     {% endif %}
 </h1>
+
 <p class="subtitle">
     Client-reported observations awaiting professional review
 </p>
@@ -110,12 +119,14 @@
 {% if faults %}
     {% for fault in faults %}
         <div class="concern">
+
             <div class="meta">
                 <strong>Vehicle ID:</strong> {{ fault.car_id }} •
+
                 <strong>Category:</strong> {{ fault.category }} •
-                <strong>Severity:</strong> {{ fault.severity }} •
+
                 <span class="status {{ fault.status }}">
-                    {{ fault.status.replace('_', ' ')|title }}
+                    {{ fault.safe_status_label() }}
                 </span>
             </div>
 
@@ -126,21 +137,49 @@
                 Further assessment may be required.
             </div>
 
+            {% if fault.reviewed_at %}
+                <div class="audit">
+                    Reviewed on {{ fault.reviewed_at.strftime("%Y-%m-%d %H:%M") }}
+                </div>
+            {% endif %}
+
+            {% if fault.resolved_at %}
+                <div class="audit">
+                    Resolved on {{ fault.resolved_at.strftime("%Y-%m-%d %H:%M") }}
+                </div>
+            {% endif %}
+
             <div class="actions">
+
                 {% if fault.status == "reported" %}
                     <form method="POST"
                           action="{{ url_for('admin.admin_review_concern', concern_id=fault.id) }}">
-                        <button class="btn-review">Mark Under Review</button>
+                        <button class="btn-review">
+                            Mark Under Review
+                        </button>
+                    </form>
+                {% endif %}
+
+                {% if fault.status in ("reported", "under_review") %}
+                    <form method="POST"
+                          action="{{ url_for('admin.admin_monitor_concern', concern_id=fault.id) }}">
+                        <button class="btn-monitor">
+                            Move to Monitoring
+                        </button>
                     </form>
                 {% endif %}
 
                 {% if fault.status != "resolved" %}
                     <form method="POST"
                           action="{{ url_for('admin.admin_resolve_concern', concern_id=fault.id) }}">
-                        <button class="btn-resolve">Mark Resolved</button>
+                        <button class="btn-resolve">
+                            Mark Resolved
+                        </button>
                     </form>
                 {% endif %}
+
             </div>
+
         </div>
     {% endfor %}
 {% else %}

@@ -10,9 +10,13 @@
             font-family: Arial, sans-serif;
             max-width: 600px;
             margin: 28px auto;
-            padding: 12px;
+            padding: 0 12px;
             line-height: 1.55;
             color: #111827;
+        }
+
+        h1{
+            margin-bottom: 6px;
         }
 
         h2 {
@@ -50,6 +54,7 @@
 
         button {
             margin-top: 24px;
+            max-width: 320;
             cursor: pointer;
             border-radius: 6px;
             border: none;
@@ -79,15 +84,55 @@
         a:hover {
             text-decoration: underline;
         }
+
+        .flash{
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 14px;
+            font-size: 14px;
+            border: 1px solid transparent;
+        }
+
+        .flash.success{
+            background: #ecfdf5;
+            border: 1px solid #bbf7d0;
+        }
+
+        .flash.error{
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+        }
+
+        .flash.warning{
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+        }
+
+        .flash.info{
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+        }
     </style>
 </head>
 <body>
 
-<h2>Report a Concern</h2>
+<h1>Report a Concern</h1>
+
+<!-- FLASH MESSAGES -->
+ {% with messages = get_flashed_messages(with_categories=true) %}
+ {% if messages %}
+ {% for category, message in messages %}
+ <div class="flash {{ category }}">
+{{ message }}
+ </div>
+ {% endfor %}
+ {% endif %}
+ {% endwith %}
+
 
 <p class="subtitle">
     <strong>{{ car.brand }} {{ car.model }} {{ car.year }}</strong><br>
-    Share anything unusual you’ve observed.
+    Share anything unusual you observed.
     This does not confirm a fault or diagnosis.
 </p>
 
@@ -95,13 +140,13 @@
 
     <label for="category">Area of Concern</label>
     <select id="category" name="category" required>
-        <option value="">Select area</option>
+        <option value=""disable selected>Select area</option>
         <option value="engine">Engine</option>
         <option value="brakes">Brakes</option>
         <option value="electrical">Electrical</option>
-        <option value="suspension">Suspension / Steering</option>
-        <option value="warning_light">Warning Indicator</option>
-        <option value="sound">Noise / Vibration</option>
+        <option value="suspension">Suspension % Steering</option>
+        <option value="warning_light">Warning Light</option>
+        <option value="sound">Noise or Vibration</option>
         <option value="other">Other</option>
     </select>
 
@@ -109,14 +154,13 @@
     <textarea
         id="description"
         name="description"
-        placeholder="Describe what you observed, when it occurred, and any patterns you noticed…"
+        placeholder="Describe what you observed and when it occurred"
         required
     ></textarea>
 
     <div class="note">
         This submission does not diagnose your vehicle.
-        It allows Ajebo Fix to review your observation professionally
-        and recommend appropriate next steps.
+        Ajebo Fix will review the observation and recommend next steps.
     </div>
 
     <button type="submit">Submit Observation</button>

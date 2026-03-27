@@ -1,7 +1,11 @@
-from weasyprint import HTML, CSS
+# from weasyprint import HTML, CSS
 from flask import render_template, current_app
 from io import BytesIO
 
+try:
+    import weasyprint
+except ImportError:
+    weasyprint = None
 
 def render_assessment_pdf(*, report_data):
     """
@@ -49,3 +53,6 @@ def render_assessment_pdf(*, report_data):
 
     pdf_file.seek(0)
     return pdf_file
+
+if weasyprint is None:
+    raise RuntimeError("PDF generator is not available in this environment.")

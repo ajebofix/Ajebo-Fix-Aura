@@ -35,7 +35,7 @@ from services.rina_action_suggestions import RinaCareGuidanceEngine
 from services.rina_alert_awareness_service import RinaCareContextService
 
 from io import BytesIO
-from xhtml2pdf import pisa
+# from xhtml2pdf import pisa
 import hashlib
 from sqlalchemy import func
 

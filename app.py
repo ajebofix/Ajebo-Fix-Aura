@@ -115,4 +115,19 @@ def create_app():
 
     app.register_blueprint(admin_assessments_bp)
 
+    @app.route("/")
+    def home():
+        return {
+            "status": "Ajebo Fix Aura is LIVE 🚀",
+            "available_routes": [
+                "/auth",
+                "/cars",
+                "/chat",
+                "/health",
+                "/dashboard",
+                "/intelligence"
+            ]
+        }
+
     return app
+

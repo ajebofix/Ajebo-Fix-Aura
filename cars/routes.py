@@ -34,7 +34,7 @@ from services.rina_action_suggestions import RinaCareGuidanceEngine
 
 
 from io import BytesIO
-from xhtml2pdf import pisa
+# from xhtml2pdf import pisa
 
 
 cars_bp = Blueprint("cars", __name__, url_prefix="/cars")

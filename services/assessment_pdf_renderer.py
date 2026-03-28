@@ -7,7 +7,14 @@ try:
 except ImportError:
     weasyprint = None
 
+
 def render_assessment_pdf(*, report_data):
+
+    if weasyprint is None:
+        raise Exception("Weasyprint is not installed.")
+
+    HTML, CSS = weasyprint.HTML, weasyprint.CSS
+
     """
     Renders a finalized vehicle assessment report to PDF.
 
@@ -53,6 +60,3 @@ def render_assessment_pdf(*, report_data):
 
     pdf_file.seek(0)
     return pdf_file
-
-if weasyprint is None:
-    raise RuntimeError("PDF generator is not available in this environment.")

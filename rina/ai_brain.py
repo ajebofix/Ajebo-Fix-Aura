@@ -1,9 +1,13 @@
-from openai import OpenAI
-
-client = OpenAI()
-
-
 def generate_rina_response(context: dict) -> str:
+    from openai import OpenAI
+    import os
+
+    api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set")
+
+    client = OpenAI(api_key=api_key)
     """
     High-intelligence response layer for A.J. Rina
     Converts structured vehicle data into human, premium advisory language

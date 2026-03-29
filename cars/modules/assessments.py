@@ -12,7 +12,6 @@ from models import (
     CarOwnership,
 )
 from services.assessment_report_builder import build_assessment_report
-from services.assessment_pdf_renderer import render_assessment_pdf
 
 cars_assessments_bp = Blueprint(
     "car_assessments",

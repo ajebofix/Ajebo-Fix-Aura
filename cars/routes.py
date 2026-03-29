@@ -34,7 +34,6 @@ from services.rina_action_suggestions import RinaCareGuidanceEngine
 
 
 from io import BytesIO
-from xhtml2pdf import pisa
 
 
 cars_bp = Blueprint("cars", __name__, url_prefix="/cars")
@@ -178,7 +177,9 @@ def car_detail(car_id):
     health = calculate_vehicle_health(car, ownership) if ownership else {}
 
     guidance = RinaCareGuidanceEngine.generate_guidance(car.id, current_user.id)
-    care_context = RinaCareContextService.get_active_care_context(car.id, current_user.id)
+    care_context = RinaCareContextService.get_active_care_context(
+        car.id, current_user.id
+    )
     escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
 
     return render_template(
@@ -396,24 +397,12 @@ def vehicle_records_pdf(car_id):
 
     report = build_vehicle_report(ownership.car, ownership)
 
-    html = render_template(
+    return render_template(
         "reports/vehicle_report.html",
         report=report,
         car=ownership.car,
         print_mode=True,
         is_admin_view=False,
-    )
-
-    pdf_buffer = BytesIO()
-    pisa.CreatePDF(html, dest=pdf_buffer, encoding="UTF-8")
-    pdf_buffer.seek(0)
-
-    return Response(
-        pdf_buffer.read(),
-        mimetype="application/pdf",
-        headers={
-            "Content-Disposition": f"attachment; filename=vehicle_{car_id}_record.pdf"
-        },
     )
 
 
@@ -567,22 +556,10 @@ def assessment_report(car_id):
 
     report = build_assessment_report(assessment=assessment)
 
-    html = render_template(
+    return render_template(
         "reports/assessment_report.html",
         report=report,
         car=ownership.car,
         print_mode=request.args.get("print") == "1",
         is_admin_view=False,
-    )
-
-    pdf_buffer = BytesIO()
-    pisa.CreatePDF(html, dest=pdf_buffer, encoding="UTF-8")
-    pdf_buffer.seek(0)
-
-    return Response(
-        pdf_buffer.read(),
-        mimetype="application/pdf",
-        headers={
-            "Content-Disposition": f"attachment; filename=assessment_{car_id}_report.pdf"
-        },
     )

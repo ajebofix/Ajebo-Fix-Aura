@@ -87,5 +87,11 @@
     📄 Download / Print Report
 </a>
 
+{% if print_mode %}
+<button onclick="window.print()" style="margin-bottom: 20px;">
+    Download as PDF
+</button>
+{% endif %}
+
 </body>
 </html>

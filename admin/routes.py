@@ -35,7 +35,6 @@ from services.rina_action_suggestions import RinaCareGuidanceEngine
 from services.rina_alert_awareness_service import RinaCareContextService
 
 from io import BytesIO
-from xhtml2pdf import pisa
 import hashlib
 from sqlalchemy import func
 
@@ -500,7 +499,7 @@ def admin_vehicle_records_pdf(car_id):
     concerns = CarFault.query.filter_by(car_id=car.id).all()
     health = calculate_vehicle_health(car, ownership)
 
-    html = render_template(
+    return render_template(
         "reports/timeline.html",
         car=car,
         ownership=ownership,
@@ -509,23 +508,10 @@ def admin_vehicle_records_pdf(car_id):
         health=health,
         is_admin_view=True,
         is_pdf_export=True,
+        print_mode=True,
         exported_by=current_user.email,
         exported_at=datetime.utcnow(),
         disclaimer=CLINICAL_DISCLAIMER,
-    )
-
-    pdf_buffer = BytesIO()
-    pisa.CreatePDF(html, dest=pdf_buffer, encoding="UTF-8")
-    pdf_buffer.seek(0)
-
-    return Response(
-        pdf_buffer.read(),
-        mimetype="application/pdf",
-        headers={
-            "Content-Disposition": (
-                f"attachment; filename=AJF_MEDICAL_FILE_{car.vin}.pdf"
-            )
-        },
     )
 
 
@@ -1150,14 +1136,47 @@ def advisor_control_panel():
 @advisor_required
 def admin_download_assessment_pdf(assessment_id):
 
-    assessment = VehicleAssessment.query.get_or_404(assessment_id)
+    try:
+        # -----------------------------------------
+        # Fetch assessment
+        # -----------------------------------------
+        assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
-    if not assessment.is_finalized:
-        abort(403)
+        if not assessment.is_finalized:
+            abort(403)
 
-    report = build_assessment_report(assessment=assessment)
+        # -----------------------------------------
+        # Build structured report
+        # -----------------------------------------
+        report = build_assessment_report(assessment=assessment)
 
-    return render_template(
-        "reports/assessment_report.html",
-        report=report,
-    )
+        # -----------------------------------------
+        # Render PDF
+        # -----------------------------------------
+        pdf_file = render_assessment_pdf(report_data=report)
+
+        # SAFETY CHECK (prevents NoneType crash)
+        if not pdf_file:
+            raise RuntimeError("PDF generation returned empty file")
+
+        pdf_file.seek(0)
+
+        # -----------------------------------------
+        # Return response
+        # -----------------------------------------
+        return Response(
+            pdf_file.read(),
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=AJF_ASSESSMENT_{assessment.id}.pdf"
+            },
+        )
+
+    except Exception as e:
+        # -----------------------------------------
+        # DEBUG MODE (VERY IMPORTANT)
+        # -----------------------------------------
+        return f"""
+        <h2>PDF GENERATION ERROR</h2>
+        <pre>{str(e)}</pre>
+        """

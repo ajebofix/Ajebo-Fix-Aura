@@ -66,3 +66,5 @@ xhtml2pdf
 reportlab
 pillow
 weasyprint
+pycairo
+cairocffi

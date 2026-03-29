@@ -65,6 +65,3 @@ gunicorn==21.2.0
 xhtml2pdf
 reportlab
 pillow
-weasyprint
-pycairo
-cairocffi

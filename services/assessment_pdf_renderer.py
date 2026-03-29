@@ -1,62 +1,34 @@
-# from weasyprint import HTML, CSS
+from weasyprint import pisa
 from flask import render_template, current_app
 from io import BytesIO
-
-try:
-    import weasyprint
-except ImportError:
-    weasyprint = None
 
 
 def render_assessment_pdf(*, report_data):
 
-    if weasyprint is None:
-        raise Exception("Weasyprint is not installed.")
+    # ----------------------------------------
+    # Render HTML
+    # ----------------------------------------
 
-    HTML, CSS = weasyprint.HTML, weasyprint.CSS
-
-    """
-    Renders a finalized vehicle assessment report to PDF.
-
-    INPUT:
-        report_data (dict) — output from build_assessment_report()
-
-    OUTPUT:
-        BytesIO (PDF)
-    """
-
-    # --------------------------------------------
-    # Render HTML using Jinja
-    # --------------------------------------------
-    html_content = render_template(
+    html = render_template(
         "reports/assessment_report.html",
         report=report_data,
     )
 
-    # --------------------------------------------
-    # Generate PDF
-    # --------------------------------------------
+    # ----------------------------------------
+    # Convert to PDF
+    # ----------------------------------------
+
     pdf_file = BytesIO()
 
-    HTML(
-        string=html_content,
-        base_url=current_app.root_path,
-    ).write_pdf(
-        pdf_file,
-        stylesheets=[
-            CSS(
-                string="""
-                @page {
-                    size: A4;
-                    margin: 22mm;
-                }
-                body {
-                    font-family: Arial, Helvetica, sans-serif;
-                }
-                """
-            )
-        ],
+    pisa_status = pisa.CreatePDF(
+        html,
+        dest=pdf_file,
+        encoding="UTF-8",
     )
 
+    if pisa_status.err:
+        raise Exception("PDF generation failed with xhtml2pdf")
+
     pdf_file.seek(0)
+
     return pdf_file

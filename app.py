@@ -125,9 +125,11 @@ def create_app():
                 "/chat",
                 "/health",
                 "/dashboard",
-                "/intelligence"
-            ]
+                "/intelligence",
+            ],
         }
 
     return app
 
+
+app = create_app()

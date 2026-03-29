@@ -168,6 +168,12 @@
 </div>
 {% endif %}
 
+{% if print_mode %}
+<button onclick="window.print()" style="margin-bottom: 20px;">
+    Download as PDF
+</button>
+{% endif %}
+
 <br>
 
 {% if is_admin_view %}

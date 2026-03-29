@@ -4,6 +4,7 @@ from flask import (
     flash,
     redirect,
     url_for,
+    render_template,
 )
 from flask_login import login_required, current_user
 
@@ -28,9 +29,9 @@ cars_assessments_bp = Blueprint(
 @cars_assessments_bp.route("/<int:assessment_id>/download", methods=["GET"])
 @login_required
 def client_download_assessment_pdf(assessment_id):
+
     assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
-    # Verify ownership
     ownership = CarOwnership.query.filter_by(
         car_id=assessment.car_id,
         user_id=current_user.id,
@@ -45,4 +46,21 @@ def client_download_assessment_pdf(assessment_id):
         flash("Assessment is not yet available for download.", "error")
         return redirect(url_for("cars.car_detail", car_id=assessment.car_id))
 
-    filename = f"Vehicle_Health_Report_" f"{assessment.car.vin}.pdf"
+    # 🔥 build report
+    report = build_assessment_report(assessment)
+
+    # 🔥 render HTML (same template used for print)
+    html = render_template(
+        "reports/assessment_report.html",
+        report=report,
+        car=ownership.car,
+        print_mode=True,
+    )
+
+    return Response(
+        html,
+        mimetype="text/html",
+        headers={
+            "Content-Disposition": f"inline; filename=assessment_{assessment.id}.html"
+        },
+    )

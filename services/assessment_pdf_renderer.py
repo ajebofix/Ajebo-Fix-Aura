@@ -14,11 +14,6 @@ def render_assessment_pdf(*, report_data):
         report=report_data,
     )
 
-    html_content = render_template(
-        "reports/assessment_report.html",
-        report=report_data,
-    )
-
     # ----------------------------------------
     # Convert to PDF
     # ----------------------------------------
@@ -36,5 +31,4 @@ def render_assessment_pdf(*, report_data):
 
     pdf_file.seek(0)
 
-    # return pdf_file
-    return html_content
+    return pdf_file

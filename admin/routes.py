@@ -28,7 +28,6 @@ from services.vehicle_intelligence import calculate_vehicle_health
 from .utils import advisor_required
 from services.consultation_guard import require_active_consultation
 from services.assessment_report_builder import build_assessment_report
-from services.assessment_pdf_renderer import render_assessment_pdf
 from services.assessment_risk_engine import calculate_assessment_risk
 from services.rina_escalation_engine import RinaEscalationEngine
 from services.rina_action_suggestions import RinaCareGuidanceEngine

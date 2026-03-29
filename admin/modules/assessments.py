@@ -30,16 +30,21 @@ admin_assessments_bp = Blueprint(
 # =====================================================
 
 
+from flask import render_template, Response, flash, redirect, url_for, request
+
+
 @admin_assessments_bp.route("/<int:assessment_id>/download", methods=["GET"])
 @login_required
 @advisor_required
 def admin_download_assessment_pdf(assessment_id):
 
+    print("ADMIN DOWNLOAD ROUTE HIT")
+
     assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
     if not assessment.is_finalized:
         flash("Assessment must be finalized before download.", "error")
-        return redirect(request.referrer)
+        return redirect(request.referrer or url_for("admin.admin_dashboard"))
 
     report = build_assessment_report(assessment)
 

@@ -4,6 +4,8 @@ from flask import (
     flash,
     redirect,
     url_for,
+    render_template,
+    request,
 )
 from flask_login import login_required, current_user
 from datetime import datetime
@@ -32,25 +34,20 @@ admin_assessments_bp = Blueprint(
 @login_required
 @advisor_required
 def admin_download_assessment_pdf(assessment_id):
+
     assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
     if not assessment.is_finalized:
         flash("Assessment must be finalized before download.", "error")
         return redirect(request.referrer)
 
-    # Build authoritative report data
-    report_data = build_assessment_report(assessment)
+    report = build_assessment_report(assessment)
 
-    # Render PDF
-
-    filename = (
-        f"AJF_VEHICLE_ASSESSMENT_"
-        f"{assessment.car.vin}_"
-        f"{assessment.created_at.date()}.pdf"
+    html = render_template(
+        "reports/assessment_report.html",
+        report=report,
+        car=assessment.car,
+        print_mode=True,
     )
 
-    return Response(
-        pdf.read(),
-        mimetype="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
-    )
+    return Response(html, mimetype="text/html")

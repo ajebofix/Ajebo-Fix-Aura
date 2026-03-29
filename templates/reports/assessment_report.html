@@ -77,7 +77,7 @@
 
 <p class="muted">
     Powered by <strong>Ajebo Fix</strong><br>
-    Issued on {{ report.title_page.issued_date.strftime("%Y-%m-%d") }}
+    Issued on {{ report.title_page.issued_date.strftime("%Y-%m-%d") if report.title_page.issued_date else "—" }}
 </p>
 
 <div class="box">
@@ -95,7 +95,7 @@
 
     <div class="box">
         <strong>Vehicle:</strong>
-        {{ report.vehicle_overview.brand }}
+        {{ report.vehicle_overview.brand  if report.vehicle_overview else "—" }}
         {{ report.vehicle_overview.model }}
         {{ report.vehicle_overview.year }}<br>
 
@@ -178,7 +178,7 @@
 
     <div class="box">
         <strong>Immediate Attention:</strong>
-        {{ report.urgency_classification.immediate_attention | join(", ") or "None" }}<br><br>
+        {{ report.urgency_classification.immediate_attention | join(", ") if report.urgency_classification and report.urgency_classification.immediate_attention else "None" }}<br><br>
 
         <strong>Monitoring Closely:</strong>
         {{ report.urgency_classification.monitoring_closely | join(", ") or "None" }}<br><br>

@@ -1148,21 +1148,47 @@ def advisor_control_panel():
 @advisor_required
 def admin_download_assessment_pdf(assessment_id):
 
-    assessment = VehicleAssessment.query.get_or_404(assessment_id)
+    try:
+        # -----------------------------------------
+        # Fetch assessment
+        # -----------------------------------------
+        assessment = VehicleAssessment.query.get_or_404(assessment_id)
 
-    if not assessment.is_finalized:
-        abort(403)
+        if not assessment.is_finalized:
+            abort(403)
 
-    # Build structured report
-    report = build_assessment_report(assessment=assessment)
+        # -----------------------------------------
+        # Build structured report
+        # -----------------------------------------
+        report = build_assessment_report(assessment=assessment)
 
-    # Render PDF
-    pdf_file = render_assessment_pdf(report_data=report)
+        # -----------------------------------------
+        # Render PDF
+        # -----------------------------------------
+        pdf_file = render_assessment_pdf(report_data=report)
 
-    return Response(
-        pdf_file.read(),
-        mimetype="application/pdf",
-        headers={
-            "Content-Disposition": f"attachment; filename=AJF_ASSESSMENT_{assessment.id}.pdf"
-        },
-    )
+        # SAFETY CHECK (prevents NoneType crash)
+        if not pdf_file:
+            raise RuntimeError("PDF generation returned empty file")
+
+        pdf_file.seek(0)
+
+        # -----------------------------------------
+        # Return response
+        # -----------------------------------------
+        return Response(
+            pdf_file.read(),
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=AJF_ASSESSMENT_{assessment.id}.pdf"
+            },
+        )
+
+    except Exception as e:
+        # -----------------------------------------
+        # DEBUG MODE (VERY IMPORTANT)
+        # -----------------------------------------
+        return f"""
+        <h2>PDF GENERATION ERROR</h2>
+        <pre>{str(e)}</pre>
+        """

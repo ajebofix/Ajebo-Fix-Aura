@@ -45,13 +45,4 @@ def client_download_assessment_pdf(assessment_id):
         flash("Assessment is not yet available for download.", "error")
         return redirect(url_for("cars.car_detail", car_id=assessment.car_id))
 
-    report_data = build_assessment_report(assessment)
-    pdf = render_assessment_pdf(report_data=report_data)
-
     filename = f"Vehicle_Health_Report_" f"{assessment.car.vin}.pdf"
-
-    return Response(
-        pdf.read(),
-        mimetype="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
-    )

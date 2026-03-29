@@ -42,7 +42,6 @@ def admin_download_assessment_pdf(assessment_id):
     report_data = build_assessment_report(assessment)
 
     # Render PDF
-    pdf = render_assessment_pdf(report_data=report_data)
 
     filename = (
         f"AJF_VEHICLE_ASSESSMENT_"

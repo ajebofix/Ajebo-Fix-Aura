@@ -284,7 +284,7 @@ menu.style.display="none"
 
         <p>
             <strong>Under Care Since:</strong>
-            {{ ownership.start_date.strftime("%Y-%m-%d") }}
+            {{ ownership.start_date.strftime("%Y-%m-%d") if ownership.start_date }}
         </p>
 
     {% else %}

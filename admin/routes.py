@@ -44,11 +44,11 @@ from sqlalchemy import func
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
-admin_assessments_bp = Blueprint(
-    "admin_assessments",
-    __name__,
-    url_prefix="/admin/assessments",
-)
+# admin_assessments_bp = Blueprint(
+#     "admin_assessments",
+#     __name__,
+#     url_prefix="/admin/assessments",
+# )
 
 # =====================================================
 # CLINICAL DISCLAIMER

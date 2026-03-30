@@ -58,3 +58,4 @@ pyHanko==0.33.0
 pyhanko-certvalidator==0.29.1
 arabic-reshaper
 python-bidi
+arabic-reshaper

@@ -177,7 +177,7 @@
 <br>
 
 {% if is_admin_view %}
-    <a href="{{ url_for('admin.admin_view_vehicle', car_id=car.id) }}">
+    <a href="{{ url_for('admin.view_vehicle', car_id=car.id) }}">
         ← Back to Vehicle (Admin)
     </a>
 {% else %}

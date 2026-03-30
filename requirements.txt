@@ -64,4 +64,3 @@ zopfli==0.4.1
 gunicorn==21.2.0
 xhtml2pdf
 reportlab
-pillow

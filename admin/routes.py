@@ -374,19 +374,24 @@ def admin_view_vehicle(car_id):
     # -------------------------
     # INTELLIGENCE (SAFE)
     # -------------------------
-    if ownership:
-        guidance = RinaCareGuidanceEngine.generate_guidance(
-            car.id, ownership.user_id
-        )
+    try:
+        if ownership:
+            guidance = RinaCareGuidanceEngine.generate_guidance(
+                car.id, ownership.user_id
+            )
 
-        care_context = RinaCareContextService.get_active_care_context(
-            car.id, ownership.user_id
-        )
+            care_context = RinaCareContextService.get_active_care_context(
+                car.id, ownership.user_id
+            )
 
-        escalation = RinaEscalationEngine.evaluate(
-           health, guidance, care_context
-        )
-    else:
+            escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
+        else:
+            guidance = None
+            care_context = None
+            escalation = None
+
+    except Exception as e:
+        print("ERROR IN INTELLIGENCE BLOCK:", str(e))
         guidance = None
         care_context = None
         escalation = None
@@ -399,8 +404,7 @@ def admin_view_vehicle(car_id):
     assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
 
     has_active_consultation = any(
-        c.status == "in_progress" for c in consultations
-    )
+        getattr(c, "status", None) == "in_progress" for c in consultations)
 
     # -------------------------
     # RENDER
@@ -1145,4 +1149,3 @@ def advisor_control_panel():
         draft_assessments=draft_assessments,
         vehicles_at_risk=vehicles_at_risk,
     )
-    

@@ -402,23 +402,23 @@ def admin_view_vehicle(car_id):
         c.status == "in_progress" for c in consultations
     )
 
-# -------------------------
-# RENDER
-# -------------------------
-return render_template(
-    "car_detail.html",
-    car=car,
-    ownership=ownership,
-    health=health,
-    guidance=guidance,
-    care_context=care_context,
-    escalation=escalation,
-    consultations=consultations,
-    assessments=assessments,
-    has_active_consultation=has_active_consultation,
-    disclaimer=CLINICAL_DISCLAIMER,
-    is_admin_view=True,
-)
+    # -------------------------
+    # RENDER
+    # -------------------------
+    return render_template(
+        "car_detail.html",
+        car=car,
+        ownership=ownership,
+        health=health,
+        guidance=guidance,
+        care_context=care_context,
+        escalation=escalation,
+        consultations=consultations,
+        assessments=assessments,
+        has_active_consultation=has_active_consultation,
+        disclaimer=CLINICAL_DISCLAIMER,
+        is_admin_view=True,
+    )
 
 
 # =====================================================

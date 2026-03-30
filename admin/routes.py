@@ -347,7 +347,7 @@ def admin_resolve_concern(concern_id):
 # ADMIN — VEHICLE PROFILE VIEW
 # =====================================================
 
-
+@admin_bp.route("/cars/<int:car_id>", endpoint="view_vehicle")
 def admin_view_vehicle(car_id):
     try:
         car = Car.query.get_or_404(car_id)

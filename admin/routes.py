@@ -359,31 +359,32 @@ def admin_view_vehicle(car_id):
         is_active=True,
     ).first()
 
-    health = (
-        calculate_vehicle_health(car, ownership)
-        if ownership
-        else {
+    #SAFE HEALTH
+    if ownership:
+        health = calculate_vehicle_health(car, ownership)
+    else:
+         health = {
             "health_status": "critical",
             "risk_reasons": ["Vehicle not under active care"],
             "next_action": "Assign to Ajebo Fix advisor",
         }
-    )
+    
+    # SAFE BLOCK
+    if ownership:
+        guidance = RinaCareGuidanceEngine.generate_guidance(car.id, ownership.user_id)
 
-    guidance = RinaCareGuidanceEngine.generate_guidance(car.id, ownership.user_id)
+        care_context = RinaCareContextService.get_active_care_context(
+            car.id, ownership.user_id
+        )
 
-    care_context = RinaCareContextService.get_active_care_context(
-        car.id, ownership.user_id
-    )
+        escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
+    else:
+        guidance = None
+        care_context = None
+        escalation = None 
 
-    escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
 
-    consultations = Consultation.query.filter_by(car_id=car.id).all()
-
-    assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
-
-    has_active_consultation = any(c.status == "in_progress" for c in consultations)
-
-    return render_template(
+  return render_template(
         "car_detail.html",
         car=car,
         ownership=ownership,

@@ -43,7 +43,7 @@ def admin_download_assessment_pdf(assessment_id):
         flash("Assessment must be finalized before download.", "error")
         return redirect(request.referrer or url_for("admin.admin_dashboard"))
 
-    report = build_assessment_report(assessment)
+    report = build_assessment_report(assessment=assessment)
 
     html = render_template(
         "reports/assessment_report.html",

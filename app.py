@@ -90,7 +90,7 @@ def create_app():
     from ownership.routes import stewardship_bp
     from dashboard.routes import dashboard_bp
     from cars.fault_routes import concerns_bp
-    from routes.assessments import admin_assessments_bp
+    from admin.modules.assessments import assessments_bp
 
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(advisor_bp)
@@ -113,7 +113,7 @@ def create_app():
 
     app.register_blueprint(concerns_bp)
 
-    app.register_blueprint(admin_assessments_bp)
+    app.register_blueprint(assessments_bp)
 
     @app.route("/")
     def home():

@@ -384,7 +384,7 @@ def admin_view_vehicle(car_id):
         )
 
         escalation = RinaEscalationEngine.evaluate(
-            health, guidance, care_context
+           health, guidance, care_context
         )
     else:
         guidance = None

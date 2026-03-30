@@ -348,81 +348,73 @@ def admin_resolve_concern(concern_id):
 # =====================================================
 
 
-@admin_bp.route("/cars/<int:car_id>", methods=["GET"])
-@login_required
-@advisor_required
 def admin_view_vehicle(car_id):
-    car = Car.query.get_or_404(car_id)
-
-    ownership = CarOwnership.query.filter_by(
-        car_id=car.id,
-        is_active=True,
-    ).first()
-
-    # -------------------------
-    # HEALTH (SAFE)
-    # -------------------------
-    if ownership:
-        health = calculate_vehicle_health(car, ownership)
-    else:
-        health = {
-            "health_status": "critical",
-            "risk_reasons": ["Vehicle not under active care"],
-            "next_action": "Assign to Ajebo Fix advisor",
-        }
-
-    # -------------------------
-    # INTELLIGENCE (SAFE)
-    # -------------------------
     try:
+        car = Car.query.get_or_404(car_id)
+
+        ownership = CarOwnership.query.filter_by(
+            car_id=car.id,
+            is_active=True,
+        ).first()
+
         if ownership:
-            guidance = RinaCareGuidanceEngine.generate_guidance(
-                car.id, ownership.user_id
-            )
-
-            care_context = RinaCareContextService.get_active_care_context(
-                car.id, ownership.user_id
-            )
-
-            escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
+            health = calculate_vehicle_health(car, ownership)
         else:
+            health = {
+                "health_status": "critical",
+                "risk_reasons": ["Vehicle not under active care"],
+                "next_action": "Assign to Ajebo Fix advisor",
+            }
+
+        try:
+            if ownership:
+                guidance = RinaCareGuidanceEngine.generate_guidance(
+                    car.id, ownership.user_id
+                )
+
+                care_context = RinaCareContextService.get_active_care_context(
+                    car.id, ownership.user_id
+                )
+
+                escalation = RinaEscalationEngine.evaluate(
+                    health, guidance, care_context
+                )
+            else:
+                guidance = None
+                care_context = None
+                escalation = None
+
+        except Exception as e:
+            print("🔥 INTELLIGENCE ERROR:", str(e))
             guidance = None
             care_context = None
             escalation = None
 
+        consultations = Consultation.query.filter_by(car_id=car.id).all()
+        assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
+
+        has_active_consultation = any(
+            getattr(c, "status", None) == "in_progress" for c in consultations
+        )
+
+        return render_template(
+            "car_detail.html",
+            car=car,
+            ownership=ownership,
+            health=health,
+            guidance=guidance,
+            care_context=care_context,
+            escalation=escalation,
+            consultations=consultations,
+            assessments=assessments,
+            has_active_consultation=has_active_consultation,
+            disclaimer=CLINICAL_DISCLAIMER,
+            is_admin_view=True,
+        )
+
     except Exception as e:
-        print("ERROR IN INTELLIGENCE BLOCK:", str(e))
-        guidance = None
-        care_context = None
-        escalation = None
-
-    # -------------------------
-    # CONSULTATIONS (YOU FORGOT THIS)
-    # -------------------------
-    consultations = Consultation.query.filter_by(car_id=car.id).all()
-
-    assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
-
-    has_active_consultation = any(
-        getattr(c, "status", None) == "in_progress" for c in consultations)
-
-    # -------------------------
-    # RENDER
-    # -------------------------
-    return render_template(
-        "car_detail.html",
-        car=car,
-        ownership=ownership,
-        health=health,
-        guidance=guidance,
-        care_context=care_context,
-        escalation=escalation,
-        consultations=consultations,
-        assessments=assessments,
-        has_active_consultation=has_active_consultation,
-        disclaimer=CLINICAL_DISCLAIMER,
-        is_admin_view=True,
-    )
+        print("🔥 VEHICLE PAGE ERROR:", str(e))
+        return "Something broke. Check logs.", 500
 
 
 # =====================================================

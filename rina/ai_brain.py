@@ -102,6 +102,7 @@ Always sound like someone who has seen this many times before.
 """
 
     user_prompt = f"""
+User Name: {context.get("user_name")}
 Vehicle: {context.get("vehicle")}
 Health Score: {context.get("score")}
 Health Status: {context.get("status")}
@@ -114,6 +115,9 @@ Observed Signals:
 
 Guidance:
 {context.get("guidance")}
+
+Conversation History:
+{context.get("history")}
 
 User Message:
 {context.get("message")}

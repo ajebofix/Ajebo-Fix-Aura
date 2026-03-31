@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, session, current_app
 from flask_login import login_required, current_user
 
-from models import CarOwnership
+from models import CarOwnership, ChatMessage
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
 
@@ -227,3 +227,21 @@ def chat():
             ),
             200,
         )
+
+
+# ============================================
+# CHAT HISTORY
+# =======================================
+
+
+@chat_bp.route("/chat/history", methods=["GET"])
+@login_required
+def chat_history():
+    messages = (
+        ChatMessage.query.filter_by(user_id=current_user.id)
+        .order_by(ChatMessage.timestamp.asc())
+        .limit(20)
+        .all()
+    )
+
+    return {"messages": [{"role": m.role, "message": m.message} for m in messages]}

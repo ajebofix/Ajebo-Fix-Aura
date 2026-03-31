@@ -21,7 +21,7 @@
     <div
         id="rina-messages"
         style="
-            height: 190px;
+            height: 300px;
             overflow-y: auto;
             border: 1px solid #e5e7eb;
             padding: 10px;
@@ -84,78 +84,108 @@
 </div>
 
 <script>
+const messagesEl = document.getElementById("rina-messages");
+
+// =========================
+// FORMAT MESSAGE (clean UI)
+// =========================
+function formatMessage(role, text) {
+    const name = role === "user" ? "You" : "Rina";
+
+    return `
+        <div style="margin-bottom:10px;">
+            <strong>${name}:</strong>
+            <div style="margin-top:4px; white-space:pre-line;">
+                ${text}
+            </div>
+        </div>
+    `;
+}
+
+// =========================
+// LOAD CHAT HISTORY
+// =========================
+function loadHistory() {
+    fetch("/chat/history", {
+        credentials: "same-origin"
+    })
+    .then(res => res.json())
+    .then(data => {
+        messagesEl.innerHTML = "";
+
+        if (!data.messages.length) {
+            messagesEl.innerHTML = `
+                <div>
+                    <strong>Rina:</strong>
+                    Welcome. How can I assist you with your vehicle today?
+                </div>
+            `;
+            return;
+        }
+
+        data.messages.forEach(msg => {
+            messagesEl.innerHTML += formatMessage(msg.role, msg.message);
+        });
+
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    });
+}
+
+// =========================
+// SEND MESSAGE
+// =========================
 function sendToRina() {
     const input = document.getElementById("rina-input");
-    const messages = document.getElementById("rina-messages");
     const text = input.value.trim();
 
     if (!text) return;
 
-    // -------------------------
     // Show user message
-    // -------------------------
-    messages.innerHTML += `
-        <div>
-            <strong>You:</strong> ${text}
-        </div>
-    `;
-    messages.scrollTop = messages.scrollHeight;
+    messagesEl.innerHTML += formatMessage("user", text);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
     input.value = "";
 
-    // -------------------------
-    // Thinking indicator
-    // -------------------------
+    // Loading
     const loadingId = "rina-loading";
-    messages.innerHTML += `
-        <div id="${loadingId}">
-            <em>Rina is reviewing the information…</em>
+    messagesEl.innerHTML += `
+        <div id="${loadingId}" style="margin-bottom:10px;">
+            <em>Rina is reviewing this…</em>
         </div>
     `;
-    messages.scrollTop = messages.scrollHeight;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    // -------------------------
-    // Payload (vehicle authority stays server-side)
-    // -------------------------
-    const payload = { message: text };
-
-    // Optional context hint (non-authoritative)
-    if (window.CURRENT_CAR_ID) {
-        payload.car_id = window.CURRENT_CAR_ID;
-    }
-
-    // -------------------------
-    // Send to server
-    // -------------------------
     fetch("/chat", {
         method: "POST",
         credentials: "same-origin",
         headers: {
             "Content-Type": "application/json"
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ message: text })
     })
     .then(res => res.json())
     .then(data => {
         document.getElementById(loadingId)?.remove();
 
-        messages.innerHTML += `
-            <div>
-                <strong>Rina:</strong> ${data.reply}
-            </div>
-        `;
-        messages.scrollTop = messages.scrollHeight;
+        messagesEl.innerHTML += formatMessage("assistant", data.reply);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
     })
     .catch(() => {
         document.getElementById(loadingId)?.remove();
 
-        messages.innerHTML += `
-            <div>
-                <strong>Rina:</strong>
-                I’m unable to respond at the moment.
-                Please try again shortly.
-            </div>
-        `;
-        messages.scrollTop = messages.scrollHeight;
+        messagesEl.innerHTML += formatMessage(
+            "assistant",
+            "I’m unable to respond at the moment. Please try again shortly."
+        );
+
+        messagesEl.scrollTop = messagesEl.scrollHeight;
     });
 }
+
+// =========================
+// LOAD ON PAGE OPEN
+// =========================
+window.onload = () => {
+    loadHistory();
+    document.getElementById("rina_input").focus();
+};
 </script>

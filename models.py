@@ -185,16 +185,9 @@ class CarFault(db.Model):
         nullable=True,
     )
 
-    reviewed_at = db.Column(
-        db.DateTime,
-        nullable=True
-    )
+    reviewed_at = db.Column(db.DateTime, nullable=True)
 
-    reviewed_by = db.Column(
-        db.Integer,
-        db.ForeignKey("users.id"),
-        nullable=True
-    )
+    reviewed_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
     # =====================================================
     # REPORTED CONCERN DETAILS
@@ -753,3 +746,79 @@ class VehicleAssessmentTreatmentOption(db.Model):
 
     title = db.Column(db.String(150), nullable=False)
     description = db.Column(db.Text, nullable=False)
+
+
+# ================================================
+# USER MEMORY (identification + personalization)
+# ===================================================
+
+
+class UserMemory(db.Model):
+    __tablename__ = "user_memory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True)
+
+    name = db.Column(db.String(100))
+    preferences = db.Column(db.JSON, nullable=True)
+
+    last_seen = db.Column(db.DateTime, default=db.func.now())
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+    user = db.relationship("User", backref="memory", uselist=False)
+
+
+# =========================================================
+# CHAT MESSAGES (conversation memory)
+# ===========================================================
+
+
+class ChatMessage(db.Model):
+    __tablename__ = "chat_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    role = db.Column(db.String(20))  # "user" or "assistant"
+    message = db.Column(db.Text, nullable=False)
+
+    timestamp = db.Column(db.DateTime, default=db.func.now())
+
+    user = db.relationship("User", backref="chat_messages")
+
+
+# =================================================
+# CONVERSATION SESSION
+# =================================================
+
+
+class ChatSession(db.Model):
+    __tablename__ = "chat_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    started_at = db.Column(db.DateTime, default=db.func.now())
+    active = db.Column(db.Boolean, default=True)
+
+    user = db.relationship("User", backref="chat_sessions")
+
+
+# ========================================================
+# COMPLAINT / ESCALATION SYSTEM
+# =======================================================
+
+
+class EscalationLog(db.Model):
+    __tablename__ = "escalation_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    message = db.Column(db.Text)
+
+    status = db.Column(db.String(50), default="pending")  # pending, resolved
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+    user = db.relationship("User", backref="escalations")

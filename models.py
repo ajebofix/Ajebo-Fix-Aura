@@ -763,6 +763,8 @@ class UserMemory(db.Model):
     preferences = db.Column(db.JSON, nullable=True)
 
     last_seen = db.Column(db.DateTime, default=db.func.now())
+    last_vehicle = db.Column(db.String)
+    last_topic = db.Column(db.String)
     created_at = db.Column(db.DateTime, default=db.func.now())
 
     user = db.relationship("User", backref="memory", uselist=False)

@@ -167,6 +167,24 @@ function sendToRina() {
         document.getElementById(loadingId)?.remove();
 
         messagesEl.innerHTML += formatMessage("assistant", data.reply);
+
+        // =========================
+        // SHOW BOOKING BUTTON
+        // =========================
+        if (data.intent === "booking") {
+            messagesEl.innerHTML += `
+                <div style="margin-bottom:10px;">
+                    <a href="/book-consultation"
+                        style="background:#16a34a; color:white; padding:8px 12px; border-radius:6px; text-decoration:none;">
+                        Book a Consultation
+                    </a>
+                </div>
+            `;
+        }
+
+        speak(data.reply); // Text-to-speech
+
+
         messagesEl.scrollTop = messagesEl.scrollHeight;
     })
     .catch(() => {
@@ -188,4 +206,18 @@ window.onload = () => {
     loadHistory();
     document.getElementById("rina_input").focus();
 };
+
+// =========================
+// TEXT TO SPEECH
+// =========================
+function speak(text) {
+    const speech = new SpeechSynthesisUtterance(text);
+    speech.lang = "en-UK";
+    speech.volume = 1;
+    speech.rate = 0.95;
+    speech.pitch = 1;
+    window.speechSynthesis.speak(speech);
+}
+
+
 </script>

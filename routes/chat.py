@@ -1,4 +1,14 @@
-from flask import Blueprint, request, jsonify, session, current_app
+from flask import (
+    Blueprint,
+    request,
+    jsonify,
+    session,
+    current_app,
+    render_template,
+    redirect,
+    url_for,
+    flash,
+)
 from flask_login import login_required, current_user
 from werkzeug.wrappers import response
 
@@ -227,9 +237,17 @@ def chat():
                 message,
                 {
                     **health,
+                    # User Identity
+                    "user_name": current_user.first_name,
+
+                    # Vehicle Context
                     "vehicle_id": car.id,
                     "vehicle_identity": f"{car.brand} {car.model} {car.year}",
                     "intent": intent,
+
+                    # Chat Context
+                    "intent": intent,
+                    "has_history": True,
                 },
             )
 
@@ -290,3 +308,13 @@ def chat_history():
     )
 
     return {"messages": [{"role": m.role, "message": m.message} for m in messages]}
+
+
+# =============================================
+# BOOK CONSULTATION
+# =============================================
+
+@chat_bp.route("/book-consultation", methods=["GET", "POST"])
+@login_required
+def book_consultation():
+    return render_template("chat/book_consultation.html")

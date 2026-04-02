@@ -1,9 +1,11 @@
 from flask import Blueprint, request, jsonify, session, current_app
 from flask_login import login_required, current_user
+from werkzeug.wrappers import response
 
-from models import CarOwnership, ChatMessage
+from models import CarOwnership, ChatMessage, db
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
+from datetime import datetime
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -49,6 +51,43 @@ def _match_vehicle_from_message(message, ownerships):
     return None
 
 
+def save_message(role, text):
+    chat = ChatMessage(
+        user_id=current_user.id,
+        role=role,
+        message=text,
+        timestamp=datetime.utcnow(),
+    )
+
+    db.session.add(chat)
+    db.session.commit()
+
+
+def detect_intent(message: str) -> str:
+    msg = message.lower()
+
+    if any(
+        x in msg
+        for x in [
+            "book",
+            "appointment",
+            "check my car",
+            "schedule",
+            "reserve",
+            "reserve my car",
+        ]
+    ):
+        return "booking"
+
+    if any(x in msg for x in ["problem", "issue", "noise", "fault"]):
+        return "diagnostic"
+
+    if any(x in msg for x in ["thanks", "okay", "thank you", "thank you very much"]):
+        return "casual"
+
+    return "general"
+
+
 # ======================================================
 # Chat Route (STRICT, VEHICLE-LOCKED)
 # ======================================================
@@ -67,16 +106,20 @@ def chat():
         return (
             jsonify(
                 {
-                    "reply": (
-                        "I’m here with you. "
-                        "You can ask about a vehicle’s score, condition, or next steps."
-                    )
+                    "reply": "I’m here with you. Ask me about your vehicle.",
+                    "intent": "general",
                 }
             ),
             200,
         )
 
     try:
+        # Save user message
+        save_message("user", message)
+
+        # Intent detection
+        intent = detect_intent(message)
+
         # --------------------------------
         # Fetch ALL active vehicles
         # --------------------------------
@@ -93,17 +136,15 @@ def chat():
             return (
                 jsonify(
                     {
-                        "reply": (
-                            "I don’t see any vehicles under your care yet. "
-                            "Once one is added, I can assist."
-                        )
+                        "reply": "I don’t see any vehicles under your care yet.",
+                        "intent": intent,
                     }
                 ),
                 200,
             )
 
         # --------------------------------
-        # HARD SOURCE OF TRUTH (ORDERED)
+        # HARD SOURCE OF TRUTH (ORDERED)  VEHICLE RESOLUTION
         # --------------------------------
         ownership = None
 
@@ -138,16 +179,15 @@ def chat():
             matched = _match_vehicle_from_message(message, ownerships)
 
             if not matched:
-                vehicle_list = _build_vehicle_list(ownerships)
                 return (
                     jsonify(
                         {
                             "reply": (
                                 "You have multiple vehicles under your care.\n\n"
                                 "Which vehicle would you like to discuss?\n\n"
-                                f"{vehicle_list}\n\n"
-                                "Reply with a number or the vehicle name."
-                            )
+                                f"{_build_vehicle_list(ownerships)}"
+                            ),
+                            "intent": intent,
                         }
                     ),
                     200,
@@ -189,6 +229,7 @@ def chat():
                     **health,
                     "vehicle_id": car.id,
                     "vehicle_identity": f"{car.brand} {car.model} {car.year}",
+                    "intent": intent,
                 },
             )
 
@@ -202,6 +243,9 @@ def chat():
                 "Please try again shortly or contact an advisor if this continues."
             )
 
+        # Save AI response
+        save_message("assistant", reply)
+
         # --------------------------------
         # Persist FINAL session truth
         # --------------------------------
@@ -210,9 +254,10 @@ def chat():
             "vehicle": f"{car.brand} {car.model} {car.year}",
             "health_status": health.get("health_status"),
             "health_score": health.get("health_score"),
+            "intent": health.get("intent"),
         }
 
-        return jsonify({"reply": reply}), 200
+        return jsonify({"reply": reply, "intent": intent}), 200
 
     except Exception:
         current_app.logger.exception("Chat route failed")

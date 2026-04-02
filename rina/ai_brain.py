@@ -238,6 +238,8 @@ Escalation Level: {context.get("escalation")}
 User Intent: {context.get("intent")}
 User Urgency: {context.get("urgency")}
 
+Vehicle: {context.get("vehicle_identity")}
+
 Observed Signals:
 {context.get("reasons")}
 
@@ -264,7 +266,7 @@ Last User Message:
 """
 
     response = client.chat.completions.create(
-        model="gpt-5-mini",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": system_prompt.strip()},
             {"role": "user", "content": user_prompt.strip()},

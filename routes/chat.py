@@ -9,6 +9,7 @@ from flask import (
     url_for,
     flash,
 )
+from flask.ctx import F
 from flask_login import login_required, current_user
 from werkzeug.wrappers import response
 
@@ -238,13 +239,13 @@ def chat():
                 {
                     **health,
                     # User Identity
-                    "user_name": current_user.first_name,
-
+                    "user_name": current_user.first_name
+                    or current_user.email
+                    or "there",
                     # Vehicle Context
                     "vehicle_id": car.id,
                     "vehicle_identity": f"{car.brand} {car.model} {car.year}",
                     "intent": intent,
-
                     # Chat Context
                     "intent": intent,
                     "has_history": True,
@@ -254,12 +255,9 @@ def chat():
             if not reply or not isinstance(reply, str):
                 raise ValueError("Invalid Rina response")
 
-        except Exception:
+        except Exception as e:
             current_app.logger.exception("RinaChatEngine.respond failed")
-            reply = (
-                "I’m having trouble responding right now. "
-                "Please try again shortly or contact an advisor if this continues."
-            )
+            reply = f"Something went wrong. Please try again. ({e})"
 
         # Save AI response
         save_message("assistant", reply)
@@ -294,25 +292,45 @@ def chat():
 
 # ============================================
 # CHAT HISTORY
-# =======================================
+# ============================================
 
 
 @chat_bp.route("/chat/history", methods=["GET"])
 @login_required
 def chat_history():
-    messages = (
-        ChatMessage.query.filter_by(user_id=current_user.id)
-        .order_by(ChatMessage.timestamp.asc())
-        .limit(20)
-        .all()
-    )
+    """
+    Returns last 20 chat messages for the logged-in user.
+    This endpoint does NOT generate AI responses.
+    """
 
-    return {"messages": [{"role": m.role, "message": m.message} for m in messages]}
+    try:
+        messages = (
+            ChatMessage.query.filter_by(user_id=current_user.id)
+            .order_by(ChatMessage.timestamp.asc())
+            .limit(20)
+            .all()
+        )
+
+        return {
+            "messages": [
+                {
+                    "role": m.role,
+                    "message": m.message,
+                }
+                for m in messages
+            ]
+        }, 200
+
+    except Exception as e:
+        current_app.logger.exception("Chat history failed")
+
+        return {"messages": [], "error": str(e)}, 200
 
 
 # =============================================
 # BOOK CONSULTATION
 # =============================================
+
 
 @chat_bp.route("/book-consultation", methods=["GET", "POST"])
 @login_required

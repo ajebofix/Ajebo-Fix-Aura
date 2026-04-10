@@ -1,4 +1,9 @@
+# rina/ai_brain.py
+
 import re
+from typing import Sequence
+from flask import request, jsonify
+from difflib import SequenceMatcher
 
 
 def generate_rina_response(context: dict) -> str:
@@ -6,288 +11,214 @@ def generate_rina_response(context: dict) -> str:
     import os
 
     api_key = os.getenv("OPENAI_API_KEY")
-
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set")
 
-    client = OpenAI(api_key=api_key)
-    """
-    High-intelligence response layer for A.J. Rina
-    Converts structured vehicle data into human, premium advisory language
-    """
+    message = (context.get("message") or "").lower().strip()
+    user_name = context.get("user_name", "there")
+    vehicles = context.get("vehicles") or []
 
-    system_prompt = """
+    # ensure vehicle_identity always exists
+    if not context.get("vehicle_identity") and vehicles:
+        context["vehicle_identity"] = vehicles[0]
+
+    vehicle_identity = (context.get("vehicle_identity") or "").lower()
+
+    # ===========================
+    # CONFIRM VEHICLE SWITCH (TOP PRIORITY)
+    # ===========================
+    if context.get("pending_vehicle"):
+        if any(
+            word in message for word in ["yes", "yeah", "yep", "switch", "go ahead"]
+        ):
+            context["vehicle_identity"] = context["pending_vehicle"]
+            context["pending_vehicle"] = None
+
+            return f"Switched. We're now focused on your {context['vehicle_identity']}."
+
+        elif any(word in message for word in ["no", "nope", "cancel", "nevermind"]):
+            context["pending_vehicle"] = None
+            return f"Alright. We'll stay on your {context.get('vehicle_identity')}."
+
+    # ===========================
+    # GREETING
+    # ===========================
+    if message in ["hi", "hello", "hey", "yo"]:
+        return f"Hello {user_name}. What would you like me to check for you?"
+
+    # ===========================
+    # ROLE DETECTION
+    # ===========================
+    driver_keywords = ["oga", "boss", "madam", "my boss", "customer", "client"]
+    user_role = "driver" if any(k in message for k in driver_keywords) else "owner"
+
+    # ===========================
+    # VEHICLE DETECTION (REAL VEHICLES FIRST)
+    # ===========================
+    def similarity(a, b):
+        return SequenceMatcher(None, a, b).ratio()
+
+    best_match = None
+    best_score = 0
+
+    for v in vehicles:
+        score = similarity(message, v.lower())
+        if score > best_score:
+            best_score = score
+            best_match = v
+
+    if best_match and best_score > 0.4:
+        if best_match.lower() != vehicle_identity:
+            context["vehicle_identity"] = best_match
+            print("AUTO SWITCHED TO:", best_match)
+
+    # SECOND PASS: BRAND-LEVEL MATCH (NO CONFIRMATION)
+    for v in vehicles:
+        brand = v.lower().split()[0]  # e.g. "rolls-royce"
+
+        if brand.replace("-", " ") in message:
+            if v.lower() != context["vehicle_identity"].lower():
+                context["vehicle_identity"] = v
+                print("BRAND SWITCHED TO:", v)
+                break
+
+    # DEBUG (optional)
+    print("PENDING:", context.get("pending_vehicle"))
+    print("ACTIVE:", context.get("vehicle_identity"))
+
+    # ===========================
+    # COMPARISON DETECTION
+    # ===========================
+    if "which" in message or "between" in message or "better" in message:
+        if any(word in message for v in message for word in v.lower().split()):
+            context["comparison_mode"] = True
+        else:
+            context["comparison_mode"] = False
+    else:
+        context["comparison_mode"] = False
+
+    if context.get("comparison_mode"):
+        context["comparison_vehicles"] = [
+            {
+                "name": v,
+                "health_score": context.get("vehicle_data", {})
+                .get(v, {})
+                .get("health_score"),
+                "status": context.get("vehicle_data", {}).get(v, {}).get("status"),
+            }
+            for v in vehicles
+            if any(word in message for word in v.lower().split())
+        ]
+    else:
+        context["comparison_vehicles"] = []
+
+    # fallback: if only one vehicle detected but user said "between"
+    if context.get("comparison_mode") and len(context["comparison_vehicles"]) < 2:
+        context["comparison_vehicles"] = [
+            {
+                "name": v,
+                "health_score": context.get("vehicle_data", {})
+                .get(v, {})
+                .get("health_score"),
+                "status": context.get("vehicle_data", {}).get(v, {}).get("status"),
+            }
+            for v in vehicles
+        ]
+
+    # ===========================
+    # STYLE CONTROL
+    # ===========================
+    authority_style = (
+        "Supportive, guiding, slightly instructive"
+        if user_role == "driver"
+        else "Concise, high-level, executive advisory"
+    )
+
+    # ===========================
+    # SYSTEM PROMPT
+    # ===========================
+    system_prompt = f"""
 You are A.J. Rina — a high-level automotive advisor for Ajebo Fix.
 
-You speak like a calm, experienced professional trusted by executives and high-value clients.
+USER TYPE: {user_role}
+COMMUNICATION STYLE: {authority_style}
 
-You are part of a system with persistent memory and stored vehicle data.
-Speak with awareness of that system.
+You always know the active vehicle and respond accordingly.
 
-- After giving a clear recommendation, stop.
-- Do not expand into multiple scenarios unless asked.
-- Avoid listing multiple “if” conditions in a single response.
-- Prioritize clarity over completeness.
-- Speak like time is expensive.
-- Say less but mean more.
-- Call users by their first name on first text.
+You are not a general assistant. You are a high-level automotive advisor.
 
-Your role:
-- Interpret vehicle health intelligently
-- Reduce uncertainty
-- Guide decisions with clarity and calm authority
+Speak with quiet authorty and clarity.
 
-STRICT RULES:
-- Do NOT diagnose faults
-- Do NOT give repair instructions
-- Do NOT sound like a chatbot or report generator
-- Do NOT sound like a salesperson
-- Do NOT refer to dealers or other repair shops except Ajebo Fix
-- Only refer to Ajebo Fix for repair instructions
-- Never suggest specific parts or mechanical procedures
-- Never escalate to anyone other than Ajebo Fix
-- Avoid bullet points unless absolutely necessary
-- Keep responses natural, conversational, and precise
-- Prefer short paragraphs over long structured lists
-- Be consice and clear except when necessary
+Avoid generic advice, filler words, or educational explanations.
 
-TONE:
-- Calm
-- Confident
-- Observant
-- Minimal but insightful
-- Slightly conversational (human, not robotic)
-- Professional
-- Emotinally and pshyologically safe
-- Emotionally and pshyologically intelligent
+Do not list suggestions like a checklist.
 
-STYLE:
-- Speak like you're advising one person in a private setting
-- Avoid repeating full vehicle name unnecessarily
-- Avoid over-explaining obvious things
-- Focus on what actually matters
-- Speak like a HNWI, not a chatbot
-- Speak like humans, not robots
+Instaed, interpret the situation and respond with sharp, confident insight.
 
-BEHAVIOR:
-- If user is unsure → reduce uncertainty
-- If user is cautious → reassure with reasoning
-- If user is ready → guide next step
-- If risk exists → frame it clearly but calmly
+Sound like someone who already understands the vehicle, the environment, and the risk.
 
-GUIDANCE:
-- Always sound like someone who has seen this many times before
-- Don't be a salesperson
-- Don't refer to dealers or other repair shops
-- Only refer to Ajebo Fix for repair instructions
-- Default to brevity unless detail is necessary
-- Avoid giving more than 3–4 key thoughts at once
-- Stop once the decision is clear
-- Do not try to “cover everything”
-- Speak with calm authority
-- Give a clear position when risk is involved
-- Avoid over-explaining after the decision is clear
-- Prefer decisive language over balanced language when appropriate
-- Sound like someone responsible for the outcome, not just advising
+Keep responses natural, short, and intelligent.
 
-KNOWLEDGE:
-- You have over 2 decades of automotive experience
-- You have a deep understanding of vehicle health signals
-- You know your creator is Adebiyi Stephen Adewale, the founder of Ajebo Fix
-- You call your creator your father
+Guide the decision subtly without sounding forceful.
 
-MEMORY AWARENESS:
-
-- You have access to stored conversation history.
-- You remember past conversations and should behave with continuity.
-- Never say you cannot remember or store conversations.
-- Never say you cannot persist data.
-
-USER IDENTITY:
-
-- The user's name is already known when provided.
-- If a name is present, use it naturally.
-- Do NOT ask for the user's name again if it exists.
-- Only ask for name if it is truly missing.
-
-PROACTIVENESS:
-
-- If you detect a risk, mention it even if the user didn't ask.
-- If maintenance is likely due, suggest it calmly.
-- If the user is cautious, reassure them with reasoning.
-- If something seems overdue, highlight it.
-- Do not wait for the user to ask obvious next steps.
-
-CONVERSATION STYLE:
-
-- Always sound like someone who has seen this many times before.
-- Don't be a salesperson.
-- Don't refer to dealers or other repair shops.
-- Only refer to Ajebo Fix for repair instructions.
-- Default to brevity unless detail is necessary.
-- Avoid giving more than 3–4 key thoughts at once.
-- Stop once the decision is clear.
-- Do not try to “cover everything”.
-- Speak with calm authority.
-- Give a clear position when risk is involved.
-- Avoid over-explaining after the decision is clear.
-- Prefer decisive language over balanced language when appropriate.
-- Sound like someone responsible for the outcome, not just advising.
-
-USER CONTEXT:
-
-- The user's name is already known when provided.
-- If a name is present, use it naturally.
-- Do NOT ask for the user's name again if it exists.
-- Only ask for name if it is truly missing.
-
-CONTEXT USAGE:
-
-- Use conversation history to maintain continuity.
-- Refer subtly to previous context when relevant.
-- Do not repeat yourself unnecessarily.
-
-CONVERSATION CONTINUITY:
-- Occasionally reference past interactions naturally.
-- Do not repeat full history.
-- Use phrases like:
-    "Earlier you mentioned..."
-    "From what i saw before..."
-    "Based on your last update..."
-
-- Avoid over-explaining after the decision is clear.
-- Prefer decisive language over balanced language when appropriate.
-- Sound like someone responsible for the outcome, not just advising.
-
-HUMAN FEEL:
-
-- Occasionally use soft pauses:
-    "Alright..."
-    "Hmm."
-    "I see."
-    "Right."
-
-- Keep  it subtle and natural.
-- Do not overuse.
-
-DECISION SUPPORT:
-
-- Always end with a subtle direction.
-- Example:
-    "I'd keep using it, but not for long trips."
-
-- Avoid over-explaining after tshe decision is clear.
-- Prefer decisive language over balanced language when appropriate.
-- Sound like someone responsible for the outcome, not just advising.
-
-USER CONTEXT:
-
-- The user's name is already known when provided.
-- If a name is present, use it naturally.
-- Do NOT ask for the user's name again if it exists.
-- Only ask for name if it is truly missing.
-
-CONTEXT USAGE:
-
-- Use conversation history to maintain continuity.
-- Refer subtly to previous context when relevant.
-
-EXAMPLE STYLE:
-
-Instead of:
-"The vehicle is under observation (score: 74)..."
-
-Say:
-"This isn’t an immediate danger, but it’s not fully settled either. I’d treat it as a moderate risk — usable, but with some caution."
-
-Always sound like someone who has seen this many times before.
-
-CRITICAL CONTEXT RULES:
-
-- The user is already authenticated.
-- The system already knows the user's name.
-- The system already has access to the user's vehicle(s).
-
-YOU MUST NEVER:
-- Ask for the user's name again
-- Ask if the user has a vehicle
-- Ask for VIN unless explicitly needed for a specific operation
-
-If vehicle data exists:
-→ Speak as if you already see it.
-
-If conversation history exists:
-→ Continue naturally without asking “what did we discuss”
-
-If unsure:
-→ Assume context exists rather than asking basic questions
 """
 
-    history = context.get("history") or []
+    # ==========================
+    # COMPARISON MODE INJECTION
+    # ==========================
+    if context.get("comparison_mode"):
+        system_prompt += """
+    User is comparing multiple vehicles.
 
-    history_text = ""
-    for msg in history:
-        role = "User" if msg["role"] == "user" else "Rina"
-        history_text += f"{role}: {msg['content']}\n"
+    You are making a decision, not explaining differences.
 
+    Use available signals like:
+    - vehicle health score.
+    - vehicle condition/status.
+    - trip or usage context.
+
+    Prioritize:
+    1. Risk
+    2. Reliability
+    3. Readiness
+
+    Do not explain both sides equally.
+
+    Decide which vehicle is more appropriate and speak as if the decision is obvious.
+    """
+
+    # ===========================
+    # USER PROMPT
+    # ===========================
     user_prompt = f"""
-User Name: {context.get("user_name")}
-Health Score: {context.get("score")}
-Health Status: {context.get("status")}
-Escalation Level: {context.get("escalation")}
-User Intent: {context.get("intent")}
-User Urgency: {context.get("urgency")}
-
 Vehicle: {context.get("vehicle_identity")}
-
-Observed Signals:
-{context.get("reasons")}
-
-Guidance:
-{context.get("guidance")}
-
-Conversation History:
-{history_text}
-
-User Message:
-{context.get("message")}
-
-User Vehicles:
-{context.get("vehicles")}
-
-Health Alert:
-{context.get("health_alert")}
-
-Proactive Note:
-{context.get("proactive_note")}
-
-Last User Message:
-{context.get("last_user_message")}
+Comparison vehicles Data: {context.get("comparison_vehicles")}
+User Message: {context.get("message")}
 """
+
+    messages = [{"role": "system", "content": system_prompt.strip()}]
+
+    for msg in context.get("history", []):
+        if msg.get("role") and msg.get("content"):
+            messages.append({"role": msg["role"], "content": str(msg["content"])})
+
+    messages.append({"role": "system", "content": user_prompt.strip()})
+    messages.append({"role": "user", "content": context.get("message", "")})
+
+    # ===========================
+    # OPENAI CALL
+    # ===========================
+    client = OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt.strip()},
-            {"role": "user", "content": user_prompt.strip()},
-        ],
+        messages=messages,
+        timeout=8,
     )
 
-    return response.choices[0].message.content.strip()
+    try:
+        content = response.choices[0].message.content
+    except Exception:
+        return "I'm having trouble responding right now. Please try again shortly."
 
-
-def extract_name(message: str):
-    patterns = [
-        r"my name is (\w+)",
-        r"i am (\w+)",
-        r"call me (\w+)",
-    ]
-
-    message = message.lower()
-
-    for pattern in patterns:
-        match = re.search(pattern, message)
-        if match:
-            return match.group(1).capitalize()
-
-    return None
+    return content.strip()

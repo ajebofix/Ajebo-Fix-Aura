@@ -1,3 +1,5 @@
+# services/rina_chat_engine.py
+
 from typing import Dict, List, Optional
 
 from rina.memory import update_user_behavior, get_user_behavior_profile
@@ -127,7 +129,9 @@ class RinaChatEngine:
         # =========================
         # BUILD AI CONTEXT
         # =========================
-        context = {
+        context = health.copy()
+
+        context.update({
             "vehicle": vehicle_identity,
             "score": score_text,
             "status": status,
@@ -139,7 +143,7 @@ class RinaChatEngine:
             "message": message,
             "behavior": dominant_behavior,
             "timeline": timeline,
-        }
+        })
 
         # =========================
         # AI RESPONSE (PRIMARY)

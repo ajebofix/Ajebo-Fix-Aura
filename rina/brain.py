@@ -1,3 +1,5 @@
+# rina/brain.py
+
 from models import db, ChatMessage, UserMemory, Car, EscalationLog
 from flask_login import current_user
 from datetime import datetime
@@ -7,8 +9,29 @@ from .ai_brain import generate_rina_response
 
 
 # ====================
+# HELPERS
+# ====================
+
+
+def get_user_name(user):
+    """
+    Safely extract user's display name.
+    Never returns None.
+    """
+    return (
+        getattr(user, "first_name", None)
+        or getattr(user, "name", None)
+        or getattr(user, "username", None)
+        or (user.email.split("@")[0] if getattr(user, "email", None) else None)
+        or "there"
+    )
+
+
+# ====================
 # CONTEXT BUILDER
 # ====================
+
+
 def build_rina_context(user_message: str) -> dict:
     """
     Build full intelligence context for Rina
@@ -19,32 +42,36 @@ def build_rina_context(user_message: str) -> dict:
     # -------------------------
     # USER MEMORY
     # -------------------------
-    memory = UserMemory.query.filter_by(user_id=user.id).first()
+    memory = None
+    name = "there"
 
-    name = None
-    if memory and memory.name:
-        name = memory.name
-    elif user.first_name:
-        name = user.first_name
+    if user.is_authenticated:
+        memory = UserMemory.query.filter_by(user_id=user.id).first()
+        if memory and memory.name:
+            name = memory.name
+        else:
+            name = get_user_name(user)
 
     # -------------------------
     # VEHICLE CONTEXT
     # -------------------------
-    cars = Car.query.filter_by(owner_id=user.id).all()
+    cars = []
+    if user.is_authenticated:
+        cars = Car.query.filter_by(owner_id=user.id).all()
 
-    vehicle_info = []
-    if cars:
-        vehicle_info = [f"{c.make} {c.model} {c.year}" for c in cars]
+    vehicle_info = [f"{c.make} {c.model} {c.year}" for c in cars] if cars else []
 
     # -------------------------
-    # CHAT HISTORY (last 10)
+    # CHAT HISTORY (last 100)
     # -------------------------
-    messages = (
-        ChatMessage.query.filter_by(user_id=user.id)
-        .order_by(ChatMessage.timestamp.desc())
-        .limit(10)
-        .all()
-    )
+    messages = []
+    if user.is_authenticated:
+        messages = (
+            ChatMessage.query.filter_by(user_id=user.id)
+            .order_by(ChatMessage.timestamp.desc())
+            .limit(100)
+            .all()
+        )
 
     history = [{"role": m.role, "content": m.message} for m in reversed(messages)]
 
@@ -70,37 +97,44 @@ def build_rina_context(user_message: str) -> dict:
     if cars:
         primary_car = cars[0]
 
-        if hasattr(primary_car, "mileage") and primary_car.mileage > 8000:
-            health_alert = "Service may be due soon."
+        if hasattr(primary_car, "mileage") and primary_car.mileage:
+            if primary_car.mileage > 8000:
+                health_alert = "Service may be due soon."
 
     # -------------------------
-    # PROACTIVE BEHAVVIOUR
+    # PROACTIVE NOTE
     # -------------------------
-    proactive__note = None
-
+    proactive_note = None
     if health_alert:
-        proactive__note = f"Note: {health_alert}"
+        proactive_note = f"Note: {health_alert}"
 
     return {
         "user_name": name,
         "vehicles": vehicle_info,
         "history": history,
+        "has_history": len(history) > 0,
         "last_user_message": last_user_message,
         "message": user_message,
         "intent": intent,
         "health_alert": health_alert,
-        "proactive_note": proactive__note,
+        "proactive_note": proactive_note,
     }
 
 
 # ====================
 # PROACTIVE MESSAGES
 # ====================
+
+
 def get_proactive_message(user):
+    if not user.is_authenticated:
+        return None
+
     car = Car.query.filter_by(owner_id=user.id).first()
 
-    if car and car.mileage > 8000:
-        return "Your vehicle may be due for service soon."
+    if car and hasattr(car, "mileage") and car.mileage:
+        if car.mileage > 8000:
+            return "Your vehicle may be due for service soon."
 
     return None
 
@@ -108,6 +142,8 @@ def get_proactive_message(user):
 # ====================
 # INTENT DETECTION
 # ====================
+
+
 def detect_intent(message: str) -> str:
     message = message.lower()
 
@@ -126,6 +162,8 @@ def detect_intent(message: str) -> str:
 # ====================
 # MESSAGE SAVING
 # ====================
+
+
 def save_message(role: str, message: str):
     if not current_user.is_authenticated:
         return
@@ -164,54 +202,10 @@ def extract_name(message: str):
 
 
 # ====================
-# MAIN ENTRY POINT
-# ====================
-def rina_chat(user_message: str) -> str:
-    """
-    Main brain entry point
-    """
-
-    # Save user message
-    save_message("user", user_message)
-
-    # Auto save name
-    name = extract_name(user_message)
-
-    if name:
-        memory = UserMemory.query.filter_by(user_id=current_user.id).first()
-        if not memory:
-            memory = UserMemory(user_id=current_user.id)
-
-            memory.name = name
-            db.session.add(memory)
-            db.session.commit()
-
-    # Complaint detection
-    if is_complaint(user_message):
-        escalation = EscalationLog(
-            user_id=current_user.id,
-            message=user_message,
-        )
-        db.session.add(escalation)
-        db.session.commit()
-
-        notify_admin(user_message)
-
-    # Build context
-    context = build_rina_context(user_message)
-
-    # Generate response
-    response = generate_rina_response(context)
-
-    # Save AI response
-    save_message("assistant", response)
-
-    return response
-
-
-# ====================
 # COMPLAINT DETECTION
 # ====================
+
+
 def is_complaint(message: str) -> bool:
     message = message.lower()
 
@@ -234,8 +228,7 @@ def is_complaint(message: str) -> bool:
 def notify_admin(message: str):
     print(f"ESCALATION ALERT: {message}")
 
-    # Later:
-    # - send email to admin
+    # Future:
+    # - email
     # - push notification
-    # - dashboard alert
-    # - etc
+    # - dashboard alerts

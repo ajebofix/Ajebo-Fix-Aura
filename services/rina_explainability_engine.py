@@ -1,3 +1,5 @@
+# services/rina_explainability_engine.py
+
 # =====================================================
 # RINA EXPLAINABILITY ENGINE — AURA CLINICAL MODE
 # Explains observations + professional recommendations

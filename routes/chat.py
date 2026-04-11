@@ -16,6 +16,8 @@ from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
 from datetime import datetime
 
+import re
+
 chat_bp = Blueprint("chat", __name__)
 
 
@@ -74,9 +76,9 @@ def save_message(role, text):
 
 
 def detect_intent(message: str) -> str:
-    msg = message.lower()
+    msg = message.lower().strip()
 
-    if any(x in msg for x in ["book", "appointment", "schedule", "reserve"]):
+    if re.search(r"\b(book|consult|appointment|schedule|reserve|assessment)\b", msg):
         return "booking"
 
     if any(x in msg for x in ["problem", "issue", "noise", "fault"]):
@@ -115,6 +117,14 @@ def chat():
         save_message("user", message)
 
         intent = detect_intent(message)
+
+        # REMEMBER BOOKING INTENT
+        if intent == "booking":
+            session["last_intent"] = "booking"
+
+        # IF USER WAS PREVIOUSLY BOOKING, KEEP IT ACTIVE
+        if session.get("last_intent") == "booking" and intent == "general":
+            intent = "booking"
 
         # --------------------------------
         # VEHICLES
@@ -247,7 +257,16 @@ def chat():
             )
 
             # CALL AI WITH FULL CONTEXT
-            reply = RinaChatEngine.respond(message, rina_context)
+            # =========================
+            # HARD BOOKING OVERRIDE
+            # =========================
+            if intent == "booking":
+                reply = (
+                    f"Good decision. Let's get your {car.brand} {car.model} scheduled."
+                )
+
+            else:
+                reply = RinaChatEngine.respond(message, rina_context)
 
             # SAVE MEMORY BACK
             session["rina_context_full"] = {
@@ -276,7 +295,7 @@ def chat():
             "intent": intent,
         }
 
-        return jsonify({"reply": reply, "intent": intent}), 200
+        return jsonify({"reply": reply, "intent": intent, "car_id": car.id}), 200
 
     except Exception:
         current_app.logger.exception("Chat route failed")
@@ -309,14 +328,3 @@ def chat_history():
     except Exception:
         current_app.logger.exception("Chat history failed")
         return {"messages": []}, 200
-
-
-# ======================================================
-# BOOK CONSULTATION
-# ======================================================
-
-
-@chat_bp.route("/book-consultation", methods=["GET", "POST"])
-@login_required
-def book_consultation():
-    return render_template("chat/book_consultation.html")

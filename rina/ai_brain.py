@@ -90,13 +90,16 @@ def generate_rina_response(context: dict) -> str:
     # COMPARISON DETECTION
     # ===========================
     if "which" in message or "between" in message or "better" in message:
-        if any(word in message for v in message for word in v.lower().split()):
+        if any(word in message for v in vehicles for word in v.lower().split()):
             context["comparison_mode"] = True
         else:
             context["comparison_mode"] = False
     else:
         context["comparison_mode"] = False
 
+    # ===========================
+    # COMPARISON VEHICLE EXTRACTION
+    # ===========================
     if context.get("comparison_mode"):
         context["comparison_vehicles"] = [
             {
@@ -188,6 +191,40 @@ Guide the decision subtly without sounding forceful.
     """
 
     # ===========================
+    # CONSULTATION INTENT DETECTION
+    # ===========================
+    if context.get("intent") == "booking":
+        system_prompt += """
+
+    User is initiating a consultation booking.
+
+    Do NOT tell them to contact Ajebo Fix.
+
+    CRITICAL RULES:
+    - Do NOT tell them to contact Ajebo Fix
+    - Do NOT give instructions
+    - Do NOT explain process
+
+    ASSUME:
+    The system is already handling the booking.
+
+    Your role:
+    - Acknowledge the decision
+    - Reinforce urgency or correctness
+    - Transition them into action
+
+    STYLE:
+    Short. confident. smooth. concierge-level.
+
+    EXAMPLES:
+    "Good call. Let's get that scheduled."
+    "Perfect. We'll take care of this now."
+    "That's the right move. Proceed."
+
+    Never sound like support. Sound like control.
+    """
+
+    # ===========================
     # USER PROMPT
     # ===========================
     user_prompt = f"""
@@ -210,6 +247,13 @@ User Message: {context.get("message")}
     # ===========================
     client = OpenAI(api_key=api_key)
 
+    # ===========================
+    # HARD BOOKING RESPONSE (BYPASS AI)
+    # ===========================
+    print("INTENT:", context.get("intent"))
+    if context.get("intent") == "booking":
+        return "Good decision. Let's get that arranged."
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
@@ -220,5 +264,10 @@ User Message: {context.get("message")}
         content = response.choices[0].message.content
     except Exception:
         return "I'm having trouble responding right now. Please try again shortly."
+
+    # HARD OVERREIDE FOR BOOKING INTENT
+    if context.get("intent") == "booking":
+        if "contact ajebo" in content.lower():
+            content = "Good decision. Let's get that scheduled."
 
     return content.strip()

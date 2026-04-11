@@ -1,3 +1,5 @@
+<!-- templates/components/rina_chat.html -->
+
 <!DOCTYPE html>
 <div
     style="
@@ -172,9 +174,16 @@ function sendToRina() {
         // SHOW BOOKING BUTTON
         // =========================
         if (data.intent === "booking") {
+
+            messagesEl.innerHTML += `
+                <div style="margin-top:8px; margin-bottom:4px;">
+                    <strong>Continue:</strong>
+                </div>
+            `;
+
             messagesEl.innerHTML += `
                 <div style="margin-bottom:10px;">
-                    <a href="/book-consultation"
+                    <a href="/cars/${data.car_id}/consultations/book"
                         style="background:#16a34a; color:white; padding:8px 12px; border-radius:6px; text-decoration:none;">
                         Book a Consultation
                     </a>
@@ -204,7 +213,7 @@ function sendToRina() {
 // =========================
 window.onload = () => {
     loadHistory();
-    document.getElementById("rina_input").focus();
+    document.getElementById("rina-input").focus();
 };
 
 // =========================

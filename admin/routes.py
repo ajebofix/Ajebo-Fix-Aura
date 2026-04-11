@@ -1,3 +1,5 @@
+# admin/routes.py
+
 from flask import (
     Blueprint,
     request,

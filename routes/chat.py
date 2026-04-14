@@ -15,6 +15,7 @@ from models import CarOwnership, ChatMessage, db
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
 from datetime import datetime
+from services.whatsapp import send_booking_confirmation
 
 import re
 
@@ -264,6 +265,26 @@ def chat():
                 reply = (
                     f"Good decision. Let's get your {car.brand} {car.model} scheduled."
                 )
+
+                # --------------------------------
+                # WHATSAPP TRIGGER
+                # --------------------------------
+                try:
+                    user_phone = current_user.phone_number.replace("+", "").strip()
+                    user_name = get_user_name(current_user)
+                    vehicle_name = f"{car.brand} {car.model}"
+
+                    print("SENDING WHATSAPP TO:", user_phone)
+
+                    send_booking_confirmation(
+                        phone=user_phone,
+                        name=user_name,
+                        vehicle=vehicle_name,
+                    )
+
+                except Exception as e:
+                    print("WHATSAPP ERROR:", str(e))
+                    current_app.logger.exception("WhatsApp send failed")
 
             else:
                 reply = RinaChatEngine.respond(message, rina_context)

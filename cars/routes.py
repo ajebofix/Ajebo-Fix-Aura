@@ -1,5 +1,6 @@
 # cars/routes.py
 
+from re import DEBUG
 from flask import (
     Blueprint,
     request,
@@ -26,6 +27,7 @@ from models import (
     Consultation,
     VehicleAssessment,
 )
+from rina.brain import notify_admin
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.report_builder import build_vehicle_report
 from services.consultation_guard import require_active_consultation
@@ -36,6 +38,9 @@ from services.rina_action_suggestions import RinaCareGuidanceEngine
 
 
 from io import BytesIO
+
+from services.whatsapp import notify_admin_new_booking, send_booking_confirmation
+from models import BookingIntent
 
 
 cars_bp = Blueprint("cars", __name__, url_prefix="/cars")
@@ -409,7 +414,7 @@ def vehicle_records_pdf(car_id):
 
 
 # =========================================================
-# CONSULTATION — BOOK (DAY 6)
+# CONSULTATION — BOOK
 # =========================================================
 
 
@@ -422,6 +427,22 @@ def book_consultation(car_id):
         is_active=True,
     ).first_or_404()
 
+    # =============================
+    # START BOOKING INTENT (GET)
+    # =============================
+    if request.method == "GET":
+
+        existing_intent = BookingIntent.query.filter_by(
+            user_id=current_user.id, car_id=car_id, completed=False
+        ).first()
+
+        if not existing_intent:
+            intent = BookingIntent(
+                user_id=current_user.id, car_id=car_id, started_at=datetime.utcnow()
+            )
+            db.session.add(intent)
+            db.session.commit()
+
     if request.method == "POST":
         preferred_time = request.form.get("preferred_time")
         description = request.form.get("description", "").strip()
@@ -430,6 +451,9 @@ def book_consultation(car_id):
             flash("Please select a preferred time.", "error")
             return redirect(request.referrer)
 
+        # ============================
+        # CREATE CONSULTATION
+        # ============================
         consultation = Consultation(
             car_id=car_id,
             ownership_id=ownership.id,
@@ -443,6 +467,60 @@ def book_consultation(car_id):
         db.session.add(consultation)
         db.session.commit()
 
+        # ===========================
+        # COMPLETE EXISTING INTENT
+        # ===========================
+        intent = (
+            BookingIntent.query.filter_by(
+                user_id=current_user.id, car_id=car_id, completed=False
+            )
+            .order_by(BookingIntent.started_at.desc())
+            .first()
+        )
+
+        if intent:
+            intent.completed = True
+            db.session.commit()
+
+        intent = (
+            BookingIntent.query.filter_by(
+                user_id=current_user.id, car_id=car_id, completed=False
+            )
+            .order_by(BookingIntent.started_at.desc())
+            .first()
+        )
+
+        if intent:
+            intent.completed = True
+            db.session.commit()
+
+        try:
+            user_phone = current_user.phone_number.strip().replace("+", "")
+
+            if user_phone.startswith("0"):
+                user_phone = "234" + user_phone[1:]
+
+            user_name = (
+                getattr(current_user, "first_name", None)
+                or getattr(current_user, "name", None)
+                or "there"
+            )
+
+            vehicle_name = f"{ownership.car.brand} {ownership.car.model}"
+
+            send_booking_confirmation(
+                phone=user_phone,
+                name=user_name,
+                vehicle=vehicle_name,
+            )
+
+            notify_admin_new_booking(
+                user=user_name, vehicle=vehicle_name, time=preferred_time
+            )
+
+        except Exception as e:
+            print("WHATSAPP ERROR:", str(e))
+
         flash(
             "Consultation requested",
             "success",
@@ -454,6 +532,17 @@ def book_consultation(car_id):
         car=ownership.car,
         ownership=ownership,
     )
+
+
+# ===================================
+# DEBUG FOR REMINDER
+# ===================================
+@cars_bp.route("/debug/run-reminders")
+def run_reminders():
+    from services.reminder_engine import check_abandoned_bookings
+
+    check_abandoned_bookings()
+    return "Reminder sent"
 
 
 # =========================================================

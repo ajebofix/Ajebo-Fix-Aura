@@ -1,3 +1,5 @@
+# services/whatsapp.py
+
 import requests
 import os
 
@@ -10,6 +12,9 @@ WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
 
+# =================================
+# SEND BOOKING CONFIRMATION
+# ================================
 def send_booking_confirmation(phone, name, vehicle):
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
 
@@ -39,6 +44,99 @@ def send_booking_confirmation(phone, name, vehicle):
 
     response = requests.post(url, headers=headers, json=payload)
 
-    print("WHATSAPP RESPONSE:", response.json())
+    if response.status_code != 200:
+        print("WHATSAPP FAILED")
+        print("Status Code:", response.status_code)
+        print("Response:", response.text)
+    else:
+        print("WHATSAPP SENT")
+        print("Response:", response.json())
+        print("SENDING TO:", phone)
+        print("NAME:", name)
+        print("VEHICLE:", vehicle)
+
+    return response.json()
+
+
+# =================================
+# NOTIFY ADMIN NEW BOOKING
+# ================================
+def notify_admin_new_booking(user, vehicle, time):
+    try:
+        print("Trying admin TEXT alert...")
+        return send_text_admin(user, vehicle, time)
+
+    except Exception as e:
+        print("TEXT FAILED:", str(e))
+        print("Falling back to template fallback...")
+
+        return send_template_admin(user, vehicle, time)
+
+
+# =================================
+# ADMIN TEXT ALERT
+# ================================
+def send_text_admin(user, vehicle, time):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": "2347074490640",
+        "type": "text",
+        "text": {
+            "body": f"""NEW Booking
+
+Client: {user}
+Vehicle: {vehicle}
+Time: {time}
+"""
+        },
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+
+    if response.status_code != 200:
+        raise Exception(response.text)
+
+    return response.json()
+
+
+# =================================
+# ADMIN TEMPLATE ALERT
+# ================================
+def send_template_admin(user, vehicle, time):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": "2347074490640",
+        "type": "template",
+        "template": {
+            "name": "admin_booking_alert",
+            "language": {"code": "en"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": user},
+                        {"type": "text", "text": vehicle},
+                        {"type": "text", "text": str(time)},
+                    ],
+                }
+            ],
+        },
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
 
     return response.json()

@@ -1,8 +1,10 @@
+<!-- templates/signup.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Client Enrollment</title>
+    <title>Aura Enrollment</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
@@ -128,10 +130,10 @@
         <input type="checkbox" onclick="togglePassword()"> Show password
     </label>
 
-    <label>Admin access code (optional)</label>
-    <input type="text" name="admin_code">
+    <label>Access code (optional)</label>
+    <input type="text" name="access_code" placeholder="Access Code (optional)">
     <div class="hint">
-        Provided privately by Ajebo Fix.
+        Used for advisor or invited driver access.
     </div>
 
     <button type="submit">Continue Enrollment</button>

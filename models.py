@@ -1,8 +1,10 @@
 # models.py
 
 from datetime import datetime
+from enum import unique
 
 from flask_login import UserMixin
+from httpx._transports import default
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from sqlalchemy import UniqueConstraint
@@ -31,7 +33,7 @@ class User(db.Model, UserMixin):
 
     # 🔑 ROLE CONTROL
     role = db.Column(db.String(20), default="user", nullable=False)
-    # user | admin
+    # user | admin | driver
 
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
@@ -58,6 +60,47 @@ class User(db.Model, UserMixin):
 
     def __repr__(self):
         return f"<User {self.email} ({self.role})>"
+
+    @property
+    def is_driver(self):
+        return self.role == "driver"
+
+
+# ========================================================
+# CAR DRIVERS
+# ========================================================
+
+
+class CarDriver(db.Model):
+    __tablename__ = "car_drivers"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    car_id = db.Column(db.Integer, db.ForeignKey("cars.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    assigned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+
+    car = db.relationship("Car")
+    user = db.relationship("User")
+
+
+# ====================================================
+# ACCESS CODE
+# ====================================================
+
+
+class AccessCode(db.Model):
+    __tablename__ = "access_code"
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(50), unique=True, nullable=False)
+    role = db.Column(db.String(20), nullable=False)  # driver/admin
+    car_id = db.Column(db.Integer, db.ForeignKey("cars.id"), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    is_used = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow())
+    expires_at = db.Column(db.DateTime, nullable=False)
 
 
 # =========================================================
@@ -826,3 +869,16 @@ class EscalationLog(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.now())
 
     user = db.relationship("User", backref="escalations")
+
+
+# ========================================
+# BOOKING INTENT
+# ========================================
+
+
+class BookingIntent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer)
+    car_id = db.Column(db.Integer)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed = db.Column(db.Boolean, default=False)

@@ -91,6 +91,7 @@ def create_app():
     from dashboard.routes import dashboard_bp
     from cars.fault_routes import concerns_bp
     from admin.modules.assessments import assessments_bp
+    from driver.routes import driver_bp
 
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(advisor_bp)
@@ -114,6 +115,8 @@ def create_app():
     app.register_blueprint(concerns_bp)
 
     app.register_blueprint(assessments_bp)
+
+    app.register_blueprint(driver_bp)
 
     @app.route("/")
     def home():

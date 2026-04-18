@@ -148,6 +148,10 @@ border:1px solid #ef4444;
 Scheduled {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
 </div>
 
+{% if c.created_at and (now - c.created_at).total_seconds() < 300 %}
+    <span class="badge badge-danger">NEW</span>
+{% endif %}
+
 <div class="actions">
 
 <form method="POST"

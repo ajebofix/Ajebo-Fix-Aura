@@ -1,3 +1,7 @@
+# auth/routes.py
+
+from datetime import datetime, timedelta
+
 from flask import (
     Blueprint,
     request,
@@ -15,8 +19,9 @@ from flask_login import (
 from urllib.parse import urlparse
 from sqlalchemy import func
 
-from models import db, User, CarOwnership, Car, VehicleEvent
+from models import AccessCode, CarDriver, db, User, CarOwnership, Car, VehicleEvent
 from utils.auth_helpers import require_admin
+import os
 
 
 # =====================================================
@@ -36,7 +41,8 @@ advisor_bp = Blueprint(
 # ADVISOR ACCESS CODE
 # =====================================================
 
-ADVISOR_ACCESS_CODE = "AJEBO-ADVISOR-2026"
+ADVISOR_ACCESS_CODE = os.getenv("ADVISOR_ACCESS_CODE")
+# DRIVER_ACCESS_CODE = "AJEBO-DRIVER-2026"
 
 
 # =====================================================
@@ -58,7 +64,7 @@ def signup():
     email = data.get("email", "").strip().lower()
     phone_number = data.get("phone_number", "").strip()
     password = data.get("password", "")
-    advisor_code = data.get("admin_code", "").strip()
+    access_code = data.get("access_code", "").strip()
 
     if not all([name, email, phone_number, password]):
         flash("All fields are required.", "error")
@@ -73,7 +79,20 @@ def signup():
         return render_template("signup.html")
 
     # 🔑 ROLE DECISION (EXPLICIT & SAFE)
-    role = "admin" if advisor_code == ADVISOR_ACCESS_CODE else "user"
+    role = "user"
+
+    code_entry = None
+
+    code_entry = AccessCode.query.filter(
+        AccessCode.code == access_code,
+        AccessCode.is_used == False,
+        AccessCode.expires_at > datetime.utcnow(),
+    ).first()
+
+    if code_entry:
+        role = code_entry.role
+    else:
+        role = "user"
 
     user = User(
         name=name,
@@ -84,16 +103,25 @@ def signup():
     user.set_password(password)
 
     db.session.add(user)
+    db.session.flush()  # get user.id BEFORE commit
+
+    # LINK DRIVER TO CAR
+    if code_entry and role == "driver":
+        link = CarDriver(user_id=user.id, car_id=code_entry.car_id)
+
+        db.session.add(link)
+        code_entry.is_used = True
+
     db.session.commit()
 
-    flash(
-        (
-            "Advisor account created successfully."
-            if role == "admin"
-            else "Your account has been created."
-        ),
-        "success",
-    )
+    if role == "admin":
+        msg = "Advisor account created successfully."
+    elif role == "driver":
+        msg = "Driver account created successfully."
+    else:
+        msg = "Your account has created."
+
+    flash(msg, "success")
 
     return redirect(url_for("auth.login"))
 
@@ -140,6 +168,9 @@ def login():
     # 🔑 ROLE-BASED REDIRECT (FINAL)
     if user.is_admin:
         return redirect(url_for("advisor.admin_dashboard"))
+
+    if user.is_driver:
+        return redirect(url_for("driver.driver_dashboard"))
 
     return redirect(url_for("dashboard.aura_home"))
 

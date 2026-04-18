@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 
 from rina.memory import update_user_behavior, get_user_behavior_profile
 from rina.ai_brain import generate_rina_response
+from models import CarOwnership, CarDriver
 
 
 class RinaChatEngine:
@@ -17,7 +18,7 @@ class RinaChatEngine:
     """
 
     @staticmethod
-    def respond(message: str, health: Dict) -> str:
+    def respond(user_id: int, car_id: int, message: str, health: Dict) -> str:
 
         message = (message or "").lower().strip()
 
@@ -87,7 +88,7 @@ class RinaChatEngine:
         # =========================
         # INTENT DETECTION
         # =========================
-        intent = "unknown"
+        intent = health.get("intent", "unknown")
 
         if any(k in message for k in ["can i drive", "is it safe", "should i drive"]):
             intent = "risk_check"
@@ -126,24 +127,41 @@ class RinaChatEngine:
 
         dominant_behavior = max(behavior, key=behavior.get) if behavior else "neutral"
 
+        # ========================
+        # ROLE CONTEXT
+        # ========================
+        role = get_user_role_context(user_id, car_id)
+
+        if role == "driver":
+            tone = "operational"
+        elif role == "owner":
+            tone = "decision"
+        else:
+            tone = "neutral"
+
         # =========================
         # BUILD AI CONTEXT
         # =========================
         context = health.copy()
 
-        context.update({
-            "vehicle": vehicle_identity,
-            "score": score_text,
-            "status": status,
-            "reasons": "\n".join(reasons) if reasons else "None",
-            "guidance": guidance.get("summary", ""),
-            "escalation": escalation_level,
-            "intent": intent,
-            "urgency": urgency_state,
-            "message": message,
-            "behavior": dominant_behavior,
-            "timeline": timeline,
-        })
+        context.update(
+            {
+                "vehicle": vehicle_identity,
+                "score": score_text,
+                "status": status,
+                "reasons": "\n".join(reasons) if reasons else "None",
+                "guidance": guidance.get("summary", ""),
+                "care_context": care_context,
+                "escalation": escalation_level,
+                "intent": intent,
+                "urgency": urgency_state,
+                "message": message,
+                "behavior": dominant_behavior,
+                "timeline": timeline,
+                "role": role,
+                "tone": tone,
+            }
+        )
 
         # =========================
         # AI RESPONSE (PRIMARY)
@@ -180,3 +198,26 @@ class RinaChatEngine:
             f"I can help you understand {vehicle_identity}.\n\n"
             "Ask about score, observations, or next steps."
         )
+
+
+# =================================
+# RINA GETS USER ROLE CONTEXT
+# =================================
+
+
+def get_user_role_context(user_id, car_id):
+    is_owner = CarOwnership.query.filter_by(
+        user_id=user_id, car_id=car_id, is_active=True
+    ).first()
+
+    if is_owner:
+        return "owner"
+
+    is_driver = CarDriver.query.filter_by(
+        user_id=user_id, car_id=car_id, is_active=True
+    ).first()
+
+    if is_driver:
+        return "driver"
+
+    return "unknown"

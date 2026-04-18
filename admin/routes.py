@@ -11,9 +11,11 @@ from flask import (
     abort,
 )
 from flask_login import login_required, current_user
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from models import (
+    AccessCode,
+    CarDriver,
     VehicleAssessmentTreatmentOption,
     db,
     User,
@@ -26,6 +28,7 @@ from models import (
     VehicleAssessmentRisk,
 )
 
+from services import whatsapp
 from services.vehicle_intelligence import calculate_vehicle_health
 from .utils import advisor_required
 from services.consultation_guard import require_active_consultation
@@ -38,6 +41,7 @@ from services.rina_alert_awareness_service import RinaCareContextService
 from io import BytesIO
 import hashlib
 from sqlalchemy import func
+import uuid
 
 
 # =====================================================
@@ -349,12 +353,19 @@ def admin_resolve_concern(concern_id):
 # ADMIN — VEHICLE PROFILE VIEW
 # =====================================================
 
+
 @admin_bp.route("/cars/<int:car_id>", endpoint="view_vehicle")
 def admin_view_vehicle(car_id):
     try:
         car = Car.query.get_or_404(car_id)
+        whatsapp_link = request.args.get("whatsapp_link")
 
         ownership = CarOwnership.query.filter_by(
+            car_id=car.id,
+            is_active=True,
+        ).first()
+
+        active_driver = CarDriver.query.filter_by(
             car_id=car.id,
             is_active=True,
         ).first()
@@ -412,6 +423,8 @@ def admin_view_vehicle(car_id):
             has_active_consultation=has_active_consultation,
             disclaimer=CLINICAL_DISCLAIMER,
             is_admin_view=True,
+            active_driver=active_driver,
+            whatsapp_link=whatsapp_link,
         )
 
     except Exception as e:
@@ -881,6 +894,7 @@ def admin_consultations():
         "admin/consultations.html",
         grouped=grouped,
         disclaimer=CLINICAL_DISCLAIMER,
+        now=datetime.utcnow(),
     )
 
 
@@ -1143,3 +1157,92 @@ def advisor_control_panel():
         draft_assessments=draft_assessments,
         vehicles_at_risk=vehicles_at_risk,
     )
+
+
+# ========================================================
+# ADMIN GENERATE DRIVER INVITE HELPER FUNCTION
+# ========================================================
+
+
+def generate_driver_code(car_id, owner_id):
+    code = str(uuid.uuid4())[:8].upper()
+
+    access = AccessCode(
+        code=code,
+        role="driver",
+        car_id=car_id,
+        owner_id=owner_id,
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+
+    db.session.add(access)
+    db.session.commit()
+
+    return code
+
+
+# ===========================================================
+# ADMIN INVITE DRIVER ROUTE
+# ===========================================================
+
+
+@admin_bp.route("/cars/<int:car_id>/invite-driver", methods=["POST"])
+@login_required
+@advisor_required
+def invite_driver(car_id):
+
+    car = Car.query.get_or_404(car_id)
+
+    ownership = CarOwnership.query.filter_by(
+        car_id=car_id, is_active=True
+    ).first_or_404()
+
+    code = str(uuid.uuid4())[:8].upper()
+
+    invite = AccessCode(
+        code=code,
+        role="driver",
+        car_id=car_id,
+        owner_id=ownership.user_id,
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+
+    db.session.add(invite)
+    db.session.commit()
+
+    # WhatsApp share link
+    whatsapp_link = (
+        f"https://wa.me/?text="
+        f"You've been invited to manage a vehicle on Aura by Ajebo Fix.%0A"
+        f"Use Access Code: {code}%0A"
+        f"https://ajebo-fix-aura-production.up.railway.app/auth/signup"
+        f"This code expires in 24 hours."
+    )
+
+    flash(f"Invite code: {code}", "success")
+    flash("Driver invite created. Share via WhatsApp below.", "info")
+
+    return redirect(
+        url_for("admin.view_vehicle", car_id=car_id, whatsapp_link=whatsapp_link)
+    )
+
+
+# ==================================================
+# ADMIN REMOVE DRIVER ROUTE
+# ==================================================
+
+
+@admin_bp.route("/drivers/remove/<int:driver_id>", methods=["POST"])
+@login_required
+@advisor_required
+def remove_driver(driver_id):
+
+    assignment = CarDriver.query.get_or_404(driver_id)
+
+    assignment.is_active = False
+
+    db.session.commit()
+
+    flash("Driver removed successfully.", "success")
+
+    return redirect(request.referrer)

@@ -1,3 +1,6 @@
+<!-- templates/car_detail.html -->
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -683,6 +686,32 @@ View Care Timeline
 </div>
 
 {% endif %}
+
+<div class="card">
+
+<h2>Driver Management</h2>
+
+{% if active_driver %}
+    <p><strong>{{ active_driver.user.name }}</strong> is assigned</p>
+
+    <form method="POST" action="/admin/drivers/remove/{{ active_driver.id }}">
+        <button>Remove Driver</button>
+    </form>
+
+{% else %}
+    <form method="POST" action="/admin/cars/{{ car.id }}/invite-driver">
+        <button>Assign Driver</button>
+    </form>
+
+{% if whatsapp_link %}
+<br>
+<a href="{{ whatsapp_link }}" target="_blank">
+    Send via WhatsApp
+</a>
+{% endif %}
+{% endif %}
+
+</div>
 
 
 <h2>Consult A.J. Rina</h2>

@@ -1,8 +1,5 @@
 # rina/ai_brain.py
 
-import re
-from typing import Sequence
-from flask import request, jsonify
 from difflib import SequenceMatcher
 
 
@@ -50,7 +47,8 @@ def generate_rina_response(context: dict) -> str:
     # ROLE DETECTION
     # ===========================
     driver_keywords = ["oga", "boss", "madam", "my boss", "customer", "client"]
-    user_role = "driver" if any(k in message for k in driver_keywords) else "owner"
+    user_role = context.get("role", "owner")
+    tone = context.get("tone", "neutral")
 
     # ===========================
     # VEHICLE DETECTION (REAL VEHICLES FIRST)
@@ -131,11 +129,12 @@ def generate_rina_response(context: dict) -> str:
     # ===========================
     # STYLE CONTROL
     # ===========================
-    authority_style = (
-        "Supportive, guiding, slightly instructive"
-        if user_role == "driver"
-        else "Concise, high-level, executive advisory"
-    )
+    if tone == "operational":
+        authority_style = "Clear, practical, safety-focused, instruction-driven"
+    elif tone == "decision":
+        authority_style = "Concise, strategic, risk-aware, executive advisory"
+    else:
+        authority_style = "Balanced, calm, informative"
 
     # ===========================
     # SYSTEM PROMPT
@@ -145,6 +144,7 @@ You are A.J. Rina — a high-level automotive advisor for Ajebo Fix.
 
 USER TYPE: {user_role}
 COMMUNICATION STYLE: {authority_style}
+RISK LEVEL: {context.get("escalation")}
 
 You always know the active vehicle and respond accordingly.
 

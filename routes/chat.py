@@ -15,7 +15,6 @@ from models import CarOwnership, ChatMessage, db
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
 from datetime import datetime
-from services.whatsapp import send_booking_confirmation
 
 import re
 
@@ -122,6 +121,7 @@ def chat():
         # REMEMBER BOOKING INTENT
         if intent == "booking":
             session["last_intent"] = "booking"
+            session["booking_started_at"] = datetime.utcnow().isoformat()
 
         # IF USER WAS PREVIOUSLY BOOKING, KEEP IT ACTIVE
         if session.get("last_intent") == "booking" and intent == "general":
@@ -214,6 +214,9 @@ def chat():
             "health_status": health.get("health_status"),
             "health_score": health.get("health_score"),
             "risk_reasons": health.get("risk_reasons", []),
+            "guidance": health.get("guidance"),
+            "care_context": health.get("care_context"),
+            "escalation": health.get("escalation"),
         }
 
         # --------------------------------
@@ -269,25 +272,14 @@ def chat():
                 # --------------------------------
                 # WHATSAPP TRIGGER
                 # --------------------------------
-                try:
-                    user_phone = current_user.phone_number.replace("+", "").strip()
-                    user_name = get_user_name(current_user)
-                    vehicle_name = f"{car.brand} {car.model}"
-
-                    print("SENDING WHATSAPP TO:", user_phone)
-
-                    send_booking_confirmation(
-                        phone=user_phone,
-                        name=user_name,
-                        vehicle=vehicle_name,
-                    )
-
-                except Exception as e:
-                    print("WHATSAPP ERROR:", str(e))
-                    current_app.logger.exception("WhatsApp send failed")
 
             else:
-                reply = RinaChatEngine.respond(message, rina_context)
+                reply = RinaChatEngine.respond(
+                    user_id=current_user.id,
+                    car_id=car.id,
+                    message=message,
+                    health=rina_context
+                )
 
             # SAVE MEMORY BACK
             session["rina_context_full"] = {

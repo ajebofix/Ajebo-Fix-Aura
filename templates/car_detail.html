@@ -290,6 +290,10 @@ menu.style.display="none"
             {{ ownership.start_date.strftime("%Y-%m-%d") if ownership.start_date }}
         </p>
 
+        <p>
+            <strong>Driver Trust Score:</strong>
+            {{ current_user.driver_score }}</p>
+
     {% else %}
 
         <p class="muted">

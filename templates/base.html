@@ -1,0 +1,21 @@
+<!-- templates/base.html -->
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>{% block title %}Aura{% endblock %}</title>
+</head>
+<body>
+
+<nav>Aura Navbar</nav>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  ...
+{% endwith %}
+
+{% block content %}{% endblock %}
+
+<footer>Ajebo Fix Aura</footer>
+
+</body>
+</html>

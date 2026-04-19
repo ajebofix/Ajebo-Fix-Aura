@@ -1,0 +1,82 @@
+<!-- templates/driver/checkin.html -->
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>Daily Check-In</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{
+font-family:Arial;
+max-width:600px;
+margin:30px auto;
+padding:15px;
+}
+
+.card{
+border:1px solid #ddd;
+padding:20px;
+border-radius:8px;
+}
+
+label{
+display:block;
+margin:14px 0;
+}
+
+button{
+width:100%;
+padding:14px;
+background:#2563eb;
+color:white;
+border:none;
+border-radius:6px;
+font-weight:bold;
+}
+textarea{
+width:100%;
+height:100px;
+}
+</style>
+</head>
+<body>
+
+<h1>Daily Vehicle Check-In</h1>
+<p>{{ car.brand }} {{ car.model }} {{ car.year }}</p>
+
+{% if today_checkin %}
+<div class="flash success">
+    Today's Check-In Completed
+</div>
+{% else %}
+<div class="flash error">
+    Today's Check-In Pending
+</div>
+{% endif %}
+
+<div class="card">
+
+<form method="POST">
+
+<label><input type="checkbox" name="tyre_warning"> Tyre warning / low tyre</label>
+
+<label><input type="checkbox" name="fuel_low"> Fuel low</label>
+
+<label><input type="checkbox" name="dashboard_light"> Dashboard warning light</label>
+
+<label><input type="checkbox" name="vibration"> Vibration noticed</label>
+
+<label><input type="checkbox" name="unusual_sound"> Unusual sound</label>
+
+<label>Notes</label>
+<textarea name="notes"></textarea>
+
+<button type="submit">Submit Check-In</button>
+
+</form>
+
+</div>
+
+</body>
+</html>

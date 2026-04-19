@@ -100,6 +100,7 @@
                 Client: {{ car.owner_name }}<br>
                 Mileage: {{ car.current_mileage }}<br>
                 Active Concerns: {{ car.active_concerns }}
+                <p>Driver Trust Score: {{ current_user.driver_score }}</p>
             </div>
 
             {% if car.risk_reasons %}
@@ -143,6 +144,7 @@
                 Client: {{ car.owner_name }}<br>
                 Mileage: {{ car.current_mileage }}<br>
                 Active Concerns: {{ car.active_concerns }}
+                <p>Driver Trust Score: {{ current_user.driver_score }}</p>
             </div>
 
             {% if car.risk_reasons %}
@@ -177,6 +179,7 @@
             <div class="vehicle-name">{{ car.vehicle }}</div>
             <div class="meta">
                 Client: {{ car.owner_name }}
+                <p>Driver Trust Score: {{ current_user.driver_score }}</p>
             </div>
 
             <div class="links">

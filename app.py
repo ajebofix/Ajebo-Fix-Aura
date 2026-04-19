@@ -51,6 +51,9 @@ def create_app():
     app.config["MAIL_TIMEOUT"] = 30
     app.config["MAIL_DEBUG"] = True
 
+    app.config["SERVER_NAME"] = os.getenv("SERVER_NAME")
+    app.config["PREFERRED_URL_SCHEME"] = os.getenv("PREFERRED_URL_SCHEME")
+
     print("MAIL USER:", app.config["MAIL_USERNAME"])
     print("MAIL PASS LEN:", len(app.config["MAIL_PASSWORD"] or ""))
 

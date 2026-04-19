@@ -1215,7 +1215,7 @@ def invite_driver(car_id):
         f"https://wa.me/?text="
         f"You've been invited to manage a vehicle on Aura by Ajebo Fix.%0A"
         f"Use Access Code: {code}%0A"
-        f"https://ajebo-fix-aura-production.up.railway.app/auth/signup"
+        f"https://ajebo-fix-aura-production.up.railway.app/auth/login%0A "
         f"This code expires in 24 hours."
     )
 
@@ -1246,3 +1246,14 @@ def remove_driver(driver_id):
     flash("Driver removed successfully.", "success")
 
     return redirect(request.referrer)
+
+
+
+# ===================================================
+# ADMIN CREDENTIAL RECOVERY (DRIVER / USER)
+# ===================================================
+
+# @admin_bp.route("/admin/reset-driver-password/<id>", methods=["GET", "POST"])
+# @login_required
+# @advisor_required
+# def reset_driver_password(id):

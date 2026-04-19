@@ -62,15 +62,10 @@ def send_booking_confirmation(phone, name, vehicle):
 # NOTIFY ADMIN NEW BOOKING
 # ================================
 def notify_admin_new_booking(user, vehicle, time):
-    try:
-        print("Trying admin TEXT alert...")
-        return send_text_admin(user, vehicle, time)
-
-    except Exception as e:
-        print("TEXT FAILED:", str(e))
-        print("Falling back to template fallback...")
-
-        return send_template_admin(user, vehicle, time)
+    print("Sending admin booking alert...")
+    result = send_template_admin(user, vehicle, time)
+    print("ADMIN TEMPLATE SENT:", result)
+    return result
 
 
 # =================================
@@ -123,20 +118,32 @@ def send_template_admin(user, vehicle, time):
         "type": "template",
         "template": {
             "name": "admin_booking_alert",
-            "language": {"code": "en"},
+            "language": {"policy": "deterministic", "code": "en_US"},
             "components": [
+                {
+                    "type": "header",
+                    "parameters": [
+                        {
+                            "type": "text", "text": "Consultation Bookings"
+                            }
+                    ]
+                },
                 {
                     "type": "body",
                     "parameters": [
                         {"type": "text", "text": user},
                         {"type": "text", "text": vehicle},
-                        {"type": "text", "text": str(time)},
+                        {"type": "text", "text": str(time)}
                     ],
-                }
+                },
             ],
         },
     }
+    print(payload)
 
     response = requests.post(url, headers=headers, json=payload)
+
+    print("ADMIN STATUS:", response.status_code)
+    print("ADMIN RESPONSE:", response.text)
 
     return response.json()

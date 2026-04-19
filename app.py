@@ -12,7 +12,7 @@ from extensions import db
 # =====================================================
 # Load environment variables FIRST
 # =====================================================
-load_dotenv()
+load_dotenv(override=True)
 
 
 # =====================================================
@@ -37,6 +37,22 @@ def create_app():
     # ---- HARD FAIL IF SECRET KEY IS MISSING ----
     if not app.config["SECRET_KEY"]:
         raise RuntimeError("SECRET_KEY is not set. Check your .env file.")
+
+    app.config["MAIL_SERVER"] = "smtp.gmail.com"
+    app.config["MAIL_PORT"] = 587
+    app.config["MAIL_USE_TLS"] = True
+    app.config["MAIL_USE_SSL"] = False
+    app.config["MAIL_SUPPRESS_SEND"] = False
+    app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+    app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+    app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_DEFAULT_SENDER")
+    app.config["MAIL_MAX_EMAILS"] = None
+    app.config["MAIL_ASCII_ATTACHMENTS"] = False
+    app.config["MAIL_TIMEOUT"] = 30
+    app.config["MAIL_DEBUG"] = True
+
+    print("MAIL USER:", app.config["MAIL_USERNAME"])
+    print("MAIL PASS LEN:", len(app.config["MAIL_PASSWORD"] or ""))
 
     # print("SECRET KEY LOADED")
 

@@ -1,0 +1,75 @@
+<!doctype html>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+
+    <h2 class="mb-4">Driver Vehicle Access</h2>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+
+            <h4>{{ car.display_name }}</h4>
+
+            <p><strong>Plate:</strong> {{ car.plate_number or "—" }}</p>
+            <p><strong>Mileage:</strong> {{ car.current_mileage or "—" }}</p>
+            <p><strong>VIN:</strong> {{ car.vin or "—" }}</p>
+
+        </div>
+    </div>
+
+    <div class="row g-3">
+
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+
+                    <h5>Daily Check-In</h5>
+                    <p>Report today's condition before movement.</p>
+
+                    <a href="{{ url_for('driver.driver_daily_checkin', car_id=car.id) }}"
+                       class="btn btn-primary w-100">
+                        Open Check-In
+                    </a>
+
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+
+                    <h5>Report Issue</h5>
+
+                    <form method="POST"
+                          action="{{ url_for('driver.driver_report_issue', car_id=car.id) }}">
+
+                        <textarea
+                            name="description"
+                            class="form-control mb-3"
+                            rows="4"
+                            placeholder="Describe issue clearly..."
+                            required></textarea>
+
+                        <button class="btn btn-danger w-100">
+                            Submit Concern
+                        </button>
+
+                    </form>
+
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="mt-4">
+        <a href="{{ url_for('driver.driver_dashboard') }}"
+           class="btn btn-outline-secondary">
+           Back Dashboard
+        </a>
+    </div>
+
+</div>
+{% endblock %}

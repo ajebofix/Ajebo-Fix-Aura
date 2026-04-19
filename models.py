@@ -35,6 +35,8 @@ class User(db.Model, UserMixin):
     role = db.Column(db.String(20), default="user", nullable=False)
     # user | admin | driver
 
+    driver_score = db.Column(db.Integer, default=100)
+
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -882,3 +884,28 @@ class BookingIntent(db.Model):
     car_id = db.Column(db.Integer)
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed = db.Column(db.Boolean, default=False)
+
+
+# =========================================
+# DRIVER CHECK IN
+# =========================================
+class DriverCheckIn(db.Model):
+    __tablename__ = "driver_checkins"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    car_id = db.Column(db.Integer, db.ForeignKey("cars.id"), nullable=False)
+    driver_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    tyre_warning = db.Column(db.Boolean, default=False)
+    fuel_low = db.Column(db.Boolean, default=False)
+    dashboard_light = db.Column(db.Boolean, default=False)
+    vibration = db.Column(db.Boolean, default=False)
+    unusual_sound = db.Column(db.Boolean, default=False)
+
+    notes = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    car = db.relationship("Car")
+    driver = db.relationship("User")

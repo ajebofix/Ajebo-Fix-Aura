@@ -192,8 +192,11 @@ def send_password_reset_email(user):
         sender = os.getenv("MAIL_USERNAME")
         password = os.getenv("MAIL_PASSWORD")
 
+        base_url = "https://ajebo-fix-aura-production.up.railway.app"
+        reset_link = f"{base_url}/auth/reset-password/{token}"
+
         msg = MIMEMultipart()
-        msg["From"] = sender
+        msg["From"] = "Ajebo Fix Aura <ajebofix@gmail.com>"
         msg["To"] = user.email
         msg["Reply-To"] = sender
         msg["Subject"] = "Aura Password Reset"

@@ -1248,7 +1248,6 @@ def remove_driver(driver_id):
     return redirect(request.referrer)
 
 
-
 # ===================================================
 # ADMIN CREDENTIAL RECOVERY (DRIVER / USER)
 # ===================================================

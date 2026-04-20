@@ -1,7 +1,115 @@
-<!doctype html>
-{% extends "base.html" %}
+<!-- templates/driver/car_detail.html -->
 
-{% block content %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Driver Vehicle View</title>
+
+<style>
+body{
+    font-family: Arial, sans-serif;
+    background:#f5f7fa;
+    margin:0;
+    padding:30px;
+}
+
+.container{
+    max-width:700px;
+    margin:auto;
+    background:white;
+    padding:30px;
+    border-radius:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.08);
+}
+
+h1{
+    margin-top:0;
+    color:#111;
+}
+
+.card{
+    background:#f9fafb;
+    padding:18px;
+    border-radius:10px;
+    margin-bottom:25px;
+}
+
+.label{
+    font-size:14px;
+    color:#666;
+}
+
+.value{
+    font-size:18px;
+    font-weight:600;
+    margin-bottom:10px;
+}
+
+textarea{
+    width:100%;
+    min-height:140px;
+    padding:14px;
+    border:1px solid #ccc;
+    border-radius:10px;
+    resize:vertical;
+    font-size:16px;
+}
+
+button{
+    width:100%;
+    padding:15px;
+    border:none;
+    border-radius:10px;
+    background:#111827;
+    color:white;
+    font-size:16px;
+    font-weight:600;
+    cursor:pointer;
+    margin-top:15px;
+}
+
+button:hover{
+    opacity:.95;
+}
+
+.secondary{
+    background:#2563eb;
+}
+
+.flash{
+    padding:14px;
+    border-radius:10px;
+    margin-bottom:15px;
+}
+
+.success{background:#dcfce7;color:#166534;}
+.error{background:#fee2e2;color:#991b1b;}
+.info{background:#dbeafe;color:#1d4ed8;}
+
+a{
+    text-decoration:none;
+}
+</style>
+</head>
+<body>
+
+<div class="container py-4">
+
+    <h1>Assigned Vehicle</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
 <div class="container py-4">
 
     <h2 class="mb-4">Driver Vehicle Access</h2>
@@ -29,7 +137,7 @@
 
                     <a href="{{ url_for('driver.driver_daily_checkin', car_id=car.id) }}"
                        class="btn btn-primary w-100">
-                        Open Check-In
+                        Daily Check-In
                     </a>
 
                 </div>
@@ -40,7 +148,7 @@
             <div class="card h-100 shadow-sm">
                 <div class="card-body">
 
-                    <h5>Report Issue</h5>
+                    <h5>Report Vehicle Concern(s)</h5>
 
                     <form method="POST"
                           action="{{ url_for('driver.driver_report_issue', car_id=car.id) }}">
@@ -49,7 +157,7 @@
                             name="description"
                             class="form-control mb-3"
                             rows="4"
-                            placeholder="Describe issue clearly..."
+                            placeholder="Example: Steering feels heavy, warning light on dashboard, vibration while braking..."
                             required></textarea>
 
                         <button class="btn btn-danger w-100">
@@ -72,4 +180,3 @@
     </div>
 
 </div>
-{% endblock %}

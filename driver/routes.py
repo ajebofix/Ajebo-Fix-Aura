@@ -89,7 +89,7 @@ def driver_report_issue(car_id):
 
     if not description:
         flash("Describe the issue.", "error")
-        return redirect(request.referrer)
+        return redirect(url_for("driver.driver_car_view", car_id=car_id))
 
     fault = CarFault(
         car_id=car_id,
@@ -111,6 +111,7 @@ def driver_report_issue(car_id):
         return redirect(url_for("driver.driver_dashboard"))
 
     return redirect(url_for("driver.driver_car_view", car_id=car_id))
+
 
 # ===========================================
 # MIDDLEWARE GUARD

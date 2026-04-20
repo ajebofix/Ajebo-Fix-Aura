@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload
 from models import CarOwnership, ChatMessage, db
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import re
 
@@ -116,16 +116,23 @@ def chat():
         # Save user message
         save_message("user", message)
 
-        intent = detect_intent(message)
+        # intent = detect_intent(message)
 
         # REMEMBER BOOKING INTENT
-        if intent == "booking":
-            session["last_intent"] = "booking"
-            session["booking_started_at"] = datetime.utcnow().isoformat()
+        intent = detect_intent(message)
 
         # IF USER WAS PREVIOUSLY BOOKING, KEEP IT ACTIVE
-        if session.get("last_intent") == "booking" and intent == "general":
-            intent = "booking"
+        session["topic"] = {
+            "type": "intent",
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+
+        topic = session.get("topic")
+
+        if topic:
+            updated = datetime.fromisoformat(topic["updated_at"])
+            if (datetime.utcnow() - updated) > timedelta(minutes=10):
+                session.pop("topic", None)
 
         # --------------------------------
         # VEHICLES
@@ -225,7 +232,7 @@ def chat():
         messages = (
             ChatMessage.query.filter_by(user_id=current_user.id)
             .order_by(ChatMessage.timestamp.desc())
-            .limit(200)
+            .limit(8)
             .all()
         )
 
@@ -278,7 +285,7 @@ def chat():
                     user_id=current_user.id,
                     car_id=car.id,
                     message=message,
-                    health=rina_context
+                    health=rina_context,
                 )
 
             # SAVE MEMORY BACK
@@ -330,7 +337,7 @@ def chat_history():
         messages = (
             ChatMessage.query.filter_by(user_id=current_user.id)
             .order_by(ChatMessage.timestamp.asc())
-            .limit(200)
+            .limit(8)
             .all()
         )
 

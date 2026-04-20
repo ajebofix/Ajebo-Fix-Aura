@@ -69,7 +69,7 @@ def build_rina_context(user_message: str) -> dict:
         messages = (
             ChatMessage.query.filter_by(user_id=user.id)
             .order_by(ChatMessage.timestamp.desc())
-            .limit(100)
+            .limit(8)
             .all()
         )
 

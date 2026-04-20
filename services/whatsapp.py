@@ -117,17 +117,9 @@ def send_template_admin(user, vehicle, time):
         "to": "2347074490640",
         "type": "template",
         "template": {
-            "name": "admin_booking_alert",
-            "language": {"policy": "deterministic", "code": "en_US"},
+            "name": "admin_booking_alert_v1",
+            "language": {"code": "en_US"},
             "components": [
-                {
-                    "type": "header",
-                    "parameters": [
-                        {
-                            "type": "text", "text": "Consultation Bookings"
-                            }
-                    ]
-                },
                 {
                     "type": "body",
                     "parameters": [

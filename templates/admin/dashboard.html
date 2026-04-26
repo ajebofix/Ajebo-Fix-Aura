@@ -1,181 +1,199 @@
 <!-- templates/admin/dashboard.html -->
 
+{% extends "base.html" %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block title %}Aura | Advisor Console{% endblock %}
 
-<title>Aura | Advisor Console</title>
+{% block page_title %}Advisor Console{% endblock %}
 
-<style>
+{% block page_subtitle %}
+Operational command center for client vehicles, health intelligence, and advisory oversight.
+{% endblock %}
 
-body{
-font-family: Arial, sans-serif;
-max-width:900px;
-margin:32px auto;
-padding:0 12px;
-color:#111827;
-line-height:1.5;
-}
-
-h1{
-margin-bottom:4px;
-}
-
-.subtitle{
-font-size:14px;
-color:#6b7280;
-margin-bottom:28px;
-}
-
-.flash{
-padding:12px;
-border-radius:6px;
-margin-bottom:16px;
-font-size:14px;
-}
-
-.flash.success{
-background:#ecfdf5;
-border:1px solid #10b981;
-}
-
-.flash.error{
-background:#fee2e2;
-border:1px solid #ef4444;
-}
-
-.card{
-border:1px solid #e5e7eb;
-border-radius:6px;
-padding:16px;
-margin-bottom:22px;
-background:#fafafa;
-}
-
-.card h2{
-margin-top:0;
-font-size:16px;
-}
-
-ul{
-margin:0;
-padding-left:18px;
-}
-
-li{
-margin-bottom:6px;
-}
-
-.metric{
-font-weight:bold;
-}
-
-.actions{
-margin-top:30px;
-display:grid;
-grid-template-columns:1fr;
-gap:14px;
-}
-
-.btn{
-display:block;
-text-align:center;
-padding:16px;
-border-radius:6px;
-font-weight:bold;
-text-decoration:none;
-color:white;
-}
-
-.btn-primary{background:#2563eb;}
-.btn-secondary{background:#059669;}
-.btn-attention{background:#d97706;}
-.btn-neutral{background:#6b7280;}
-
-.btn:hover{
-opacity:.92;
-}
-
-.logout{
-margin-top:28px;
-}
-
-.logout button{
-padding:14px;
-width:100%;
-border:none;
-border-radius:6px;
-background:#111827;
-color:white;
-cursor:pointer;
-}
-
-</style>
-</head>
-
-<body>
-
-<h1>Aura</h1>
-<p class="subtitle">Advisor Console</p>
+{% block content %}
 
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="flash {{ category }}">{{ message }}</div>
+<div class="flash {{ category }}">
+    {{ message }}
+</div>
 {% endfor %}
 {% endif %}
 {% endwith %}
 
+
+
 {% if stats %}
 
-<div class="card">
-<h2>System</h2>
-<ul>
-<li><span class="metric">Clients:</span> {{ stats.clients }}</li>
-<li><span class="metric">Vehicles:</span> {{ stats.vehicles }}</li>
-<li><span class="metric">Care Assignments:</span> {{ stats.active_care_assignments }}</li>
-</ul>
-</div>
+<section class="dashboard-grid">
 
-<div class="card">
-<h2>Records</h2>
-<ul>
-<li><span class="metric">Total:</span> {{ stats.events.total }}</li>
-<li><span class="metric">Active:</span> {{ stats.events.active }}</li>
-<li><span class="metric">Archived:</span> {{ stats.events.archived }}</li>
-</ul>
-</div>
+    <div class="card stat-card">
+
+        <div class="stat-label">
+            Clients
+        </div>
+
+        <div class="stat-value">
+            {{ stats.clients }}
+        </div>
+
+        <p class="muted">
+            Active client accounts enrolled in Aura.
+        </p>
+
+    </div>
+
+
+    <div class="card stat-card">
+
+        <div class="stat-label">
+            Vehicles
+        </div>
+
+        <div class="stat-value">
+            {{ stats.vehicles }}
+        </div>
+
+        <p class="muted">
+            Registered vehicles under monitoring.
+        </p>
+
+    </div>
+
+
+    <div class="card stat-card">
+
+        <div class="stat-label">
+            Care Assignments
+        </div>
+
+        <div class="stat-value">
+            {{ stats.active_care_assignments }}
+        </div>
+
+        <p class="muted">
+            Vehicles currently under active management.
+        </p>
+
+    </div>
+
+</section>
+
+
+
+<section class="dashboard-grid">
+
+    <div class="card">
+
+        <h2>
+            Records Intelligence
+        </h2>
+
+        <div class="list-item">
+            <strong>Total Records:</strong>
+            {{ stats.events.total }}
+        </div>
+
+        <div class="list-item">
+            <strong>Active Records:</strong>
+            {{ stats.events.active }}
+        </div>
+
+        <div class="list-item">
+            <strong>Archived Records:</strong>
+            {{ stats.events.archived }}
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <h2>
+            Executive Summary
+        </h2>
+
+        <p class="muted">
+            Aura centralizes client relationships, fleet visibility,
+            and preventive vehicle health operations.
+        </p>
+
+        <div class="badge success">
+            Advisor Authority Enabled
+        </div>
+
+    </div>
+
+</section>
 
 {% endif %}
 
-<div class="actions">
 
-<a href="{{ url_for('admin.advisor_control_panel') }}" class="btn btn-primary">
-Advisor Panel
-</a>
 
-<a href="{{ url_for('admin.admin_fleet_health') }}" class="btn btn-secondary">
-Fleet Health
-</a>
+<section class="card">
 
-<a href="{{ url_for('admin.admin_reported_concerns') }}" class="btn btn-attention">
-Concerns
-</a>
+    <h2>
+        Quick Actions
+    </h2>
 
-<a href="{{ url_for('dashboard.aura_home') }}" class="btn btn-neutral">
-Client View
-</a>
+    <div class="button-grid">
 
-</div>
+        <a
+            href="{{ url_for('admin.advisor_control_panel') }}"
+            class="btn btn-primary"
+        >
+            Advisor Panel
+        </a>
 
-<div class="logout">
-<form action="{{ url_for('auth.logout') }}" method="POST">
-<button type="submit">Sign Out</button>
-</form>
-</div>
+        <a
+            href="{{ url_for('admin.admin_fleet_health') }}"
+            class="btn btn-secondary"
+        >
+            Fleet Health
+        </a>
 
-</body>
-</html>
+        <a
+            href="{{ url_for('admin.admin_reported_concerns') }}"
+            class="btn btn-warning"
+        >
+            Concerns
+        </a>
+
+        <a
+            href="{{ url_for('dashboard.aura_home') }}"
+            class="btn btn-neutral"
+        >
+            Client View
+        </a>
+
+    </div>
+
+</section>
+
+
+
+<section class="card">
+
+    <h2>
+        Secure Exit
+    </h2>
+
+    <p class="muted">
+        End the current advisor session safely.
+    </p>
+
+    <form action="{{ url_for('auth.logout') }}" method="POST">
+
+        <button
+            type="submit"
+            class="btn btn-dark btn-block"
+        >
+            Sign Out
+        </button>
+
+    </form>
+
+</section>
+
+{% endblock %}

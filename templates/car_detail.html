@@ -1,344 +1,145 @@
-<!-- templates/car_detail.html -->
+{# templates/car_detail.html #}
+{% extends "base.html" %}
 
+{% block title %}Vehicle Profile Health Record{% endblock %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Vehicle Profile Health Record</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block page_title %}
+{{ car.brand }} {{ car.model }} {{ car.year }}
+{% endblock %}
 
-    <style>
-        body {
-            font-family: Arial, Helvetica, sans-serif;
-            max-width: 900px;
-            margin: 28px auto;
-            padding: 0 14px;
-            line-height: 1.5;
-            color: #111827;
-        }
+{% block page_subtitle %}
+Vehicle Health Record
+{% endblock %}
 
-        h1{
-            margin-top: 6px;
-        }
+{% block content %}
 
-        h2, h3 {
-            margin-top: 26px;
-            margin-bottom: 8px;
-            font-size: 17px;
-        }
+<section class="page-header">
 
-        .card {
-            background: #f9fafb;
-            padding: 16px;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-            margin-bottom: 22px;
-        }
+    <div>
 
-        .meta {
-            font-size: 14px;
-            color: #4b5563;
-            margin-bottom: 22px;
-        }
+        <h1 class="page-heading">
 
-        ul {
-            padding-left: 18px;
-        }
+            {{ car.brand }} {{ car.model }} {{ car.year }}
 
-        .muted {
-            color: #6b7280;
-            font-size: 14px;
-        }
+            {% if is_admin_view %}
+            <span class="pill">ADVISOR</span>
+            {% endif %}
 
-        a {
-            color: #2563eb;
-            font-weight: bold;
-            text-decoration: none;
-        }
+        </h1>
 
-        a:hover {
-            text-decoration: underline;
-        }
+        <p class="muted">
+            Private automotive health profile.
+        </p>
 
-        .cta {
-            background: #eef2ff;
-            border: 1px solid #c7d2fe;
-            padding: 14px;
-            border-radius: 8px;
-            margin-top: 12px;
-        }
+    </div>
 
-        .btn-primary{
-        background: #2563eb;
-        color: white;
-        border: none;
-        padding: 8px 14px;
-        border-radius: 6px;
-        cursor: pointer;
-        }
-
-        .btn-complete{
-            background: #065f46;
-            color: white;
-            border: none;
-            padding: 8px 14px;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-
-        .admin-badge {
-            display: inline-block;
-            margin-left: 10px;
-            padding: 3px 8px;
-            font-size: 12px;
-            border-radius: 4px;
-            background: #111827;
-            color: #ffffff;
-        }
-
-        .status {
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin-left: 6px;
-        }
-
-        .status-green { background:#dcfce7 }
-        .status-yellow { background:#fef3c7 }
-        .status-red { background:#fee2e2 }
-        .status-blue { background:#dbeafe }
-
-        .status-badge{
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600px;
-            margin-left: 6px;
-        }
-
-        .status-badge.monitor{
-            background: #ecfdf5;
-            color: #065f46;
-        }
-
-        .status-badge.flag{
-            background: #fffbeb;
-            color: #92400e;
-        }
-
-        .status-badge.escalate{
-            background: #fef2f2;
-            color: #991b1b;
-        }
-
-        .flash{
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 16px;
-            font-size: 14px;
-            border: 1px solid transparent;}
-
-        .flash.success{
-            background: #ecfdf5;
-            border: 1px solid #bbf7d0;
-        }
-
-        .flash.error{
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-        }
-
-        .flash.warning{
-            background: #fffbeb;
-            border: 1px solid #fde68a;
-        }
-
-        .flash.info{
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-        }
-
-        .actions-menu{
-position:relative;
-display:inline-block;
-}
-
-.actions-btn{
-background:#111827;
-color:white;
-border:none;
-padding:10px 16px;
-border-radius:6px;
-cursor:pointer;
-font-weight:bold;
-}
-
-.actions-btn:hover{
-opacity:0.9;
-}
-
-.actions-dropdown{
-display:none;
-position:absolute;
-top:42px;
-left:0;
-background:white;
-border:1px solid #e5e7eb;
-border-radius:8px;
-min-width:220px;
-box-shadow:0 10px 20px rgba(0,0,0,0.08);
-z-index:10;
-}
-
-.actions-dropdown a{
-display:block;
-padding:10px 14px;
-color:#111827;
-text-decoration:none;
-font-size:14px;
-}
-
-.actions-dropdown a:hover{
-background:#f9fafb;
-}
-    </style>
-
-</head>
-
-<script>
-
-function toggleActionsMenu(){
-const menu=document.getElementById("actionsDropdown")
-
-if(menu.style.display==="block"){
-menu.style.display="none"
-}else{
-menu.style.display="block"
-}
-}
-
-window.onclick=function(event){
-
-if(!event.target.closest('.actions-menu')){
-
-const menu=document.getElementById("actionsDropdown")
-
-if(menu){
-menu.style.display="none"
-}
-
-}
-
-}
-
-</script>
-
-<body>
-
-
-<h1>
-    {{ car.brand }} {{ car.model }} {{ car.year }}
-
-    {% if is_admin_view %}
-        <span class="admin-badge">ADVISOR</span>
-    {% endif %}
-</h1>
-
-<p class="meta">Vehicle Health Record</p>
-
-
-<!-- FLASH MESSAGES -->
- {% with messages = get_flashed_messages(with_categories=true) %}
- {% if messages %}
- {% for category, message in messages %}
- <div class="flash {{ category }}">
-{{ message }}
- </div>
- {% endfor %}
- {% endif %}
- {% endwith %}
+</section>
 
 
 
-<div class="card">
-    <h2>Vehicle Identification</h2>
-
-    <p><strong>VIN:</strong> {{ car.vin or "—" }}</p>
-
-    <p>
-        <strong>Recorded Mileage:</strong>
-        {{ car.current_mileage or "—" }}
-    </p>
+{% if error %}
+<div class="flash error">
+    {{ error }}
 </div>
+{% endif %}
 
 
 
-<div class="card">
+<section class="dashboard-grid">
 
-    <h2>Ownership</h2>
+    <div class="card">
 
-    {% if ownership %}
+        <h2>Vehicle Identification</h2>
 
-        <p>
-            <strong>Registered Plate:</strong>
-            {{ ownership.plate_number or "—" }}
-        </p>
+        <div class="info-list">
 
-        <p>
-            <strong>Under Care Since:</strong>
-            {{ ownership.start_date.strftime("%Y-%m-%d") if ownership.start_date }}
-        </p>
+            <div class="info-row">
+                <span class="label">VIN</span>
+                <span class="value">{{ car.vin or "—" }}</span>
+            </div>
 
-        <p>
-            <strong>Driver Trust Score:</strong>
-            {{ current_user.driver_score }}</p>
+            <div class="info-row">
+                <span class="label">Recorded Mileage</span>
+                <span class="value">{{ car.current_mileage or "—" }}</span>
+            </div>
 
-    {% else %}
+        </div>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <h2>Ownership</h2>
+
+        {% if ownership %}
+
+        <div class="info-list">
+
+            <div class="info-row">
+                <span class="label">Registered Plate</span>
+                <span class="value">{{ ownership.plate_number or "—" }}</span>
+            </div>
+
+            <div class="info-row">
+                <span class="label">Under Care Since</span>
+                <span class="value">
+                    {{ ownership.start_date.strftime("%Y-%m-%d") if ownership.start_date }}
+                </span>
+            </div>
+
+            <div class="info-row">
+                <span class="label">Driver Trust Score</span>
+                <span class="value">{{ current_user.driver_score or 0 }}</span>
+            </div>
+
+        </div>
+
+        {% else %}
 
         <p class="muted">
             This vehicle is not currently under an active care assignment.
         </p>
 
-    {% endif %}
-
-</div>
-
-
-
-<div class="card">
-
-    <h2>Health Overview</h2>
-
-    <p>
-        <strong>Status:</strong>
-        <span class="
-        status
-        {% if health.health_status == 'green' %}status-green
-        {% elif health.health_status == 'attention' %}status-yellow
-        {% elif health.health_status == 'critical' %}status-red
         {% endif %}
-        ">
-        {{ health.label or health.health_status }}
-        </span>
-    </p>
 
-    <p>
-        {% if escalation %}
-        <span class="status-badge {{ escalation.level }}">
+    </div>
+
+</section>
+
+
+
+<section class="card">
+
+    <div class="section-head">
+        <h2>Health Overview</h2>
+
+        <span class="pill">
+            {{ health.label or health.health_status }}
+        </span>
+    </div>
+
+    {% if escalation %}
+    <p style="margin-top:12px;">
+        <span class="badge">
             {{ escalation.label }}
         </span>
-        {% endif %}
     </p>
+    {% endif %}
 
     {% if health.risk_reasons %}
-        <h3>Monitoring</h3>
 
-        <ul>
-            {% for reason in health.risk_reasons %}
-                <li>{{ reason }}</li>
-            {% endfor %}
-        </ul>
+    <h3>Monitoring</h3>
+
+    <ul class="clean-list">
+
+        {% for reason in health.risk_reasons %}
+        <li>{{ reason }}</li>
+        {% endfor %}
+
+    </ul>
+
     {% endif %}
 
     <h3>Next Step</h3>
@@ -350,281 +151,275 @@ menu.style.display="none"
         It reflects professional monitoring by Ajebo Fix.
     </p>
 
-</div>
+</section>
 
 
 
 {% if consultations %}
-<div class="card">
+<section class="card">
 
     <h2>Consultation Activity</h2>
 
     {% for c in consultations|sort(attribute='created_at', reverse=True) %}
 
-        <p>
+    <div class="list-item">
 
-            <strong>Status:</strong>
-            {{ c.status|capitalize }}
+        <div class="section-head">
 
-            {% if c.status == "scheduled" %}
-                <span class="status status-yellow">Scheduled</span>
-            {% elif c.status == "in_progress" %}
-                <span class="status status-blue">In Progress</span>
-            {% elif c.status == "completed" %}
-                <span class="status status-green">Completed</span>
-            {% endif %}
+            <strong>{{ c.status|capitalize }}</strong>
 
-            <br>
+            <span class="pill">
+                {{ c.status|replace("_"," ")|title }}
+            </span>
 
-            {% if c.scheduled_for %}
-                <strong>Scheduled For:</strong>
-                {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
-                <br>
-            {% endif %}
+        </div>
 
-            {% if c.notes %}
-                <strong>Note:</strong>
-                {{ c.notes }}
-            {% endif %}
-
+        {% if c.scheduled_for %}
+        <p class="muted">
+            Scheduled For:
+            {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
         </p>
+        {% endif %}
 
-        <hr>
+        {% if c.notes %}
+        <p>{{ c.notes }}</p>
+        {% endif %}
+
+    </div>
 
     {% endfor %}
 
-</div>
+</section>
 {% endif %}
 
 
 
 {% if has_active_consultation %}
 
-<div class="card">
+{% set active_consultation = consultations | selectattr("status","equalto","in_progress") | first %}
 
-<h2>Active Consultation</h2>
+<section class="card">
 
-<p class="meta">
-A professional consultation is currently active for this vehicle.
-</p>
+    <h2>Active Consultation</h2>
 
-{% set active_consultation = consultations | selectattr("status","equalto", "in_progress") | first %}
-{% if active_consultation %}
+    <p class="muted">
+        A professional consultation is currently active for this vehicle.
+    </p>
 
-<p>
-<strong>Started:</strong>
-{{ active_consultation.started_at.strftime("%Y-%m-%d %H:%M") if active_consultation.started_at }}
-</p>
+    {% if active_consultation and active_consultation.started_at %}
+    <p>
+        <strong>Started:</strong>
+        {{ active_consultation.started_at.strftime("%Y-%m-%d %H:%M") }}
+    </p>
+    {% endif %}
 
-{% endif %}
+    {% if is_admin_view and active_consultation %}
 
-{% if is_admin_view %}
+    <div class="button-stack">
 
-<p>
+        <form method="POST"
+              action="{{ url_for('admin.admin_start_assessment', consultation_id=active_consultation.id) }}">
 
-<form method="POST"
-action="{{ url_for('admin.admin_start_assessment', consultation_id=active_consultation.id) }}">
-<button class="btn-primary">
-Start / Continue Assessment
-</button>
+            <button class="btn btn-primary">
+                Start / Continue Assessment
+            </button>
 
+        </form>
 
-</form>
+        <form method="POST"
+              action="{{ url_for('admin.admin_complete_consultation', consultation_id=active_consultation.id) }}">
 
-</p>
+            <button class="btn btn-success">
+                Complete Consultation
+            </button>
 
+        </form>
 
-<form method="POST"
-action="{{ url_for('admin.admin_complete_consultation', consultation_id=active_consultation.id) }}">
-<button class="btn-complete">
-Complete Consultation
+        <a href="{{ url_for('admin.admin_consultations') }}"
+           class="btn btn-secondary">
+            Open Consultation Queue
+        </a>
 
-</button>
+    </div>
 
-</form>
+    {% endif %}
 
-
-<p>
-
-<a href="{{ url_for('admin.admin_consultations') }}">
-Open Consultation Queue
-</a>
-
-</p>
+</section>
 
 {% endif %}
 
-</div>
-{% endif %}
 
-
-{# ========================= #}
-{# ESCALATION CTA (NEW LAYER) #}
-{# ========================= #}
 
 {% if escalation and escalation.level == "escalate" %}
 
-<div class="card cta">
-    <strong>Professional review recommended</strong>
+<section class="card">
+
+    <h2>Professional Review Recommended</h2>
+
     <p class="muted">
         A consultation will provide clarity and reduce risk exposure.
     </p>
 
-    <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}">
+    <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}"
+       class="btn btn-primary">
         Book Private Consultation
     </a>
-</div>
+
+</section>
 
 {% elif escalation and escalation.level == "flag" %}
 
-<div class="card cta">
-    <strong>Monitoring recommended</strong>
+<section class="card">
+
+    <h2>Monitoring Recommended</h2>
+
     <p class="muted">
         A scheduled review may help maintain optimal performance.
     </p>
 
-    <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}">
+    <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}"
+       class="btn btn-primary">
         Schedule Review
     </a>
-</div>
+
+</section>
 
 {% endif %}
+
 
 
 {% if not has_active_consultation %}
 
-<div class="card cta">
+<section class="card">
 
-<strong>All vehicle care begins with a private consultation.</strong>
+    <h2>Private Consultation Required</h2>
 
-<p class="muted">
-Professional services and advisor actions become available
-during an active consultation.
-</p>
+    <p class="muted">
+        Professional services and advisor actions become available
+        during an active consultation.
+    </p>
 
-{% if is_admin_view %}
+    {% if is_admin_view %}
 
-<a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}">
-Schedule Consultation
-</a>
+    <div class="button-stack">
 
-<p>
+        <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}"
+           class="btn btn-primary">
+            Schedule Consultation
+        </a>
 
-<a href="{{ url_for('admin.admin_consultations') }}">
-Check Consultation Queue
-</a>
+        <a href="{{ url_for('admin.admin_consultations') }}"
+           class="btn btn-secondary">
+            Check Consultation Queue
+        </a>
 
-</p>
+    </div>
 
-{% else %}
+    {% else %}
 
-<a href="{{ url_for('cars.book_consultation', car_id=car.id) }}">
-Book Consultation
-</a>
+    <a href="{{ url_for('cars.book_consultation', car_id=car.id) }}"
+       class="btn btn-primary">
+        Book Consultation
+    </a>
+
+    {% endif %}
+
+</section>
 
 {% endif %}
 
-</div>
 
-{% endif %}
 
-<div class="card">
-<h3>Vehicle Assessments</h3>
-<p class="meta">
-A complete professional record of services, observations,
-and longitudinal vehicle monitoring.
-</p>
+<section class="card">
 
-{% for assessment in assessments %}
+    <h2>Vehicle Assessments</h2>
 
-    {% if assessment.is_finalized %}
-        <div style="margin-bottom: 10px;">
+    <p class="muted">
+        Professional record of services, observations,
+        and longitudinal monitoring.
+    </p>
 
-            Assessment completed on
+    {% for assessment in assessments %}
 
-            {{ assessment.finalized_at.strftime("%Y-%m-%d") }}
+        {% if assessment.is_finalized %}
 
-            <br>
+        <div class="list-item">
+
+            <p>
+                Assessment completed on
+                {{ assessment.finalized_at.strftime("%Y-%m-%d") }}
+            </p>
 
             <a href="{{ url_for(
-                 'admin_assessments.admin_download_assessment_pdf',
+                'admin_assessments.admin_download_assessment_pdf',
                 assessment_id=assessment.id
             ) }}">
-
                 Download Assessment Report
-
             </a>
 
         </div>
+
+        {% endif %}
+
+    {% endfor %}
+
+    {% if current_user.role != 'admin' %}
+    <a href="{{ url_for('cars.assessment_report', car_id=car.id) }}"
+       class="btn btn-primary">
+        View Vehicle Health Assessment
+    </a>
     {% endif %}
-{% endfor %}
 
-
-{% if current_user.role != 'admin' %}
-<a href="{{ url_for('cars.assessment_report', car_id=car.id) }}" class="btn-primary">
-    View Vehicle Health Assessment
-</a>
-{% endif %}
-
-</div>
+</section>
 
 
 
+<section class="card">
 
-<div class="card">
+    <h2>Vehicle Care History</h2>
 
-<h2>Vehicle Care History</h2>
+    <p class="muted">
+        A chronological record of services, observations,
+        and vehicle monitoring over time.
+    </p>
 
-<p class="meta">
-A chronological record of services, observations,
-and vehicle monitoring over time.
-</p>
+    {% if is_admin_view %}
 
-<div class="cta">
+    <a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
+       class="btn btn-secondary">
+        View Full Care History
+    </a>
 
-{% if is_admin_view %}
+    {% else %}
 
-<a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}">
-View Full Care History (Medical File)
-</a>
+    <a href="{{ url_for('cars.vehicle_records', car_id=car.id) }}"
+       class="btn btn-secondary">
+        View Full Care History
+    </a>
 
-{% else %}
+    {% endif %}
 
-<a href="{{ url_for('cars.vehicle_records', car_id=car.id) }}">
-View Full Care History (Medical File)
-</a>
-
-{% endif %}
-
-</div>
-
-<p class="muted" style="margin-top:8px;">
-This documentation supports long-term care,
-resale value, and professional accountability.
-</p>
-
-</div>
+</section>
 
 
 
 {% if not is_admin_view %}
 
-<div class="card">
+<section class="card">
 
-<h2>Report an Issue</h2>
+    <h2>Report an Issue</h2>
 
-<p class="muted">
-Report observations or concerns anytime.
-An advisor will review them.
-</p>
+    <p class="muted">
+        Report observations or concerns anytime.
+        An advisor will review them.
+    </p>
 
-<p>
-<a href="{{ url_for('cars.add_reported_concern', car_id=car.id) }}">
-Report Concern
-</a>
-</p>
+    <a href="{{ url_for('cars.add_reported_concern', car_id=car.id) }}"
+       class="btn btn-primary">
+        Report Concern
+    </a>
 
-</div>
+</section>
 
 {% endif %}
 
@@ -632,110 +427,133 @@ Report Concern
 
 {% if has_active_consultation %}
 
-<div class="card">
+<section class="card">
 
-<h2>Actions</h2>
+    <h2>Actions</h2>
 
-<div class="actions-menu">
+    <div class="button-stack">
 
-<button
-class="actions-btn" onclick="toggleActionsMenu()">
+        {% if is_admin_view %}
 
-Core Actions ⬇
+        <a href="{{ url_for('admin.admin_add_service', car_id=car.id) }}"
+           class="btn btn-secondary">
+            Record Service
+        </a>
 
-</button>
+        <a href="{{ url_for('admin.admin_add_concern', car_id=car.id) }}"
+           class="btn btn-secondary">
+            Record Observation
+        </a>
 
-<div class="actions-dropdown" id="actionsDropdown">
+        <a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
+           class="btn btn-secondary">
+            View Care Timeline
+        </a>
 
-{% if is_admin_view %}
+        <a href="{{ url_for('admin.admin_reported_concerns') }}"
+           class="btn btn-secondary">
+            All Reported Concerns
+        </a>
 
-<a href="{{ url_for('admin.admin_add_service', car_id=car.id) }}">
-Record Service (Advisor)
-</a>
+        {% else %}
 
-<a href="{{ url_for('admin.admin_add_concern', car_id=car.id) }}">
-Record Observation / Concern
-</a>
+            {% if ownership %}
+            <a href="{{ url_for('cars.add_service_record', ownership_id=ownership.id) }}"
+               class="btn btn-secondary">
+                Record Service
+            </a>
+            {% endif %}
 
-<a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}">
-View Care Timeline
-</a>
+            <a href="{{ url_for('cars.vehicle_records', car_id=car.id) }}"
+               class="btn btn-secondary">
+                View Care Timeline
+            </a>
 
+        {% endif %}
 
-<a href="{{ url_for('admin.admin_reported_concerns') }}">
-View All Reported Concerns
-</a>
+    </div>
 
-{% else %}
-
-{% if ownership %}
-
-
-<a href="{{ url_for('cars.add_service_record', ownership_id=ownership.id) }}">
-Record Service
-</a>
-
-{% endif %}
-
-<a href="{{ url_for('cars.vehicle_records', car_id=car.id) }}">
-View Care Timeline
-</a>
-
-{% endif %}
-
-</div>
-
-</div>
-
-</div>
+</section>
 
 {% endif %}
 
-<div class="card">
 
-<h2>Driver Management</h2>
 
-{% if active_driver %}
-    <p><strong>{{ active_driver.user.name }}</strong> is assigned</p>
+<section class="card">
 
-    <form method="POST" action="/admin/drivers/remove/{{ active_driver.id }}">
-        <button>Remove Driver</button>
+    <h2>Driver Management</h2>
+
+    {% if active_driver %}
+
+    <p>
+        <strong>{{ active_driver.user.name }}</strong> is assigned
+    </p>
+
+    <form method="POST"
+          action="/admin/drivers/remove/{{ active_driver.id }}">
+
+        <button class="btn btn-danger">
+            Remove Driver
+        </button>
+
     </form>
 
-{% else %}
-    <form method="POST" action="/admin/cars/{{ car.id }}/invite-driver">
-        <button>Assign Driver</button>
+    {% else %}
+
+    <form method="POST"
+          action="/admin/cars/{{ car.id }}/invite-driver">
+
+        <button class="btn btn-primary">
+            Assign Driver
+        </button>
+
     </form>
 
-{% if whatsapp_link %}
-<br>
-<a href="{{ whatsapp_link }}" target="_blank">
-    Send via WhatsApp
-</a>
-{% endif %}
-{% endif %}
+    {% if whatsapp_link %}
+    <p style="margin-top:12px;">
+        <a href="{{ whatsapp_link }}" target="_blank">
+            Send via WhatsApp
+        </a>
+    </p>
+    {% endif %}
 
-</div>
+    {% endif %}
 
-
-<h2>Consult A.J. Rina</h2>
-
-<p class="muted">
-Ask about vehicle status, observations, or recommended next steps.
-</p>
-
-{% include "components/rina_chat.html" %}
+</section>
 
 
-<hr>
+
+<section class="card">
+
+    <h2>Consult A.J. Rina</h2>
+
+    <p class="muted">
+        Ask about vehicle status, observations,
+        or recommended next steps.
+    </p>
+
+    {% include "components/rina_chat.html" %}
+
+</section>
 
 
-{% if is_admin_view %}
-<a href="{{ url_for('admin.admin_dashboard') }}">← Back to Admin Dashboard</a>
-{% else %}
-<a href="/dashboard">← Back to Dashboard</a>
-{% endif %}
 
+<section class="page-footer">
 
-</body>
-</html>
+    {% if is_admin_view %}
+
+    <a href="{{ url_for('admin.admin_dashboard') }}">
+        ← Back to Admin Dashboard
+    </a>
+
+    {% else %}
+
+    <a href="/dashboard">
+        ← Back to Dashboard
+    </a>
+
+    {% endif %}
+
+</section>
+
+{% endblock %}

@@ -1,256 +1,367 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Vehicle Health & Risk Report</title>
+<!-- templates/reports/assessment_report.html -->
 
-    <style>
-        body {
-            font-family: Arial, Helvetica, sans-serif;
-            color: #111827;
-            line-height: 1.6;
-            font-size: 14px;
-        }
+{% extends "base.html" %}
 
-        h1, h2, h3 {
-            margin-bottom: 6px;
-        }
+{% block title %}Vehicle Health & Risk Report{% endblock %}
 
-        h1 {
-            font-size: 26px;
-            margin-top: 0;
-        }
+{% block page_title %}Vehicle Health & Risk Report{% endblock %}
 
-        h2 {
-            font-size: 20px;
-            margin-top: 28px;
-            border-bottom: 1px solid #e5e7eb;
-            padding-bottom: 6px;
-        }
+{% block page_subtitle %}
+Professional assessment summary for informed ownership decisions.
+{% endblock %}
 
-        h3 {
-            font-size: 16px;
-            margin-top: 18px;
-        }
+{% block content %}
 
-        .muted {
-            color: #6b7280;
-            font-size: 13px;
-        }
 
-        .section {
-            margin-top: 24px;
-        }
-
-        .box {
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            padding: 14px;
-            border-radius: 6px;
-            margin-top: 12px;
-        }
-
-        ul {
-            padding-left: 18px;
-        }
-
-        .risk {
-            margin-bottom: 14px;
-        }
-
-        .footer {
-            margin-top: 50px;
-            font-size: 12px;
-            color: #6b7280;
-            border-top: 1px solid #e5e7eb;
-            padding-top: 12px;
-        }
-    </style>
-</head>
-<body>
 
 <!-- ======================================
-     TITLE PAGE
+TITLE PAGE
 ====================================== -->
+
+<section class="card">
 
 <h1>Vehicle Health & Risk Assessment</h1>
 
 <p class="muted">
-    Powered by <strong>Ajebo Fix</strong><br>
-    Issued on {{ report.title_page.issued_date.strftime("%Y-%m-%d") if report.title_page.issued_date else "—" }}
+Powered by <strong>Ajebo Fix</strong><br>
+Issued on
+{{ report.title_page.issued_date.strftime("%Y-%m-%d") if report.title_page.issued_date else "—" }}
 </p>
 
-<div class="box">
-    <strong>Vehicle VIN:</strong> {{ report.title_page.vehicle_vin }}<br>
-    <strong>Engine:</strong> {{ report.title_page.engine_number or "—" }}<br>
-    <strong>Recorded Mileage:</strong> {{ report.title_page.current_mileage or "—" }}
+<div class="dashboard-grid">
+
+<div class="metric-card">
+<span class="metric-label">Vehicle VIN</span>
+<span class="metric-value">
+{{ report.title_page.vehicle_vin }}
+</span>
 </div>
+
+<div class="metric-card">
+<span class="metric-label">Engine</span>
+<span class="metric-value">
+{{ report.title_page.engine_number or "—" }}
+</span>
+</div>
+
+<div class="metric-card">
+<span class="metric-label">Mileage</span>
+<span class="metric-value">
+{{ report.title_page.current_mileage or "—" }}
+</span>
+</div>
+
+</div>
+
+</section>
+
+
 
 <!-- ======================================
-     SECTION 1 — VEHICLE OVERVIEW
+SECTION 1
 ====================================== -->
 
-<div class="section">
-    <h2>1. Vehicle Overview</h2>
+<section class="card">
 
-    <div class="box">
-        <strong>Vehicle:</strong>
-        {{ report.vehicle_overview.brand  if report.vehicle_overview else "—" }}
-        {{ report.vehicle_overview.model }}
-        {{ report.vehicle_overview.year }}<br>
+<h2>1. Vehicle Overview</h2>
 
-        <strong>Engine Type:</strong>
-        {{ report.vehicle_overview.engine_type or "—" }}<br>
+<div class="dashboard-grid">
 
-        <strong>Transmission:</strong>
-        {{ report.vehicle_overview.transmission or "—" }}<br>
-
-        <strong>Usage Pattern:</strong>
-        {{ report.vehicle_overview.usage_pattern or "—" }}<br>
-
-        <strong>Ownership Duration:</strong>
-        {{ report.vehicle_overview.ownership_duration }} days
-    </div>
+<div class="metric-card">
+<span class="metric-label">Vehicle</span>
+<span class="metric-value">
+{{ report.vehicle_overview.brand if report.vehicle_overview else "—" }}
+{{ report.vehicle_overview.model }}
+{{ report.vehicle_overview.year }}
+</span>
 </div>
+
+<div class="metric-card">
+<span class="metric-label">Engine Type</span>
+<span class="metric-value">
+{{ report.vehicle_overview.engine_type or "—" }}
+</span>
+</div>
+
+<div class="metric-card">
+<span class="metric-label">Transmission</span>
+<span class="metric-value">
+{{ report.vehicle_overview.transmission or "—" }}
+</span>
+</div>
+
+<div class="metric-card">
+<span class="metric-label">Usage Pattern</span>
+<span class="metric-value">
+{{ report.vehicle_overview.usage_pattern or "—" }}
+</span>
+</div>
+
+<div class="metric-card">
+<span class="metric-label">Ownership Duration</span>
+<span class="metric-value">
+{{ report.vehicle_overview.ownership_duration }} days
+</span>
+</div>
+
+</div>
+
+</section>
+
+
 
 <!-- ======================================
-     SECTION 2 — CURRENT HEALTH STATUS
+SECTION 2
 ====================================== -->
 
-<div class="section">
-    <h2>2. Current Health Status</h2>
+<section class="card">
 
-    <ul>
-        <li><strong>Engine System:</strong> {{ report.current_health_status.engine_system }}</li>
-        <li><strong>Transmission System:</strong> {{ report.current_health_status.transmission_system }}</li>
-        <li><strong>Suspension & Steering:</strong> {{ report.current_health_status.suspension_and_steering }}</li>
-        <li><strong>Electrical & Control Systems:</strong> {{ report.current_health_status.electrical_and_controls }}</li>
-        <li><strong>Cooling & Lubrication:</strong> {{ report.current_health_status.cooling_and_lubrication }}</li>
-    </ul>
+<h2>2. Current Health Status</h2>
 
-    <p class="muted">
-        Health status reflects professional assessment and monitoring.
-        It does not constitute a mechanical diagnosis.
-    </p>
+<div class="list-stack">
+
+<div class="list-item">
+<strong>Engine System:</strong>
+{{ report.current_health_status.engine_system }}
 </div>
 
-
-<div class="section">
-    <h2>Vehicle Risk Score</h2>
-
-    <div class="box">
-        <strong>Risk Level:</strong> {{ report.risk.level }}<br>
-        <strong>Risk Score:</strong> {{ report.risk.score }}/100
-    </div>
+<div class="list-item">
+<strong>Transmission System:</strong>
+{{ report.current_health_status.transmission_system }}
 </div>
+
+<div class="list-item">
+<strong>Suspension & Steering:</strong>
+{{ report.current_health_status.suspension_and_steering }}
+</div>
+
+<div class="list-item">
+<strong>Electrical & Control Systems:</strong>
+{{ report.current_health_status.electrical_and_controls }}
+</div>
+
+<div class="list-item">
+<strong>Cooling & Lubrication:</strong>
+{{ report.current_health_status.cooling_and_lubrication }}
+</div>
+
+</div>
+
+<p class="muted">
+Health status reflects professional assessment and monitoring.
+It does not constitute a mechanical diagnosis.
+</p>
+
+</section>
+
+
 
 <!-- ======================================
-     SECTION 3 — IDENTIFIED RISKS
+RISK SCORE
 ====================================== -->
 
-<div class="section">
-    <h2>3. Identified Risks</h2>
+<section class="card">
 
-    {% if report.identified_risks %}
-        {% for risk in report.identified_risks %}
-            <div class="box">
-                <strong>Description</strong><br>
-                {{ risk.description }}<br><br>
+<h2>Vehicle Risk Score</h2>
 
-                <strong>Likely Cause</strong><br>
-                {{ risk.likely_cause }}<br><br>
+<div class="dashboard-grid">
 
-                <strong>Potential Consequence</strong><br>
-                {{ risk.potential_consequence }}
-            </div>
-        {% endfor %}
-    {% else %}
-        <p class="muted">No immediate risks identified at this time.</p>
-    {% endif %}
+<div class="metric-card">
+<span class="metric-label">Risk Level</span>
+<span class="metric-value">
+{{ report.risk.level }}
+</span>
 </div>
+
+<div class="metric-card">
+<span class="metric-label">Risk Score</span>
+<span class="metric-value">
+{{ report.risk.score }}/100
+</span>
+</div>
+
+</div>
+
+</section>
+
+
 
 <!-- ======================================
-     SECTION 4 — URGENCY CLASSIFICATION
+SECTION 3
 ====================================== -->
 
-<div class="section">
-    <h2>4. Urgency Classification</h2>
+<section class="card">
 
-    <div class="box">
-        <strong>Immediate Attention:</strong>
-        {{ report.urgency_classification.immediate_attention | join(", ") if report.urgency_classification and report.urgency_classification.immediate_attention else "None" }}<br><br>
+<h2>3. Identified Risks</h2>
 
-        <strong>Monitoring Closely:</strong>
-        {{ report.urgency_classification.monitoring_closely | join(", ") or "None" }}<br><br>
+{% if report.identified_risks %}
 
-        <strong>Preventive Recommendations:</strong>
-        {{ report.urgency_classification.preventive_recommendations | join(", ") or "None" }}
-    </div>
+{% for risk in report.identified_risks %}
+
+<div class="list-item">
+
+<p><strong>Description</strong></p>
+<p>{{ risk.description }}</p>
+
+<p><strong>Likely Cause</strong></p>
+<p>{{ risk.likely_cause }}</p>
+
+<p><strong>Potential Consequence</strong></p>
+<p>{{ risk.potential_consequence }}</p>
+
 </div>
 
-<!-- ======================================
-     SECTION 5 — COST VS CONSEQUENCE
-====================================== -->
+{% endfor %}
 
-<div class="section">
-    <h2>5. Cost vs Consequence Analysis</h2>
+{% else %}
 
-    <p>
-        {{ report.cost_vs_consequence.summary }}
-    </p>
-</div>
+<p class="muted">
+No immediate risks identified at this time.
+</p>
 
-<!-- ======================================
-     SECTION 6 — RECOMMENDED TREATMENT PATHS
-====================================== -->
-
-<div class="section">
-    <h2>6. Recommended Treatment Paths</h2>
-
-    {% if report.treatment_paths %}
-        <ul>
-        {% for option in report.treatment_paths %}
-            <li>
-                <strong>Option {{ option.option_code }}:</strong>
-                {{ option.title }} — {{ option.description }}
-            </li>
-        {% endfor %}
-        </ul>
-    {% else %}
-        <p class="muted">No treatment paths documented.</p>
-    {% endif %}
-</div>
-
-<!-- ======================================
-     SECTION 7 — PROFESSIONAL RECOMMENDATION
-====================================== -->
-
-<div class="section">
-    <h2>7. Professional Recommendation</h2>
-
-    <p>
-        {{ report.professional_recommendation.statement }}
-    </p>
-
-    <p class="muted">
-        Advisor: {{ report.professional_recommendation.advisor }}
-    </p>
-</div>
-
-{% if print_mode %}
-<button onclick="window.print()" style="margin-bottom: 20px;">
-    Download Report
-</button>
 {% endif %}
 
+</section>
+
+
+
 <!-- ======================================
-     FOOTER
+SECTION 4
 ====================================== -->
 
-<div class="footer">
-    This report reflects professional assessment conducted by Ajebo Fix.
-    It is intended to support informed decision-making and long-term vehicle care.
+<section class="card">
+
+<h2>4. Urgency Classification</h2>
+
+<div class="list-stack">
+
+<div class="list-item">
+<strong>Immediate Attention:</strong><br>
+{{ report.urgency_classification.immediate_attention | join(", ") if report.urgency_classification and report.urgency_classification.immediate_attention else "None" }}
 </div>
 
-</body>
-</html>
+<div class="list-item">
+<strong>Monitoring Closely:</strong><br>
+{{ report.urgency_classification.monitoring_closely | join(", ") or "None" }}
+</div>
+
+<div class="list-item">
+<strong>Preventive Recommendations:</strong><br>
+{{ report.urgency_classification.preventive_recommendations | join(", ") or "None" }}
+</div>
+
+</div>
+
+</section>
+
+
+
+<!-- ======================================
+SECTION 5
+====================================== -->
+
+<section class="card">
+
+<h2>5. Cost vs Consequence Analysis</h2>
+
+<p>
+{{ report.cost_vs_consequence.summary }}
+</p>
+
+</section>
+
+
+
+<!-- ======================================
+SECTION 6
+====================================== -->
+
+<section class="card">
+
+<h2>6. Recommended Treatment Paths</h2>
+
+{% if report.treatment_paths %}
+
+<div class="list-stack">
+
+{% for option in report.treatment_paths %}
+
+<div class="list-item">
+<strong>Option {{ option.option_code }}:</strong>
+{{ option.title }} — {{ option.description }}
+</div>
+
+{% endfor %}
+
+</div>
+
+{% else %}
+
+<p class="muted">
+No treatment paths documented.
+</p>
+
+{% endif %}
+
+</section>
+
+
+
+<!-- ======================================
+SECTION 7
+====================================== -->
+
+<section class="card">
+
+<h2>7. Professional Recommendation</h2>
+
+<p>
+{{ report.professional_recommendation.statement }}
+</p>
+
+<p class="muted">
+Advisor:
+{{ report.professional_recommendation.advisor }}
+</p>
+
+</section>
+
+
+
+<!-- ======================================
+DOWNLOAD BUTTON
+====================================== -->
+
+{% if print_mode %}
+
+<section class="card">
+
+<button
+onclick="window.print()"
+class="btn btn-primary btn-block"
+>
+Download Report
+</button>
+
+</section>
+
+{% endif %}
+
+
+
+<!-- ======================================
+FOOTER
+====================================== -->
+
+<section class="card">
+
+<p class="muted">
+This report reflects professional assessment conducted by Ajebo Fix.
+It is intended to support informed decision-making and long-term vehicle care.
+</p>
+
+</section>
+
+
+
+{% endblock %}

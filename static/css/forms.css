@@ -1,0 +1,26 @@
+input,
+select,
+textarea{
+width:100%;
+padding:12px 14px;
+border:1px solid var(--border);
+border-radius:10px;
+font-family:var(--font);
+font-size:15px;
+margin-bottom:14px;
+background:white;
+}
+
+input:focus,
+select:focus,
+textarea:focus{
+outline:none;
+border-color:var(--blue);
+box-shadow:0 0 0 3px rgba(37,99,235,.12);
+}
+
+label{
+display:block;
+font-weight:600;
+margin-bottom:6px;
+}

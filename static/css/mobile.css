@@ -1,0 +1,51 @@
+@media(max-width:980px){
+
+.app-shell{
+grid-template-columns:1fr;
+}
+
+.sidebar{
+border-right:none;
+border-bottom:1px solid var(--border);
+}
+
+.main-panel{
+padding:20px;
+}
+
+.topbar{
+flex-direction:column;
+align-items:flex-start;
+}
+
+.page-title{
+font-size:24px;
+}
+
+}
+
+@media(max-width:640px){
+
+.stats-grid,
+.quick-grid{
+grid-template-columns:1fr;
+}
+
+.btn{
+width:100%;
+}
+
+}
+    .navbar{
+        flex-direction: column;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .container{
+        padding: 20px 14px;
+    }
+
+    .btn{
+        width: 100%;
+    }

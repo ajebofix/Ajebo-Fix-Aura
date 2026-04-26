@@ -1,229 +1,163 @@
 <!-- templates/cars/book_consultation.html -->
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Private Consultation</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% extends "base.html" %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 32px auto;
-            padding: 0 14px;
-            color: #111827;
-            line-height: 1.6;
-        }
+{% block title %}Private Consultation{% endblock %}
 
-        h1 {
-            margin-bottom: 6px;
-        }
+{% block page_title %}Private Consultation{% endblock %}
 
-        .subtitle {
-            font-size: 14px;
-            color: #4b5563;
-            margin-bottom: 20px;
-        }
+{% block page_subtitle %}
+Request a confidential advisor review before any professional vehicle action begins.
+{% endblock %}
 
-        .card {
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 18px;
-            margin-top: 18px;
-        }
+{% block content %}
 
-        label {
-            display: block;
-            margin-top: 18px;
-            font-weight: bold;
-            font-size: 14px;
-        }
 
-        input,
-        textarea {
-            width: 100%;
-            padding: 10px;
-            margin-top: 6px;
-            border-radius: 6px;
-            border: 1px solid #d1d5db;
-            font-size: 14px;
-        }
 
-        textarea {
-            resize: vertical;
-            min-height: 100px;
-        }
+<!-- ======================= -->
+<!-- FLASH -->
+<!-- ======================= -->
 
-        button {
-            width: 100%;
-            max-width: 320px;
-            padding: 14px;
-            margin-top: 24px;
-            border-radius: 6px;
-            border: none;
-            background: #111827;
-            color: #ffffff;
-            font-size: 15px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        .note {
-            font-size: 13px;
-            color: #4b5563;
-            background: #f3f4f6;
-            padding: 12px;
-            border-radius: 6px;
-            margin-top: 18px;
-        }
-
-        .status-box {
-            background: #eef2ff;
-            border: 1px solid #c7d2fe;
-            padding: 14px;
-            border-radius: 6px;
-            margin-bottom: 16px;
-            font-size: 14px;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 20px;
-            font-size: 14px;
-            font-weight: bold;
-            color: #2563eb;
-            text-decoration: none;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-
-        .flash{
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 14px;
-            font-size: 14px;
-        }
-
-        .flash.success{
-            background: #ecfdf5;
-            border: 1px solid #bbf7d0;
-        }
-
-        .flash.error{
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-        }
-
-        .flash.warning{
-            background: #fffbeb;
-            border: 1px solid #fde68a;
-        }
-
-        .flash.info{
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-        }
-    </style>
-</head>
-<body>
-
-<h1>Private Consultation</h1>
-
-<!-- FLASH MESSAGES -->
- {% with messages = get_flashed_messages(with_categories=true) %}
- {% if messages %}
- {% for category, message in messages %}
- <div class="flash {{ category }}">
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash {{ category }}">
     {{ message }}
- </div>
- {% endfor %}
- {% endif %}
- {% endwith %}
+</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
 
- {% if error %}
-    <div class="error">{{ error }}</div>
+{% if error %}
+<div class="flash error">
+    {{ error }}
+</div>
 {% endif %}
 
 
-<p class="subtitle">
-    {{ car.brand }} {{ car.model }} {{ car.year }}
-</p>
 
-<!-- ========================= -->
-<!-- MOST RECENT CONSULTATION -->
-<!-- ========================= -->
+<!-- ======================= -->
+<!-- VEHICLE -->
+<!-- ======================= -->
 
-{% if ownership and ownership.consultations %}
-    {% set recent = ownership.consultations|sort(attribute='created_at', reverse=True)|first %}
+<section class="card">
 
-    {% if recent %}
-        <div class="status-box">
-            <strong>Latest Consultation:</strong><br>
-            Status: {{ recent.status|capitalize }}<br>
+<h2>Vehicle</h2>
 
-            {% if recent.scheduled_for %}
-                <strong>Scheduled For:</strong>
-                {{ recent.scheduled_for.strftime("%Y-%m-%d %H:%M") if recent.scheduled_for else "Pending" }}<br>
-            {% endif %}
+<div class="metric-card">
 
-            {% if recent.notes %}
-                <strong>Your Submitted Note:</strong><br>
-                {{ recent.notes }}
-            {% endif %}
-        </div>
-    {% endif %}
-{% endif %}
+<span class="metric-value">
+{{ car.brand }} {{ car.model }} {{ car.year }}
+</span>
 
-<div class="card">
-    <p>
-        <strong>All vehicle care begins with a private consultation.</strong>
-    </p>
-
-    <p class="subtitle">
-        Ajebo Fix reviews the vehicle history and current condition
-        before any professional action is taken.
-    </p>
-
-    <form method="POST">
-
-        <label for="preferred_time">
-            Preferred Consultation Time
-        </label>
-        <input
-            type="datetime-local"
-            id="preferred_time"
-            name="preferred_time"
-            required
-        >
-
-        <label for="description">
-            Describe Your Concern (Optional)
-        </label>
-        <textarea
-            id="description"
-            name="description"
-            placeholder="Briefly describe any issue or observation you want reviewed."
-        ></textarea>
-
-        <div class="note">
-            An advisor will review the request and confirm the consultation.
-            You will be notified once it is scheduled.
-        </div>
-
-        <button type="submit">
-            Submit Consultation Request
-        </button>
-    </form>
 </div>
 
-<a href="{{ url_for('cars.car_detail', car_id=car.id) }}">
-    ← Back to Vehicle Profile
+</section>
+
+
+
+<!-- ======================= -->
+<!-- MOST RECENT CONSULTATION -->
+<!-- ======================= -->
+
+{% if ownership and ownership.consultations %}
+{% set recent = ownership.consultations|sort(attribute='created_at', reverse=True)|first %}
+
+{% if recent %}
+
+<section class="card">
+
+<h2>Latest Consultation</h2>
+
+<p>
+<strong>Status:</strong>
+{{ recent.status|capitalize }}
+</p>
+
+{% if recent.scheduled_for %}
+<p>
+<strong>Scheduled For:</strong>
+{{ recent.scheduled_for.strftime("%Y-%m-%d %H:%M") if recent.scheduled_for else "Pending" }}
+</p>
+{% endif %}
+
+{% if recent.notes %}
+<p>
+<strong>Your Submitted Note:</strong><br>
+{{ recent.notes }}
+</p>
+{% endif %}
+
+</section>
+
+{% endif %}
+{% endif %}
+
+
+
+<!-- ======================= -->
+<!-- REQUEST FORM -->
+<!-- ======================= -->
+
+<section class="card">
+
+<h2>Request Consultation</h2>
+
+<p class="subtitle">
+All vehicle care begins with a private consultation.
+Ajebo Fix reviews vehicle history and current condition
+before any professional action is taken.
+</p>
+
+<form method="POST">
+
+<label for="preferred_time">
+Preferred Consultation Time
+</label>
+
+<input
+    type="datetime-local"
+    id="preferred_time"
+    name="preferred_time"
+    required
+>
+
+<label for="description">
+Describe Your Concern (Optional)
+</label>
+
+<textarea
+    id="description"
+    name="description"
+    placeholder="Briefly describe any issue or observation you want reviewed."
+></textarea>
+
+<div class="alert alert-info">
+
+An advisor will review the request and confirm the consultation.
+You will be notified once it is scheduled.
+
+</div>
+
+<div class="button-grid">
+
+<button type="submit" class="btn btn-primary">
+    Submit Consultation Request
+</button>
+
+<a
+href="{{ url_for('cars.car_detail', car_id=car.id) }}"
+class="btn btn-secondary"
+>
+    Back to Vehicle Profile
 </a>
 
-</body>
-</html>
+</div>
+
+</form>
+
+</section>
+
+
+
+{% endblock %}

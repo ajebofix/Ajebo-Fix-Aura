@@ -1,59 +1,192 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Aura | Vehicle Medical File</title>
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
-</head>
-<body>
+<!-- templates/reports/report_pdf.html -->
+
+{% extends "base.html" %}
+
+{% block title %}Vehicle Medical File{% endblock %}
+
+{% block page_title %}Vehicle Medical File{% endblock %}
+
+{% block page_subtitle %}
+Chronological care history and professional monitoring record.
+{% endblock %}
+
+{% block content %}
+
+<link rel="stylesheet"
+href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
+
+
+
+<!-- ===================================== -->
+<!-- VEHICLE HEADER -->
+<!-- ===================================== -->
+
+<section class="card">
 
 <h1>{{ report.vehicle.name }}</h1>
+
 <p class="muted">
-    VIN: {{ report.vehicle.vin }}<br>
-    Assigned Advisor: {{ report.vehicle.assigned_advisor }}<br>
-    Record generated: {{ report.vehicle.generated_at.strftime("%Y-%m-%d") }}
+VIN: {{ report.vehicle.vin }}<br>
+Assigned Advisor: {{ report.vehicle.assigned_advisor }}<br>
+Record generated:
+{{ report.vehicle.generated_at.strftime("%Y-%m-%d") }}
 </p>
 
-<section class="section">
-    <h2>Health Summary</h2>
-    <p>{{ report.health.overview }}</p>
+<div class="dashboard-grid">
+
+<div class="metric-card">
+<span class="metric-label">VIN</span>
+<span class="metric-value">
+{{ report.vehicle.vin }}
+</span>
+</div>
+
+<div class="metric-card">
+<span class="metric-label">Advisor</span>
+<span class="metric-value">
+{{ report.vehicle.assigned_advisor }}
+</span>
+</div>
+
+<div class="metric-card">
+<span class="metric-label">Generated</span>
+<span class="metric-value">
+{{ report.vehicle.generated_at.strftime("%Y-%m-%d") }}
+</span>
+</div>
+
+</div>
+
 </section>
 
-<section class="section">
-    <h2>Reported Concerns</h2>
-    {% if report.concerns %}
-        {% for c in report.concerns %}
-            <p>
-                <strong>{{ c.category | replace('_',' ') | title }}</strong><br>
-                {{ c.description }}<br>
-                <span class="muted">
-                    Status: {{ c.status | replace('_',' ') | title }}
-                </span>
-            </p>
-        {% endfor %}
-    {% else %}
-        <p class="muted">No concerns reported.</p>
-    {% endif %}
+
+
+<!-- ===================================== -->
+<!-- HEALTH SUMMARY -->
+<!-- ===================================== -->
+
+<section class="card">
+
+<h2>Health Summary</h2>
+
+<p>
+{{ report.health.overview }}
+</p>
+
 </section>
 
-<section class="section">
-    <h2>Service Records</h2>
-    {% if report.treatments %}
-        {% for t in report.treatments %}
-            <p>
-                <strong>{{ t.title }}</strong><br>
-                {{ t.description }}<br>
-                <span class="muted">
-                    {{ t.date.strftime("%Y-%m-%d") }}
-                </span>
-            </p>
-        {% endfor %}
-    {% else %}
-        <p class="muted">No service records available.</p>
-    {% endif %}
+
+
+<!-- ===================================== -->
+<!-- REPORTED CONCERNS -->
+<!-- ===================================== -->
+
+<section class="card">
+
+<h2>Reported Concerns</h2>
+
+{% if report.concerns %}
+
+<div class="list-stack">
+
+{% for c in report.concerns %}
+
+<div class="list-item">
+
+<p>
+<strong>
+{{ c.category | replace('_',' ') | title }}
+</strong>
+</p>
+
+<p>
+{{ c.description }}
+</p>
+
+<p class="muted">
+Status:
+{{ c.status | replace('_',' ') | title }}
+</p>
+
+</div>
+
+{% endfor %}
+
+</div>
+
+{% else %}
+
+<p class="muted">
+No concerns reported.
+</p>
+
+{% endif %}
+
 </section>
 
-<a href="/cars/{{ car.id }}/records">← Back to Care History</a>
 
-</body>
-</html>
+
+<!-- ===================================== -->
+<!-- SERVICE RECORDS -->
+<!-- ===================================== -->
+
+<section class="card">
+
+<h2>Service Records</h2>
+
+{% if report.treatments %}
+
+<div class="list-stack">
+
+{% for t in report.treatments %}
+
+<div class="list-item">
+
+<p>
+<strong>{{ t.title }}</strong>
+</p>
+
+<p>
+{{ t.description }}
+</p>
+
+<p class="muted">
+{{ t.date.strftime("%Y-%m-%d") }}
+</p>
+
+</div>
+
+{% endfor %}
+
+</div>
+
+{% else %}
+
+<p class="muted">
+No service records available.
+</p>
+
+{% endif %}
+
+</section>
+
+
+
+<!-- ===================================== -->
+<!-- BACK LINK -->
+<!-- ===================================== -->
+
+<section class="card">
+
+<a
+href="/cars/{{ car.id }}/records"
+class="btn btn-secondary btn-block"
+>
+← Back to Care History
+</a>
+
+</section>
+
+
+
+{% endblock %}

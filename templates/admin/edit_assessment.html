@@ -1,201 +1,119 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Vehicle Assessment</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- templates/admin/edit_assessment.html -->
 
-<style>
+{% extends "base.html" %}
 
-body{
-font-family:Arial,Helvetica,sans-serif;
-max-width:900px;
-margin:32px auto;
-padding:0 16px;
-color:#111827;
-line-height:1.5;
-}
+{% block title %}Vehicle Assessment{% endblock %}
 
-h1{
-margin-bottom:6px;
-}
+{% block page_title %}Vehicle Assessment{% endblock %}
 
-.meta{
-font-size:14px;
-color:#4b5563;
-margin-bottom:18px;
-}
+{% block page_subtitle %}
+Professional inspection record, risk profiling, and treatment planning.
+{% endblock %}
 
-.badge{
-display:inline-block;
-padding:6px 10px;
-border-radius:6px;
-font-size:12px;
-font-weight:bold;
-margin-left:8px;
-}
-
-.badge.draft{background:#fef3c7;color:#92400e}
-.badge.finalized{background:#dcfce7;color:#065f46}
-
-.section{
-background:#f9fafb;
-border:1px solid #e5e7eb;
-border-radius:8px;
-padding:18px;
-margin-bottom:22px;
-}
-
-h2{
-margin-top:0;
-margin-bottom:10px;
-font-size:16px;
-}
-
-label{
-display:block;
-font-weight:bold;
-margin-bottom:6px;
-font-size:14px;
-}
-
-textarea{
-width:100%;
-min-height:120px;
-padding:12px;
-border-radius:6px;
-border:1px solid #d1d5db;
-resize:vertical;
-font-size:14px;
-}
-
-input[type="text"]{
-width:100%;
-padding:10px;
-margin-bottom:12px;
-border-radius:6px;
-border:1px solid #d1d5db;
-}
-
-select{
-width:100%;
-padding:10px;
-margin-bottom:12px;
-border-radius:6px;
-border:1px solid #d1d5db;
-}
-
-.actions{
-margin-top:24px;
-display:flex;
-gap:10px;
-flex-wrap:wrap;
-}
-
-button{
-padding:12px 18px;
-border-radius:6px;
-border:none;
-font-size:14px;
-cursor:pointer;
-font-weight:bold;
-}
-
-button.save{background:#111827;color:white}
-button.finalize{background:#7c2d12;color:white}
-
-.risk-block{
-border:1px dashed #d1d5db;
-padding:12px;
-margin-bottom:14px;
-border-radius:6px;
-background:white;
-}
-
-.flash{
-padding:12px 16px;
-border-radius:6px;
-margin-bottom:16px;
-font-size:14px;
-border:1px solid transparent;
-}
-
-.flash.success{background:#ecfdf5;border:1px solid #bbf7d0}
-.flash.error{background:#fef2f2;border:1px solid #fecaca}
-.flash.warning{background:#fffbeb;border:1px solid #fde68a}
-.flash.info{background:#eff6ff;border:1px solid #bfdbfe}
-
-.risk-summary{
-background:white;
-border:1px solid #e5e7eb;
-border-radius:8px;
-padding:12px;
-margin-bottom:18px;
-font-size: 14px;
-}
-
-.lock-note{
-margin-top:28px;
-font-size:13px;
-color:#374151;
-border-top:1px solid #e5e7eb;
-padding-top:12px;
-}
-
-.download{
-margin-top:20px;
-}
-
-.download a{
-font-weight:bold;
-text-decoration:none;
-color:#2563eb;
-}
-
-</style>
-</head>
-
-<body>
-
-<h1>
-Vehicle Assessment
-{% if assessment.is_finalized %}
-<span class="badge finalized">Finalized</span>
-{% else %}
-<span class="badge draft">Draft</span>
-{% endif %}
-</h1>
+{% block content %}
 
 
-<!-- FLASH MESSAGES -->
+
+<!-- ======================= -->
+<!-- HEADER -->
+<!-- ======================= -->
+
+<section class="card">
+
+<div class="section-head">
+
+    <div>
+        <h2>
+            Assessment Status
+
+            {% if assessment.is_finalized %}
+            <span class="badge success">Finalized</span>
+            {% else %}
+            <span class="badge warning">Draft</span>
+            {% endif %}
+        </h2>
+
+        <p class="muted">
+            {{ assessment.car.brand }}
+            {{ assessment.car.model }}
+            {{ assessment.car.year }}
+        </p>
+
+        <p class="meta">
+            VIN {{ assessment.car.vin or "—" }}
+            · Mileage {{ assessment.mileage_at_assessment or "—" }}
+        </p>
+    </div>
+
+</div>
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- FLASH -->
+<!-- ======================= -->
+
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="flash {{ category }}">{{ message }}</div>
+<div class="flash {{ category }}">
+    {{ message }}
+</div>
 {% endfor %}
 {% endif %}
 {% endwith %}
 
 
-<p class="meta">
-{{ assessment.car.brand }} {{ assessment.car.model }} {{ assessment.car.year }}<br>
-VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "—" }}
-</p>
 
+<!-- ======================= -->
+<!-- RISK SUMMARY -->
+<!-- ======================= -->
 
-<div class="risk-summary">
-<strong>Risk Level:</strong> <span id="riskLevel">{{ risk.label or "Not Calculated" }}</span><br>
-<strong>Risk Score:</strong> <span id="riskScore">{{ risk.score if risk.score else 0 }}/100</span>
+<section class="card">
+
+<h2>Risk Summary</h2>
+
+<div class="dashboard-grid">
+
+    <div class="metric-card">
+        <span class="metric-label">Risk Level</span>
+        <span class="metric-value" id="riskLevel">
+            {{ risk.label or "Not Calculated" }}
+        </span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">Risk Score</span>
+        <span class="metric-value">
+            <span id="riskScore">
+                {{ risk.score if risk.score else 0 }}
+            </span>/100
+        </span>
+    </div>
+
 </div>
+
+</section>
+
 
 
 <form method="post">
 
 
-<div class="section">
+
+<!-- ======================= -->
+<!-- SYSTEM HEALTH -->
+<!-- ======================= -->
+
+<section class="card">
 
 <h2>System Health</h2>
 
+<div class="form-grid">
+
+<div>
 <label>Engine System</label>
 <select name="engine_status">
 <option value="healthy" {% if assessment.engine_status=="healthy" %}selected{% endif %}>Healthy</option>
@@ -203,7 +121,9 @@ VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "
 <option value="attention" {% if assessment.engine_status=="attention" %}selected{% endif %}>Attention</option>
 <option value="critical" {% if assessment.engine_status=="critical" %}selected{% endif %}>Critical</option>
 </select>
+</div>
 
+<div>
 <label>Transmission</label>
 <select name="transmission_status">
 <option value="healthy" {% if assessment.transmission_status=="healthy" %}selected{% endif %}>Healthy</option>
@@ -211,7 +131,9 @@ VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "
 <option value="attention" {% if assessment.transmission_status=="attention" %}selected{% endif %}>Attention</option>
 <option value="critical" {% if assessment.transmission_status=="critical" %}selected{% endif %}>Critical</option>
 </select>
+</div>
 
+<div>
 <label>Suspension & Steering</label>
 <select name="suspension_status">
 <option value="healthy" {% if assessment.suspension_status=="healthy" %}selected{% endif %}>Healthy</option>
@@ -219,7 +141,9 @@ VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "
 <option value="attention" {% if assessment.suspension_status=="attention" %}selected{% endif %}>Attention</option>
 <option value="critical" {% if assessment.suspension_status=="critical" %}selected{% endif %}>Critical</option>
 </select>
+</div>
 
+<div>
 <label>Electrical</label>
 <select name="electrical_status">
 <option value="healthy" {% if assessment.electrical_status=="healthy" %}selected{% endif %}>Healthy</option>
@@ -227,7 +151,9 @@ VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "
 <option value="attention" {% if assessment.electrical_status=="attention" %}selected{% endif %}>Attention</option>
 <option value="critical" {% if assessment.electrical_status=="critical" %}selected{% endif %}>Critical</option>
 </select>
+</div>
 
+<div>
 <label>Cooling System</label>
 <select name="cooling_status">
 <option value="healthy" {% if assessment.cooling_status=="healthy" %}selected{% endif %}>Healthy</option>
@@ -235,11 +161,19 @@ VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "
 <option value="attention" {% if assessment.cooling_status=="attention" %}selected{% endif %}>Attention</option>
 <option value="critical" {% if assessment.cooling_status=="critical" %}selected{% endif %}>Critical</option>
 </select>
+</div>
 
 </div>
 
+</section>
 
-<div class="section">
+
+
+<!-- ======================= -->
+<!-- RISKS -->
+<!-- ======================= -->
+
+<section class="card">
 
 <h2>Identified Risks</h2>
 
@@ -291,10 +225,15 @@ VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "
 
 {% endif %}
 
-</div>
+</section>
 
 
-<div class="section">
+
+<!-- ======================= -->
+<!-- TREATMENT -->
+<!-- ======================= -->
+
+<section class="card">
 
 <h2>Treatment Paths</h2>
 
@@ -304,70 +243,116 @@ VIN {{ assessment.car.vin }} · Mileage {{ assessment.mileage_at_assessment or "
 
 {% set option = options | selectattr("option_code","equalto",code) | first %}
 
-<label>Option {{code}} Title</label>
+<div class="risk-block">
+
+<label>Option {{ code }} Title</label>
 <input type="text" name="treatment_title[]" value="{{ option.title if option }}">
 
 <label>Description</label>
 <textarea name="treatment_description[]">{{ option.description if option }}</textarea>
 
-<input type="hidden" name="treatment_code[]" value="{{code}}">
+<input type="hidden" name="treatment_code[]" value="{{ code }}">
+
+</div>
 
 {% endfor %}
 
-</div>
+</section>
 
 
-<div class="section">
+
+<!-- ======================= -->
+<!-- RECOMMENDATION -->
+<!-- ======================= -->
+
+<section class="card">
 
 <h2>Professional Recommendation</h2>
 
-<textarea name="professional_recommendation">
-{{ assessment.professional_recommendation or "" }}
-</textarea>
+<textarea name="professional_recommendation">{{ assessment.professional_recommendation or "" }}</textarea>
 
-</div>
+</section>
 
 
-{% if not assessment.is_finalized %}
 
-<div class="actions">
-<button type="submit" class="save">Save Draft</button>
-</div>
-
-{% endif %}
-
-</form>
-
+<!-- ======================= -->
+<!-- SAVE -->
+<!-- ======================= -->
 
 {% if not assessment.is_finalized %}
 
-<form method="post" action="{{ url_for('admin.admin_finalize_assessment', assessment_id=assessment.id) }}">
+<section class="card">
+<div class="button-grid">
 
-<div class="actions">
-<button type="submit" class="finalize">
-Finalize Assessment
+<button type="submit" class="btn btn-primary btn-block">
+    Save Draft
 </button>
-</div>
 
-</form>
+</div>
+</section>
 
 {% endif %}
 
+</form>
+
+
+
+<!-- ======================= -->
+<!-- FINALIZE -->
+<!-- ======================= -->
+
+{% if not assessment.is_finalized %}
+
+<section class="card">
+
+<form
+    method="post"
+    action="{{ url_for('admin.admin_finalize_assessment', assessment_id=assessment.id) }}"
+>
+
+<button type="submit" class="btn btn-success btn-block">
+    Finalize Assessment
+</button>
+
+</form>
+
+</section>
+
+{% endif %}
+
+
+
+<!-- ======================= -->
+<!-- DOWNLOAD -->
+<!-- ======================= -->
 
 {% if assessment.is_finalized %}
 
-<div class="download">
-<a href="{{ url_for('admin_assessments.admin_download_assessment_pdf', assessment_id=assessment.id) }}">
+<section class="card">
+
+<a
+href="{{ url_for('admin_assessments.admin_download_assessment_pdf', assessment_id=assessment.id) }}"
+class="btn btn-secondary"
+>
 Download Official Health Report (PDF)
 </a>
-</div>
+
+</section>
 
 {% endif %}
 
 
-<div class="lock-note">
-Once finalized, this assessment becomes the official record.
-</div>
+
+<!-- ======================= -->
+<!-- NOTE -->
+<!-- ======================= -->
+
+<section class="card">
+<p class="muted">
+Once finalized, this assessment becomes the official permanent record.
+</p>
+</section>
+
 
 
 <script>
@@ -411,5 +396,4 @@ el.addEventListener("change",calculateRisk)
 
 </script>
 
-</body>
-</html>
+{% endblock %}

@@ -1,0 +1,8 @@
+.actions{
+    display: grid;
+    gap: 10px;
+}
+
+.logout{
+    margin-top: 24px;
+}

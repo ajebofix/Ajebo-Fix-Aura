@@ -1,0 +1,18 @@
+.auth-wrap{
+max-width:460px;
+margin:auto;
+padding:50px 20px;
+}
+
+.auth-card{
+background:white;
+padding:30px;
+border-radius:16px;
+box-shadow:var(--shadow-md);
+}
+
+.helper{
+    margin-top: 14px;
+    text-align: center;
+    font-size: 14px;
+}

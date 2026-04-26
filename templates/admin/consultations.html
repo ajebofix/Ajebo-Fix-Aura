@@ -1,127 +1,29 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aura | Consultation Queue</title>
+<!-- templates/admin/consultations.html -->
 
-<style>
+{% extends "base.html" %}
 
-body{
-font-family:Arial,Helvetica,sans-serif;
-max-width:900px;
-margin:32px auto;
-padding:0 12px;
-color:#111827;
-}
+{% block title %}Aura | Consultation Queue{% endblock %}
 
-h1{
-margin-bottom:26px;
-}
+{% block page_title %}Consultation Queue{% endblock %}
 
-h2{
-margin-top:34px;
-margin-bottom:12px;
-font-size:17px;
-}
+{% block page_subtitle %}
+Manage scheduled sessions, live consultations, and completed advisory engagements.
+{% endblock %}
 
-.card{
-border:1px solid #e5e7eb;
-border-radius:6px;
-padding:14px;
-margin-bottom:12px;
-background:#fafafa;
-}
-
-.meta{
-font-size:14px;
-color:#374151;
-margin-bottom:6px;
-}
-
-.timestamp{
-font-size:13px;
-color:#6b7280;
-}
-
-.actions{
-margin-top:10px;
-display:flex;
-flex-wrap:wrap;
-gap:6px;
-}
-
-form{
-display:inline;
-}
-
-button{
-padding:8px 12px;
-border-radius:4px;
-border:none;
-cursor:pointer;
-font-size:13px;
-}
-
-.btn-start{
-background:#fde68a;
-}
-
-.btn-assessment{
-background:#bfdbfe;
-}
-
-.btn-complete{
-background:#bbf7d0;
-}
-
-a{
-text-decoration:none;
-color:#2563eb;
-font-size:13px;
-}
-
-a:hover{
-text-decoration:underline;
-}
-
-.empty{
-font-size:14px;
-color:#6b7280;
-}
-
-.flash{
-padding:12px;
-border-radius:6px;
-margin-bottom:16px;
-font-size:14px;
-}
-
-.flash.success{
-background:#ecfdf5;
-color:#065f46;
-border:1px solid #10b981;
-}
-
-.flash.error{
-background:#fee2e2;
-color:#991b1b;
-border:1px solid #ef4444;
-}
-
-</style>
-</head>
-
-<body>
-
-<h1>Consultation Queue</h1>
+{% block content %}
 
 
-<!-- FLASH MESSAGES -->
+
+<!-- ============================= -->
+<!-- FLASH -->
+<!-- ============================= -->
+
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="flash {{ category }}">{{ message }}</div>
+<div class="flash {{ category }}">
+    {{ message }}
+</div>
 {% endfor %}
 {% endif %}
 {% endwith %}
@@ -132,40 +34,57 @@ border:1px solid #ef4444;
 <!-- SCHEDULED -->
 <!-- ======================== -->
 
-<h2>Scheduled</h2>
+<section class="card">
+
+<div class="section-head">
+    <h2>Scheduled</h2>
+    <span class="badge info">
+        {{ grouped.scheduled|length if grouped.scheduled else 0 }}
+    </span>
+</div>
 
 {% if grouped.scheduled %}
 
 {% for c in grouped.scheduled %}
 
-<div class="card">
+<div class="list-item">
 
-<div class="meta">
-<strong>{{ c.car.display_name }}</strong> — {{ c.client.email }}
-</div>
+    <div class="vehicle-name">
+        {{ c.car.display_name }}
+    </div>
 
-<div class="timestamp">
-Scheduled {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
-</div>
+    <div class="meta">
+        {{ c.client.email }}
+    </div>
 
-{% if c.created_at and (now - c.created_at).total_seconds() < 300 %}
-    <span class="badge badge-danger">NEW</span>
-{% endif %}
+    <div class="timestamp">
+        Scheduled
+        {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
+    </div>
 
-<div class="actions">
+    {% if c.created_at and (now - c.created_at).total_seconds() < 300 %}
+        <span class="badge danger">NEW</span>
+    {% endif %}
 
-<form method="POST"
-action="{{ url_for('admin.admin_start_consultation', consultation_id=c.id) }}">
-<button class="btn-start">
-Start Consultation
-</button>
-</form>
+    <div class="button-grid">
 
-<a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
-View Vehicle
-</a>
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_start_consultation', consultation_id=c.id) }}"
+        >
+            <button class="btn btn-primary btn-block">
+                Start Consultation
+            </button>
+        </form>
 
-</div>
+        <a
+            href="{{ url_for('admin.view_vehicle', car_id=c.car_id) }}"
+            class="btn btn-secondary"
+        >
+            View Vehicle
+        </a>
+
+    </div>
 
 </div>
 
@@ -173,9 +92,11 @@ View Vehicle
 
 {% else %}
 
-<p class="empty">None scheduled.</p>
+<p class="muted">None scheduled.</p>
 
 {% endif %}
+
+</section>
 
 
 
@@ -183,43 +104,62 @@ View Vehicle
 <!-- IN PROGRESS -->
 <!-- ======================== -->
 
-<h2>In Progress</h2>
+<section class="card">
+
+<div class="section-head">
+    <h2>In Progress</h2>
+    <span class="badge warning">
+        {{ grouped.in_progress|length if grouped.in_progress else 0 }}
+    </span>
+</div>
 
 {% if grouped.in_progress %}
 
 {% for c in grouped.in_progress %}
 
-<div class="card">
+<div class="list-item">
 
-<div class="meta">
-<strong>{{ c.car.display_name }}</strong> — {{ c.client.email }}
-</div>
+    <div class="vehicle-name">
+        {{ c.car.display_name }}
+    </div>
 
-<div class="timestamp">
-Started {{ c.started_at.strftime("%Y-%m-%d %H:%M") if c.started_at }}
-</div>
+    <div class="meta">
+        {{ c.client.email }}
+    </div>
 
-<div class="actions">
+    <div class="timestamp">
+        Started
+        {{ c.started_at.strftime("%Y-%m-%d %H:%M") if c.started_at }}
+    </div>
 
-<form method="POST"
-action="{{ url_for('admin.admin_start_assessment', consultation_id=c.id) }}">
-<button class="btn-assessment">
-Continue Assessment
-</button>
-</form>
+    <div class="button-grid">
 
-<form method="POST"
-action="{{ url_for('admin.admin_complete_consultation', consultation_id=c.id) }}">
-<button class="btn-complete">
-Complete
-</button>
-</form>
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_start_assessment', consultation_id=c.id) }}"
+        >
+            <button class="btn btn-warning btn-block">
+                Continue Assessment
+            </button>
+        </form>
 
-<a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
-View Vehicle
-</a>
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_complete_consultation', consultation_id=c.id) }}"
+        >
+            <button class="btn btn-success btn-block">
+                Complete
+            </button>
+        </form>
 
-</div>
+        <a
+            href="{{ url_for('admin.view_vehicle', car_id=c.car_id) }}"
+            class="btn btn-secondary"
+        >
+            View Vehicle
+        </a>
+
+    </div>
 
 </div>
 
@@ -227,9 +167,11 @@ View Vehicle
 
 {% else %}
 
-<p class="empty">None active.</p>
+<p class="muted">None active.</p>
 
 {% endif %}
+
+</section>
 
 
 
@@ -237,29 +179,44 @@ View Vehicle
 <!-- COMPLETED -->
 <!-- ======================== -->
 
-<h2>Completed</h2>
+<section class="card">
+
+<div class="section-head">
+    <h2>Completed</h2>
+    <span class="badge success">
+        {{ grouped.completed|length if grouped.completed else 0 }}
+    </span>
+</div>
 
 {% if grouped.completed %}
 
 {% for c in grouped.completed %}
 
-<div class="card">
+<div class="list-item">
 
-<div class="meta">
-<strong>{{ c.car.display_name }}</strong> — {{ c.client.email }}
-</div>
+    <div class="vehicle-name">
+        {{ c.car.display_name }}
+    </div>
 
-<div class="timestamp">
-Completed {{ c.completed_at.strftime("%Y-%m-%d %H:%M") if c.completed_at }}
-</div>
+    <div class="meta">
+        {{ c.client.email }}
+    </div>
 
-<div class="actions">
+    <div class="timestamp">
+        Completed
+        {{ c.completed_at.strftime("%Y-%m-%d %H:%M") if c.completed_at }}
+    </div>
 
-<a href="{{ url_for('admin.admin_view_vehicle', car_id=c.car_id) }}">
-View Vehicle
-</a>
+    <div class="button-grid">
 
-</div>
+        <a
+            href="{{ url_for('admin.view_vehicle', car_id=c.car_id) }}"
+            class="btn btn-secondary"
+        >
+            View Vehicle
+        </a>
+
+    </div>
 
 </div>
 
@@ -267,10 +224,10 @@ View Vehicle
 
 {% else %}
 
-<p class="empty">None completed.</p>
+<p class="muted">None completed.</p>
 
 {% endif %}
 
+</section>
 
-</body>
-</html>
+{% endblock %}

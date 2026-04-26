@@ -1,0 +1,20 @@
+/* templates/static/css/style.css */
+
+@import url("theme.css");
+@import url("buttons.css");
+@import url("components.css");
+@import url("layout.css");
+@import url("forms.css");
+@import url("alerts.css");
+@import url("core.css")
+@import url("mobile.css");
+@import url("auth.css");
+@import url("dashboard.css")
+@import url("admin.css");
+@import url("driver.css");
+@import url("sidebar.css");
+@import url("ajebo_fix_report.css");
+@import url("cards.css");
+@import url("vehicle.css");
+@import url("chat.css");
+@import url("animations.css");

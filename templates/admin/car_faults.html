@@ -1,78 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Reported Concerns</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- templates/admin/car_faults.html -->
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 24px auto;
-            padding: 12px;
-            color: #111827;
-        }
+{% extends "base.html" %}
 
-        h2 {
-            margin-bottom: 8px;
-        }
+{% block title %}Reported Concerns{% endblock %}
 
-        .concern {
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 14px;
-            margin-bottom: 16px;
-            background: #fafafa;
-        }
-
-        .meta {
-            font-size: 14px;
-            color: #374151;
-        }
-
-        .status {
-            font-weight: bold;
-        }
-
-        .status.review { color: #92400e; }
-        .status.monitor { color: #0369a1; }
-        .status.resolved { color: #065f46; }
-
-        .actions form {
-            display: inline;
-        }
-
-        button {
-            padding: 6px 10px;
-            margin-right: 6px;
-            cursor: pointer;
-            border-radius: 4px;
-            border: 1px solid #d1d5db;
-            background: #ffffff;
-        }
-
-        button:hover {
-            background: #f3f4f6;
-        }
-
-        .note {
-            font-size: 13px;
-            color: #4b5563;
-            background: #f9fafb;
-            padding: 10px;
-            border-radius: 6px;
-            margin-bottom: 18px;
-        }
-
-        a {
-            text-decoration: none;
-            font-weight: bold;
-            color: #2563eb;
-        }
-    </style>
-</head>
-<body>
+{% block content %}
 
 <h2>Reported Concerns — {{ car.brand }} {{ car.model }}</h2>
 
@@ -128,5 +60,4 @@
 
 <a href="/admin/fleet/health">← Back to Fleet Overview</a>
 
-</body>
-</html>
+{% endblock %}

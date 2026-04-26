@@ -1,82 +1,144 @@
 <!-- templates/driver/checkin.html -->
 
-<!DOCTYPE html>
-<html>
-<head>
-<title>Daily Check-In</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+{% extends "base.html" %}
 
-<style>
-body{
-font-family:Arial;
-max-width:600px;
-margin:30px auto;
-padding:15px;
-}
+{% block title %}Daily Vehicle Check-In{% endblock %}
 
-.card{
-border:1px solid #ddd;
-padding:20px;
-border-radius:8px;
-}
+{% block page_title %}Daily Vehicle Check-In{% endblock %}
 
-label{
-display:block;
-margin:14px 0;
-}
+{% block page_subtitle %}
+Operational readiness review for assigned vehicle.
+{% endblock %}
 
-button{
-width:100%;
-padding:14px;
-background:#2563eb;
-color:white;
-border:none;
-border-radius:6px;
-font-weight:bold;
-}
-textarea{
-width:100%;
-height:100px;
-}
-</style>
-</head>
-<body>
+{% block content %}
 
-<h1>Daily Vehicle Check-In</h1>
-<p>{{ car.brand }} {{ car.model }} {{ car.year }}</p>
+
+
+<!-- ======================= -->
+<!-- VEHICLE -->
+<!-- ======================= -->
+
+<section class="card">
+
+<h2>Assigned Vehicle</h2>
+
+<div class="metric-card">
+
+<span class="metric-value">
+{{ car.brand }} {{ car.model }} {{ car.year }}
+</span>
+
+</div>
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- STATUS -->
+<!-- ======================= -->
 
 {% if today_checkin %}
+
 <div class="flash success">
-    Today's Check-In Completed
+Today's Check-In Completed
 </div>
+
 {% else %}
-<div class="flash error">
-    Today's Check-In Pending
+
+<div class="flash warning">
+Today's Check-In Pending
 </div>
+
 {% endif %}
 
-<div class="card">
+
+
+<!-- ======================= -->
+<!-- FORM -->
+<!-- ======================= -->
+
+<section class="card">
+
+<h2>Inspection Checklist</h2>
+
+<p class="muted">
+Tick any issue noticed before or during operation.
+</p>
 
 <form method="POST">
 
-<label><input type="checkbox" name="tyre_warning"> Tyre warning / low tyre</label>
+<div class="check-group">
 
-<label><input type="checkbox" name="fuel_low"> Fuel low</label>
+<label class="checkbox-row">
+<input type="checkbox" name="tyre_warning">
+<span>Tyre warning / low tyre</span>
+</label>
 
-<label><input type="checkbox" name="dashboard_light"> Dashboard warning light</label>
+<label class="checkbox-row">
+<input type="checkbox" name="fuel_low">
+<span>Fuel low</span>
+</label>
 
-<label><input type="checkbox" name="vibration"> Vibration noticed</label>
+<label class="checkbox-row">
+<input type="checkbox" name="dashboard_light">
+<span>Dashboard warning light</span>
+</label>
 
-<label><input type="checkbox" name="unusual_sound"> Unusual sound</label>
+<label class="checkbox-row">
+<input type="checkbox" name="vibration">
+<span>Vibration noticed</span>
+</label>
 
-<label>Notes</label>
-<textarea name="notes"></textarea>
-
-<button type="submit">Submit Check-In</button>
-
-</form>
+<label class="checkbox-row">
+<input type="checkbox" name="unusual_sound">
+<span>Unusual sound</span>
+</label>
 
 </div>
 
-</body>
-</html>
+<label>Notes</label>
+
+<textarea
+name="notes"
+placeholder="Optional notes about symptoms, timing, or operating condition"
+></textarea>
+
+<div class="button-grid">
+
+<button type="submit" class="btn btn-primary">
+Submit Check-In
+</button>
+
+<a
+href="{{ url_for('driver.driver_dashboard') }}"
+class="btn btn-secondary"
+>
+Back to Portal
+</a>
+
+</div>
+
+</form>
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- NOTE -->
+<!-- ======================= -->
+
+<section class="card">
+
+<div class="alert alert-info">
+
+Daily check-ins help identify risks early and support proactive vehicle care.
+
+</div>
+
+</section>
+
+
+
+{% endblock %}

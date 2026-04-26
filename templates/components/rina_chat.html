@@ -1,127 +1,135 @@
 <!-- templates/components/rina_chat.html -->
 
-<!DOCTYPE html>
-<div
-    style="
-        border: 1px solid #e5e7eb;
-        padding: 14px;
-        max-width: 100%;
-        border-radius: 8px;
-        background: #fafafa;
-    "
->
-    <strong>💬 Private Consultation — A.J. Rina</strong>
+<div class="card rina-shell">
 
-    <p style="font-size:14px; margin-top:6px; color:#4b5563;">
-        I help interpret vehicle health, reported concerns,
-        and recommended next steps — clearly and calmly.
-    </p>
+    <div class="rina-header">
+
+        <div class="rina-avatar">
+            A.J
+        </div>
+
+        <div>
+
+            <h3 class="rina-title">
+                Private Consultation — A.J. Rina
+            </h3>
+
+            <p class="rina-subtitle">
+                I help interpret vehicle health, reported concerns,
+                and recommended next steps clearly and calmly.
+            </p>
+
+        </div>
+
+    </div>
+
 
     <!-- ===================== -->
     <!-- CONVERSATION WINDOW -->
     <!-- ===================== -->
+
     <div
         id="rina-messages"
-        style="
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #e5e7eb;
-            padding: 10px;
-            margin-bottom: 12px;
-            background: #ffffff;
-            -webkit-overflow-scrolling: touch;
-            font-size: 14px;
-            line-height: 1.5;
-        "
+        class="rina-messages"
     >
-        <div>
-            <strong>Rina:</strong>
-            Welcome. How can I assist you with your vehicle today?
+        <div class="rina-message assistant">
+
+            <div class="rina-bubble">
+                <strong>Rina</strong><br>
+                Welcome. How can I assist you with your vehicle today?
+            </div>
+
         </div>
     </div>
+
 
     <!-- ===================== -->
     <!-- INPUT ROW -->
     <!-- ===================== -->
-    <div style="display:flex; gap:8px;">
+
+    <div class="rina-input-row">
+
         <input
             type="text"
             id="rina-input"
-            placeholder="Ask about your vehicle’s condition or next steps…"
-            style="
-                flex: 1;
-                padding: 12px;
-                font-size: 15px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-            "
+            class="rina-input"
+            placeholder="Ask about your vehicle condition or next steps..."
             onkeydown="if(event.key === 'Enter'){ sendToRina(); }"
-        />
+        >
 
         <button
             type="button"
             onclick="sendToRina()"
-            style="
-                padding: 12px 16px;
-                font-size: 15px;
-                cursor: pointer;
-                border-radius: 6px;
-                border: none;
-                background: #2563eb;
-                color: white;
-                font-weight: bold;
-            "
+            class="btn btn-primary"
         >
             Ask
         </button>
+
     </div>
+
 
     <!-- ===================== -->
     <!-- DISCLAIMER -->
     <!-- ===================== -->
-    <p style="font-size:12px; color:#6b7280; margin-top:10px;">
+
+    <p class="rina-note">
         Rina provides guidance based on recorded vehicle data.
         She does not diagnose faults — physical inspection is required for confirmation.
     </p>
+
 </div>
+
 
 <script>
 const messagesEl = document.getElementById("rina-messages");
 
+
 // =========================
-// FORMAT MESSAGE (clean UI)
+// FORMAT MESSAGE
 // =========================
 function formatMessage(role, text) {
-    const name = role === "user" ? "You" : "Rina";
+
+    const isUser = role === "user";
+
+    const name = isUser ? "You" : "Rina";
 
     return `
-        <div style="margin-bottom:10px;">
-            <strong>${name}:</strong>
-            <div style="margin-top:4px; white-space:pre-line;">
-                ${text}
+        <div class="rina-message ${isUser ? "user" : "assistant"}">
+            <div class="rina-bubble">
+                <strong>${name}</strong><br>
+                <div style="margin-top:6px; white-space:pre-line;">
+                    ${text}
+                </div>
             </div>
         </div>
     `;
 }
 
+
 // =========================
 // LOAD CHAT HISTORY
 // =========================
 function loadHistory() {
+
     fetch("/chat/history", {
         credentials: "same-origin"
     })
     .then(res => res.json())
     .then(data => {
+
         messagesEl.innerHTML = "";
 
         if (!data.messages.length) {
+
             messagesEl.innerHTML = `
-                <div>
-                    <strong>Rina:</strong>
-                    Welcome. How can I assist you with your vehicle today?
+                <div class="rina-message assistant">
+                    <div class="rina-bubble">
+                        <strong>Rina</strong><br>
+                        Welcome. How can I assist you with your vehicle today?
+                    </div>
                 </div>
             `;
+
             return;
         }
 
@@ -133,28 +141,34 @@ function loadHistory() {
     });
 }
 
+
 // =========================
 // SEND MESSAGE
 // =========================
 function sendToRina() {
+
     const input = document.getElementById("rina-input");
     const text = input.value.trim();
 
     if (!text) return;
 
-    // Show user message
     messagesEl.innerHTML += formatMessage("user", text);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+
     input.value = "";
 
-    // Loading
     const loadingId = "rina-loading";
+
     messagesEl.innerHTML += `
-        <div id="${loadingId}" style="margin-bottom:10px;">
-            <em>Rina is reviewing this…</em>
+        <div class="rina-message assistant" id="${loadingId}">
+            <div class="rina-bubble">
+                <em>Rina is reviewing this...</em>
+            </div>
         </div>
     `;
+
     messagesEl.scrollTop = messagesEl.scrollHeight;
+
 
     fetch("/chat", {
         method: "POST",
@@ -164,69 +178,83 @@ function sendToRina() {
         },
         body: JSON.stringify({ message: text })
     })
+
     .then(res => res.json())
+
     .then(data => {
-        document.getElementById(loadingId)?.remove();
 
-        messagesEl.innerHTML += formatMessage("assistant", data.reply);
-
-        // =========================
-        // SHOW BOOKING BUTTON
-        // =========================
-        if (data.intent === "booking") {
-
-            messagesEl.innerHTML += `
-                <div style="margin-top:8px; margin-bottom:4px;">
-                    <strong>Continue:</strong>
-                </div>
-            `;
-
-            messagesEl.innerHTML += `
-                <div style="margin-bottom:10px;">
-                    <a href="/cars/${data.car_id}/consultations/book"
-                        style="background:#16a34a; color:white; padding:8px 12px; border-radius:6px; text-decoration:none;">
-                        Book a Consultation
-                    </a>
-                </div>
-            `;
-        }
-
-        speak(data.reply); // Text-to-speech
-
-
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-    })
-    .catch(() => {
         document.getElementById(loadingId)?.remove();
 
         messagesEl.innerHTML += formatMessage(
             "assistant",
-            "I’m unable to respond at the moment. Please try again shortly."
+            data.reply
+        );
+
+
+        // =========================
+        // BOOKING CTA
+        // =========================
+
+        if (data.intent === "booking") {
+
+            messagesEl.innerHTML += `
+                <div class="rina-message assistant">
+                    <div class="rina-bubble">
+                        <strong>Continue</strong><br><br>
+
+                        <a
+                            href="/cars/${data.car_id}/consultations/book"
+                            class="btn btn-success"
+                        >
+                            Book a Consultation
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+
+        speak(data.reply);
+
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    })
+
+    .catch(() => {
+
+        document.getElementById(loadingId)?.remove();
+
+        messagesEl.innerHTML += formatMessage(
+            "assistant",
+            "I’m unable to respond right now. Please try again shortly."
         );
 
         messagesEl.scrollTop = messagesEl.scrollHeight;
     });
 }
 
+
 // =========================
-// LOAD ON PAGE OPEN
+// LOAD PAGE
 // =========================
 window.onload = () => {
+
     loadHistory();
-    document.getElementById("rina-input").focus();
+
+    document.getElementById("rina-input")?.focus();
 };
+
 
 // =========================
 // TEXT TO SPEECH
 // =========================
 function speak(text) {
+
     const speech = new SpeechSynthesisUtterance(text);
-    speech.lang = "en-UK";
-    speech.volume = 1;
+
+    speech.lang = "en-GB";
     speech.rate = 0.95;
-    speech.pitch = 1;
+    speech.pitch = 1.1;
+    speech.volume = 1;
+
     window.speechSynthesis.speak(speech);
 }
-
-
 </script>

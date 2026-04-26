@@ -1,21 +1,138 @@
 <!-- templates/base.html -->
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>{% block title %}Aura{% endblock %}</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>{% block title %}Aura{% endblock %}</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+rel="stylesheet">
+
 </head>
 <body>
 
-<nav>Aura Navbar</nav>
+<div class="app-shell">
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  ...
-{% endwith %}
+    <aside class="sidebar">
 
-{% block content %}{% endblock %}
+        <div class="brand-block">
+            <div class="brand-logo">logo</div>
 
-<footer>Ajebo Fix Aura</footer>
+            <div>
+                <div class="brand-name">Aura</div>
+                <div class="brand-sub">
+                    Private Automotive Health
+                </div>
+            </div>
+        </div>
+
+        <nav class="side-nav">
+
+            <a href="/dashboard" class="nav-item">Dashboard</a>
+
+            <a href="/cars" class="nav-item">Vehicles</a>
+
+            <a href="/chat" class="nav-item">A.J. Rina</a>
+
+            {% if current_user.is_authenticated and current_user.is_admin %}
+            <a href="/admin/dashboard" class="nav-item">
+                Advisor Console
+            </a>
+            {% endif %}
+
+            {% if current_user.is_authenticated and current_user.is_driver %}
+            <a href="/driver/dashboard" class="nav-item">
+                Driver Portal
+            </a>
+            {% endif %}
+
+            <a href="/auth/change-password" class="nav-item">
+                Security
+            </a>
+
+        </nav>
+
+        {% if current_user.is_authenticated %}
+        <div class="sidebar-user">
+
+            <div class="user-name">
+                {{ current_user.name }}
+            </div>
+
+            <div class="user-role">
+                {{ current_user.role|capitalize }}
+            </div>
+
+            <form method="POST"
+                  action="{{ url_for('auth.logout') }}">
+
+                <button class="btn btn-dark btn-block">
+                    Sign Out
+                </button>
+
+            </form>
+
+        </div>
+        {% endif %}
+
+    </aside>
+
+
+    <main class="main-panel">
+
+        <header class="topbar">
+
+            <div>
+                <h1 class="page-title">
+                    {% block page_title %}Aura{% endblock %}
+                </h1>
+
+                <p class="page-subtitle">
+                    {% block page_subtitle %}
+                    Private vehicle health management.
+                    {% endblock %}
+                </p>
+            </div>
+
+            <div class="topbar-right">
+                {% if current_user.is_authenticated %}
+                <span class="pill">
+                    {{ current_user.role|capitalize }}
+                </span>
+                {% endif %}
+            </div>
+
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="flash {{ category }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <section class="content-area">
+            {% block content %}{% endblock %}
+        </section>
+
+        <footer class="footer-bar">
+            Ajebo Fix Aura © 2026
+        </footer>
+
+    </main>
+
+</div>
 
 </body>
 </html>

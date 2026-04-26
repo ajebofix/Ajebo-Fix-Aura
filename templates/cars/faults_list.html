@@ -1,192 +1,148 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Aura | Reported Concerns</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- templates/cars/faults_list.html -->
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 28px auto;
-            padding: 12px;
-            line-height: 1.55;
-            color: #111827;
-        }
+{% extends "base.html" %}
 
-        h1 {
-            margin-bottom: 6px;
-        }
+{% block title %}Aura | Reported Concerns{% endblock %}
 
-        p.subtitle {
-            margin-top: 0;
-            color: #4b5563;
-            font-size: 14px;
-        }
+{% block page_title %}Reported Concerns{% endblock %}
 
-        .flash.success {
-            background: #ecfdf5;
-            color: #065f46;
-        }
+{% block page_subtitle %}
+Submitted observations currently under professional review.
+{% endblock %}
 
-        .flash.error {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .concern {
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 14px;
-            margin-bottom: 14px;
-            background: #fafafa;
-        }
-
-        .meta {
-            font-size: 13px;
-            color: #6b7280;
-            margin-bottom: 8px;
-        }
-
-        .status {
-            font-weight: bold;
-            text-transform: capitalize;
-        }
-
-        .status.reported {
-            color: #92400e;
-        }
-
-        .status.under_review {
-            color: #1d4ed8;
-        }
-
-        .status.monitoring{
-            color: #b45309;
-        }
-
-        .status.resolved {
-            color: #065f46;
-        }
-
-        .note {
-            font-size: 13px;
-            color: #4b5563;
-            background: #f9fafb;
-            padding: 12px;
-            border-radius: 6px;
-            margin-top: 20px;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 18px;
-            text-decoration: none;
-            color: #2563eb;
-            font-weight: bold;
-            font-size: 14px;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-
-        .flash{
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 14px;
-            font-size: 14px;
-            border: 1px solid transparent;
-        }
-
-        .flash.success{
-            background: #ecfdf5;
-            border: 1px solid #bbf7d0;
-        }
-
-        .flash.error{
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-        }
-
-        .flash.warning{
-            background: #fffbeb;
-            border: 1px solid #fde68a;
-        }
-
-        .flash.info{
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-        }
-    </style>
-</head>
-<body>
-
-<h1>Reported Concerns</h1>
-
-<!-- FLASH MESSAGES -->
- {% with messages = get_flashed_messages(with_categories=true) %}
- {% if messages %}
- {% for category, message in messages %}
- <div class="flash {{ category }}">
-{{ message }}
- </div>
- {% endfor %}
- {% endif %}
- {% endwith %}
+{% block content %}
 
 
-<p class="subtitle">
-    <strong>{{ car.brand }} {{ car.model }} {{ car.year }}</strong><br>
-    Observations submitted for professional review by Ajebo Fix.
-</p>
 
+<!-- ======================= -->
+<!-- FLASH -->
+<!-- ======================= -->
 
-<!-- ===================== -->
-<!-- CONCERNS LIST -->
-<!-- ===================== -->
-{% if faults %}
-    {% for fault in faults %}
-        <div class="concern">
-            <div class="meta">
-                {{ fault.created_at.strftime("%Y-%m-%d") }} •
-                Area: {{ fault.category | replace('_', ' ') | title }} •
-                Severity: {{ fault.severity | capitalize }} •
-                Status:
-                <span class="status {{ fault.status }}">
-                    {{ fault.status | replace('_', ' ') | title }}
-                </span>
-            </div>
-
-            <p>{{ fault.description }}</p>
-        </div>
-    {% endfor %}
-{% else %}
-    <p>No concerns have been reported for this vehicle.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash {{ category }}">
+    {{ message }}
+</div>
+{% endfor %}
 {% endif %}
+{% endwith %}
 
-<!-- ===================== -->
-<!-- DISCLAIMER -->
-<!-- ===================== -->
-<div class="note">
-    Reported concerns are observations, not diagnoses.
-    They help Ajebo Fix monitor your vehicle and determine
-    whether assessment or action is required.
+
+
+<!-- ======================= -->
+<!-- VEHICLE -->
+<!-- ======================= -->
+
+<section class="card">
+
+<h2>Vehicle</h2>
+
+<div class="metric-card">
+
+<span class="metric-value">
+{{ car.brand }} {{ car.model }} {{ car.year }}
+</span>
+
 </div>
 
-<!-- ===================== -->
+<p class="muted">
+Observations submitted for professional review by Ajebo Fix.
+</p>
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- CONCERNS LIST -->
+<!-- ======================= -->
+
+<section class="card">
+
+<h2>Concern History</h2>
+
+{% if faults %}
+
+    {% for fault in faults %}
+
+    <div class="list-item">
+
+        <p class="meta">
+            {{ fault.created_at.strftime("%Y-%m-%d") }} ·
+            Area: {{ fault.category | replace('_', ' ') | title }} ·
+            Severity: {{ fault.severity | capitalize }}
+        </p>
+
+        <p>
+            <strong>Status:</strong>
+            <span class="status {{ fault.status }}">
+                {{ fault.status | replace('_', ' ') | title }}
+            </span>
+        </p>
+
+        <p>{{ fault.description }}</p>
+
+    </div>
+
+    {% endfor %}
+
+{% else %}
+
+<p class="muted">
+No concerns have been reported for this vehicle.
+</p>
+
+{% endif %}
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- DISCLAIMER -->
+<!-- ======================= -->
+
+<section class="card">
+
+<div class="alert alert-info">
+
+Reported concerns are observations, not diagnoses.
+They help Ajebo Fix monitor your vehicle and determine
+whether assessment or action is required.
+
+</div>
+
+</section>
+
+
+
+<!-- ======================= -->
 <!-- ACTIONS -->
-<!-- ===================== -->
-<a href="{{ url_for('faults.add_fault', car_id=car.id) }}">
-    Report a new concern
+<!-- ======================= -->
+
+<section class="card">
+
+<div class="button-grid">
+
+<a
+href="{{ url_for('faults.add_fault', car_id=car.id) }}"
+class="btn btn-primary"
+>
+    Report a New Concern
 </a>
 
-<br><br>
-
-<a href="{{ url_for('cars.car_detail', car_id=car.id) }}">
-    ← Return to Vehicle Overview
+<a
+href="{{ url_for('cars.car_detail', car_id=car.id) }}"
+class="btn btn-secondary"
+>
+    Return to Vehicle Overview
 </a>
 
-</body>
-</html>
+</div>
+
+</section>
+
+
+
+{% endblock %}

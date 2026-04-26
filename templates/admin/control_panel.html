@@ -1,356 +1,300 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Aura | Advisor Console</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- templates/admin/control_panel.html -->
 
-<style>
+{% extends "base.html" %}
 
-body{
-font-family:Arial,Helvetica,sans-serif;
-background:#f9fafb;
-margin:0;
-padding:28px;
-color:#111827;
-}
+{% block title %}Aura | Advisor Control Panel{% endblock %}
 
-.container{
-max-width:1100px;
-margin:auto;
-}
+{% block page_title %}Advisor Control Panel{% endblock %}
 
-h1{
-margin-bottom:18px;
-}
+{% block page_subtitle %}
+Live consultation flow, draft assessments, and fleet risk visibility.
+{% endblock %}
 
-.section{
-background:white;
-border:1px solid #e5e7eb;
-border-radius:8px;
-padding:20px;
-margin-bottom:24px;
-overflow-x:auto;
-}
+{% block content %}
 
-h2{
-margin-top:0;
-margin-bottom:14px;
-font-size:17px;
-}
+<div class="container-fluid">
 
-table{
-width:100%;
-border-collapse:collapse;
-font-size:14px;
-}
-
-th,td{
-padding:10px;
-border-bottom:1px solid #e5e7eb;
-text-align:left;
-}
-
-th{
-background:#f3f4f6;
-}
-
-.badge{
-padding:4px 8px;
-border-radius:5px;
-font-size:12px;
-font-weight:bold;
-}
-
-.badge.critical{
-background:#fee2e2;
-color:#991b1b;
-}
-
-.badge.attention{
-background:#fef3c7;
-color:#92400e;
-}
-
-.badge.healthy{
-background:#dcfce7;
-color:#065f46;
-}
-
-.actions{
-margin-top:28px;
-display:grid;
-grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-gap:14px;
-}
-
-.btn{
-display:block;
-text-align:center;
-padding:16px;
-border-radius:6px;
-font-weight:bold;
-text-decoration:none;
-color:white;
-}
-
-.btn-primary{background:#2563eb;}
-.btn-secondary{background:#059669;}
-.btn-neutral{background:#6b7280;}
-
-.btn:hover{
-opacity:.92;
-}
-
-</style>
-</head>
-
-<body>
-
-<div class="container">
-
-<h1>Advisor Console</h1>
 
 
 <!-- ============================= -->
 <!-- CONSULTATIONS TODAY -->
 <!-- ============================= -->
 
-<div class="section">
+<section class="card">
 
-<h2>Consultations Today</h2>
+    <div class="section-head">
+        <h2>Consultations Today</h2>
+        <span class="badge info">
+            {{ consultations_today|length if consultations_today else 0 }}
+        </span>
+    </div>
 
-{% if consultations_today %}
+    {% if consultations_today %}
 
-<table>
-<tr>
-<th>Vehicle</th>
-<th>Client</th>
-<th>Scheduled</th>
-<th>Status</th>
-</tr>
+    <div class="table-wrap">
+        <table>
+            <tr>
+                <th>Vehicle</th>
+                <th>Client</th>
+                <th>Scheduled</th>
+                <th>Status</th>
+            </tr>
 
-{% for consultation in consultations_today %}
+            {% for consultation in consultations_today %}
+            <tr>
 
-<tr>
+                <td>
+                    {{ consultation.car.brand }}
+                    {{ consultation.car.model }}
+                    {{ consultation.car.year }}
+                </td>
 
-<td>
-{{ consultation.car.brand }}
-{{ consultation.car.model }}
-{{ consultation.car.year }}
-</td>
+                <td>
+                    {{ consultation.client.full_name if consultation.client else "—" }}
+                </td>
 
-<td>
-{{ consultation.client.full_name if consultation.client else "—" }}
-</td>
+                <td>
+                    {{ consultation.scheduled_for.strftime("%Y-%m-%d %H:%M") if consultation.scheduled_for else "—" }}
+                </td>
 
-<td>
-{{ consultation.scheduled_for.strftime("%Y-%m-%d %H:%M") if consultation.scheduled_for else "—" }}
-</td>
+                <td>
+                    <span class="badge neutral">
+                        {{ consultation.status }}
+                    </span>
+                </td>
 
-<td>
-{{ consultation.status }}
-</td>
+            </tr>
+            {% endfor %}
 
-</tr>
+        </table>
+    </div>
 
-{% endfor %}
+    {% else %}
 
-</table>
+    <p class="muted">No consultations scheduled today.</p>
 
-{% else %}
+    {% endif %}
 
-<p>None scheduled.</p>
+</section>
 
-{% endif %}
-
-</div>
 
 
 <!-- ============================= -->
 <!-- ACTIVE CONSULTATIONS -->
 <!-- ============================= -->
 
-<div class="section">
+<section class="card">
 
-<h2>Active Consultations</h2>
+    <div class="section-head">
+        <h2>Active Consultations</h2>
+        <span class="badge success">
+            {{ active_consultations|length if active_consultations else 0 }}
+        </span>
+    </div>
 
-{% if active_consultations %}
+    {% if active_consultations %}
 
-<table>
+    <div class="table-wrap">
+        <table>
 
-<tr>
-<th>Vehicle</th>
-<th>Client</th>
-<th>Started</th>
-</tr>
+            <tr>
+                <th>Vehicle</th>
+                <th>Client</th>
+                <th>Started</th>
+            </tr>
 
-{% for consultation in active_consultations %}
+            {% for consultation in active_consultations %}
+            <tr>
 
-<tr>
+                <td>
+                    {{ consultation.car.brand }}
+                    {{ consultation.car.model }}
+                    {{ consultation.car.year }}
+                </td>
 
-<td>
-{{ consultation.car.brand }}
-{{ consultation.car.model }}
-{{ consultation.car.year }}
-</td>
+                <td>
+                    {{ consultation.client.full_name if consultation.client else "—" }}
+                </td>
 
-<td>
-{{ consultation.client.full_name if consultation.client else "—" }}
-</td>
+                <td>
+                    {{ consultation.started_at.strftime("%Y-%m-%d %H:%M") if consultation.started_at else "—" }}
+                </td>
 
-<td>
-{{ consultation.started_at.strftime("%Y-%m-%d %H:%M") if consultation.started_at else "—" }}
-</td>
+            </tr>
+            {% endfor %}
 
-</tr>
+        </table>
+    </div>
 
-{% endfor %}
+    {% else %}
 
-</table>
+    <p class="muted">No active consultations.</p>
 
-{% else %}
+    {% endif %}
 
-<p>No active consultations.</p>
+</section>
 
-{% endif %}
-
-</div>
 
 
 <!-- ============================= -->
 <!-- DRAFT ASSESSMENTS -->
 <!-- ============================= -->
 
-<div class="section">
+<section class="card">
 
-<h2>Draft Assessments</h2>
+    <div class="section-head">
+        <h2>Draft Assessments</h2>
+        <span class="badge warning">
+            {{ draft_assessments|length if draft_assessments else 0 }}
+        </span>
+    </div>
 
-{% if draft_assessments %}
+    {% if draft_assessments %}
 
-<table>
+    <div class="table-wrap">
+        <table>
 
-<tr>
-<th>Vehicle</th>
-<th>Advisor</th>
-<th>Created</th>
-<th></th>
-</tr>
+            <tr>
+                <th>Vehicle</th>
+                <th>Advisor</th>
+                <th>Created</th>
+                <th>Action</th>
+            </tr>
 
-{% for assessment in draft_assessments %}
+            {% for assessment in draft_assessments %}
+            <tr>
 
-<tr>
+                <td>
+                    {{ assessment.car.brand }}
+                    {{ assessment.car.model }}
+                    {{ assessment.car.year }}
+                </td>
 
-<td>
-{{ assessment.car.brand }}
-{{ assessment.car.model }}
-{{ assessment.car.year }}
-</td>
+                <td>
+                    {{ assessment.advisor.full_name if assessment.advisor else "—" }}
+                </td>
 
-<td>
-{{ assessment.advisor.full_name if assessment.advisor else "—" }}
-</td>
+                <td>
+                    {{ assessment.created_at.strftime("%Y-%m-%d %H:%M") if assessment.created_at else "—" }}
+                </td>
 
-<td>
-{{ assessment.created_at.strftime("%Y-%m-%d %H:%M") if assessment.created_at else "—" }}
-</td>
+                <td>
+                    <a
+                        href="{{ url_for('admin.admin_edit_assessment', assessment_id=assessment.id) }}"
+                        class="btn btn-sm btn-primary"
+                    >
+                        Continue
+                    </a>
+                </td>
 
-<td>
-<a href="{{ url_for('admin.admin_edit_assessment', assessment_id=assessment.id) }}">
-Continue
-</a>
-</td>
+            </tr>
+            {% endfor %}
 
-</tr>
+        </table>
+    </div>
 
-{% endfor %}
+    {% else %}
 
-</table>
+    <p class="muted">No draft assessments.</p>
 
-{% else %}
+    {% endif %}
 
-<p>No draft assessments.</p>
+</section>
 
-{% endif %}
-
-</div>
 
 
 <!-- ============================= -->
 <!-- VEHICLES AT RISK -->
 <!-- ============================= -->
 
-<div class="section">
+<section class="card">
 
-<h2>Vehicles Requiring Attention</h2>
+    <div class="section-head">
+        <h2>Vehicles Requiring Attention</h2>
+        <span class="badge danger">
+            {{ vehicles_at_risk|length if vehicles_at_risk else 0 }}
+        </span>
+    </div>
 
-{% if vehicles_at_risk %}
+    {% if vehicles_at_risk %}
 
-<table>
+    <div class="table-wrap">
+        <table>
 
-<tr>
-<th>Vehicle</th>
-<th>Owner</th>
-<th>Status</th>
-<th>Next Action</th>
-</tr>
+            <tr>
+                <th>Vehicle</th>
+                <th>Owner</th>
+                <th>Status</th>
+                <th>Next Action</th>
+            </tr>
 
-{% for item in vehicles_at_risk %}
+            {% for item in vehicles_at_risk %}
+            <tr>
 
-<tr>
+                <td>
+                    {{ item.car.brand }}
+                    {{ item.car.model }}
+                    {{ item.car.year }}
+                </td>
 
-<td>
-{{ item.car.brand }}
-{{ item.car.model }}
-{{ item.car.year }}
-</td>
+                <td>
+                    {{ item.car.owner.full_name if item.car.owner else "—" }}
+                </td>
 
-<td>
-{{ item.car.owner.full_name if item.car.owner else "—" }}
-</td>
+                <td>
+                    <span class="badge {{ item.health.health_status }}">
+                        {{ item.health.health_status }}
+                    </span>
+                </td>
 
-<td>
-<span class="badge {{ item.health.health_status }}">
-{{ item.health.health_status }}
-</span>
-</td>
+                <td>
+                    {{ item.health.next_action }}
+                </td>
 
-<td>
-{{ item.health.next_action }}
-</td>
+            </tr>
+            {% endfor %}
 
-</tr>
+        </table>
+    </div>
 
-{% endfor %}
+    {% else %}
 
-</table>
+    <p class="muted">No vehicles currently flagged.</p>
 
-{% else %}
+    {% endif %}
 
-<p>No vehicles flagged.</p>
+</section>
 
-{% endif %}
-
-</div>
 
 
 <!-- ============================= -->
 <!-- ACTIONS -->
 <!-- ============================= -->
 
-<div class="actions">
+<section class="card">
 
-<a href="{{ url_for('admin.admin_consultations') }}" class="btn btn-primary">
-Consultation Queue
-</a>
+    <h2>Quick Actions</h2>
 
-<a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-secondary">
-Advisor Console
-</a>
+    <div class="button-grid">
+
+        <a
+            href="{{ url_for('admin.admin_consultations') }}"
+            class="btn btn-primary"
+        >
+            Consultation Queue
+        </a>
+
+        <a
+            href="{{ url_for('admin.admin_dashboard') }}"
+            class="btn btn-secondary"
+        >
+            Advisor Console
+        </a>
+
+    </div>
+
+</section>
 
 </div>
 
-</div>
-
-</body>
-</html>
+{% endblock %}

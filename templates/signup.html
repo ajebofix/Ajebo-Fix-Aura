@@ -1,155 +1,131 @@
 <!-- templates/signup.html -->
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Aura Enrollment</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+{% extends "base.html" %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 420px;
-            margin: 20px auto;
-            padding: 12px;
-            overflow-x: hidden;
-            line-height: 1.6;
-        }
+{% block title %}Aura Enrollment{% endblock %}
 
-        h1 {
-            margin-bottom: 6px;
-        }
+{% block page_title %}Client Enrollment{% endblock %}
 
-        .subtext {
-            font-size: 14px;
-            color: #555;
-            margin-bottom: 20px;
-        }
+{% block page_subtitle %}
+Begin your private vehicle health relationship with Ajebo Fix.
+{% endblock %}
 
-        label {
-            font-weight: bold;
-            display:block;
-            margin-top:14px;
-        }
+{% block content %}
 
-        input {
-            width: 100%;
-            padding: 10px;
-            font-size: 16px;
-            margin-top: 6px;
-            box-sizing: border-box;
-        }
+<div class="auth-wrap">
 
-        button {
-            width: 100%;
-            padding: 12px;
-            font-size: 16px;
-            margin-top: 20px;
-            cursor: pointer;
-        }
+    <div class="card auth-card">
 
-        .flash {
-            padding: 10px;
-            margin-bottom: 12px;
-            border-radius: 6px;
-        }
+        <h2 style="margin-bottom:8px;">
+            Create Your Aura Access
+        </h2>
 
-        .flash.success {
-            background:#e6fffa;
-            color:#065f46;
-        }
+        <p class="subtext">
+            Secure enrollment for private vehicle health records,
+            consultations, and ongoing care management.
+        </p>
 
-        .flash.error {
-            background:#fee2e2;
-            color:#991b1b;
-        }
+        {% if error %}
+        <div class="flash error">
+            {{ error }}
+        </div>
+        {% endif %}
 
-        .flash.info {
-            background:#eef2ff;
-            color:#1e3a8a;
-        }
+        <form method="POST"
+              action="{{ url_for('auth.signup') }}">
 
-        .hint {
-            font-size: 13px;
-            color: #666;
-            margin-top: 4px;
-        }
+            <label for="name">Full name</label>
+            <input
+                type="text"
+                id="name"
+                name="name"
+                placeholder="Enter your full name"
+                required
+            >
 
-        .footer {
-            margin-top: 20px;
-            font-size: 14px;
-        }
+            <label for="email">Email address</label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="Enter your email"
+                required
+            >
 
-        a {
-            color:#2563eb;
-            text-decoration:none;
-            font-weight: bold;
-        }
+            <label for="phone_number">Phone number</label>
+            <input
+                type="text"
+                id="phone_number"
+                name="phone_number"
+                placeholder="Enter your phone number"
+                required
+            >
 
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
+            <div class="hint">
+                Used only for account support and important updates.
+            </div>
 
-<h1>Client Enrollment</h1>
-<p class="subtext">
-    Begin your private vehicle health relationship with Ajebo Fix.
-</p>
+            <label for="password">Password</label>
+            <input
+                type="password"
+                id="password"
+                name="password"
+                placeholder="Create a secure password"
+                required
+            >
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% for category, message in messages %}
-    <div class="flash {{ category }}">{{ message }}</div>
-  {% endfor %}
-{% endwith %}
+            <label class="checkbox-row">
+                <input
+                    type="checkbox"
+                    onclick="togglePassword()"
+                >
+                Show password
+            </label>
 
-{% if error %}
-<div class="flash error">{{ error }}</div>
-{% endif %}
+            <label for="access_code">
+                Access code (optional)
+            </label>
 
-<form method="POST" action="{{ url_for('auth.signup') }}">
+            <input
+                type="text"
+                id="access_code"
+                name="access_code"
+                placeholder="Advisor / Driver Access Code"
+            >
 
-    <label>Full name</label>
-    <input type="text" name="name" required>
+            <div class="hint">
+                Used for advisor or invited driver access.
+            </div>
 
-    <label>Email address</label>
-    <input type="email" name="email" required>
+            <button
+                type="submit"
+                class="btn btn-primary btn-block"
+            >
+                Continue Enrollment
+            </button>
 
-    <label>Phone number</label>
-    <input type="text" name="phone_number" required>
-    <div class="hint">
-        Used only for account support and important updates.
+        </form>
+
+        <div class="helper">
+            Already enrolled?
+            <a href="{{ url_for('auth.login') }}">
+                Access your account
+            </a>
+        </div>
+
     </div>
 
-    <label>Password</label>
-    <input type="password" name="password" id="password" required>
-
-    <label class="hint">
-        <input type="checkbox" onclick="togglePassword()"> Show password
-    </label>
-
-    <label>Access code (optional)</label>
-    <input type="text" name="access_code" placeholder="Access Code (optional)">
-    <div class="hint">
-        Used for advisor or invited driver access.
-    </div>
-
-    <button type="submit">Continue Enrollment</button>
-</form>
-
-<div class="footer">
-    Already enrolled?
-    <a href="{{ url_for('auth.login') }}">Access your account</a>
 </div>
 
 <script>
 function togglePassword() {
     const input = document.getElementById("password");
-    input.type = input.type === "password" ? "text" : "password";
+
+    input.type =
+        input.type === "password"
+        ? "text"
+        : "password";
 }
 </script>
 
-</body>
-</html>
+{% endblock %}

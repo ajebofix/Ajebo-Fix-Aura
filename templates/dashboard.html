@@ -1,197 +1,234 @@
-
 <!-- templates/dashboard.html -->
 
+{% extends "base.html" %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Aura | Home</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+{% block title %}Aura | Home{% endblock %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 28px auto;
-            padding: 12px;
-            line-height: 1.6;
-            color: #111827;
-        }
+{% block page_title %}Dashboard{% endblock %}
 
-        h1 { margin-bottom: 4px; }
+{% block page_subtitle %}
+Your vehicle is under professional care.
+{% endblock %}
 
-        .subtitle {
-            font-size: 14px;
-            color: #4b5563;
-            margin-bottom: 24px;
-        }
+{% block content %}
 
-        .flash {
-            padding: 10px;
-            margin-bottom: 16px;
-            border-radius: 6px;
-        }
-
-        .flash.success {
-            background: #e6fffa;
-            color: #065f46;
-        }
-
-        /* ==============================
-           VEHICLE CARD
-           ============================== */
-
-        .vehicle-card {
-            margin-bottom: 20px;
-            padding: 18px;
-            border-radius: 8px;
-            border: 2px solid #e5e7eb;
-            background: #fafafa;
-        }
-
-        .vehicle-card.active {
-            border-color: #2563eb;
-            background: #eef2ff;
-        }
-
-        .vehicle-name {
-            font-size: 18px;
-            font-weight: bold;
-        }
-
-        .meta {
-            font-size: 14px;
-            color: #374151;
-            margin-top: 6px;
-        }
-
-        .health {
-            margin-top: 10px;
-            font-weight: bold;
-        }
-
-        .health.healthy { color: #065f46; }
-        .health.attention { color: #92400e; }
-        .health.critical { color: #991b1b; }
-
-        .reassurance {
-            margin-top: 12px;
-            font-size: 14px;
-            background: #ecfdf5;
-            color: #065f46;
-            padding: 10px;
-            border-radius: 6px;
-        }
-
-        .actions {
-            margin-top: 14px;
-        }
-
-        button {
-            padding: 10px 14px;
-            font-size: 14px;
-            cursor: pointer;
-            border-radius: 6px;
-            border: none;
-            background: #2563eb;
-            color: white;
-            font-weight: bold;
-        }
-
-        button.secondary {
-            background: #6b7280;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 12px;
-            font-weight: bold;
-            color: #2563eb;
-            text-decoration: none;
-        }
-
-        hr { margin: 36px 0; }
-    </style>
-</head>
-<body>
-
-<h1>Aura</h1>
-<p class="subtitle">Your vehicle is under professional care.</p>
-
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% for category, message in messages %}
-    <div class="flash {{ category }}">{{ message }}</div>
-  {% endfor %}
-{% endwith %}
-
-{% if vehicles %}
-    {% for v in vehicles %}
-        <div class="vehicle-card {% if v.is_active %}active{% endif %}">
-            <div class="vehicle-name">{{ v.vehicle_identity }}</div>
-
-            <div class="meta">
-                Assigned Advisor: <strong>{{ v.advisor_name }}</strong>
-            </div>
-
-            <div class="health {{ v.health_status }}">
-                Health Status: {{ v.health_label }}
-            </div>
-
-            {% if v.last_assessed_at %}
-                <div class="meta">
-                    Last assessed on {{ v.last_assessed_at[:10] }}
-                </div>
-            {% endif %}
-
-            <div class="reassurance">
-                {{ v.reassurance }}
-            </div>
-
-            <div class="actions">
-                {% if not v.is_active %}
-                    <button onclick="selectVehicle({{ v.vehicle_id }})">
-                        Make this my active vehicle
-                    </button>
-                {% else %}
-                    <button class="secondary" disabled>
-                        Active vehicle
-                    </button>
-                {% endif %}
-            </div>
-
-            <a href="/cars/{{ v.vehicle_id }}">View full vehicle record →</a>
-        </div>
-    {% endfor %}
-
-    <a href="/cars/add">➕ Add another vehicle</a>
-{% else %}
-    <p>No vehicles have been added yet.</p>
-    <a href="/cars/add">➕ Add your first vehicle</a>
+{% if error %}
+<div class="flash error">
+    {{ error }}
+</div>
 {% endif %}
 
-<hr>
 
-<h2>Consult A.J. Rina</h2>
-<p class="subtitle">Rina responds based on your <strong>active vehicle</strong>.</p>
+{% if vehicles %}
 
-{% include "components/rina_chat.html" %}
+<div class="stats-grid">
 
-<hr>
+    {% for v in vehicles %}
 
-<form action="{{ url_for('auth.logout') }}" method="POST">
-    <button type="submit">Sign out</button>
+    <div class="card vehicle-card {% if v.is_active %}active{% endif %}">
+
+        <div class="vehicle-header">
+
+            <div>
+
+                <div class="vehicle-name">
+                    {{ v.vehicle_identity }}
+                </div>
+
+                <div class="meta">
+                    Assigned Advisor:
+                    <strong>{{ v.advisor_name }}</strong>
+                </div>
+
+            </div>
+
+            <div>
+
+                <span class="health-pill
+                    {% if v.health_status == 'healthy' %}
+                        health-green
+                    {% elif v.health_status == 'attention' %}
+                        health-gold
+                    {% else %}
+                        health-red
+                    {% endif %}
+                ">
+                    {{ v.health_label }}
+                </span>
+
+            </div>
+
+        </div>
+
+
+        {% if v.last_assessed_at %}
+        <div class="meta" style="margin-top:14px;">
+            Last assessed on
+            {{ v.last_assessed_at[:10] }}
+        </div>
+        {% endif %}
+
+
+        <div class="reassurance" style="margin-top:14px;">
+            {{ v.reassurance }}
+        </div>
+
+
+        <div class="actions" style="margin-top:18px;">
+
+            {% if not v.is_active %}
+
+            <button
+                class="btn btn-primary btn-block"
+                onclick="selectVehicle({{ v.vehicle_id }})"
+            >
+                Make Active Vehicle
+            </button>
+
+            {% else %}
+
+            <button
+                class="btn btn-success btn-block"
+                disabled
+            >
+                Active Vehicle
+            </button>
+
+            {% endif %}
+
+            <a
+                href="/cars/{{ v.vehicle_id }}"
+                class="btn btn-dark btn-block"
+            >
+                View Full Record
+            </a>
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+</div>
+
+
+<div class="quick-grid">
+
+    <div class="card">
+
+        <h3 style="margin-bottom:10px;">
+            Vehicle Management
+        </h3>
+
+        <p class="subtext">
+            Add, organize, and manage your vehicles.
+        </p>
+
+        <a
+            href="/cars/add"
+            class="btn btn-primary btn-block"
+        >
+            Add Another Vehicle
+        </a>
+
+    </div>
+
+    <div class="card">
+
+        <h3 style="margin-bottom:10px;">
+            Private Guidance
+        </h3>
+
+        <p class="subtext">
+            Speak with A.J. Rina using your active vehicle profile.
+        </p>
+
+        <a href="#rina-chat"
+           class="btn btn-dark btn-block">
+           Open A.J. Rina
+        </a>
+
+    </div>
+
+</div>
+
+{% else %}
+
+<div class="card">
+
+    <h2 style="margin-bottom:10px;">
+        Welcome to Aura
+    </h2>
+
+    <p class="subtext">
+        No vehicles have been added yet.
+        Start your private automotive health journey now.
+    </p>
+
+    <a
+        href="/cars/add"
+        class="btn btn-primary btn-block"
+    >
+        Add Your First Vehicle
+    </a>
+
+</div>
+
+{% endif %}
+
+
+<div class="divider"></div>
+
+
+<div class="card" id="rina-chat">
+
+    <h2 style="margin-bottom:8px;">
+        Consult A.J. Rina
+    </h2>
+
+    <p class="subtext">
+        Rina responds based on your
+        <strong>active vehicle</strong>.
+    </p>
+
+    {% include "components/rina_chat.html" %}
+
+</div>
+
+
+<div class="divider"></div>
+
+
+<form
+    action="{{ url_for('auth.logout') }}"
+    method="POST"
+>
+
+    <button
+        type="submit"
+        class="btn btn-dark btn-block"
+    >
+        Sign Out
+    </button>
+
 </form>
+
 
 <script>
 function selectVehicle(vehicleId) {
+
     fetch("/dashboard/select-vehicle", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vehicle_id: vehicleId }),
-    }).then(() => window.location.reload());
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            vehicle_id: vehicleId
+        }),
+    }).then(() =>
+        window.location.reload()
+    );
 }
 </script>
 
-</body>
-</html>
+{% endblock %}

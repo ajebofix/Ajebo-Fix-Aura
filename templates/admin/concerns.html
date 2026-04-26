@@ -1,192 +1,193 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aura | Reported Concerns</title>
+<!-- templates/admin/concerns.html -->
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 32px auto;
-            padding: 0 12px;
-            color: #111827;
-        }
+{% extends "base.html" %}
 
-        h1 {
-            margin-bottom: 6px;
-        }
+{% block title %}Aura | Reported Concerns{% endblock %}
 
-        .subtitle {
-            font-size: 14px;
-            color: #4b5563;
-            margin-bottom: 22px;
-        }
+{% block page_title %}
+Reported Concerns
+{% if car %}
+- {{ car.brand }} {{ car.model }}
+{% endif %}
+{% endblock %}
 
-        .concern {
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 16px;
-            margin-bottom: 16px;
-            background: #fafafa;
-        }
+{% block page_subtitle %}
+Client-reported observations awaiting professional review and action.
+{% endblock %}
 
-        .meta {
-            font-size: 14px;
-            color: #4b5563;
-            margin-bottom: 10px;
-        }
+{% block content %}
 
-        .status {
-            font-weight: bold;
-        }
 
-        .reported { color: #92400e; }
-        .under_review { color: #1d4ed8; }
-        .monitoring { color: #7c3aed; }
-        .resolved { color: #065f46; }
 
-        .actions {
-            margin-top: 12px;
-        }
+<!-- ============================= -->
+<!-- FLASH -->
+<!-- ============================= -->
 
-        form {
-            display: inline;
-        }
-
-        button {
-            padding: 8px 12px;
-            margin-right: 8px;
-            border-radius: 4px;
-            border: none;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .btn-review { background: #fde68a; }
-        .btn-monitor { background: #ddd6fe; }
-        .btn-resolve { background: #bbf7d0; }
-
-        .note {
-            font-size: 13px;
-            color: #4b5563;
-            background: #f9fafb;
-            padding: 10px;
-            border-radius: 6px;
-            margin-top: 10px;
-        }
-
-        .audit {
-            font-size: 12px;
-            color: #6b7280;
-            margin-top: 8px;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 24px;
-            text-decoration: none;
-            color: #2563eb;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-
-<h1>Reported Concerns
-    {% if car %}
-        - {{ car.brand }} {{ car.model }}
-    {% endif %}
-</h1>
-
-<p class="subtitle">
-    Client-reported observations awaiting professional review
-</p>
-
-<!-- FLASH MESSAGES -->
 {% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, message in messages %}
-      <p><strong>{{ message }}</strong></p>
-    {% endfor %}
-  {% endif %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash {{ category }}">
+    {{ message }}
+</div>
+{% endfor %}
+{% endif %}
 {% endwith %}
 
+
+
+<!-- ============================= -->
+<!-- CONCERNS LIST -->
+<!-- ============================= -->
+
 {% if faults %}
-    {% for fault in faults %}
-        <div class="concern">
+
+<section class="stack-list">
+
+{% for fault in faults %}
+
+<div class="card concern-card">
+
+    <!-- Header -->
+    <div class="section-head">
+
+        <div>
+
+            <div class="vehicle-name">
+                Vehicle ID: {{ fault.car_id }}
+            </div>
 
             <div class="meta">
-                <strong>Vehicle ID:</strong> {{ fault.car_id }} •
-
-                <strong>Category:</strong> {{ fault.category }} •
-
-                <span class="status {{ fault.status }}">
-                    {{ fault.safe_status_label() }}
-                </span>
-            </div>
-
-            <p>{{ fault.description }}</p>
-
-            <div class="note">
-                This is a reported concern, not a diagnosis.
-                Further assessment may be required.
-            </div>
-
-            {% if fault.reviewed_at %}
-                <div class="audit">
-                    Reviewed on {{ fault.reviewed_at.strftime("%Y-%m-%d %H:%M") }}
-                </div>
-            {% endif %}
-
-            {% if fault.resolved_at %}
-                <div class="audit">
-                    Resolved on {{ fault.resolved_at.strftime("%Y-%m-%d %H:%M") }}
-                </div>
-            {% endif %}
-
-            <div class="actions">
-
-                {% if fault.status == "reported" %}
-                    <form method="POST"
-                          action="{{ url_for('admin.admin_review_concern', concern_id=fault.id) }}">
-                        <button class="btn-review">
-                            Mark Under Review
-                        </button>
-                    </form>
-                {% endif %}
-
-                {% if fault.status in ("reported", "under_review") %}
-                    <form method="POST"
-                          action="{{ url_for('admin.admin_monitor_concern', concern_id=fault.id) }}">
-                        <button class="btn-monitor">
-                            Move to Monitoring
-                        </button>
-                    </form>
-                {% endif %}
-
-                {% if fault.status != "resolved" %}
-                    <form method="POST"
-                          action="{{ url_for('admin.admin_resolve_concern', concern_id=fault.id) }}">
-                        <button class="btn-resolve">
-                            Mark Resolved
-                        </button>
-                    </form>
-                {% endif %}
-
+                Category: {{ fault.category }}
             </div>
 
         </div>
-    {% endfor %}
+
+        <span class="badge {{ fault.status }}">
+            {{ fault.safe_status_label() }}
+        </span>
+
+    </div>
+
+
+
+    <!-- Description -->
+    <div class="alert-box neutral">
+
+        <strong>Reported Observation</strong>
+
+        <p style="margin-top:8px;">
+            {{ fault.description }}
+        </p>
+
+    </div>
+
+
+
+    <!-- Note -->
+    <p class="muted">
+        This is a reported concern, not a diagnosis.
+        Professional inspection may be required.
+    </p>
+
+
+
+    <!-- Audit -->
+    {% if fault.reviewed_at %}
+    <div class="meta">
+        Reviewed on
+        {{ fault.reviewed_at.strftime("%Y-%m-%d %H:%M") }}
+    </div>
+    {% endif %}
+
+    {% if fault.resolved_at %}
+    <div class="meta">
+        Resolved on
+        {{ fault.resolved_at.strftime("%Y-%m-%d %H:%M") }}
+    </div>
+    {% endif %}
+
+
+
+    <!-- Actions -->
+    <div class="button-grid">
+
+        {% if fault.status == "reported" %}
+
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_review_concern', concern_id=fault.id) }}"
+        >
+            <button class="btn btn-warning btn-block">
+                Mark Under Review
+            </button>
+        </form>
+
+        {% endif %}
+
+
+
+        {% if fault.status in ("reported", "under_review") %}
+
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_monitor_concern', concern_id=fault.id) }}"
+        >
+            <button class="btn btn-secondary btn-block">
+                Move to Monitoring
+            </button>
+        </form>
+
+        {% endif %}
+
+
+
+        {% if fault.status != "resolved" %}
+
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_resolve_concern', concern_id=fault.id) }}"
+        >
+            <button class="btn btn-success btn-block">
+                Mark Resolved
+            </button>
+        </form>
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+{% endfor %}
+
+</section>
+
 {% else %}
-    <p>No reported concerns at this time.</p>
+
+<section class="card">
+
+    <h2>No Reported Concerns</h2>
+
+    <p class="muted">
+        There are currently no pending client concerns requiring review.
+    </p>
+
+</section>
+
 {% endif %}
 
-<a href="/admin/dashboard">← Return to Advisor Console</a>
 
-</body>
-</html>
+
+<!-- ============================= -->
+<!-- BACK -->
+<!-- ============================= -->
+
+<section class="page-footer">
+
+    <a href="/admin/dashboard">
+        ← Return to Advisor Console
+    </a>
+
+</section>
+
+{% endblock %}

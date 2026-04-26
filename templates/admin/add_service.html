@@ -1,133 +1,103 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Record Service — Advisor</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- templates/admin/add_service.html -->
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 24px auto;
-            padding: 0 16px;
-            color: #111827;
-            line-height: 1.6;
-        }
+{% extends "base.html" %}
 
-        h1, h2 {
-            margin-bottom: 8px;
-        }
+{% block title %}Record Service — Advisor{% endblock %}
 
-        .muted {
-            color: #6b7280;
-            font-size: 14px;
-        }
+{% block page_title %}Record Service{% endblock %}
 
-        .card {
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 20px;
-            margin-top: 20px;
-        }
+{% block page_subtitle %}
+Advisor entry recorded on behalf of client and added to the official care history.
+{% endblock %}
 
-        label {
-            display: block;
-            margin-top: 14px;
-            font-weight: bold;
-            font-size: 14px;
-        }
+{% block content %}
 
-        input, textarea, select {
-            width: 100%;
-            padding: 10px;
-            margin-top: 6px;
-            border-radius: 6px;
-            border: 1px solid #d1d5db;
-            font-size: 14px;
-        }
 
-        textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
 
-        .actions {
-            margin-top: 24px;
-            display: flex;
-            gap: 12px;
-        }
+<!-- ======================= -->
+<!-- INTRO -->
+<!-- ======================= -->
 
-        button {
-            background: #111827;
-            color: #ffffff;
-            border: none;
-            padding: 12px 18px;
-            border-radius: 6px;
-            font-size: 14px;
-            cursor: pointer;
-        }
+<section class="card">
 
-        button.secondary {
-            background: #6b7280;
-        }
-
-        .disclaimer {
-            margin-top: 32px;
-            font-size: 13px;
-            color: #374151;
-            border-top: 1px solid #e5e7eb;
-            padding-top: 14px;
-        }
-    </style>
-</head>
-<body>
-
-<h1>Record Service</h1>
 <p class="muted">
-    Advisor entry — recorded on behalf of client
+Document completed maintenance, inspections, replacements,
+or preventive work with accurate mileage and notes.
 </p>
 
-<div class="card">
-    <h2>Vehicle Information</h2>
+</section>
 
-    <p>
-        <strong>Vehicle:</strong>
-        {{ car.brand }} {{ car.model }} {{ car.year }}
-    </p>
 
-    <p>
-        <strong>VIN:</strong>
-        {{ car.vin or "—" }}
-    </p>
 
-    <p>
-        <strong>Current Recorded Mileage:</strong>
-        {{ car.current_mileage or "—" }}
-    </p>
+<!-- ======================= -->
+<!-- VEHICLE INFO -->
+<!-- ======================= -->
 
-    <p>
-        <strong>Under Care Since:</strong>
-        {{ ownership.start_date.strftime("%Y-%m-%d") }}
-    </p>
+<section class="card">
+
+<h2>Vehicle Information</h2>
+
+<div class="dashboard-grid">
+
+    <div class="metric-card">
+        <span class="metric-label">Vehicle</span>
+        <span class="metric-value">
+            {{ car.brand }} {{ car.model }} {{ car.year }}
+        </span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">VIN</span>
+        <span class="metric-value">
+            {{ car.vin or "—" }}
+        </span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">Recorded Mileage</span>
+        <span class="metric-value">
+            {{ car.current_mileage or "—" }}
+        </span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">Under Care Since</span>
+        <span class="metric-value">
+            {{ ownership.start_date.strftime("%Y-%m-%d") }}
+        </span>
+    </div>
+
 </div>
 
-<div class="card">
-    <h2>Service Details</h2>
+</section>
 
-    <form method="post">
 
-        <label for="service_type">Service Type *</label>
-        <input
-            type="text"
-            id="service_type"
-            name="service_type"
-            placeholder="e.g. Engine oil service, Brake inspection"
-            required
-        >
 
+<!-- ======================= -->
+<!-- FORM -->
+<!-- ======================= -->
+
+<section class="card">
+
+<h2>Service Details</h2>
+
+<form method="post">
+
+<label for="service_type">Service Type *</label>
+
+<input
+    type="text"
+    id="service_type"
+    name="service_type"
+    placeholder="e.g. Engine oil service, Brake inspection"
+    required
+>
+
+<div class="form-grid">
+
+    <div>
         <label for="mileage">Mileage at Service *</label>
+
         <input
             type="number"
             id="mileage"
@@ -136,41 +106,65 @@
             placeholder="Enter current odometer reading"
             required
         >
+    </div>
 
+    <div>
         <label for="service_date">Service Date *</label>
+
         <input
             type="date"
             id="service_date"
             name="service_date"
             required
         >
+    </div>
 
-        <label for="description">Advisor Notes (Optional)</label>
-        <textarea
-            id="description"
-            name="description"
-            placeholder="Observations, parts replaced, recommendations, or follow-up notes"
-        ></textarea>
-
-        <div class="actions">
-            <button type="submit">
-                Save Service Record
-            </button>
-
-            <a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}">
-                <button type="button" class="secondary">
-                    Cancel
-                </button>
-            </a>
-        </div>
-
-    </form>
 </div>
 
-<div class="disclaimer">
-    <strong>Confidential — Internal Medical File</strong><br>
-    {{ disclaimer }}
+<label for="description">Advisor Notes (Optional)</label>
+
+<textarea
+    id="description"
+    name="description"
+    placeholder="Observations, parts replaced, recommendations, or follow-up notes"
+></textarea>
+
+<div class="button-grid">
+
+    <button type="submit" class="btn btn-primary">
+        Save Service Record
+    </button>
+
+    <a
+    href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
+    class="btn btn-secondary"
+    >
+        Cancel
+    </a>
+
 </div>
 
-</body>
-</html>
+</form>
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- CONFIDENTIAL -->
+<!-- ======================= -->
+
+<section class="card">
+
+<div class="alert alert-warning">
+
+<strong>Confidential — Internal Medical File</strong><br>
+{{ disclaimer }}
+
+</div>
+
+</section>
+
+
+
+{% endblock %}

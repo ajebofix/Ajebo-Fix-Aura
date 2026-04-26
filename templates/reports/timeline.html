@@ -1,190 +1,253 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Vehicle Care History</title>
+<!-- templates/reports/timeline.html -->
 
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
+{% extends "base.html" %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 32px auto;
-            color: #111827;
-            line-height: 1.6;
-        }
+{% block title %}Vehicle Care History{% endblock %}
 
-        h1, h2 {
-            margin-bottom: 6px;
-        }
+{% block page_title %}Vehicle Care History{% endblock %}
 
-        .muted {
-            color: #6b7280;
-            font-size: 14px;
-        }
+{% block page_subtitle %}
+Chronological service and concern records for long-term vehicle management.
+{% endblock %}
 
-        .section {
-            border: 1px solid #e5e7eb;
-            padding: 18px;
-            margin-top: 22px;
-            border-radius: 8px;
-            background: #fafafa;
-        }
+{% block content %}
 
-        .pdf-banner {
-            border: 2px solid #111827;
-            padding: 14px;
-            margin-bottom: 24px;
-            background: #f8f8f8;
-            font-size: 13px;
-        }
 
-        .timeline {
-            list-style: none;
-            padding-left: 0;
-        }
 
-        .timeline-item {
-            margin-bottom: 12px;
-            padding-left: 8px;
-        }
+<link rel="stylesheet"
+href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
 
-        .timeline-service {
-            border-left: 4px solid #047857;
-        }
 
-        .timeline-concern {
-            border-left: 4px solid #b45309;
-        }
 
-        .admin-actions {
-            margin-top: 20px;
-            padding: 14px;
-            border: 1px dashed #9ca3af;
-            border-radius: 6px;
-            background: #f9fafb;
-        }
-
-        a {
-            color: #2563eb;
-            font-weight: bold;
-            text-decoration: none;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-
-        @media print {
-            a {
-                display: none;
-            }
-
-            body {
-                margin: 0;
-            }
-        }
-    </style>
-</head>
-<body>
+<!-- ===================================== -->
+<!-- INTERNAL BANNER -->
+<!-- ===================================== -->
 
 {% if is_admin_view %}
+
+<section class="card">
+
 <div class="pdf-banner">
-    <strong>CONFIDENTIAL — INTERNAL MEDICAL FILE</strong>
-    Ajebo Fix Advisory Division<br>
 
-    {% if exported_by %}
-        Exported by: {{ exported_by }}<br>
-    {% endif %}
+<strong>CONFIDENTIAL — INTERNAL MEDICAL FILE</strong><br>
+Ajebo Fix Advisory Division
 
-    {% if exported_at %}
-        Exported on: {{ exported_at.strftime("%Y-%m-%d %H:%M UTC") }}<br>
-    {% endif %}
-
-    <span class="muted">
-        For internal professional use only. Observational and non-diagnostic.
-    </span>
-</div>
+{% if exported_by %}
+<br>Exported by: {{ exported_by }}
 {% endif %}
 
-<h1>Vehicle Care History</h1>
+{% if exported_at %}
+<br>Exported on:
+{{ exported_at.strftime("%Y-%m-%d %H:%M UTC") }}
+{% endif %}
+
 <p class="muted">
-    {{ car.brand }} {{ car.model }} {{ car.year }}
+For internal professional use only.
+Observational and non-diagnostic.
 </p>
 
-<div class="section">
-    <h2>Health Snapshot</h2>
-    <p><strong>Status:</strong> {{ health.label }}</p>
-    <p><strong>Recommended Action:</strong> {{ health.next_action }}</p>
 </div>
 
-<div class="section">
-    <h2>Care Timeline</h2>
+</section>
 
-    {% if services or concerns %}
-        <ul class="timeline">
-            {% for s in services %}
-                <li class="timeline-item timeline-service">
-                    <strong>Service:</strong> {{ s.title }}<br>
-                    <span class="muted">
-                        {{ s.created_at.strftime("%Y-%m-%d") }}
-                        · Mileage: {{ s.mileage or "—" }}
-                    </span>
-                </li>
-            {% endfor %}
+{% endif %}
 
-            {% for c in concerns %}
-                <li class="timeline-item timeline-concern">
-                    <strong>Reported Concern:</strong>
-                    {{ c.category | replace('_',' ') | title }}<br>
-                    <span class="muted">
-                        {{ c.created_at.strftime("%Y-%m-%d") }}
-                        · Status: {{ c.status | replace('_',' ') | title }}
-                    </span>
-                </li>
-            {% endfor %}
-        </ul>
-    {% else %}
-        <p class="muted">No records have been logged yet.</p>
-    {% endif %}
+
+
+<!-- ===================================== -->
+<!-- VEHICLE HEADER -->
+<!-- ===================================== -->
+
+<section class="card">
+
+<h1>Vehicle Care History</h1>
+
+<p class="muted">
+{{ car.brand }} {{ car.model }} {{ car.year }}
+</p>
+
+</section>
+
+
+
+<!-- ===================================== -->
+<!-- HEALTH SNAPSHOT -->
+<!-- ===================================== -->
+
+<section class="card">
+
+<h2>Health Snapshot</h2>
+
+<div class="dashboard-grid">
+
+<div class="metric-card">
+<span class="metric-label">Status</span>
+<span class="metric-value">
+{{ health.label }}
+</span>
 </div>
+
+<div class="metric-card">
+<span class="metric-label">Recommended Action</span>
+<span class="metric-value">
+{{ health.next_action }}
+</span>
+</div>
+
+</div>
+
+</section>
+
+
+
+<!-- ===================================== -->
+<!-- TIMELINE -->
+<!-- ===================================== -->
+
+<section class="card">
+
+<h2>Care Timeline</h2>
+
+{% if services or concerns %}
+
+<div class="list-stack">
+
+{% for s in services %}
+
+<div class="list-item">
+
+<p>
+<strong>Service:</strong>
+{{ s.title }}
+</p>
+
+<p class="muted">
+{{ s.created_at.strftime("%Y-%m-%d") }}
+· Mileage: {{ s.mileage or "—" }}
+</p>
+
+</div>
+
+{% endfor %}
+
+
+
+{% for c in concerns %}
+
+<div class="list-item">
+
+<p>
+<strong>Reported Concern:</strong>
+{{ c.category | replace('_',' ') | title }}
+</p>
+
+<p class="muted">
+{{ c.created_at.strftime("%Y-%m-%d") }}
+· Status:
+{{ c.status | replace('_',' ') | title }}
+</p>
+
+</div>
+
+{% endfor %}
+
+</div>
+
+{% else %}
+
+<p class="muted">
+No records have been logged yet.
+</p>
+
+{% endif %}
+
+</section>
+
+
+
+<!-- ===================================== -->
+<!-- DOWNLOAD ACTIONS -->
+<!-- ===================================== -->
+
+<section class="card">
 
 {% if is_admin_view %}
-<div class="admin-actions">
-    <strong>Advisor Actions</strong><br><br>
 
-    <a href="{{ url_for('admin.admin_vehicle_records_pdf', car_id=car.id) }}">
-        🔒 Download Confidential Medical File (PDF)
-    </a>
-</div>
+<h2>Advisor Actions</h2>
+
+<a
+href="{{ url_for('admin.admin_vehicle_records_pdf', car_id=car.id) }}"
+class="btn btn-primary btn-block"
+>
+Download Confidential Medical File (PDF)
+</a>
+
 {% else %}
-<div class="admin-actions">
-    <strong>Client Actions</strong><br><br>
-    <a href="{{ url_for('cars.vehicle_records_pdf', car_id=car.id) }}">
-        🔒 Download Confidential Medical File (PDF)
-    </a>
-</div>
+
+<h2>Client Actions</h2>
+
+<a
+href="{{ url_for('cars.vehicle_records_pdf', car_id=car.id) }}"
+class="btn btn-primary btn-block"
+>
+Download Confidential Medical File (PDF)
+</a>
+
 {% endif %}
+
+</section>
+
+
+
+<!-- ===================================== -->
+<!-- PRINT -->
+<!-- ===================================== -->
 
 {% if print_mode %}
-<button onclick="window.print()" style="margin-bottom: 20px;">
-    Download as PDF
+
+<section class="card">
+
+<button
+onclick="window.print()"
+class="btn btn-secondary btn-block"
+>
+Download as PDF
 </button>
+
+</section>
+
 {% endif %}
 
-<br>
+
+
+<!-- ===================================== -->
+<!-- BACK -->
+<!-- ===================================== -->
+
+<section class="card">
 
 {% if is_admin_view %}
-    <a href="{{ url_for('admin.view_vehicle', car_id=car.id) }}">
-        ← Back to Vehicle (Admin)
-    </a>
+
+<a
+href="{{ url_for('admin.view_vehicle', car_id=car.id) }}"
+class="btn btn-secondary btn-block"
+>
+← Back to Vehicle (Admin)
+</a>
+
 {% else %}
-    <a href="{{ url_for('cars.car_detail', car_id=car.id) }}">
-        ← Back to Vehicle Profile
-    </a>
+
+<a
+href="{{ url_for('cars.car_detail', car_id=car.id) }}"
+class="btn btn-secondary btn-block"
+>
+← Back to Vehicle Profile
+</a>
+
 {% endif %}
 
-</body>
-</html>
+</section>
+
+
+
+{% endblock %}

@@ -1,150 +1,42 @@
 <!-- templates/driver/checkin.html -->
 
+{% extends "base.html" %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block title %}Aura Driver Portal{% endblock %}
 
-<title>Aura Driver Portal</title>
+{% block page_title %}Driver Portal{% endblock %}
 
-<style>
+{% block page_subtitle %}
+Assigned vehicle access, daily check-ins, and operational reporting.
+{% endblock %}
 
-body{
-font-family:Arial, sans-serif;
-max-width:900px;
-margin:30px auto;
-padding:15px;
-line-height:1.5;
-color:#111827;
-}
+{% block content %}
 
-h1{
-margin-bottom:4px;
-}
 
-.subtitle{
-font-size:14px;
-color:#6b7280;
-margin-bottom:28px;
-}
 
-.flash{
-padding:12px;
-border-radius:6px;
-margin-bottom:14px;
-font-size:14px;
-}
-
-.flash.success{
-background:#ecfdf5;
-border:1px solid #10b981;
-}
-
-.flash.error{
-background:#fee2e2;
-border:1px solid #ef4444;
-}
-
-.card{
-border:1px solid #e5e7eb;
-border-radius:8px;
-padding:18px;
-margin-bottom:22px;
-background:#fafafa;
-}
-
-.vehicle-title{
-font-size:20px;
-font-weight:bold;
-margin-bottom:6px;
-}
-
-.meta{
-font-size:14px;
-color:#6b7280;
-margin-bottom:14px;
-}
-
-.actions{
-display:grid;
-grid-template-columns:1fr;
-gap:10px;
-margin-top:15px;
-}
-
-.btn{
-display:block;
-text-align:center;
-padding:14px;
-border-radius:6px;
-font-weight:bold;
-text-decoration:none;
-color:white;
-}
-
-.btn-primary{
-background:#2563eb;
-}
-
-.btn-warning{
-background:#d97706;
-}
-
-.btn-secondary{
-background:#059669;
-}
-
-.btn-neutral{
-background:#6b7280;
-}
-
-.btn:hover{
-opacity:.92;
-}
-
-.empty{
-padding:20px;
-border:1px dashed #d1d5db;
-border-radius:8px;
-color:#6b7280;
-}
-
-.logout{
-margin-top:28px;
-}
-
-.logout button{
-width:100%;
-padding:14px;
-border:none;
-background:#111827;
-color:white;
-border-radius:6px;
-cursor:pointer;
-font-weight:bold;
-}
-
-</style>
-</head>
-
-<body>
-
-<h1>Aura</h1>
-<p class="subtitle">Driver Portal</p>
+<!-- ======================= -->
+<!-- FLASH -->
+<!-- ======================= -->
 
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
 <div class="flash {{ category }}">
-{{ message }}
+    {{ message }}
 </div>
 {% endfor %}
 {% endif %}
 {% endwith %}
 
+
+
+<!-- ======================= -->
+<!-- VEHICLES -->
+<!-- ======================= -->
+
 {% if vehicles %}
+
+<section class="dashboard-grid">
 
 {% for v in vehicles %}
 
@@ -155,7 +47,7 @@ font-weight:bold;
 </div>
 
 <div class="meta">
-Owner:
+<strong>Owner:</strong>
 {% if v.owner %}
 {{ v.owner.name }}
 {% else %}
@@ -163,18 +55,25 @@ Not assigned
 {% endif %}
 </div>
 
-<div class="actions">
+<p class="muted">
+Use daily check-in to report operational condition,
+warning signs, or driving concerns.
+</p>
 
-<a href="/driver/cars/{{ v.car.id }}/check-in" class="btn btn-primary">
+<div class="button-grid">
+
+<a
+href="/driver/cars/{{ v.car.id }}/check-in"
+class="btn btn-primary"
+>
 Daily Check-In
 </a>
 
-<a href="/driver/cars/{{ v.car.id }}" class="btn btn-secondary">
+<a
+href="/driver/cars/{{ v.car.id }}"
+class="btn btn-secondary"
+>
 View Vehicle
-</a>
-
-<a href="/driver/cars/{{ v.car.id }}/report" class="btn btn-warning">
-Report Issue
 </a>
 
 </div>
@@ -183,19 +82,42 @@ Report Issue
 
 {% endfor %}
 
+</section>
+
 {% else %}
+
+<section class="card">
 
 <div class="empty">
 No assigned vehicles yet.
 </div>
 
+<p class="muted">
+Once a vehicle is assigned, it will appear here.
+</p>
+
+</section>
+
 {% endif %}
 
-<div class="logout">
-<form action="{{ url_for('auth.logout') }}" method="POST">
-<button type="submit">Sign Out</button>
-</form>
-</div>
 
-</body>
-</html>
+
+<!-- ======================= -->
+<!-- SIGN OUT -->
+<!-- ======================= -->
+
+<section class="card">
+
+<form action="{{ url_for('auth.logout') }}" method="POST">
+
+<button type="submit" class="btn btn-dark btn-block">
+    Sign Out
+</button>
+
+</form>
+
+</section>
+
+
+
+{% endblock %}

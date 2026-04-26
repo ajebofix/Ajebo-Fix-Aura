@@ -1,193 +1,111 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Vehicle Health</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- templates/vehicle_health.html -->
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 28px auto;
-            padding: 12px;
-            color: #111827;
-        }
+{% extends "base.html" %}
 
-        h1 {
-            margin-bottom: 4px;
-        }
+{% block title %}Vehicle Health{% endblock %}
 
-        .subtitle {
-            color: #4b5563;
-            font-size: 14px;
-            margin-bottom: 24px;
-        }
+{% block page_title %}
+{{ car.brand }} {{ car.model }}
+{% endblock %}
 
-        .section {
-            margin-top: 28px;
-            padding: 18px;
-            border-radius: 8px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-        }
+{% block page_subtitle %}
+Vehicle Health Summary · Professional Monitoring Overview
+{% endblock %}
 
-        .section h2 {
-            margin-top: 0;
-            font-size: 16px;
-        }
+{% block content %}
 
-        ul {
-            margin-top: 10px;
-            padding-left: 18px;
-        }
+<section class="page-header">
 
-        /* =========================
-           STATUS STYLES
-           ========================= */
+    <div>
 
-        .calm {
-            background: #ecfdf5;
-            color: #065f46;
-            border-left: 4px solid #10b981;
-        }
+        <h1 class="page-heading">
+            {{ car.brand }} {{ car.model }}
+        </h1>
 
-        .attention {
-            background: #fffbeb;
-            color: #92400e;
-            border-left: 4px solid #f59e0b;
-        }
+        <p class="muted">
+            Professional monitoring overview.
+        </p>
 
-        .critical {
-            background: #fef2f2;
-            color: #991b1b;
-            border-left: 4px solid #ef4444;
-        }
+    </div>
 
-        .neutral {
-            background: #f3f4f6;
-            color: #374151;
-            border-left: 4px solid #9ca3af;
-        }
+</section>
 
-        .badge {
-            display: inline-block;
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-top: 6px;
-        }
 
-        .badge.draft {
-            background: #fef3c7;
-            color: #92400e;
-        }
 
-        .badge.inprogress {
-            background: #dbeafe;
-            color: #1e40af;
-        }
+<section class="card">
 
-        .badge.finalized {
-            background: #dcfce7;
-            color: #065f46;
-        }
+    <div class="section-head">
 
-        .reassurance {
-            margin-top: 12px;
-            font-size: 13px;
-            color: #4b5563;
-        }
+        <h2>Assessment Status</h2>
 
-        .report-download {
-            margin-top: 16px;
-        }
+        {% if assessment %}
 
-        .report-download a {
-            font-weight: bold;
-            color: #2563eb;
-            text-decoration: none;
-        }
+            {% if assessment.is_finalized %}
+            <span class="badge finalized">
+                Finalized
+            </span>
 
-        .report-download a:hover {
-            text-decoration: underline;
-        }
+            {% elif consultation and consultation.status == "in_progress" %}
+            <span class="badge inprogress">
+                In Progress
+            </span>
 
-        .muted {
-            font-size: 13px;
-            color: #6b7280;
-        }
+            {% else %}
+            <span class="badge draft">
+                Pending
+            </span>
 
-        a.nav {
-            display: inline-block;
-            margin-top: 32px;
-            font-weight: bold;
-            color: #2563eb;
-            text-decoration: none;
-        }
+            {% endif %}
 
-        a.nav:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
+        {% else %}
+        <span class="badge draft">
+            None
+        </span>
+        {% endif %}
 
-<!-- ========================= -->
-<!-- HEADER -->
-<!-- ========================= -->
+    </div>
 
-<h1>{{ car.brand }} {{ car.model }}</h1>
-<p class="subtitle">
-    Vehicle Health Summary · Professional Monitoring Overview
-</p>
 
-<!-- ========================= -->
-<!-- ASSESSMENT STATUS -->
-<!-- ========================= -->
 
-{% if assessment %}
-    {% if assessment.is_finalized %}
-        <div class="badge finalized">
-            Finalized Professional Assessment
-        </div>
+    {% if assessment %}
 
-        <div class="report-download">
-            <a href="{{ url_for('car_assessments.client_download_assessment_pdf', assessment_id=assessment.id) }}">
-                Download Health & Risk Report (PDF)
-            </a>
-        </div>
+        {% if assessment.is_finalized %}
 
-    {% elif consultation and consultation.status == "in_progress" %}
-        <div class="badge inprogress">
-            Assessment in Progress
-        </div>
+        <p class="muted">
+            A finalized professional vehicle assessment is available.
+        </p>
+
+        <a href="{{ url_for('car_assessments.client_download_assessment_pdf', assessment_id=assessment.id) }}"
+           class="btn btn-primary">
+            Download Health & Risk Report
+        </a>
+
+        {% elif consultation and consultation.status == "in_progress" %}
+
         <p class="muted">
             A consultation is currently active. The full professional report
             will be available once finalized.
         </p>
 
-    {% else %}
-        <div class="badge draft">
-            Assessment Pending Finalization
-        </div>
+        {% else %}
+
         <p class="muted">
             A professional review has been conducted and is being prepared.
         </p>
-    {% endif %}
-{% else %}
-    <div class="badge draft">
-        No Assessment Available
-    </div>
+
+        {% endif %}
+
+    {% else %}
+
     <p class="muted">
         A consultation is required before a formal vehicle health report can be issued.
     </p>
-{% endif %}
 
-<!-- ========================= -->
-<!-- HEALTH OVERVIEW -->
-<!-- ========================= -->
+    {% endif %}
+
+</section>
+
+
 
 {% set status_class =
     "calm" if health.status == "healthy"
@@ -196,74 +114,95 @@
     else "neutral"
 %}
 
-<div class="section {{ status_class }}">
-    <h2>Health Overview</h2>
-    <p>{{ health.overview }}</p>
 
-    <div class="reassurance">
+
+<section class="card {{ status_class }}">
+
+    <h2>Health Overview</h2>
+
+    <p>
+        {{ health.overview }}
+    </p>
+
+    <p class="muted">
         This overview reflects monitoring data and recorded service history.
         It does not constitute a mechanical diagnosis.
-    </div>
-</div>
+    </p>
 
-<!-- ========================= -->
-<!-- ACTIVE RISKS -->
-<!-- ========================= -->
+</section>
+
+
 
 {% if health.active_risks %}
-<div class="section attention">
+
+<section class="card attention">
+
     <h2>Active Risks</h2>
-    <ul>
+
+    <ul class="clean-list">
+
         {% for risk in health.active_risks %}
-            <li>{{ risk }}</li>
+        <li>{{ risk }}</li>
         {% endfor %}
+
     </ul>
 
-    <div class="reassurance">
+    <p class="muted">
         These items are highlighted to reduce the likelihood of escalation.
-    </div>
-</div>
+    </p>
+
+</section>
+
 {% endif %}
 
-<!-- ========================= -->
-<!-- MONITORED ITEMS -->
-<!-- ========================= -->
+
 
 {% if health.monitored_items %}
-<div class="section neutral">
+
+<section class="card neutral">
+
     <h2>Monitored Items</h2>
-    <ul>
+
+    <ul class="clean-list">
+
         {% for item in health.monitored_items %}
-            <li>{{ item }}</li>
+        <li>{{ item }}</li>
         {% endfor %}
+
     </ul>
 
-    <div class="reassurance">
+    <p class="muted">
         These observations are non-urgent and are being tracked over time.
-    </div>
-</div>
+    </p>
+
+</section>
+
 {% endif %}
 
-<!-- ========================= -->
-<!-- PREVENTIVE GUIDANCE -->
-<!-- ========================= -->
 
-<div class="section calm">
+
+<section class="card calm">
+
     <h2>Preventive Recommendations</h2>
-    <p>{{ health.preventive_guidance }}</p>
 
-    <div class="reassurance">
+    <p>
+        {{ health.preventive_guidance }}
+    </p>
+
+    <p class="muted">
         Preventive planning helps preserve long-term vehicle integrity and resale value.
-    </div>
-</div>
+    </p>
 
-<!-- ========================= -->
-<!-- NAVIGATION -->
-<!-- ========================= -->
+</section>
 
-<a href="{{ url_for('dashboard.aura_home') }}" class="nav">
-    ← Back to Dashboard
-</a>
 
-</body>
-</html>
+
+<section class="page-footer">
+
+    <a href="{{ url_for('dashboard.aura_home') }}">
+        ← Back to Dashboard
+    </a>
+
+</section>
+
+{% endblock %}

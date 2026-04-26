@@ -1,0 +1,26 @@
+.flash{
+padding:14px 16px;
+border-radius:10px;
+margin-bottom:14px;
+font-weight:600;
+}
+
+.flash.success{
+background:#ecfdf5;
+color:#065f46;
+}
+
+.flash.error{
+background:#fef2f2;
+color:#991b1b;
+}
+
+.flash.info{
+background:#eff6ff;
+color:#1d4ed8;
+}
+
+.flash.warning{
+background:#fff7ed;
+color:#92400e;
+}

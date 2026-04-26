@@ -1,0 +1,16 @@
+.card,
+.flash,
+.btn{
+animation:fadeUp .45s ease;
+}
+
+@keyframes fadeUp{
+from{
+opacity:0;
+transform:translateY(10px);
+}
+to{
+opacity:1;
+transform:none;
+}
+}

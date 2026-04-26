@@ -1,182 +1,145 @@
 <!-- templates/driver/car_detail.html -->
 
+{% extends "base.html" %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Driver Vehicle View</title>
+{% block title %}Assigned Vehicle{% endblock %}
 
-<style>
-body{
-    font-family: Arial, sans-serif;
-    background:#f5f7fa;
-    margin:0;
-    padding:30px;
-}
+{% block page_title %}Assigned Vehicle{% endblock %}
 
-.container{
-    max-width:700px;
-    margin:auto;
-    background:white;
-    padding:30px;
-    border-radius:14px;
-    box-shadow:0 10px 30px rgba(0,0,0,.08);
-}
+{% block page_subtitle %}
+Operational access for assigned vehicle.
+{% endblock %}
 
-h1{
-    margin-top:0;
-    color:#111;
-}
+{% block content %}
 
-.card{
-    background:#f9fafb;
-    padding:18px;
-    border-radius:10px;
-    margin-bottom:25px;
-}
 
-.label{
-    font-size:14px;
-    color:#666;
-}
 
-.value{
-    font-size:18px;
-    font-weight:600;
-    margin-bottom:10px;
-}
+<!-- ======================= -->
+<!-- FLASH -->
+<!-- ======================= -->
 
-textarea{
-    width:100%;
-    min-height:140px;
-    padding:14px;
-    border:1px solid #ccc;
-    border-radius:10px;
-    resize:vertical;
-    font-size:16px;
-}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash {{ category }}">
+{{ message }}
+</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
 
-button{
-    width:100%;
-    padding:15px;
-    border:none;
-    border-radius:10px;
-    background:#111827;
-    color:white;
-    font-size:16px;
-    font-weight:600;
-    cursor:pointer;
-    margin-top:15px;
-}
 
-button:hover{
-    opacity:.95;
-}
 
-.secondary{
-    background:#2563eb;
-}
+<!-- ======================= -->
+<!-- VEHICLE PROFILE -->
+<!-- ======================= -->
 
-.flash{
-    padding:14px;
-    border-radius:10px;
-    margin-bottom:15px;
-}
+<section class="card">
 
-.success{background:#dcfce7;color:#166534;}
-.error{background:#fee2e2;color:#991b1b;}
-.info{background:#dbeafe;color:#1d4ed8;}
+<h2>Vehicle Summary</h2>
 
-a{
-    text-decoration:none;
-}
-</style>
-</head>
-<body>
+<div class="dashboard-grid">
 
-<div class="container py-4">
+<div class="metric-card">
+<span class="metric-label">Vehicle</span>
+<span class="metric-value">{{ car.display_name }}</span>
+</div>
 
-    <h1>Assigned Vehicle</h1>
+<div class="metric-card">
+<span class="metric-label">Plate</span>
+<span class="metric-value">{{ car.plate_number or "—" }}</span>
+</div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="flash {{ category }}">
-            {{ message }}
-          </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+<div class="metric-card">
+<span class="metric-label">Mileage</span>
+<span class="metric-value">{{ car.current_mileage or "—" }}</span>
+</div>
 
-<div class="container py-4">
-
-    <h2 class="mb-4">Driver Vehicle Access</h2>
-
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
-
-            <h4>{{ car.display_name }}</h4>
-
-            <p><strong>Plate:</strong> {{ car.plate_number or "—" }}</p>
-            <p><strong>Mileage:</strong> {{ car.current_mileage or "—" }}</p>
-            <p><strong>VIN:</strong> {{ car.vin or "—" }}</p>
-
-        </div>
-    </div>
-
-    <div class="row g-3">
-
-        <div class="col-md-6">
-            <div class="card h-100 shadow-sm">
-                <div class="card-body">
-
-                    <h5>Daily Check-In</h5>
-                    <p>Report today's condition before movement.</p>
-
-                    <a href="{{ url_for('driver.driver_daily_checkin', car_id=car.id) }}"
-                       class="btn btn-primary w-100">
-                        Daily Check-In
-                    </a>
-
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="card h-100 shadow-sm">
-                <div class="card-body">
-
-                    <h5>Report Vehicle Concern(s)</h5>
-
-                    <form method="POST"
-                          action="{{ url_for('driver.driver_report_issue', car_id=car.id) }}">
-
-                        <textarea
-                            name="description"
-                            class="form-control mb-3"
-                            rows="4"
-                            placeholder="Example: Steering feels heavy, warning light on dashboard, vibration while braking..."
-                            required></textarea>
-
-                        <button class="btn btn-danger w-100">
-                            Submit Concern
-                        </button>
-
-                    </form>
-
-                </div>
-            </div>
-        </div>
-
-    </div>
-
-    <div class="mt-4">
-        <a href="{{ url_for('driver.driver_dashboard') }}"
-           class="btn btn-outline-secondary">
-           Back Dashboard
-        </a>
-    </div>
+<div class="metric-card">
+<span class="metric-label">VIN</span>
+<span class="metric-value">{{ car.vin or "—" }}</span>
+</div>
 
 </div>
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- ACTIONS -->
+<!-- ======================= -->
+
+<section class="dashboard-grid">
+
+<!-- DAILY CHECK-IN -->
+<div class="card">
+
+<h2>Daily Check-In</h2>
+
+<p class="muted">
+Report today’s vehicle condition before movement.
+</p>
+
+<a
+href="{{ url_for('driver.driver_daily_checkin', car_id=car.id) }}"
+class="btn btn-primary btn-block"
+>
+Daily Check-In
+</a>
+
+</div>
+
+
+
+<!-- REPORT CONCERN -->
+<div class="card">
+
+<h2>Report Vehicle Concern</h2>
+
+<p class="muted">
+Share symptoms or unusual behaviour for advisor review.
+</p>
+
+<form
+method="POST"
+action="{{ url_for('driver.driver_report_issue', car_id=car.id) }}"
+>
+
+<textarea
+name="description"
+rows="5"
+placeholder="Example: Steering feels heavy, warning light on dashboard, vibration while braking..."
+required
+></textarea>
+
+<button class="btn btn-danger btn-block">
+Submit Concern
+</button>
+
+</form>
+
+</div>
+
+</section>
+
+
+
+<!-- ======================= -->
+<!-- NAVIGATION -->
+<!-- ======================= -->
+
+<section class="card">
+
+<a
+href="{{ url_for('driver.driver_dashboard') }}"
+class="btn btn-secondary btn-block"
+>
+Back Dashboard
+</a>
+
+</section>
+
+
+
+{% endblock %}

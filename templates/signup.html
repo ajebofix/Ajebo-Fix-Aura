@@ -14,16 +14,32 @@ Begin your private vehicle health relationship with Ajebo Fix.
 
 <div class="auth-wrap">
 
-    <div class="card auth-card">
+    <div class="card auth-card aura-signup-card">
 
-        <h2 style="margin-bottom:8px;">
-            Create Your Aura Access
-        </h2>
+        <!-- HEADER -->
+        <div class="signup-head">
 
-        <p class="subtext">
-            Secure enrollment for private vehicle health records,
-            consultations, and ongoing care management.
-        </p>
+            <div class="signup-logo-wrap">
+
+                <img
+                    src="{{ url_for('static', filename='images/aura-logo-main.png') }}"
+                    alt="Aura"
+                    class="signup-mini-logo"
+                >
+
+            </div>
+
+            <h2 class="signup-title">
+                Create Your Aura Access
+            </h2>
+
+            <p class="signup-subtitle">
+                Secure enrollment for private vehicle health records,
+                consultations, and long-term care management.
+            </p>
+
+        </div>
+
 
         {% if error %}
         <div class="flash error">
@@ -31,100 +47,135 @@ Begin your private vehicle health relationship with Ajebo Fix.
         </div>
         {% endif %}
 
-        <form method="POST"
-              action="{{ url_for('auth.signup') }}">
 
-            <label for="name">Full name</label>
+        <!-- FORM -->
+        <form
+            method="POST"
+            action="{{ url_for('auth.signup') }}"
+            class="signup-form"
+        >
+
+            <!-- NAME -->
+            <label for="name">Full Name</label>
+
             <input
                 type="text"
                 id="name"
                 name="name"
-                placeholder="Enter your full name"
+                placeholder="Stephen Adewale"
                 required
             >
 
-            <label for="email">Email address</label>
+
+            <!-- EMAIL -->
+            <label for="email">Email Address</label>
+
             <input
                 type="email"
                 id="email"
                 name="email"
-                placeholder="Enter your email"
+                placeholder="you@example.com"
                 required
             >
 
-            <label for="phone_number">Phone number</label>
+
+            <!-- PHONE -->
+            <label for="phone_number">Phone Number</label>
+
             <input
                 type="text"
                 id="phone_number"
                 name="phone_number"
-                placeholder="Enter your phone number"
+                placeholder="+234..."
                 required
             >
 
             <div class="hint">
-                Used only for account support and important updates.
+                Used only for account security and important updates.
             </div>
 
-            <label for="password">Password</label>
-            <input
-                type="password"
-                id="password"
-                name="password"
-                placeholder="Create a secure password"
-                required
-            >
 
-            <label class="checkbox-row">
+            <!-- PASSWORD -->
+            <label for="password">Password</label>
+
+            <div class="password-wrap">
+
                 <input
-                    type="checkbox"
+                    type="password"
+                    id="password"
+                    name="password"
+                    placeholder="Create secure password"
+                    required
+                >
+
+                <button
+                    type="button"
+                    class="password-toggle"
                     onclick="togglePassword()"
                 >
-                Show password
-            </label>
+                    Show
+                </button>
 
+            </div>
+
+
+            <!-- ACCESS CODE -->
             <label for="access_code">
-                Access code (optional)
+                Access Code
+                <span class="muted">(optional)</span>
             </label>
 
             <input
                 type="text"
                 id="access_code"
                 name="access_code"
-                placeholder="Advisor / Driver Access Code"
+                placeholder="Advisor / Driver Access"
             >
 
             <div class="hint">
-                Used for advisor or invited driver access.
+                Used for advisor onboarding or invited driver access.
             </div>
 
+
+            <!-- CTA -->
             <button
                 type="submit"
-                class="btn btn-primary btn-block"
+                class="btn btn-primary btn-block signup-btn"
             >
                 Continue Enrollment
             </button>
 
         </form>
 
-        <div class="helper">
-            Already enrolled?
+
+        <!-- FOOTER -->
+        <div class="signup-footer">
+
+            <span class="muted">
+                Already enrolled?
+            </span>
+
             <a href="{{ url_for('auth.login') }}">
                 Access your account
             </a>
+
         </div>
 
     </div>
 
 </div>
 
+
 <script>
 function togglePassword() {
+
     const input = document.getElementById("password");
 
-    input.type =
-        input.type === "password"
-        ? "text"
-        : "password";
+    if (input.type === "password") {
+        input.type = "text";
+    } else {
+        input.type = "password";
+    }
 }
 </script>
 

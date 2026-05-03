@@ -81,7 +81,7 @@ def send_text_admin(user, vehicle, time):
 
     payload = {
         "messaging_product": "whatsapp",
-        "to": "2347074490640",
+        "to": "2348112442906",
         "type": "text",
         "text": {
             "body": f"""NEW Booking
@@ -116,26 +116,14 @@ def send_template_admin(user, vehicle, time):
         "messaging_product": "whatsapp",
         "to": "2347074490640",
         "type": "template",
-        "template": {
-            "name": "admin_booking_alert_v1",
-            "language": {"code": "en_US"},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": user},
-                        {"type": "text", "text": vehicle},
-                        {"type": "text", "text": str(time)}
-                    ],
-                },
-            ],
-        },
+        "template": {"name": "admin_booking_alert_v1", "language": {"code": "en"}},
     }
+
     print(payload)
 
     response = requests.post(url, headers=headers, json=payload)
 
     print("ADMIN STATUS:", response.status_code)
-    print("ADMIN RESPONSE:", response.text)
+    print("ADMIN TEXT:", response.text)
 
     return response.json()

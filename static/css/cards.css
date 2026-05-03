@@ -1,28 +1,50 @@
+/* static/css/cards.css */
+
 .card{
-background:var(--white);
-border:1px solid var(--border);
-border-radius:var(--radius-md);
+background:var(--glass-strong);
+backdrop-filter:blur(18px);
+-webkit-backdrop-filter:blur(18px);
+border:1px solid rgba(255,255,255,.48);
+border-radius:var(--radius-lg);
 padding:22px;
-box-shadow:var(--shadow-sm);
-margin-bottom:20px;
+box-shadow:var(--shadow-md);
+margin-bottom:18px;
+transition:var(--transition);
+transform-style:preserve-3d;
 }
 
 .card:hover{
-box-shadow:var(--shadow-md);
+transform:translateY(-2px);
+box-shadow:var(--shadow-lg);
 }
 
 .metric-card{
-padding:20px;
-border-left:4px solid var(--blue);
+padding:24px;
 }
 
 .metric-label{
-font-size:13px;
+font-size:12px;
+letter-spacing: .08em;
+text-transform: uppercase;
 color:var(--muted);
+margin-bottom: 6px;
 }
 
 .metric-value{
 font-size:30px;
 font-weight:800;
-margin-top:6px;
+letter-spacing:-1px;
+}
+
+.card::before{
+content:"";
+position:absolute;
+inset:0;
+border-radius:inherit;
+background:linear-gradient(
+120deg,
+rgba(255,255,255,.18),
+transparent 30%
+);
+pointer-events:none;
 }

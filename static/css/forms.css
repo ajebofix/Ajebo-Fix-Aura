@@ -1,14 +1,16 @@
+/* static/css/forms.css */
+
 input,
 select,
 textarea{
 width:100%;
-padding:12px 14px;
+padding:13px 14px;
 border:1px solid var(--border);
-border-radius:10px;
+border-radius:14px;
 font-family:var(--font);
 font-size:15px;
 margin-bottom:14px;
-background:white;
+background:#fff;
 }
 
 input:focus,
@@ -16,11 +18,11 @@ select:focus,
 textarea:focus{
 outline:none;
 border-color:var(--blue);
-box-shadow:0 0 0 3px rgba(37,99,235,.12);
+box-shadow:0 0 0 4px rgba(37,99,235,.10);
 }
 
 label{
 display:block;
-font-weight:600;
+font-weight:700;
 margin-bottom:6px;
 }

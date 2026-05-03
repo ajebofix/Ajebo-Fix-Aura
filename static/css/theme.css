@@ -1,25 +1,36 @@
+/* static/css/theme.css */
+
 :root{
 
 --navy:#111827;
 --blue:#2563eb;
+--blue2:#60a5fa;
 --green:#10b981;
 --gold:#d97706;
 --red:#dc2626;
 
---bg:#f8fafc;
+--bg1:#f8fafc;
 --white:#ffffff;
+--bg2:#eef2ff;
+
+--glass:rgba(255,255,255,.72);
+--glass-strong:rgba(255,255,255,.84);
+
 --border:#e5e7eb;
---muted:#6b7280;
+--muted:#64748b;
+--text:#0f172a;
 
---radius-sm:8px;
---radius-md:12px;
---radius-lg:18px;
+--radius-sm:14px;
+--radius-md:18px;
+--radius-lg:24px;
+--radius-xs:10px;
+--radius-xl:30px;
 
---shadow-sm:0 2px 8px rgba(0,0,0,.05);
---shadow-md:0 8px 24px rgba(0,0,0,.08);
---shadow-lg:0 14px 40px rgba(0,0,0,.12);
+--shadow-sm:0 4px 14px rgba(15,23,42,.05);
+--shadow-md:0 12px 30px rgba(15,23,42,.08);
+--shadow-lg:0 22px 55px rgba(15,23,42,.12);
 
---transition:.25s ease;
+--transition:.28s ease;
 
 --font:'Inter',sans-serif;
 

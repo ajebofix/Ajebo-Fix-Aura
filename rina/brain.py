@@ -1,6 +1,6 @@
 # rina/brain.py
 
-from models import db, ChatMessage, UserMemory, Car, EscalationLog
+from models import CarOwnership, db, ChatMessage, UserMemory, Car, EscalationLog
 from flask_login import current_user
 from datetime import datetime
 import re
@@ -57,7 +57,7 @@ def build_rina_context(user_message: str) -> dict:
     # -------------------------
     cars = []
     if user.is_authenticated:
-        cars = Car.query.filter_by(owner_id=user.id).all()
+        cars = Car.query.filter_by(CarOwnership=user.id).all()
 
     vehicle_info = [f"{c.make} {c.model} {c.year}" for c in cars] if cars else []
 

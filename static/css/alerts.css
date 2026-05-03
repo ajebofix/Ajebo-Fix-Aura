@@ -1,26 +1,17 @@
 .flash{
-padding:14px 16px;
-border-radius:10px;
-margin-bottom:14px;
-font-weight:600;
+padding:16px 18px;
+border-radius:16px;
+margin-bottom:16px;
+font-weight:700;
+animation: fadeUp .45s ease;
 }
 
 .flash.success{
-background:#ecfdf5;
+background:#dcfce7;
 color:#065f46;
 }
 
 .flash.error{
-background:#fef2f2;
+background:#fee2e2;
 color:#991b1b;
-}
-
-.flash.info{
-background:#eff6ff;
-color:#1d4ed8;
-}
-
-.flash.warning{
-background:#fff7ed;
-color:#92400e;
 }

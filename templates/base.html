@@ -6,7 +6,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>{% block title %}Aura{% endblock %}</title>
+<title>{% block title %}Ajebo Fix{% endblock %}</title>
+
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/aura-icon-health.png') }}">
+
+<link rel="apple-touch-icon"
+href="{{ url_for('static', filename='images/aura-icon-health.png')}}">
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
@@ -19,15 +24,35 @@ rel="stylesheet">
 </head>
 <body>
 
+<button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
+
+<div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+<script>
+    function toggleSidebar() {
+        document
+            .querySelector(".sidebar")
+            .classList.toggle("open");
+        document
+            .querySelector(".sidebar-overlay").classList.toggle("open");
+    }
+</script>
+
 <div class="app-shell">
 
     <aside class="sidebar">
 
         <div class="brand-block">
-            <div class="brand-logo">logo</div>
+            <div class="brand-logo">
+                <img
+                    src="{{ url_for('static', filename='images/aura-logo-main.png') }}"
+                    alt="Aura Logo"
+                    class="brand-logo-img"
+                >
+            </div>
 
             <div>
-                <div class="brand-name">Aura</div>
+                <div class="brand-name">Aura by Ajebo Fix</div>
                 <div class="brand-sub">
                     Private Automotive Health
                 </div>
@@ -127,7 +152,7 @@ rel="stylesheet">
         </section>
 
         <footer class="footer-bar">
-            Ajebo Fix Aura © 2026
+            Powered by Ajebo Fix © 2026
         </footer>
 
     </main>

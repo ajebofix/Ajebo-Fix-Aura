@@ -1,4 +1,5 @@
 {# templates/car_detail.html #}
+
 {% extends "base.html" %}
 
 {% block title %}Vehicle Profile Health Record{% endblock %}
@@ -13,7 +14,11 @@ Vehicle Health Record
 
 {% block content %}
 
-<section class="page-header">
+<!-- ========================= -->
+<!-- HERO HEADER -->
+<!-- ========================= -->
+
+<section class="page-header aura-vehicle-hero">
 
     <div>
 
@@ -45,11 +50,29 @@ Vehicle Health Record
 
 
 
+<!-- ========================= -->
+<!-- TOP GRID -->
+<!-- ========================= -->
+
 <section class="dashboard-grid">
 
-    <div class="card">
+    <!-- VEHICLE ID -->
+    <div class="card fade-up">
+
+        <div class="mini-health-wrap">
+
+
+            <img
+                src="{{ url_for('static', filename='images/aura-icon-health.png') }}"
+                class="mini-health-icon"
+                alt="Aura"
+            >
+            <span class="shimmer"></span>
+        </div>
 
         <h2>Vehicle Identification</h2>
+
+    </div>
 
         <div class="info-list">
 
@@ -69,7 +92,8 @@ Vehicle Health Record
 
 
 
-    <div class="card">
+    <!-- OWNERSHIP -->
+    <div class="card fade-up">
 
         <h2>Ownership</h2>
 
@@ -110,14 +134,27 @@ Vehicle Health Record
 
 
 
-<section class="card">
+<!-- ========================= -->
+<!-- HEALTH -->
+<!-- ========================= -->
 
-    <div class="section-head">
+<section class="card glow-blue fade-up">
+
+    <div class="mini-health-wrap">
+
+        <img
+            src="{{ url_for('static', filename='images/aura-icon-health.png') }}"
+            class="mini-health-icon"
+            alt="Health"
+        >
+        <span class="shimmer"></span>
+
         <h2>Health Overview</h2>
 
         <span class="pill">
             {{ health.label or health.health_status }}
         </span>
+
     </div>
 
     {% if escalation %}
@@ -147,16 +184,20 @@ Vehicle Health Record
     <p>{{ health.next_action }}</p>
 
     <p class="muted">
-        This overview is informational and non-diagnostic.
-        It reflects professional monitoring by Ajebo Fix.
+        Informational and non-diagnostic.
+        Based on monitoring and professional review.
     </p>
 
 </section>
 
 
 
+<!-- ========================= -->
+<!-- CONSULTATIONS -->
+<!-- ========================= -->
+
 {% if consultations %}
-<section class="card">
+<section class="card fade-up">
 
     <h2>Consultation Activity</h2>
 
@@ -176,7 +217,7 @@ Vehicle Health Record
 
         {% if c.scheduled_for %}
         <p class="muted">
-            Scheduled For:
+            Scheduled:
             {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
         </p>
         {% endif %}
@@ -194,16 +235,20 @@ Vehicle Health Record
 
 
 
+<!-- ========================= -->
+<!-- ACTIVE CONSULTATION -->
+<!-- ========================= -->
+
 {% if has_active_consultation %}
 
 {% set active_consultation = consultations | selectattr("status","equalto","in_progress") | first %}
 
-<section class="card">
+<section class="card fade-up">
 
     <h2>Active Consultation</h2>
 
     <p class="muted">
-        A professional consultation is currently active for this vehicle.
+        A professional consultation is active.
     </p>
 
     {% if active_consultation and active_consultation.started_at %}
@@ -217,26 +262,28 @@ Vehicle Health Record
 
     <div class="button-stack">
 
-        <form method="POST"
-              action="{{ url_for('admin.admin_start_assessment', consultation_id=active_consultation.id) }}">
-
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_start_assessment', consultation_id=active_consultation.id) }}"
+        >
             <button class="btn btn-primary">
                 Start / Continue Assessment
             </button>
-
         </form>
 
-        <form method="POST"
-              action="{{ url_for('admin.admin_complete_consultation', consultation_id=active_consultation.id) }}">
-
+        <form
+            method="POST"
+            action="{{ url_for('admin.admin_complete_consultation', consultation_id=active_consultation.id) }}"
+        >
             <button class="btn btn-success">
                 Complete Consultation
             </button>
-
         </form>
 
-        <a href="{{ url_for('admin.admin_consultations') }}"
-           class="btn btn-secondary">
+        <a
+            href="{{ url_for('admin.admin_consultations') }}"
+            class="btn btn-secondary"
+        >
             Open Consultation Queue
         </a>
 
@@ -250,75 +297,46 @@ Vehicle Health Record
 
 
 
-{% if escalation and escalation.level == "escalate" %}
-
-<section class="card">
-
-    <h2>Professional Review Recommended</h2>
-
-    <p class="muted">
-        A consultation will provide clarity and reduce risk exposure.
-    </p>
-
-    <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}"
-       class="btn btn-primary">
-        Book Private Consultation
-    </a>
-
-</section>
-
-{% elif escalation and escalation.level == "flag" %}
-
-<section class="card">
-
-    <h2>Monitoring Recommended</h2>
-
-    <p class="muted">
-        A scheduled review may help maintain optimal performance.
-    </p>
-
-    <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}"
-       class="btn btn-primary">
-        Schedule Review
-    </a>
-
-</section>
-
-{% endif %}
-
-
+<!-- ========================= -->
+<!-- CTA -->
+<!-- ========================= -->
 
 {% if not has_active_consultation %}
 
-<section class="card">
+<section class="card fade-up">
 
     <h2>Private Consultation Required</h2>
 
     <p class="muted">
-        Professional services and advisor actions become available
-        during an active consultation.
+        Professional services activate during consultation.
     </p>
 
     {% if is_admin_view %}
 
     <div class="button-stack">
 
-        <a href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}"
-           class="btn btn-primary">
+        <a
+            href="{{ url_for('admin.admin_schedule_consultation', car_id=car.id) }}"
+            class="btn btn-primary"
+        >
             Schedule Consultation
         </a>
 
-        <a href="{{ url_for('admin.admin_consultations') }}"
-           class="btn btn-secondary">
-            Check Consultation Queue
+        <a
+            href="{{ url_for('admin.admin_consultations') }}"
+            class="btn btn-secondary"
+        >
+            Queue
         </a>
 
     </div>
 
     {% else %}
 
-    <a href="{{ url_for('cars.book_consultation', car_id=car.id) }}"
-       class="btn btn-primary">
+    <a
+        href="{{ url_for('cars.book_consultation', car_id=car.id) }}"
+        class="btn btn-primary"
+    >
         Book Consultation
     </a>
 
@@ -330,13 +348,16 @@ Vehicle Health Record
 
 
 
-<section class="card">
+<!-- ========================= -->
+<!-- RECORDS -->
+<!-- ========================= -->
+
+<section class="card fade-up">
 
     <h2>Vehicle Assessments</h2>
 
     <p class="muted">
-        Professional record of services, observations,
-        and longitudinal monitoring.
+        Official health records and longitudinal monitoring.
     </p>
 
     {% for assessment in assessments %}
@@ -346,14 +367,16 @@ Vehicle Health Record
         <div class="list-item">
 
             <p>
-                Assessment completed on
+                Completed on
                 {{ assessment.finalized_at.strftime("%Y-%m-%d") }}
             </p>
 
-            <a href="{{ url_for(
-                'admin_assessments.admin_download_assessment_pdf',
-                assessment_id=assessment.id
-            ) }}">
+            <a
+                href="{{ url_for(
+                    'admin_assessments.admin_download_assessment_pdf',
+                    assessment_id=assessment.id
+                ) }}"
+            >
                 Download Assessment Report
             </a>
 
@@ -364,8 +387,10 @@ Vehicle Health Record
     {% endfor %}
 
     {% if current_user.role != 'admin' %}
-    <a href="{{ url_for('cars.assessment_report', car_id=car.id) }}"
-       class="btn btn-primary">
+    <a
+        href="{{ url_for('cars.assessment_report', car_id=car.id) }}"
+        class="btn btn-primary"
+    >
         View Vehicle Health Assessment
     </a>
     {% endif %}
@@ -374,26 +399,33 @@ Vehicle Health Record
 
 
 
-<section class="card">
+<!-- ========================= -->
+<!-- HISTORY -->
+<!-- ========================= -->
+
+<section class="card fade-up">
 
     <h2>Vehicle Care History</h2>
 
     <p class="muted">
-        A chronological record of services, observations,
-        and vehicle monitoring over time.
+        Services, observations, and timeline history.
     </p>
 
     {% if is_admin_view %}
 
-    <a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
-       class="btn btn-secondary">
+    <a
+        href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
+        class="btn btn-secondary"
+    >
         View Full Care History
     </a>
 
     {% else %}
 
-    <a href="{{ url_for('cars.vehicle_records', car_id=car.id) }}"
-       class="btn btn-secondary">
+    <a
+        href="{{ url_for('cars.vehicle_records', car_id=car.id) }}"
+        class="btn btn-secondary"
+    >
         View Full Care History
     </a>
 
@@ -403,19 +435,24 @@ Vehicle Health Record
 
 
 
+<!-- ========================= -->
+<!-- CLIENT ISSUE REPORT -->
+<!-- ========================= -->
+
 {% if not is_admin_view %}
 
-<section class="card">
+<section class="card fade-up">
 
     <h2>Report an Issue</h2>
 
     <p class="muted">
-        Report observations or concerns anytime.
-        An advisor will review them.
+        Submit concerns anytime for review.
     </p>
 
-    <a href="{{ url_for('cars.add_reported_concern', car_id=car.id) }}"
-       class="btn btn-primary">
+    <a
+        href="{{ url_for('cars.add_reported_concern', car_id=car.id) }}"
+        class="btn btn-primary"
+    >
         Report Concern
     </a>
 
@@ -425,61 +462,11 @@ Vehicle Health Record
 
 
 
-{% if has_active_consultation %}
+<!-- ========================= -->
+<!-- DRIVER -->
+<!-- ========================= -->
 
-<section class="card">
-
-    <h2>Actions</h2>
-
-    <div class="button-stack">
-
-        {% if is_admin_view %}
-
-        <a href="{{ url_for('admin.admin_add_service', car_id=car.id) }}"
-           class="btn btn-secondary">
-            Record Service
-        </a>
-
-        <a href="{{ url_for('admin.admin_add_concern', car_id=car.id) }}"
-           class="btn btn-secondary">
-            Record Observation
-        </a>
-
-        <a href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
-           class="btn btn-secondary">
-            View Care Timeline
-        </a>
-
-        <a href="{{ url_for('admin.admin_reported_concerns') }}"
-           class="btn btn-secondary">
-            All Reported Concerns
-        </a>
-
-        {% else %}
-
-            {% if ownership %}
-            <a href="{{ url_for('cars.add_service_record', ownership_id=ownership.id) }}"
-               class="btn btn-secondary">
-                Record Service
-            </a>
-            {% endif %}
-
-            <a href="{{ url_for('cars.vehicle_records', car_id=car.id) }}"
-               class="btn btn-secondary">
-                View Care Timeline
-            </a>
-
-        {% endif %}
-
-    </div>
-
-</section>
-
-{% endif %}
-
-
-
-<section class="card">
+<section class="card fade-up">
 
     <h2>Driver Management</h2>
 
@@ -489,24 +476,24 @@ Vehicle Health Record
         <strong>{{ active_driver.user.name }}</strong> is assigned
     </p>
 
-    <form method="POST"
-          action="/admin/drivers/remove/{{ active_driver.id }}">
-
+    <form
+        method="POST"
+        action="/admin/drivers/remove/{{ active_driver.id }}"
+    >
         <button class="btn btn-danger">
             Remove Driver
         </button>
-
     </form>
 
     {% else %}
 
-    <form method="POST"
-          action="/admin/cars/{{ car.id }}/invite-driver">
-
+    <form
+        method="POST"
+        action="/admin/cars/{{ car.id }}/invite-driver"
+    >
         <button class="btn btn-primary">
             Assign Driver
         </button>
-
     </form>
 
     {% if whatsapp_link %}
@@ -523,13 +510,27 @@ Vehicle Health Record
 
 
 
-<section class="card">
+<!-- ========================= -->
+<!-- RINA -->
+<!-- ========================= -->
 
-    <h2>Consult A.J. Rina</h2>
+<section class="card glow-blue fade-up">
+
+    <div class="mini-health-wrap">
+
+        <img
+            src="{{ url_for('static', filename='images/aura-icon-health.png') }}"
+            class="mini-health-icon"
+            alt="Rina"
+        >
+        <span class="shimmer"></span>
+
+        <h2>Consult A.J. Rina</h2>
+
+    </div>
 
     <p class="muted">
-        Ask about vehicle status, observations,
-        or recommended next steps.
+        Ask about status, risks, or next steps.
     </p>
 
     {% include "components/rina_chat.html" %}
@@ -537,6 +538,10 @@ Vehicle Health Record
 </section>
 
 
+
+<!-- ========================= -->
+<!-- FOOTER -->
+<!-- ========================= -->
 
 <section class="page-footer">
 

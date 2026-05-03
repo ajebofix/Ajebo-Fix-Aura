@@ -11,9 +11,10 @@ from flask import (
 from flask_login import login_required, current_user
 from sqlalchemy.orm import joinedload
 
-from models import CarOwnership, ChatMessage, db
+from models import Car, CarOwnership, ChatMessage, db, CarDriver
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
+from services.rina_context_service import RinaContextService
 from datetime import datetime, timedelta
 
 import re
@@ -73,6 +74,23 @@ def save_message(role, text):
     )
     db.session.add(chat)
     db.session.commit()
+
+
+def extract_topics(text):
+    topics = []
+
+    mapping = {
+        "warning": "warning_lights",
+        "engine": "engine",
+        "transmission": "transmission",
+        "brake": "brakes",
+    }
+
+    for k, v in mapping.items():
+        if k in text.lower():
+            topics.append(v)
+
+    return topics
 
 
 def detect_intent(message: str) -> str:
@@ -137,18 +155,46 @@ def chat():
         # --------------------------------
         # VEHICLES
         # --------------------------------
-        ownerships = (
-            CarOwnership.query.options(joinedload(CarOwnership.car))
-            .filter(
-                CarOwnership.user_id == current_user.id,
-                CarOwnership.is_active.is_(True),
-            )
-            .order_by(CarOwnership.start_date.asc())
-            .all()
-        )
 
-        for o in ownerships:
-            print("OWNERSHIP:", o.id, "CAR:", o.car)
+        role = current_user.role if hasattr(current_user, "role") else "owner"
+
+        ownerships = []
+        driver_links = []
+
+        if role == "driver":
+            driver_links = (
+                CarDriver.query.options(joinedload(CarDriver.car))
+                .filter(
+                    CarDriver.user_id == current_user.id,
+                    CarDriver.is_active.is_(True),
+                )
+                .all()
+            )
+
+            if not driver_links:
+                return (
+                    jsonify(
+                        {
+                            "reply": "You're not assigned to any vehicle yet. Check with your owner.",
+                            "intent": intent,
+                        }
+                    ),
+                    200,
+                )
+
+            # Normalize into ownership-like structure
+            ownerships = driver_links
+
+        else:
+            ownerships = (
+                CarOwnership.query.options(joinedload(CarOwnership.car))
+                .filter(
+                    CarOwnership.user_id == current_user.id,
+                    CarOwnership.is_active.is_(True),
+                )
+                .order_by(CarOwnership.start_date.asc())
+                .all()
+            )
 
         if not ownerships:
             return (
@@ -245,27 +291,39 @@ def chat():
             # LOAD MEMORY
             memory = session.get("rina_context_full", {})
 
-            rina_context = {
+            context = {
                 **memory,  # restore pending + active vehicle
             }
 
-            # UPDATE MESSGE
-            rina_context["message"] = message
-
-            # CORE DATA
-            rina_context.update(
-                {
-                    "user_name": get_user_name(current_user),
-                    "vehicle_id": car.id,
-                    "vehicle_identity": f"{car.brand} {car.model} {car.year}",
-                    "vehicles": [
-                        f"{o.car.brand} {o.car.model} {o.car.year}" for o in ownerships
-                    ],
-                    "history": history,
-                    "intent": intent,
-                    **health_context,
-                }
+            # =========================
+            # BUILD FULL CONTEXT
+            # =========================
+            context = RinaContextService.build(
+                user=current_user,
+                message=message,
+                active_car_id=car.id if ownership else None,
             )
+
+            context["explained_topics"] = memory.get("explained_topics", [])
+
+            context["last_topics"] = [
+                f"{m['role']}: {m['content'][:100]}"
+                for m in context.get("history", [])[-3:]
+            ]
+
+            if not context.get("vehicle_identity"):
+                context["vehicle_identity"] = memory.get("vehicle_identity")
+
+            context["pending_vehicle"] = memory.get("pending_vehicle")
+
+            context.update(health_context)
+            context["intent"] = intent
+
+            context.update(session.get("rina_context_full", {}))
+
+            # =========================
+            # RESPONSE
+            # =========================
 
             # CALL AI WITH FULL CONTEXT
             # =========================
@@ -285,13 +343,24 @@ def chat():
                     user_id=current_user.id,
                     car_id=car.id,
                     message=message,
-                    health=rina_context,
+                    context=context,
                 )
+
+            # =========================
+            # TOPIC DETECTION
+            # =========================
+
+            topics_detected = extract_topics(reply + " " + message)
+
+            # merge with existing memory
+            existing = context.get("explained_topics", [])
+            updated_topics = list(set(existing + topics_detected))
 
             # SAVE MEMORY BACK
             session["rina_context_full"] = {
-                "vehicle_identity": rina_context.get("vehicle_identity"),
-                "pending_vehicle": rina_context.get("pending_vehicle"),
+                "vehicle_identity": context.get("vehicle_identity"),
+                "pending_vehicle": context.get("pending_vehicle"),
+                "explained_topics": updated_topics,
             }
 
             if not isinstance(reply, str):

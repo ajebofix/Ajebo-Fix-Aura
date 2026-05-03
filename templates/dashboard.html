@@ -21,12 +21,17 @@ Your vehicle is under professional care.
 
 {% if vehicles %}
 
-<div class="stats-grid">
+<!-- ========================= -->
+<!-- VEHICLE GRID -->
+<!-- ========================= -->
+
+<div class="stats-grid aura-dashboard-grid">
 
     {% for v in vehicles %}
 
-    <div class="card vehicle-card {% if v.is_active %}active{% endif %}">
+    <div class="card vehicle-card aura-vehicle-card {% if v.is_active %}active glow-blue{% endif %}">
 
+        <!-- TOP -->
         <div class="vehicle-header">
 
             <div>
@@ -61,20 +66,23 @@ Your vehicle is under professional care.
         </div>
 
 
+        <!-- LAST REVIEW -->
         {% if v.last_assessed_at %}
-        <div class="meta" style="margin-top:14px;">
+        <div class="meta vehicle-date">
             Last assessed on
             {{ v.last_assessed_at[:10] }}
         </div>
         {% endif %}
 
 
-        <div class="reassurance" style="margin-top:14px;">
+        <!-- REASSURANCE -->
+        <div class="reassurance vehicle-note">
             {{ v.reassurance }}
         </div>
 
 
-        <div class="actions" style="margin-top:18px;">
+        <!-- ACTIONS -->
+        <div class="actions vehicle-actions">
 
             {% if not v.is_active %}
 
@@ -112,16 +120,33 @@ Your vehicle is under professional care.
 </div>
 
 
-<div class="quick-grid">
 
-    <div class="card">
+<!-- ========================= -->
+<!-- QUICK ACTIONS -->
+<!-- ========================= -->
 
-        <h3 style="margin-bottom:10px;">
-            Vehicle Management
-        </h3>
+<div class="quick-grid aura-quick-grid">
+
+    <!-- VEHICLE MANAGEMENT -->
+    <div class="card aura-action-card">
+
+        <div class="section-head">
+
+            <img
+                src="{{ url_for('static', filename='images/aura-icon-health.png') }}"
+                class="mini-health-icon"
+                alt="Aura"
+            >
+            <span class="shimmer"></span>
+
+            <h3>
+                Vehicle Management
+            </h3>
+
+        </div>
 
         <p class="subtext">
-            Add, organize, and manage your vehicles.
+            Add, organize, and manage your private vehicle fleet.
         </p>
 
         <a
@@ -133,36 +158,61 @@ Your vehicle is under professional care.
 
     </div>
 
-    <div class="card">
 
-        <h3 style="margin-bottom:10px;">
-            Private Guidance
-        </h3>
+    <!-- RINA -->
+    <div class="card aura-action-card">
+
+        <div class="section-head">
+
+            <h3>
+                Private Guidance
+            </h3>
+
+        </div>
 
         <p class="subtext">
             Speak with A.J. Rina using your active vehicle profile.
         </p>
 
-        <a href="#rina-chat"
-           class="btn btn-dark btn-block">
-           Open A.J. Rina
+        <a
+            href="#rina-chat"
+            class="btn btn-dark btn-block"
+        >
+            Open A.J. Rina
         </a>
 
     </div>
 
 </div>
 
+
+
 {% else %}
 
-<div class="card">
+<!-- ========================= -->
+<!-- EMPTY STATE -->
+<!-- ========================= -->
 
-    <h2 style="margin-bottom:10px;">
-        Welcome to Aura
-    </h2>
+<div class="card aura-empty-card">
+
+    <div class="section-head">
+
+        <img
+            src="{{ url_for('static', filename='images/aura-icon-health.png') }}"
+            class="mini-health-icon"
+            alt="Aura"
+        >
+        <span class="shimmer"></span>
+
+        <h2>
+            Welcome to Aura
+        </h2>
+
+    </div>
 
     <p class="subtext">
         No vehicles have been added yet.
-        Start your private automotive health journey now.
+        Begin your private automotive health journey now.
     </p>
 
     <a
@@ -177,14 +227,31 @@ Your vehicle is under professional care.
 {% endif %}
 
 
+
 <div class="divider"></div>
 
 
-<div class="card" id="rina-chat">
 
-    <h2 style="margin-bottom:8px;">
-        Consult A.J. Rina
-    </h2>
+<!-- ========================= -->
+<!-- RINA PANEL -->
+<!-- ========================= -->
+
+<div class="card aura-rina-panel" id="rina-chat">
+
+    <div class="section-head">
+
+        <img
+            src="{{ url_for('static', filename='images/aura-icon-health.png') }}"
+            class="mini-health-icon"
+            alt="Rina"
+        >
+        <span class="shimmer"></span>
+
+        <h2>
+            Consult A.J. Rina
+        </h2>
+
+    </div>
 
     <p class="subtext">
         Rina responds based on your
@@ -196,8 +263,14 @@ Your vehicle is under professional care.
 </div>
 
 
+
 <div class="divider"></div>
 
+
+
+<!-- ========================= -->
+<!-- SIGN OUT -->
+<!-- ========================= -->
 
 <form
     action="{{ url_for('auth.logout') }}"
@@ -212,6 +285,7 @@ Your vehicle is under professional care.
     </button>
 
 </form>
+
 
 
 <script>

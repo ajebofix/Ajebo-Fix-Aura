@@ -1,3 +1,5 @@
+/* static/css/core.css */
+
 *{
 margin:0;
 padding:0;
@@ -10,10 +12,14 @@ scroll-behavior:smooth;
 
 body{
 font-family:var(--font);
-background:var(--bg);
-color:var(--navy);
+background:
+radial-gradient(circle at top right, rgba(37,99,235,.10), transparent 28%),
+radial-gradient(circle at bottom left, rgba(59,130,246,.10), transparent 25%),
+linear-gradient(180deg,var(--bg1),var(--bg2));
+color:var(--text);
 line-height:1.6;
 font-size:15px;
+min-height: 100vh;
 }
 
 img{
@@ -31,7 +37,7 @@ list-style:none;
 }
 
 h1,h2,h3,h4{
-font-weight:700;
+font-weight:800;
 line-height:1.2;
 }
 

@@ -1,3 +1,5 @@
+/* static/css/animations.css */
+
 .card,
 .flash,
 .btn{
@@ -7,10 +9,45 @@ animation:fadeUp .45s ease;
 @keyframes fadeUp{
 from{
 opacity:0;
-transform:translateY(10px);
+transform:translateY(12px);
 }
 to{
 opacity:1;
-transform:none;
+transform:translateY(0);
 }
+}
+
+/* ENTRY ANIMATION */
+@keyframes auraLogoEnter{
+    0%{
+        opacity:0;
+        transform:scale(.7) rotate(-10deg);
+        filter:blur(6px);
+    }
+
+    100%{
+        opacity:1;
+        transform:scale(1) rotate(0);
+        filter: blur(0);
+    }
+}
+
+/* GLOW PULSE */
+@keyframes auraPulse{
+    50%{
+        box-shadow:
+        0 0 28px rgba(37,99,235,.35),
+        0 16px 35px rgba(37,99,235,.20);
+    }
+}
+
+@keyframes auralogoFloat{
+    50%{
+    transform:translateY(-3px);
+}
+}
+
+@keyframes auraShimmer{
+    0%{ background-position: -120% 0; }
+    100%{ background-position: 120% 0; }
 }

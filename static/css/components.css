@@ -1,60 +1,81 @@
-.card{
-    background: var(--surface);
-    border-radius: var(--radius);
-    padding: 20px;
-    box-shadow: var(--shadow);
-    margin-bottom: 20px;
-}
-
-.vehicle-card{
-    border: 1px solid var(--border);
-}
-
-.vehicle-card.active{
-    border-color: var(--primary);
-}
-
-.badge{
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.badge.success{
-    background: #dcfce7;
-    color: #065f46;
-}
-
-.badge.warning{
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.badge.danger{
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.empty{
-    padding: 18px;
-    border: 1px dashed var(--bordrer);
-    border-radius: 10px;
-    color: var(--muted);
-}
+/* static/css/components.css */
 
 .pill{
+display: inline-block;
+align-items: center;
+justify-content: center;
 padding:8px 12px;
 border-radius:999px;
 background:#eef2ff;
 color:var(--blue);
-font-size:13px;
-font-weight:700;
+font-size:12px;
+font-weight:800;
+}
+
+.health-pill{
+padding:8px 12px;
+border-radius:999px;
+font-weight:800;
+font-size:12px;
+}
+
+.health-green{
+background:#dcfce7;
+color:#065f46;
+}
+
+.health-gold{
+background:#fef3c7;
+color:#92400e;
+}
+
+.health-red{
+background:#fee2e2;
+color:#991b1b;
 }
 
 .divider{
 height:1px;
 background:var(--border);
-margin:20px 0;
+margin:24px 0;
+}
+
+.section-head{
+display: flex;
+align-items: center;
+gap: 8px;
+margin-bottom: 12px
+}
+
+.mini-health-wrap{
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    overflow: hidden;
+}
+
+.mini-health-icon{
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.shimmer{
+    position: absolute;
+    top: 0;
+    left: -120%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(
+        120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.7) 50%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    transform: skewX(-20deg);
+    animation: auraShimmer 2.2s linear infinite;
 }

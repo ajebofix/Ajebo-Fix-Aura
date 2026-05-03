@@ -101,6 +101,34 @@ Once a vehicle is assigned, it will appear here.
 {% endif %}
 
 
+<!-- ========================= -->
+<!-- RINA -->
+<!-- ========================= -->
+
+<section class="card glow-blue fade-up">
+
+    <div class="section-head">
+
+        <img
+            src="{{ url_for('static', filename='images/aura-icon-health.png') }}"
+            class="mini-health-icon"
+            alt="Rina"
+        >
+
+        <h2>Consult A.J. Rina</h2>
+
+    </div>
+
+    <p class="muted">
+        Ask about status, risks, or next steps.
+    </p>
+
+    {% include "components/rina_chat.html" %}
+
+</section>
+
+
+
 
 <!-- ======================= -->
 <!-- SIGN OUT -->

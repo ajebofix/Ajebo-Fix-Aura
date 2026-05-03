@@ -1,18 +1,21 @@
+/* static/css/buttons.css */
+
 .btn{
 display:inline-flex;
 align-items:center;
 justify-content:center;
 gap:8px;
-padding:12px 18px;
+padding:13px 18px;
 border:none;
-border-radius:10px;
-font-weight:700;
+border-radius:14px;
+font-weight:800;
 cursor:pointer;
 transition:var(--transition);
 }
 
 .btn:hover{
 transform:translateY(-1px);
+box-shadow:var(--shadow-sm);
 }
 
 .btn-block{
@@ -20,26 +23,26 @@ width:100%;
 }
 
 .btn-primary{
-background:var(--blue);
-color:white;
+background:linear-gradient(135deg,#2563eb,#1d4ed8);
+color:#fff;
 }
 
 .btn-dark{
-background:var(--navy);
-color:white;
+background:#0b1227;
+color:#fff;
 }
 
 .btn-success{
-background:var(--green);
-color:white;
+background:#10b981;
+color:#fff;
 }
 
 .btn-warning{
-background:var(--gold);
-color:white;
+background:#f59e0b;
+color:#fff;
 }
 
 .btn-danger{
-background:var(--red);
-color:white;
+background:#ef4444;
+color:#fff;
 }

@@ -1,3 +1,5 @@
+# services/health_alert_service.py
+
 # =====================================================
 # AURA — VEHICLE CARE SIGNAL ENGINE
 # =====================================================
@@ -97,7 +99,7 @@ class CareSignalService:
                 car,
                 ownership,
                 signal_type="declining_health_trajectory",
-                severity="medium",
+                severity="moderate",
                 message=(
                     "A downward trend in vehicle health has been observed. "
                     "Continued monitoring or assessment is advised."
@@ -116,7 +118,7 @@ class CareSignalService:
                 car,
                 ownership,
                 signal_type="elevated_risk_indicator",
-                severity="medium",
+                severity="moderate",
                 message=(
                     "One or more monitored components show elevated risk indicators. "
                     "An assessment may be appropriate."
@@ -141,6 +143,9 @@ class CareSignalService:
             )
         else:
             CareSignalService._resolve_signal(car, ownership, "maintenance_monitoring")
+
+
+
 
         db.session.commit()
 
@@ -169,6 +174,7 @@ class CareSignalService:
             ownership_id=ownership.id,
             alert_type=signal_type,
             severity=severity,
+            status="new",
             message=message,
             is_active=True,
             created_at=datetime.utcnow(),

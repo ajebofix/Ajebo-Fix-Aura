@@ -8,6 +8,8 @@ import os
 
 from extensions import db
 
+from services.feature_gateways import has_feature
+
 
 # =====================================================
 # Load environment variables FIRST
@@ -58,6 +60,11 @@ def create_app():
     print("MAIL PASS LEN:", len(app.config["MAIL_PASSWORD"] or ""))
 
     # print("SECRET KEY LOADED")
+
+    # =================================================
+    # Jinja Globals
+    # =================================================
+    app.jinja_env.globals.update(has_feature=has_feature)
 
     # =================================================
     # Extensions (Single Source of Truth)

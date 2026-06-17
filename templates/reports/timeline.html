@@ -69,6 +69,58 @@ Observational and non-diagnostic.
 </section>
 
 
+<!-- ===================================== -->
+<!-- TIMELINE -->
+<!-- ===================================== -->
+ 
+<section class="card fade-up">
+
+    <h2>Unified Vehicle Timeline</h2>
+
+    <p class="muted">
+        Longitudinal vehicle care history.
+    </p>
+
+    {% for item in timeline %}
+
+    <div class="list-item">
+
+        <div class="section-head">
+
+            <strong>
+                {{ item.title }}
+            </strong>
+
+            <span class="pill">
+                {{ item.type }}
+            </span>
+
+        </div>
+
+        <p class="muted">
+
+            {% if item.date %}
+                {{ item.date.strftime("%Y-%m-%d %H:%M") }}
+            {% endif %}
+
+            •
+
+            {{ item.status }}
+
+        </p>
+
+        {% if item.description %}
+        <p>
+            {{ item.description }}
+        </p>
+        {% endif %}
+
+    </div>
+
+    {% endfor %}
+
+</section>
+
 
 <!-- ===================================== -->
 <!-- HEALTH SNAPSHOT -->

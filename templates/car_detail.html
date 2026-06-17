@@ -40,6 +40,52 @@ Vehicle Health Record
 
 </section>
 
+{% if is_admin_view and ownership %}
+
+<form
+    method="POST"
+    action="{{ url_for('admin.update_care_pathway', car_id=car.id) }}"
+>
+
+    <select name="care_plan" class="input">
+
+        <option
+            value="active_monitoring"
+            {% if ownership.care_plan == "active_monitoring" %}
+            selected
+            {% endif %}
+        >
+            Active Monitoring
+        </option>
+
+        <option
+            value="preventive_coverage"
+            {% if ownership.care_plan == "preventive_coverage" %}
+            selected
+            {% endif %}
+        >
+            Preventive Coverage
+        </option>
+
+        <option
+            value="priority_access"
+            {% if ownership.care_plan == "priority_access" %}
+            selected
+            {% endif %}
+        >
+            Priority Access
+        </option>
+
+    </select>
+
+    <button class="btn btn-primary">
+        Update Care Pathway
+    </button>
+
+</form>
+
+{% endif %}
+
 
 
 {% if error %}
@@ -72,9 +118,9 @@ Vehicle Health Record
 
         <h2>Vehicle Identification</h2>
 
-    </div>
+        <div class="info-list"></div>
 
-        <div class="info-list">
+    </div>
 
             <div class="info-row">
                 <span class="label">VIN</span>
@@ -86,9 +132,6 @@ Vehicle Health Record
                 <span class="value">{{ car.current_mileage or "—" }}</span>
             </div>
 
-        </div>
-
-    </div>
 
 
 
@@ -193,6 +236,410 @@ Vehicle Health Record
 
 
 <!-- ========================= -->
+<!-- CARE PATHWAY -->
+<!-- ========================= -->
+
+<section class="card fade-up">
+
+    <h2>Care Pathway</h2>
+
+    {% set current_plan = (
+        ownership.care_plan
+        if ownership and ownership.care_plan
+        else "active_monitoring"
+    ) %}
+
+    {% set plan_descriptions = {
+
+        "active_monitoring":
+            "Vehicle is currently under professional monitoring and longitudinal health review.",
+
+        "preventive_coverage":
+            "Preventive care coordination and ongoing monitoring are active for this vehicle.",
+
+        "priority_access":
+            "Accelerated care coordination and priority review pathways are enabled."
+
+    } %}
+
+    <div class="section-head">
+
+        <strong>
+            {{ CARE_PLAN_LABELS.get(
+                current_plan,
+                "Active Monitoring"
+            ) }}
+        </strong>
+
+        <span class="pill">
+            Enrolled
+        </span>
+
+    </div>
+
+    <p class="muted">
+        {{ plan_descriptions.get(
+            current_plan,
+            plan_descriptions["active_monitoring"]
+        ) }}
+    </p>
+
+    <!-- ===================================== -->
+    <!-- CARE PATHWAY FEATURES -->
+    <!-- ===================================== -->
+
+    <div class="info-list" style="margin-top:18px;">
+
+        <div class="info-row">
+            <span class="label">
+                Consultations
+            </span>
+
+            <span class="value">
+                ✓ Included
+            </span>
+        </div>
+
+        <div class="info-row">
+            <span class="label">
+                Concern Reporting
+            </span>
+
+            <span class="value">
+                ✓ Included
+            </span>
+        </div>
+
+        <div class="info-row">
+            <span class="label">
+                Vehicle Assessments
+            </span>
+
+            <span class="value">
+                ✓ Included
+            </span>
+        </div>
+
+        <div class="info-row">
+            <span class="label">
+                Vehicle History
+            </span>
+
+            <span class="value">
+                ✓ Included
+            </span>
+        </div>
+
+        <div class="info-row">
+            <span class="label">
+                A.J. Rina Access
+            </span>
+
+            <span class="value">
+                ✓ Included
+            </span>
+        </div>
+
+        {% if has_feature(ownership, FEATURE_PREVENTIVE_TRACKING) %}
+
+        <div class="info-row">
+            <span class="label">
+                Preventive Tracking
+            </span>
+
+            <span class="value">
+                ✓ Active
+            </span>
+        </div>
+
+        {% endif %}
+
+        {% if has_feature(ownership, FEATURE_PROACTIVE_REMINDERS) %}
+
+        <div class="info-row">
+            <span class="label">
+                Proactive Reminders
+            </span>
+
+            <span class="value">
+                ✓ Active
+            </span>
+        </div>
+
+        {% endif %}
+
+        {% if has_feature(ownership, FEATURE_PRIORITY_SCHEDULING) %}
+
+        <div class="info-row">
+            <span class="label">
+                Accelerated Scheduling
+            </span>
+
+            <span class="value">
+                ✓ Enabled
+            </span>
+        </div>
+
+        {% endif %}
+
+        {% if has_feature(ownership, FEATURE_PRIORITY_COORDINATION) %}
+
+        <div class="info-row">
+            <span class="label">
+                Priority Coordination
+            </span>
+
+            <span class="value">
+                ✓ Enabled
+            </span>
+        </div>
+
+        {% endif %}
+
+        {% if has_feature(ownership, FEATURE_EMERGENCY_REVIEW) %}
+
+        <div class="info-row">
+            <span class="label">
+                Emergency Escalation
+            </span>
+
+            <span class="value">
+                ✓ Enabled
+            </span>
+        </div>
+
+        {% endif %}
+
+    </div>
+
+    <!-- ===================================== -->
+    <!-- ADMIN CARE PATHWAY CONTROL -->
+    <!-- ===================================== -->
+
+    {% if is_admin_view and ownership %}
+
+    <div style="margin-top:24px;">
+
+        <form
+            method="POST"
+            action="{{ url_for(
+                'admin.update_care_pathway',
+                car_id=car.id
+            ) }}"
+        >
+
+            <div class="form-group">
+
+                <label class="label">
+                    Update Care Pathway
+                </label>
+
+                <select
+                    name="care_plan"
+                    class="input"
+                >
+
+                    <option
+                        value="active_monitoring"
+                        {% if current_plan == "active_monitoring" %}
+                        selected
+                        {% endif %}
+                    >
+                        Active Monitoring
+                    </option>
+
+                    <option
+                        value="preventive_coverage"
+                        {% if current_plan == "preventive_coverage" %}
+                        selected
+                        {% endif %}
+                    >
+                        Preventive Coverage
+                    </option>
+
+                    <option
+                        value="priority_access"
+                        {% if current_plan == "priority_access" %}
+                        selected
+                        {% endif %}
+                    >
+                        Priority Access
+                    </option>
+
+                </select>
+
+            </div>
+
+            <button class="btn btn-primary">
+                Update Care Pathway
+            </button>
+
+        </form>
+
+    </div>
+
+    {% endif %}
+
+</section>
+
+
+
+<!-- ================================================ -->
+<!-- PRIORITY ACCESS -->
+<!-- ================================================ -->
+
+<section class="card fade-up">
+
+    <h2>Priority Access</h2>
+
+    <p class="muted">
+        Reserved care access for eligible vehicles under
+        advanced monitoring pathways.
+    </p>
+
+    <!-- ===================================== -->
+    <!-- PRIORITY SCHEDULING -->
+    <!-- ===================================== -->
+
+    <div class="list-item">
+
+        <div class="section-head">
+
+            <strong>
+                Priority Scheduling
+            </strong>
+
+            <span class="pill">
+
+                {% if has_feature(ownership, FEATURE_PRIORITY_SCHEDULING) %}
+                Active
+                {% else %}
+                Locked
+                {% endif %}
+
+            </span>
+
+        </div>
+
+        {% if has_feature(ownership, FEATURE_PRIORITY_SCHEDULING) %}
+
+        <p class="muted">
+            Accelerated consultation coordination available.
+        </p>
+
+        {% if is_admin_view %}
+
+        <a
+            href="{{ url_for(
+                'admin.admin_consultations',
+                car_id=car.id
+            ) }}"
+            class="btn btn-primary"
+        >
+            Open Priority Queue
+        </a>
+
+        {% else %}
+
+        <form
+            method="POST"
+            action="{{ url_for(
+                'cars.request_priority_scheduling',
+                car_id=car.id
+            ) }}"
+        >
+
+            <button class="btn btn-primary">
+                Request Priority Scheduling
+            </button>
+
+        </form>
+
+        {% endif %}
+
+        {% else %}
+
+        <p class="muted">
+            Reserved for vehicles under advanced care pathways.
+        </p>
+
+        {% endif %}
+
+    </div>
+
+    <!-- ===================================== -->
+    <!-- EMERGENCY REVIEW -->
+    <!-- ===================================== -->
+
+    <div class="list-item">
+
+        <div class="section-head">
+
+            <strong>
+                Emergency Review Request
+            </strong>
+
+            <span class="pill">
+
+                {% if has_feature(ownership, FEATURE_EMERGENCY_REVIEW) %}
+                Enabled
+                {% else %}
+                Locked
+                {% endif %}
+
+            </span>
+
+        </div>
+
+        {% if has_feature(ownership, FEATURE_EMERGENCY_REVIEW) %}
+
+        <p class="muted">
+            Immediate advisor escalation access available.
+        </p>
+
+        {% if is_admin_view %}
+
+        <a
+            href="{{ url_for(
+                'admin.admin_reported_concerns',
+                car_id=car.id
+            ) }}"
+            class="btn btn-danger"
+        >
+            Open Emergency Queue
+        </a>
+
+        {% else %}
+
+        <form
+            method="POST"
+            action="{{ url_for(
+                'cars.request_emergency_review',
+                car_id=car.id
+            ) }}"
+        >
+
+            <button class="btn btn-danger">
+                Request Emergency Review
+            </button>
+
+        </form>
+
+        {% endif %}
+
+        {% else %}
+
+        <p class="muted">
+            Available for monitored vehicles with priority access.
+        </p>
+
+        {% endif %}
+
+    </div>
+
+</section>
+
+<!-- ========================= -->
 <!-- CONSULTATIONS -->
 <!-- ========================= -->
 
@@ -231,6 +678,80 @@ Vehicle Health Record
     {% endfor %}
 
 </section>
+{% endif %}
+
+
+
+<!-- ========================= -->
+<!-- CLINICAL CONVERSATIONS -->
+<!-- ========================= -->
+
+{% if is_admin_view %}
+
+<section class="card fade-up">
+
+    <h2>Clinical Conversation History</h2>
+
+    <p class="muted">
+        Logged conversational concerns and emotional indicators.
+    </p>
+
+    {% if conversation_records %}
+
+        {% for record in conversation_records %}
+
+        <div class="list-item">
+
+            <div class="section-head">
+
+                <strong>
+                    {{ record.concern }}
+                </strong>
+
+                <span class="pill">
+                    {{ record.urgency_level }}
+                </span>
+
+            </div>
+
+            <p class="muted">
+
+                {{ record.created_at.strftime("%Y-%m-%d %H:%M") }}
+
+                {% if record.emotion_detected %}
+                    • Emotion:
+                    {{ record.emotion_detected }}
+                {% endif %}
+
+            </p>
+
+            {% if record.advisor_summary %}
+            <p>
+                {{ record.advisor_summary }}
+            </p>
+            {% endif %}
+
+            {% if record.recommended_action %}
+            <p class="muted">
+                Recommended:
+                {{ record.recommended_action }}
+            </p>
+            {% endif %}
+
+        </div>
+
+        {% endfor %}
+
+    {% else %}
+
+    <p class="muted">
+        No clinical conversation records available.
+    </p>
+
+    {% endif %}
+
+</section>
+
 {% endif %}
 
 
@@ -511,6 +1032,133 @@ Vehicle Health Record
 
 
 <!-- ========================= -->
+<!-- TREATMENT PLANS -->
+<!-- ========================= -->
+<section class="card fade-up">
+
+    <h2>Treatment Plans</h2>
+
+    <p class="muted">
+        Active professional care decisions for this vehicle.
+    </p>
+
+    {% if treatment_plans %}
+
+        {% for plan in treatment_plans %}
+
+        <div class="list-item">
+
+            <div class="section-head">
+
+                <strong>
+                    {{ plan.title }}
+                </strong>
+
+                <span class="pill">
+                    {{ plan.status|replace("_"," ")|title }}
+                </span>
+
+            </div>
+
+            {% if plan.client_summary %}
+            <p>
+                {{ plan.client_summary }}
+            </p>
+            {% endif %}
+
+            <p class="muted">
+
+                Updated:
+                {{ plan.updated_at.strftime("%Y-%m-%d %H:%M") }}
+
+            </p>
+
+            {% if is_admin_view %}
+
+<div class="button-stack">
+
+    {% if plan.status == "approved" %}
+
+    <form
+        method="POST"
+        action="{{ url_for('admin.start_treatment_plan', plan_id=plan.id) }}"
+    >
+        <button class="btn btn-primary">
+            Start Treatment
+        </button>
+    </form>
+
+    <form
+        method="POST"
+        action="{{ url_for('admin.defer_treatment_plan', plan_id=plan.id) }}"
+    >
+        <button class="btn btn-secondary">
+            Monitor / Defer
+        </button>
+    </form>
+
+    {% elif plan.status == "in_progress" %}
+
+    <form
+        method="POST"
+        action="{{ url_for('admin.complete_treatment_plan', plan_id=plan.id) }}"
+    >
+        <button class="btn btn-success">
+            Mark Completed
+        </button>
+    </form>
+
+    <form
+        method="POST"
+        action="{{ url_for('admin.defer_treatment_plan', plan_id=plan.id) }}"
+    >
+        <button class="btn btn-secondary">
+            Move to Monitoring
+        </button>
+    </form>
+
+    {% elif plan.status == "completed" %}
+
+    <p class="muted">
+        Treatment pathway completed successfully.
+    </p>
+
+    {% elif plan.status == "deferred" %}
+
+    <p class="muted">
+        Vehicle currently under monitoring.
+    </p>
+
+    <form
+        method="POST"
+        action="{{ url_for('admin.start_treatment_plan', plan_id=plan.id) }}"
+    >
+        <button class="btn btn-primary">
+            Resume Treatment
+        </button>
+    </form>
+
+    {% endif %}
+
+</div>
+
+{% endif %}
+        </div>
+
+        {% endfor %}
+
+    {% else %}
+
+    <p class="muted">
+        No active treatment plans.
+    </p>
+
+    {% endif %}
+
+</section>
+
+
+<!-- ========================= -->
 <!-- RINA -->
 <!-- ========================= -->
 
@@ -562,3 +1210,4 @@ Vehicle Health Record
 </section>
 
 {% endblock %}
+

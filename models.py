@@ -5,6 +5,7 @@ from enum import unique
 
 from flask_login import UserMixin
 from httpx._transports import default
+from sqlalchemy.orm import foreign
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from sqlalchemy import UniqueConstraint
@@ -157,6 +158,15 @@ class Car(db.Model):
     def display_name(self):
         return f"{self.brand} {self.model} {self.year}"
 
+    @property
+    def active_ownership(self):
+        return next((o for o in self.ownerships if o.is_active), None)
+
+    @property
+    def current_owner(self):
+        ownership = self.active_ownership
+        return ownership.user if ownership else None
+
 
 # =========================================================
 # CAR OWNERSHIP
@@ -189,6 +199,12 @@ class CarOwnership(db.Model):
     user = db.relationship("User", back_populates="car_ownerships")
 
     car = db.relationship("Car", back_populates="ownerships")
+
+    priority_access = db.Column(
+        db.Boolean, default=False
+    )  # LEGACY FIELD  # Deprecated in favor of care_plan
+
+    care_plan = db.Column(db.String(50), default="active_monitoring")
 
 
 # =========================================================
@@ -527,6 +543,14 @@ class VehicleHealthAlert(db.Model):
 
     severity = db.Column(db.String(20), nullable=False)
     # critical | high | medium | low
+
+    status = db.Column(db.String(30), default="new", nullable=False)
+
+    acknowledged_at = db.Column(db.DateTime)
+
+    acknowledged_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    acknowledged_by = db.relationship("User", foreign_keys=[acknowledged_by_id])
 
     message = db.Column(db.Text, nullable=False)
 
@@ -909,3 +933,133 @@ class DriverCheckIn(db.Model):
 
     car = db.relationship("Car")
     driver = db.relationship("User")
+
+
+# =========================================
+# CONVERSATION RECORD
+# =========================================
+class ConversationRecord(db.Model):
+    __tablename__ = "conversation_records"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # =========================
+    # RELATIONS
+    # =========================
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            name="fk_conversation_record_user_id",
+        ),
+        nullable=False,
+    )
+
+    vehicle_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "cars.id",
+            name="fk_conversation_record_vehicle_id",
+        ),
+        nullable=False,
+    )
+
+    # =========================
+    # CORE RECORD
+    # =========================
+    concern = db.Column(db.Text)
+
+    advisor_summary = db.Column(db.Text)
+
+    emotional_state = db.Column(db.String(50))
+
+    urgency_level = db.Column(db.String(50))
+
+    escalation_level = db.Column(db.String(50))
+
+    recommended_action = db.Column(db.String(120))
+
+    consultation_related = db.Column(
+        db.Boolean,
+        default=False,
+    )
+
+    # =========================
+    # STATUS
+    # =========================
+    status = db.Column(
+        db.String(50),
+        default="logged",
+    )
+
+    # =========================
+    # TIMING
+    # =========================
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+# =========================================
+# TREATMENT PLAN
+# =========================================
+class TreatmentPlan(db.Model):
+
+    __tablename__ = "treatment_plans"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id"),
+        nullable=False,
+    )
+
+    consultation_id = db.Column(
+        db.Integer,
+        db.ForeignKey("consultations.id"),
+        nullable=True,
+    )
+
+    assessment_id = db.Column(
+        db.Integer,
+        db.ForeignKey("vehicle_assessments.id"),
+        nullable=True,
+    )
+
+    advisor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+    )
+
+    title = db.Column(db.String(255), nullable=False)
+
+    internal_instructions = db.Column(db.Text)
+
+    client_summary = db.Column(db.Text)
+
+    status = db.Column(
+        db.String(50),
+        default="approved",
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )

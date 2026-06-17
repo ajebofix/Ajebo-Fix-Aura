@@ -11,7 +11,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.dialects.sqlite import JSON
 
-from app import db
+from extensions import db
 
 
 # =========================================================

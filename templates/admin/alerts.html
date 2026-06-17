@@ -1,0 +1,140 @@
+<!-- templates/admin/alerts.html -->
+
+{% extends "base.html" %}
+
+{% block title %}Alert Center{% endblock %}
+
+{% block page_title %}
+Alert Center
+{% endblock %}
+
+{% block page_subtitle %}
+Operational monitoring and escalation visibility.
+{% endblock %}
+
+{% block content %}
+
+{% if alerts %}
+
+<section class="stack-list">
+
+    {% for alert in alerts %}
+
+    <div class="card">
+
+        <div class="section-head">
+
+            <div>
+
+                <div class="vehicle-name">
+                    {{ alert.vehicle.display_name }}
+                </div>
+
+                <div class="meta">
+                    {{ alert.title }}
+                </div>
+
+            </div>
+
+            <span class="badge
+                {% if alert.severity == 'critical' %}
+                    danger
+                {% elif alert.severity == 'high' %}
+                    warning
+                {% elif alert.severity == 'moderate' %}
+                    amber
+                {% else %}
+                    neutral
+                {% endif %}
+            ">
+                {{ alert.severity|title }}
+            </span>
+
+        </div>
+
+        <div class="meta">
+
+            <strong>Type:</strong>
+            {{ alert.type.replace("_", " ")|title }}
+
+            <br>
+
+            <strong>Status:</strong>
+
+            <span class="status-badge status-{{ alert.status }}">
+                {{ alert.status | title}}
+            </span>
+
+            <br>
+
+            <strong>Detected:</strong>
+            {{ alert.created_at.strftime('%d %b %Y %I:%M %p') }}
+
+        </div>
+
+        <div class="button-grid">
+
+            <a
+                href="{{ url_for('admin.view_vehicle', car_id=alert.vehicle.id) }}"
+                class="btn btn-primary"
+            >
+                Open Vehicle
+            </a>
+
+            <a
+                href="{{ url_for('admin.admin_vehicle_records', car_id=alert.vehicle.id) }}"
+                class="btn btn-secondary"
+            >
+                Timeline
+            </a>
+
+                <!-- alert actions -->
+<div class="alert-actions">
+
+{% if alert.type == "vehicle_alert" %}
+
+    {% if alert.status == "new" %}
+    <form method="POST"
+          action="{{ url_for('admin.acknowledge_alert', alert_id=alert.id) }}">
+        <button class="btn btn-secondary">
+            Acknowledge
+        </button>
+    </form>
+    {% endif %}
+
+    {% if alert.status != "resolved" %}
+    <form method="POST"
+          action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}">
+        <button class="btn btn-success">
+            Resolve
+        </button>
+    </form>
+    {% endif %}
+
+    </div>
+
+{% endif %}
+
+    {% endfor %}
+
+
+        </div>
+
+    </div>
+
+
+</section>
+
+{% else %}
+
+<section class="card">
+
+    <p class="muted">
+        No active operational alerts detected.
+    </p>
+
+</section>
+
+{% endif %}
+
+{% endblock %}

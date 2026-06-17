@@ -15,6 +15,7 @@ from models import Car, CarOwnership, ChatMessage, db, CarDriver
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.rina_chat_engine import RinaChatEngine
 from services.rina_context_service import RinaContextService
+from services.conversation_logger import log_conversation_record
 from datetime import datetime, timedelta
 
 import re
@@ -72,6 +73,7 @@ def save_message(role, text):
         message=text,
         timestamp=datetime.utcnow(),
     )
+
     db.session.add(chat)
     db.session.commit()
 
@@ -248,6 +250,16 @@ def chat():
                 session["active_vehicle_id"] = ownership.car.id
 
         car = ownership.car
+
+        # ==========================
+        # CLINICAL RECORD LOGGING
+        # ==========================
+
+        log_conversation_record(
+            user_id=current_user.id,
+            vehicle_id=car.id if "car" in locals() else None,
+            message=message,
+        )
 
         # --------------------------------
         # HEALTH

@@ -75,7 +75,23 @@ Clinical visibility across all vehicles currently under professional care.
                 Client: {{ car.owner_name }}<br>
                 Mileage: {{ car.current_mileage }}<br>
                 Active Concerns: {{ car.active_concerns }}<br>
-                Driver Trust Score: {{ current_user.driver_score }}
+            </div>
+
+            <div class="badge
+            {% if car.priority.band == 'critical' %}
+            danger
+            {% elif car.priority.band == 'high' %}
+            warning
+            {% elif car.priority.band == 'moderate' %}
+            amber
+            {% else %}
+            success
+            {% endif %}
+            ">
+
+                Priority:
+                {{ car.priority.score }}/100
+                {{ car.priority.band|title }}
             </div>
 
             {% if car.risk_reasons %}
@@ -102,7 +118,7 @@ Clinical visibility across all vehicles currently under professional care.
                 </a>
 
                 <a
-                    href="{{ url_for('admin.admin_view_vehicle', car_id=car.id) }}"
+                    href="{{ url_for('admin.view_vehicle', car_id=car.id) }}"
                     class="btn btn-primary"
                 >
                     Open Vehicle Record
@@ -153,7 +169,23 @@ Clinical visibility across all vehicles currently under professional care.
                 Client: {{ car.owner_name }}<br>
                 Mileage: {{ car.current_mileage }}<br>
                 Active Concerns: {{ car.active_concerns }}<br>
-                Driver Trust Score: {{ current_user.driver_score }}
+
+            <div class="badge
+            {% if car.priority.band == 'critical' %}
+            danger
+            {% elif car.priority.band == 'high' %}
+            warning
+            {% elif car.priority.band == 'moderate' %}
+            amber
+            {% else %}
+            success
+            {% endif %}
+            ">
+
+                Priority:
+                {{ car.priority.score }}/100
+                {{ car.priority.band|title }}
+            </div>
             </div>
 
             {% if car.risk_reasons %}
@@ -223,7 +255,25 @@ Clinical visibility across all vehicles currently under professional care.
 
             <div class="meta">
                 Client: {{ car.owner_name }}<br>
-                Driver Trust Score: {{ current_user.driver_score }}
+                Mileage: {{ car.current_mileage }}<br>
+                Active Concerns: {{ car.active_concerns }}<br>
+
+            <div class="badge
+            {% if car.priority.band == 'critical' %}
+            danger
+            {% elif car.priority.band == 'high' %}
+            warning
+            {% elif car.priority.band == 'moderate' %}
+            amber
+            {% else %}
+            success
+            {% endif %}
+            ">
+
+                Priority:
+                {{ car.priority.score }}/100
+                {{ car.priority.band|title }}
+            </div>
             </div>
 
             <div class="button-grid">

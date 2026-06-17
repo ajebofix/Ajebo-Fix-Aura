@@ -11,6 +11,7 @@ from flask import (
     flash,
     Response,
     current_app,
+    abort,
 )
 from flask_login import login_required, current_user
 from datetime import datetime
@@ -26,8 +27,16 @@ from models import (
     CarFault,
     Consultation,
     VehicleAssessment,
+    TreatmentPlan,
 )
 from rina.brain import notify_admin
+from services.feature_gateways import (
+    FEATURE_EMERGENCY_REVIEW,
+    FEATURE_PRIORITY_COORDINATION,
+    FEATURE_PRIORITY_SCHEDULING,
+    FEATURE_PROACTIVE_REMINDERS,
+    FEATURE_PREVENTIVE_TRACKING,
+)
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.report_builder import build_vehicle_report
 from services.consultation_guard import require_active_consultation
@@ -35,6 +44,13 @@ from services.assessment_report_builder import build_assessment_report
 from services.rina_escalation_engine import RinaEscalationEngine
 from services.rina_alert_awareness_service import RinaCareContextService
 from services.rina_action_suggestions import RinaCareGuidanceEngine
+from services.care_pathways import (
+    CARE_PLAN_LABELS,
+    has_priority_access,
+    has_preventive_coverage,
+)
+
+from services.feature_gateways import has_feature
 
 
 from io import BytesIO
@@ -189,6 +205,18 @@ def car_detail(car_id):
     )
     escalation = RinaEscalationEngine.evaluate(health, guidance, care_context)
 
+    treatment_plans = (
+        TreatmentPlan.query.filter_by(car_id=car.id)
+        .order_by(TreatmentPlan.created_at.desc())
+        .all()
+    )
+
+    consultations = Consultation.query.filter_by(car_id=car.id).all()
+
+    assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
+
+    has_active_consultation = any(c.status == "in_progress" for c in consultations)
+
     return render_template(
         "car_detail.html",
         car=car,
@@ -197,6 +225,21 @@ def car_detail(car_id):
         guidance=guidance,
         care_context=care_context,
         escalation=escalation,
+        treatment_plans=treatment_plans,
+        consultations=consultations,
+        assessments=assessments,
+        has_active_consultation=has_active_consultation,
+        active_driver=None,
+        conversation_records=[],
+        CARE_PLAN_LABELS=CARE_PLAN_LABELS,
+
+        has_feature=has_feature,
+
+        FEATURE_EMERGENCY_REVIEW=FEATURE_EMERGENCY_REVIEW,
+        FEATURE_PRIORITY_SCHEDULING=FEATURE_PRIORITY_SCHEDULING,
+        FEATURE_PREVENTIVE_TRACKING=FEATURE_PREVENTIVE_TRACKING,
+        FEATURE_PRIORITY_COORDINATION=FEATURE_PRIORITY_COORDINATION,
+        FEATURE_PROACTIVE_REMINDERS=FEATURE_PROACTIVE_REMINDERS,
     )
 
 
@@ -654,3 +697,84 @@ def assessment_report(car_id):
         print_mode=request.args.get("print") == "1",
         is_admin_view=False,
     )
+
+
+# ========================================
+# PRIORITY SCHEDULING REQUEST
+# ========================================
+
+
+@cars_bp.route("/<int:car_id>/priority-request", methods=["POST", "GET"])
+@login_required
+def request_priority_scheduling(car_id):
+
+    car = Car.query.get_or_404(car_id)
+
+    ownership = CarOwnership.query.filter_by(
+        car_id=car.id,
+        user_id=current_user.id,
+    ).first_or_404()
+
+    if not has_feature(ownership, FEATURE_PRIORITY_SCHEDULING):
+        abort(403)
+
+    consultation = Consultation(
+        car_id=car.id,
+        ownership_id=ownership.id,
+        client_id=current_user.id,
+        status="scheduled",
+        notes="Priority scheduling request by client.",
+        scheduled_for=datetime.utcnow(),
+    )
+
+    db.session.add(consultation)
+    db.session.commit()
+
+    flash(
+        "Priority scheduling request received. "
+        "An advisor will coordinate the next available session.",
+        "success",
+    )
+
+    return redirect(url_for("cars.car_detail", car_id=car.id))
+
+
+# ===========================================
+# EMERGENCY REVIEW REQUEST
+# ==========================================
+@cars_bp.route("/<int:car_id>/emergency-review", methods=["POST"])
+@login_required
+def request_emergency_review(car_id):
+
+    car = Car.query.get_or_404(car_id)
+
+    ownership = CarOwnership.query.filter_by(
+        car_id=car.id,
+        user_id=current_user.id,
+        is_active=True,
+    ).first_or_404()
+
+    if not has_feature(ownership, FEATURE_EMERGENCY_REVIEW):
+        abort(403)
+
+    concern = CarFault(
+        car_id=car.id,
+        title="Emergency review requested",
+        category="emergency_review",
+        description=("Client requested immediate professional review."),
+        status="reported",
+        source="client",
+        reported_by=current_user.id,
+        reported_at=datetime.utcnow(),
+    )
+
+    db.session.add(concern)
+    db.session.commit()
+
+    flash(
+        "Emergency review request received. "
+        "An advisor will review the vehicle status shortly.",
+        "success",
+    )
+
+    return redirect(url_for("cars.car_detail", car_id=car.id))

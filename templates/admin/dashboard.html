@@ -12,6 +12,41 @@ Operational command center for client vehicles, health intelligence, and advisor
 
 {% block content %}
 
+
+<section class="card">
+
+    <form
+        method="GET"
+        action="{{ url_for('admin.admin_global_search') }}"
+    >
+
+        <label for="q">
+            Search Vehicles, Clients, VIN, Plate, Phone
+        </label>
+
+        <div class="button-grid">
+
+            <input
+                type="text"
+                id="q"
+                name="q"
+                placeholder="Search VIN, plate, owner, phone..."
+                required
+            >
+
+            <button
+                type="submit"
+                class="btn btn-primary"
+            >
+                Search
+            </button>
+
+        </div>
+
+    </form>
+
+</section>
+
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
@@ -69,7 +104,7 @@ Operational command center for client vehicles, health intelligence, and advisor
         </div>
 
         <div class="stat-value">
-            {{ stats.active_care_assignments }}
+            {{ stats.active_assignments }}
         </div>
 
         <p class="muted">
@@ -129,6 +164,56 @@ Operational command center for client vehicles, health intelligence, and advisor
 
 {% endif %}
 
+
+
+{% if high_priority %}
+
+<section class="card">
+
+    <div class="section-head">
+
+        <h2>
+            Priority Queue
+        </h2>
+
+        <span class="badge danger">
+            {{ high_priority|length }}
+        </span>
+
+    </div>
+
+    {% for item in high_priority %}
+
+    <div class="list-item">
+
+        <strong>
+            {{ item.car.display_name }}
+        </strong>
+
+        <br>
+
+        Priority Score:
+        {{ item.priority.score }}/100
+
+        <br>
+
+        Band:
+        {{ item.priority.band|title }}
+
+        <a
+            href="{{ url_for('admin.view_vehicle', car_id=item.car.id) }}"
+            class="btn btn-sm btn-primary"
+        >
+            Open
+        </a>
+
+    </div>
+
+    {% endfor %}
+
+</section>
+
+{% endif %}
 
 
 <section class="card">

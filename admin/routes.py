@@ -26,6 +26,9 @@ from models import (
     Consultation,
     VehicleAssessment,
     VehicleAssessmentRisk,
+    ConversationRecord,
+    TreatmentPlan,
+    VehicleHealthAlert,
 )
 
 from services import whatsapp
@@ -37,10 +40,30 @@ from services.assessment_risk_engine import calculate_assessment_risk
 from services.rina_escalation_engine import RinaEscalationEngine
 from services.rina_action_suggestions import RinaCareGuidanceEngine
 from services.rina_alert_awareness_service import RinaCareContextService
+from services.priority_scoring import PriorityScoringEngine
+from services.care_pathways import (
+    CARE_PLAN_LABELS,
+    has_priority_access,
+    has_preventive_coverage,
+)
+
+from services.feature_gateways import (
+    has_feature,
+    FEATURE_EMERGENCY_REVIEW,
+    FEATURE_PRIORITY_COORDINATION,
+    FEATURE_PRIORITY_SCHEDULING,
+    FEATURE_PROACTIVE_REMINDERS,
+    FEATURE_PREVENTIVE_TRACKING,
+)
 
 from io import BytesIO
 import hashlib
-from sqlalchemy import func
+from sqlalchemy import (
+    func,
+    or_,
+)
+
+from services.alert_service import AlertService
 import uuid
 
 
@@ -113,9 +136,38 @@ def admin_dashboard():
         },
     }
 
+    high_priority = []
+
+    cars = Car.query.all()
+
+    for car in cars:
+
+        ownership = CarOwnership.query.filter_by(
+            car_id=car.id,
+            is_active=True,
+        ).first()
+
+        if not ownership:
+            continue
+
+        priority = PriorityScoringEngine.calculate(
+            car,
+            ownership,
+        )
+
+        if priority["score"] >= 60:
+
+            high_priority.append(
+                {
+                    "car": car,
+                    "priority": priority,
+                }
+            )
+
     return render_template(
         "admin/dashboard.html",
         stats=stats,
+        high_priority=high_priority,
         disclaimer=CLINICAL_DISCLAIMER,
     )
 
@@ -164,6 +216,10 @@ def admin_fleet_health():
 
         if ownership:
             health = calculate_vehicle_health(car, ownership)
+            priority = PriorityScoringEngine.calculate(
+                car,
+                ownership,
+            )
         else:
             health = {
                 "health_status": "critical",
@@ -171,8 +227,14 @@ def admin_fleet_health():
                 "next_action": "Assign vehicle to Ajebo Fix advisor",
             }
 
-        raw_status = health.get("health_status", "unknown")
-        bucket = STATUS_BUCKET_MAP.get(raw_status, "amber")
+        if priority["band"] == "critical":
+            bucket = "red"
+
+        elif priority["band"] in ("high", "moderate"):
+            bucket = "amber"
+
+        else:
+            bucket = "green"
 
         grouped[bucket].append(
             {
@@ -180,12 +242,20 @@ def admin_fleet_health():
                 "vehicle": car.display_name,
                 "owner_name": owner_name,
                 "current_mileage": car.current_mileage,
-                "health_status": raw_status,
+                "health_status": health.get("health_status"),
                 "risk_reasons": health.get("risk_reasons", []),
                 "next_action": health.get("next_action"),
                 "active_concerns": active_concerns,
+                "priority": priority,
             }
         )
+
+        for bucket in grouped.values():
+
+            bucket.sort(
+                key=lambda x: x["priority"]["score"],
+                reverse=True,
+            )
 
     summary = {
         "total": sum(len(v) for v in grouped.values()),
@@ -355,6 +425,8 @@ def admin_resolve_concern(concern_id):
 
 
 @admin_bp.route("/cars/<int:car_id>", endpoint="view_vehicle")
+@login_required
+@advisor_required
 def admin_view_vehicle(car_id):
     try:
         car = Car.query.get_or_404(car_id)
@@ -406,6 +478,19 @@ def admin_view_vehicle(car_id):
         consultations = Consultation.query.filter_by(car_id=car.id).all()
         assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
 
+        conversation_records = (
+            ConversationRecord.query.filter_by(vehicle_id=car.id)
+            .order_by(ConversationRecord.created_at.desc())
+            .limit(20)
+            .all()
+        )
+
+        treatment_plans = (
+            TreatmentPlan.query.filter_by(car_id=car.id)
+            .order_by(TreatmentPlan.created_at.desc())
+            .all()
+        )
+
         has_active_consultation = any(
             getattr(c, "status", None) == "in_progress" for c in consultations
         )
@@ -420,6 +505,15 @@ def admin_view_vehicle(car_id):
             escalation=escalation,
             consultations=consultations,
             assessments=assessments,
+            conversation_records=conversation_records,
+            treatment_plans=treatment_plans,
+            CARE_PLAN_LABELS=CARE_PLAN_LABELS,
+            has_feature=has_feature,
+            FEATURE_EMERGENCY_REVIEW=FEATURE_EMERGENCY_REVIEW,
+            FEATURE_PRIORITY_SCHEDULING=FEATURE_PRIORITY_SCHEDULING,
+            FEATURE_PREVENTIVE_TRACKING=FEATURE_PREVENTIVE_TRACKING,
+            FEATURE_PRIORITY_COORDINATION=FEATURE_PRIORITY_COORDINATION,
+            FEATURE_PROACTIVE_REMINDERS=FEATURE_PROACTIVE_REMINDERS,
             has_active_consultation=has_active_consultation,
             disclaimer=CLINICAL_DISCLAIMER,
             is_admin_view=True,
@@ -657,10 +751,82 @@ def admin_vehicle_records(car_id):
         .all()
     )
 
+    # -----------------------------------------
+    # Health assessment
+    # -----------------------------------------
+    assessments = VehicleAssessment.query.filter_by(car_id=car.id).all()
+
     # ----------------------------------------------
     # Health snapshot (interpreted, non-diagnostic)
     # ------------------------------------------------
     health = calculate_vehicle_health(car, ownership)
+
+    conversation_records = ConversationRecord.query.filter_by(vehicle_id=car.id).all()
+
+    timeline = []
+
+    for service in services:
+        timeline.append(
+            {
+                "type": "service",
+                "date": service.created_at,
+                "title": service.title,
+                "description": service.description,
+                "status": "completed",
+            }
+        )
+
+    for concern in concerns:
+        timeline.append(
+            {
+                "type": "concern",
+                "date": concern.created_at,
+                "title": concern.title,
+                "description": concern.description,
+                "status": concern.status,
+            }
+        )
+
+    for consultation in Consultation.query.filter_by(car_id=car.id).all():
+
+        timeline.append(
+            {
+                "type": "consultation",
+                "date": consultation.created_at,
+                "title": "Consultation",
+                "description": consultation.summary
+                or consultation.client_visible_summary
+                or "Professional consultation reported.",
+                "status": consultation.status,
+            }
+        )
+
+    for assessment in assessments:
+
+        timeline.append(
+            {
+                "type": "assessment",
+                "date": assessment.finalized_at or assessment.created_at,
+                "title": "Vehicle Assessment",
+                "description": assessment.professional_recommendation
+                or "Assessment finalized.",
+                "status": assessment.status,
+            }
+        )
+
+    for record in conversation_records:
+
+        timeline.append(
+            {
+                "type": "conversation",
+                "date": record.created_at,
+                "title": record.concern,
+                "description": record.advisor_summary,
+                "status": record.urgency_level,
+            }
+        )
+
+    timeline.sort(key=lambda x: x["date"] or datetime.utcnow(), reverse=True)
 
     # ------------------------------------------------
     # Render shared Medical File UI
@@ -672,6 +838,8 @@ def admin_vehicle_records(car_id):
         services=services,
         concerns=concerns,
         health=health,
+        timeline=timeline,
+        disclaimer=CLINICAL_DISCLAIMER,
         is_admin_view=True,  # 🔑 important
     )
 
@@ -840,7 +1008,7 @@ def admin_complete_consultation(consultation_id):
         return redirect(url_for("admin.admin_consultations"))
 
     flash("Consultation completed.", "success")
-    return redirect(url_for("admin.admin_view_vehicle", car_id=consultation.car_id))
+    return redirect(url_for("admin.view_vehicle", car_id=consultation.car_id))
 
 
 # ===========================================
@@ -933,9 +1101,7 @@ def admin_start_assessment(consultation_id):
 
         if assessment.status == "finalized":
             flash("Assessment already finalized.", "info")
-            return redirect(
-                url_for("admin.admin_view_vehicle", car_id=consultation.car_id)
-            )
+            return redirect(url_for("admin.view_vehicle", car_id=consultation.car_id))
 
     # ----------------------------------
     # Create new draft assessment
@@ -1101,10 +1267,25 @@ def admin_finalize_assessment(assessment_id):
     assessment.finalized_at = datetime.utcnow()
     assessment.finalized_by = current_user.id
 
+    plan = TreatmentPlan(
+        car_id=assessment.car_id,
+        consultation_id=assessment.consultation_id,
+        assessment_id=assessment.id,
+        advisor_id=current_user.id,
+        title="Vehicle Treatment Plan",
+        internal_instructions=assessment.professional_recommendation,
+        client_summary=(
+            "A professional treatment pathway " "has been created for this vehicle."
+        ),
+        status="approved",
+    )
+
+    db.session.add(plan)
+
     db.session.commit()
 
     flash("Assessment finalized. This document is now locked.", "success")
-    return redirect(url_for("admin.admin_view_vehicle", car_id=assessment.car_id))
+    return redirect(url_for("admin.view_vehicle", car_id=assessment.car_id))
 
 
 # ===========================================
@@ -1246,6 +1427,247 @@ def remove_driver(driver_id):
     flash("Driver removed successfully.", "success")
 
     return redirect(request.referrer)
+
+
+# ==================================================
+# ADMIN START TREATMENT PLAN ROUTE
+# ==================================================
+@admin_bp.route("/treatment-plans/<int:plan_id>/start", methods=["POST"])
+@login_required
+@advisor_required
+def start_treatment_plan(plan_id):
+
+    plan = TreatmentPlan.query.get_or_404(plan_id)
+
+    plan.status = "in_progress"
+
+    db.session.commit()
+
+    flash("Treatment plan started.", "success")
+
+    return redirect(request.referrer)
+
+
+# ==================================================
+# ADMIN COMPLETE TREATMENT PLAN ROUTE
+# ==================================================
+@admin_bp.route("/treatment-plans/<int:plan_id>/complete", methods=["POST"])
+@login_required
+@advisor_required
+def complete_treatment_plan(plan_id):
+
+    plan = TreatmentPlan.query.get_or_404(plan_id)
+
+    plan.status = "completed"
+
+    db.session.commit()
+
+    flash("Treatment plan completed.", "success")
+
+    return redirect(request.referrer)
+
+
+# ==================================================
+# ADMIN DEFER TREATMENT PLAN ROUTE
+# ==================================================
+@admin_bp.route("/treatment-plans/<int:plan_id>/defer", methods=["POST"])
+@login_required
+@advisor_required
+def defer_treatment_plan(plan_id):
+
+    plan = TreatmentPlan.query.get_or_404(plan_id)
+
+    plan.status = "deferred"
+
+    db.session.commit()
+
+    flash("Treatment plan moved to monitoring.", "success")
+
+    return redirect(request.referrer)
+
+
+# =================================
+# ADMIN TOGGLE PRIORITY ACCESS
+# =================================
+@admin_bp.route("/cars/<int:car_id>/priority-access", methods=["POST"])
+@login_required
+@advisor_required
+def toggle_priority_access(car_id):
+
+    ownership = CarOwnership.query.filter_by(
+        car_id=car_id,
+        is_active=True,
+    ).first_or_404()
+
+    ownership.priority_access = not ownership.priority_access
+
+    db.session.commit()
+
+    flash("Priority access updated.", "success")
+
+    return redirect(request.referrer)
+
+
+# =================================
+# ADMIN UPDATE CARE PATHWAY
+# ================================
+@admin_bp.route("/cars/<int:car_id>/care-pathway", methods=["POST"])
+@login_required
+@advisor_required
+def update_care_pathway(car_id):
+
+    ownership = CarOwnership.query.filter_by(
+        car_id=car_id,
+        is_active=True,
+    ).first_or_404()
+
+    care_plan = request.form.get("care_plan")
+
+    allowed = [
+        "active_monitoring",
+        "preventive_coverage",
+        "priority_access",
+    ]
+
+    if care_plan not in allowed:
+        flash("Invalid care pathway.", "error")
+        return redirect(request.referrer)
+
+    ownership.care_plan = request.form.get("care_plan")
+
+    # TEMPORARY migration sync
+    ownership.priority_access = care_plan == "priority_access"
+
+    db.session.commit()
+
+    flash("Care pathway updated.", "success")
+
+    return redirect(request.referrer)
+
+
+# =====================================================
+# ADMIN GLOBAL SEARCH
+# =====================================================
+
+
+@admin_bp.route("/search", methods=["GET"])
+@login_required
+@advisor_required
+def admin_global_search():
+
+    query = request.args.get("q", "").strip()
+
+    results = []
+
+    if query:
+
+        ownerships = (
+            db.session.query(CarOwnership)
+            .join(Car)
+            .join(User)
+            .filter(
+                or_(
+                    Car.brand.ilike(f"%{query}%"),
+                    Car.model.ilike(f"%{query}%"),
+                    Car.vin.ilike(f"%{query}%"),
+                    CarOwnership.plate_number.ilike(f"%{query}%"),
+                    User.name.ilike(f"%{query}%"),
+                    User.email.ilike(f"%{query}%"),
+                    User.phone_number.ilike(f"%{query}%"),
+                )
+            )
+            .filter(CarOwnership.is_active.is_(True))
+            .all()
+        )
+
+        for ownership in ownerships:
+
+            car = ownership.car
+            user = ownership.user
+
+            active_concerns = CarFault.query.filter(
+                CarFault.car_id == car.id,
+                CarFault.status != "resolved",
+            ).count()
+
+            active_consultation = Consultation.query.filter(
+                Consultation.car_id == car.id,
+                Consultation.status == "in_progress",
+            ).first()
+
+            results.append(
+                {
+                    "car": car,
+                    "owner": user,
+                    "ownership": ownership,
+                    "active_concerns": active_concerns,
+                    "active_consultation": active_consultation,
+                }
+            )
+
+    return render_template(
+        "admin/search_results.html",
+        query=query,
+        results=results,
+    )
+
+
+# =====================================================
+# ALERT CENTER
+# =====================================================
+
+
+@admin_bp.route("/alerts")
+@login_required
+@advisor_required
+def admin_alert_center():
+
+    alerts = AlertService.build_alert_center()
+
+    return render_template(
+        "admin/alerts.html",
+        alerts=alerts,
+    )
+
+
+# ===================================================
+# ADMIN ACKNOWLEDGE ALERT
+# ===================================================
+@admin_bp.route("/alerts/<int:alert_id>/acknowledge", methods=["POST"])
+@advisor_required
+def acknowledge_alert(alert_id):
+
+    alert = VehicleHealthAlert.query.get_or_404(alert_id)
+
+    alert.status = "acknowledged"
+    alert.acknowledged_at = datetime.utcnow()
+    alert.acknowledged_by_id = current_user.id
+
+    db.session.commit()
+
+    flash("Alert acknowledged", "success")
+
+    return redirect(url_for("admin.admin_alert_center"))
+
+
+# ===================================================
+# ADMIN RESOLVE ALERT
+# ===================================================
+@admin_bp.route("/alerts/<int:alert_id>/resolve", methods=["POST"])
+@advisor_required
+def resolve_alert(alert_id):
+
+    alert = VehicleHealthAlert.query.get_or_404(alert_id)
+
+    alert.status = "resolved"
+    alert.is_active = False
+    alert.resolved_at = datetime.utcnow()
+
+    db.session.commit()
+
+    flash("Alert resolved", "success")
+
+    return redirect(url_for("admin.admin_alert_center"))
 
 
 # ===================================================

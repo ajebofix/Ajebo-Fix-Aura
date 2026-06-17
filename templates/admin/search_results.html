@@ -1,0 +1,132 @@
+<!-- templates/admin/search_results.html -->
+
+{% extends "base.html" %}
+
+{% block title %}Advisor Search{% endblock %}
+
+{% block page_title %}
+Advisor Search
+{% endblock %}
+
+{% block page_subtitle %}
+Operational lookup across vehicles, owners, and care records.
+{% endblock %}
+
+{% block content %}
+
+<section class="card">
+
+    <form
+        method="GET"
+        action="{{ url_for('admin.admin_global_search') }}"
+    >
+
+        <input
+            type="text"
+            name="q"
+            value="{{ query }}"
+            placeholder="Search again..."
+        >
+
+        <button class="btn btn-primary">
+            Search
+        </button>
+
+    </form>
+
+</section>
+
+{% if results %}
+
+<section class="stack-list">
+
+{% for item in results %}
+
+<div class="card">
+
+    <div class="section-head">
+
+        <div>
+
+            <div class="vehicle-name">
+                {{ item.car.display_name }}
+            </div>
+
+            <div class="meta">
+                {{ item.ownership.plate_number or "No plate" }}
+            </div>
+
+        </div>
+
+        <span class="badge neutral">
+            {{ item.ownership.care_plan }}
+        </span>
+
+    </div>
+
+    <div class="meta">
+
+        <strong>Owner:</strong>
+        {{ item.owner.name or item.owner.email }}
+        <br>
+
+        <strong>Phone:</strong>
+        {{ item.owner.phone_number }}
+        <br>
+
+        <strong>VIN:</strong>
+        {{ item.car.vin }}
+        <br>
+
+        <strong>Active Concerns:</strong>
+        {{ item.active_concerns }}
+
+    </div>
+
+    {% if item.active_consultation %}
+
+    <div class="alert-box warning">
+
+        Active consultation currently in progress.
+
+    </div>
+
+    {% endif %}
+
+    <div class="button-grid">
+
+        <a
+            href="{{ url_for('admin.view_vehicle', car_id=item.car.id) }}"
+            class="btn btn-primary"
+        >
+            Open Vehicle
+        </a>
+
+        <a
+            href="{{ url_for('admin.admin_vehicle_records', car_id=item.car.id) }}"
+            class="btn btn-secondary"
+        >
+            Timeline
+        </a>
+
+    </div>
+
+</div>
+
+{% endfor %}
+
+</section>
+
+{% else %}
+
+<section class="card">
+
+    <p class="muted">
+        No matching vehicles or clients found.
+    </p>
+
+</section>
+
+{% endif %}
+
+{% endblock %}

@@ -56,3 +56,9 @@ pointer-events:none;
     padding: 18px;
     margin-bottom: 14px
 }
+
+.vehicle-health-card{
+    padding: 20px;
+    margin-bottom: 16px;
+    border-radius: 16px;
+}

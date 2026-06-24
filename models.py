@@ -1063,3 +1063,59 @@ class TreatmentPlan(db.Model):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
+
+
+# =========================================
+# ADVISOR-NOTE
+# =========================================
+class AdvisorNote(db.Model):
+
+    __tablename__ = "advisor_notes"
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True,
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+    )
+
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id"),
+        nullable=True,
+    )
+
+    advisor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+    )
+
+    note = db.Column(
+        db.Text,
+        nullable=False,
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+    )
+
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+    )
+
+    car = db.relationship(
+        "Car",
+        foreign_keys=[car_id],
+    )
+
+    advisor = db.relationship(
+        "User",
+        foreign_keys=[advisor_id],
+    )

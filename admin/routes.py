@@ -29,6 +29,7 @@ from models import (
     ConversationRecord,
     TreatmentPlan,
     VehicleHealthAlert,
+    AdvisorNote,
 )
 
 from services import whatsapp
@@ -168,6 +169,79 @@ def admin_dashboard():
         "admin/dashboard.html",
         stats=stats,
         high_priority=high_priority,
+        disclaimer=CLINICAL_DISCLAIMER,
+    )
+
+
+# =====================================================
+# ADMIN — UNIFIED CLIENT REGISTRY
+# =====================================================
+
+
+@admin_bp.route("/clients")
+@login_required
+@advisor_required
+def admin_clients():
+
+    clients = []
+
+    ownerships = CarOwnership.query.filter_by(is_active=True).all()
+
+    registry = {}
+
+    for ownership in ownerships:
+
+        user = ownership.user
+
+        if user.id not in registry:
+
+            registry[user.id] = {
+                "client": user,
+                "vehicles": [],
+                "priority": 0,
+                "active_concerns": 0,
+            }
+
+        # IMPORTANT:
+        # These lines must stay INSIDE the loop
+
+        car = ownership.car
+
+        priority = PriorityScoringEngine.calculate(
+            car,
+            ownership,
+        )
+
+        registry[user.id]["vehicles"].append(car)
+
+        registry[user.id]["priority"] = max(
+            registry[user.id]["priority"],
+            priority["score"],
+        )
+
+        concerns = CarFault.query.filter(
+            CarFault.car_id == car.id,
+            CarFault.status != "resolved",
+        ).count()
+
+        registry[user.id]["active_concerns"] += concerns
+
+    clients = list(registry.values())
+
+    clients.sort(
+        key=lambda x: x["priority"],
+        reverse=True,
+    )
+
+    critical_clients = len([c for c in clients if c["priority"] >= 80])
+
+    high_clients = len([c for c in clients if c["priority"] >= 60])
+
+    return render_template(
+        "admin/client_registry.html",
+        clients=clients,
+        critical_clients=critical_clients,
+        high_clients=high_clients,
         disclaimer=CLINICAL_DISCLAIMER,
     )
 
@@ -1668,6 +1742,78 @@ def resolve_alert(alert_id):
     flash("Alert resolved", "success")
 
     return redirect(url_for("admin.admin_alert_center"))
+
+
+# =====================================================
+# ADVISOR NOTES
+# =====================================================
+
+
+@admin_bp.route(
+    "/clients/<int:user_id>/notes/add",
+    methods=["POST"],
+)
+@login_required
+@advisor_required
+def add_advisor_note(user_id):
+
+    user = User.query.get_or_404(user_id)
+
+    note_text = request.form.get("note", "").strip()
+
+    if not note_text:
+
+        flash(
+            "Note cannot be empty.",
+            "error",
+        )
+
+        return redirect(request.referrer)
+
+    note = AdvisorNote(
+        user_id=user.id,
+        advisor_id=current_user.id,
+        note=note_text,
+    )
+
+    db.session.add(note)
+    db.session.commit()
+
+    flash(
+        "Advisor note saved.",
+        "success",
+    )
+
+    return redirect(request.referrer)
+
+
+# =====================================================
+# ADMIN CLIENT PROFILE
+# =====================================================
+@admin_bp.route("/clients/<int:user_id>")
+@login_required
+@advisor_required
+def admin_client_profile(user_id):
+
+    user = User.query.get_or_404(user_id)
+
+    ownerships = CarOwnership.query.filter_by(
+        user_id=user.id,
+        is_active=True,
+    ).all()
+
+    notes = (
+        AdvisorNote.query.filter_by(user_id=user.id)
+        .order_by(AdvisorNote.created_at.desc())
+        .all()
+    )
+
+    return render_template(
+        "admin/client_profile.html",
+        client=user,
+        ownerships=ownerships,
+        notes=notes,
+    )
 
 
 # ===================================================

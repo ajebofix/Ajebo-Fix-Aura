@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}
+Aura | Client Registry
+{% endblock %}
+
+{% block page_title %}
+Unified Client Registry
+{% endblock %}
+
+{% block content %}
+
+<section class="card">
+
+    <div class="section-head">
+
+        <h2>
+            Clients
+        </h2>
+
+        <span class="badge">
+            {{ clients|length }}
+        </span>
+
+    </div>
+
+</section>
+
+<section class="card">
+
+    <div class="section-head">
+
+        <h2>
+            Critical
+        </h2>
+
+        <span class="badge">
+            {{ critical|length }}
+        </span>
+
+    </div>
+
+</section>
+
+<section class="card">
+
+    <div class="section-head">
+
+        <h2>
+            High
+        </h2>
+
+        <span class="badge">
+            {{ high|length }}
+        </span>
+
+    </div>
+
+</section>
+
+<section class="card">
+
+    <div class="section-head">
+
+        <h2>
+            Vehicles
+        </h2>
+
+        <span class="badge">
+            {{ car|length }}
+        </span>
+
+    </div>
+
+</section>
+
+
+
+
+{% for item in clients %}
+
+<section class="card">
+
+    <div class="section-head">
+
+        <h3>
+            {{ item.client.name }}
+        </h3>
+
+        {% if item.priority >= 80 %}
+            <span class="badge danger">
+                Critical
+            </span>
+
+        {% elif item.priority >= 60 %}
+            <span class="badge warning">
+                High
+            </span>
+
+        {% else %}
+            <span class="badge success">
+                Normal
+            </span>
+        {% endif %}
+
+    </div>
+
+    <div class="meta">
+
+        Vehicles:
+        {{ item.vehicles|length }}
+
+        <br>
+
+        Active Concerns:
+        {{ item.active_concerns }}
+
+        <br>
+
+        Priority Score:
+        {{ item.priority }}/100
+
+    </div>
+
+    <hr>
+
+    {% for vehicle in item.vehicles %}
+
+        <div class="list-item">
+
+            {{ vehicle.display_name }}
+
+            <a
+                href="{{ url_for('admin.view_vehicle',
+                car_id=vehicle.id) }}"
+                class="btn btn-sm btn-primary"
+            >
+                Open Vehicle
+            </a>
+
+        </div>
+
+
+        <div>
+
+        <a
+            href="{{ url_for(
+            'admin.admin_client_profile',
+            user_id=item.client.id
+            )}}"
+            class="btn btn-primary"
+        >
+            Client Profile
+        </a>
+        </div>
+
+    {% endfor %}
+
+</section>
+
+
+{% endfor %}
+
+{% endblock %}

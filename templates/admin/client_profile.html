@@ -1,0 +1,231 @@
+<!-- templates/admin/client_profile.html -->
+
+
+{% extends "base.html" %}
+
+{% block title %}
+Aura | Client Profile
+{% endblock %}
+
+{% block page_title %}
+Client Profile
+{% endblock %}
+
+{% block content %}
+
+<section class="card">
+
+    <div class="section-head">
+
+        <div>
+
+            <h2>
+                {{ client.full_name }}
+            </h2>
+
+            <p class="text-muted">
+                Private vehicle health management
+            </p>
+
+        </div>
+
+    </div>
+
+</section>
+
+<!-- CLIENT SUMMARY -->
+
+<section class="card">
+
+    <h3>
+        Client Summary
+    </h3>
+
+    <div class="stats-grid">
+
+        <div class="stat-card">
+            <span class="stat-label">
+                Vehicles
+            </span>
+
+            <span class="stat-value">
+                {{ ownerships|length }}
+            </span>
+        </div>
+
+        <div class="stat-card">
+            <span class="stat-label">
+                Advisor Notes
+            </span>
+
+            <span class="stat-value">
+                {{ notes|length }}
+            </span>
+        </div>
+
+    </div>
+
+</section>
+
+<!-- VEHICLES -->
+
+<section class="card">
+
+    <h3>
+        Vehicles
+    </h3>
+
+    {% if ownerships %}
+
+        {% for ownership in ownerships %}
+
+            <div class="list-item">
+
+                <div>
+
+                    <strong>
+                        {{ ownership.car.display_name }}
+                    </strong>
+
+                    <br>
+
+                    <small>
+                        {{ ownership.car.year }}
+                    </small>
+
+                </div>
+
+                <a
+                    href="{{ url_for(
+                        'admin.view_vehicle',
+                        car_id=ownership.car.id
+                    ) }}"
+                    class="btn btn-primary"
+                >
+                    Open Vehicle
+                </a>
+
+            </div>
+
+            {% if not loop.last %}
+                <hr>
+            {% endif %}
+
+        {% endfor %}
+
+    {% else %}
+
+        <p>
+            No vehicles assigned.
+        </p>
+
+    {% endif %}
+
+</section>
+
+<!-- ADD NOTE -->
+
+<section class="card">
+
+    <h3>
+        Add Advisor Note
+    </h3>
+
+    <form
+        method="POST"
+        action="{{ url_for(
+            'admin.add_advisor_note',
+            user_id=client.id
+        ) }}"
+    >
+
+        <div class="form-group">
+
+            <textarea
+                name="note"
+                rows="5"
+                required
+                placeholder="Enter advisor note..."
+                class="form-control"
+            ></textarea>
+
+        </div>
+
+        <button
+            type="submit"
+            class="btn btn-primary"
+        >
+            Save Note
+        </button>
+
+    </form>
+
+</section>
+
+<!-- ADVISOR NOTES -->
+
+<section class="card">
+
+    <h3>
+        Advisor Notes
+    </h3>
+
+    {% if notes %}
+
+        {% for note in notes %}
+
+            <div class="note-card">
+
+                <div class="note-meta">
+
+                    <strong>
+                        {{ note.advisor.full_name }}
+                    </strong>
+
+                    <span class="text-muted">
+                        •
+                        {{ note.created_at.strftime('%d %b %Y %H:%M') }}
+                    </span>
+
+                </div>
+
+                <div class="note-content">
+
+                    {{ note.note }}
+
+                </div>
+
+            </div>
+
+            {% if not loop.last %}
+                <hr>
+            {% endif %}
+
+        {% endfor %}
+
+    {% else %}
+
+        <p>
+            No advisor notes recorded.
+        </p>
+
+    {% endif %}
+
+</section>
+
+<!-- CLIENT TIMELINE PLACEHOLDER -->
+
+<section class="card">
+
+    <h3>
+        Timeline
+    </h3>
+
+    <p class="text-muted">
+        Consultation records, concerns, assessments, and treatment plans
+        will appear here in future Aura releases.
+    </p>
+
+</section>
+
+{% endblock %}

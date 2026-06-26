@@ -1,11 +1,11 @@
 # models.py
 
 from datetime import datetime
-from enum import unique
+# from enum import unique
 
 from flask_login import UserMixin
-from httpx._transports import default
-from sqlalchemy.orm import foreign
+# from httpx._transports import default
+# from sqlalchemy.orm import foreign
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from sqlalchemy import UniqueConstraint
@@ -154,6 +154,35 @@ class Car(db.Model):
         cascade="all, delete-orphan",
     )
 
+    # =========================================================
+    # VEHICLE INTELLIGENCE
+    # =========================================================
+
+    vehicle_profile = db.relationship(
+        "VehicleProfile",
+        back_populates="car",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    dtcs = db.relationship(
+        "VehicleDTC",
+        back_populates="car",
+        cascade="all, delete-orphan",
+    )
+
+    recalls = db.relationship(
+        "VehicleRecall",
+        back_populates="car",
+        cascade="all, delete-orphan",
+    )
+
+    maintenance_schedules = db.relationship(
+        "MaintenanceSchedule",
+        back_populates="car",
+        cascade="all, delete-orphan",
+    )
+
     @property
     def display_name(self):
         return f"{self.brand} {self.model} {self.year}"
@@ -166,6 +195,246 @@ class Car(db.Model):
     def current_owner(self):
         ownership = self.active_ownership
         return ownership.user if ownership else None
+
+
+# =========================================================
+# VEHICLE PROFILE
+# =========================================================
+
+
+class VehicleProfile(db.Model):
+    __tablename__ = "vehicle_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    trim = db.Column(db.String(100))
+    body_style = db.Column(db.String(100))
+    fuel_type = db.Column(db.String(50))
+    drive_type = db.Column(db.String(50))
+    plant_country = db.Column(db.String(100))
+
+    vin_decoded = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    decoded_at = db.Column(db.DateTime)
+
+    source = db.Column(db.String(100))
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    car = db.relationship(
+        "Car",
+        back_populates="vehicle_profile",
+    )
+
+
+# =========================================================
+# VEHICLE DTC
+# =========================================================
+
+
+class VehicleDTC(db.Model):
+    __tablename__ = "vehicle_dtcs"
+
+    __table_args__ = (
+        db.Index("idx_vehicle_dtc_car", "car_id"),
+        db.Index("idx_vehicle_dtc_status", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    code = db.Column(
+        db.String(20),
+        nullable=False,
+    )
+
+    code_type = db.Column(
+        db.String(20),
+        default="SAE",
+        nullable=False,
+    )
+
+    description = db.Column(
+        db.Text,
+        nullable=False,
+    )
+
+    affected_system = db.Column(
+        db.String(100),
+        nullable=True,
+    )
+
+    severity = db.Column(
+        db.String(20),
+        default="attention",
+        nullable=False,
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="active",
+        nullable=False,
+    )
+
+    advisor_note = db.Column(db.Text)
+
+    detected_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    cleared_at = db.Column(db.DateTime)
+
+    source = db.Column(
+        db.String(100),
+        default="manual",
+    )
+
+    car = db.relationship(
+        "Car",
+        back_populates="dtcs",
+    )
+
+
+# =========================================================
+# VEHICLE RECALLS
+# =========================================================
+
+
+class VehicleRecall(db.Model):
+    __tablename__ = "vehicle_recalls"
+
+    __table_args__ = (
+        db.Index("idx_vehicle_recall_car", "car_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    recall_number = db.Column(
+        db.String(100),
+        nullable=False,
+    )
+
+    title = db.Column(
+        db.String(255),
+        nullable=False,
+    )
+
+    summary = db.Column(db.Text)
+
+    risk_level = db.Column(
+        db.String(20),
+        default="medium",
+    )
+
+    is_open = db.Column(
+        db.Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    published_at = db.Column(db.DateTime)
+
+    closed_at = db.Column(db.DateTime)
+
+    source = db.Column(
+        db.String(100),
+        default="OEM",
+    )
+
+    car = db.relationship(
+        "Car",
+        back_populates="recalls",
+    )
+
+
+# =========================================================
+# MAINTENANCE SCHEDULE
+# =========================================================
+
+
+class MaintenanceSchedule(db.Model):
+    __tablename__ = "maintenance_schedules"
+
+    __table_args__ = (
+        db.Index("idx_maintenance_car", "car_id"),
+        db.Index("idx_maintenance_status", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    service_name = db.Column(
+        db.String(150),
+        nullable=False,
+    )
+
+    due_mileage = db.Column(db.Integer)
+
+    due_date = db.Column(db.Date)
+
+    completed_at = db.Column(db.DateTime)
+
+    status = db.Column(
+        db.String(20),
+        default="upcoming",
+        nullable=False,
+    )
+
+    source = db.Column(
+        db.String(100),
+        default="OEM",
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    car = db.relationship(
+        "Car",
+        back_populates="maintenance_schedules",
+    )
 
 
 # =========================================================
@@ -903,9 +1172,18 @@ class EscalationLog(db.Model):
 
 
 class BookingIntent(db.Model):
+    __tablename__ = "booking_intent"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer)
-    car_id = db.Column(db.Integer)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+    )
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id"),
+        nullable=False,
+    )
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed = db.Column(db.Boolean, default=False)
 
@@ -946,7 +1224,6 @@ class ConversationRecord(db.Model):
     # =========================
     # RELATIONS
     # =========================
-    id = db.Column(db.Integer, primary_key=True)
 
     user_id = db.Column(
         db.Integer,

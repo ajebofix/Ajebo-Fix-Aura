@@ -30,7 +30,11 @@ from models import (
     TreatmentPlan,
     VehicleHealthAlert,
     AdvisorNote,
+    VehicleDTC,
 )
+
+from intelligence.vin_decoder import VINDecoderService
+from intelligence.dtc_decoder import DTCDecoderService
 
 from services import whatsapp
 from services.vehicle_intelligence import calculate_vehicle_health
@@ -1813,6 +1817,177 @@ def admin_client_profile(user_id):
         client=user,
         ownerships=ownerships,
         notes=notes,
+    )
+
+
+# =====================================================
+# ADMIN DECODE VEHICLE VIN
+# =====================================================
+@admin_bp.post("/vehicles/<int:car_id>/decode-vin")
+@login_required
+@advisor_required
+def decode_vehicle_vin(car_id):
+    """
+    Decode a vehicle VIN and update VehicleProfile.
+    """
+
+    car = Car.query.get_or_404(car_id)
+
+    service = VINDecoderService()
+
+    result = service.update_vehicle_profile(car)
+
+    if result.success:
+        flash(
+            "Vehicle VIN decoded successfully.",
+            "success",
+        )
+    else:
+        flash(
+            result.errors[0] if result.errors else "VIN decoding failed.",
+            "danger",
+        )
+
+    return redirect(
+        url_for(
+            "admin.view_vehicle",
+            car_id=car.id,
+        )
+    )
+
+
+# =====================================================
+# ADMIN ADD VEHICLE DTC
+# =====================================================
+
+
+@admin_bp.post("/vehicles/<int:car_id>/dtcs/add")
+@login_required
+@advisor_required
+def add_vehicle_dtc(car_id):
+    """
+    Resolve and store a vehicle Diagnostic Trouble Code.
+    """
+
+    car = Car.query.get_or_404(car_id)
+
+    code = request.form.get(
+        "code",
+        "",
+    ).strip()
+
+    advisor_note = (
+        request.form.get(
+            "advisor_note",
+            "",
+        ).strip()
+        or None
+    )
+
+    service = DTCDecoderService()
+
+    result = service.add_vehicle_dtc(
+        car=car,
+        code=code,
+        source="advisor",
+        advisor_note=advisor_note,
+    )
+
+    if result.success:
+        data = result.data or {}
+
+        normalized_code = data.get(
+            "code",
+            code.upper(),
+        )
+
+        description = data.get(
+            "description",
+            "Definition recorded.",
+        )
+
+        if data.get("already_active"):
+            flash(
+                (f"DTC {normalized_code} is already active " "for this vehicle."),
+                "info",
+            )
+        else:
+            flash(
+                (f"DTC {normalized_code} added successfully " f"({description})."),
+                "success",
+            )
+
+    else:
+        flash(
+            (result.errors[0] if result.errors else "Unable to resolve DTC."),
+            "danger",
+        )
+
+    return redirect(
+        url_for(
+            "admin.view_vehicle",
+            car_id=car.id,
+        )
+    )
+
+
+# =====================================================
+# ADMIN CLEAR VEHICLE DTC
+# =====================================================
+
+
+@admin_bp.post("/vehicles/<int:car_id>/dtcs/<int:dtc_id>/clear")
+@login_required
+@advisor_required
+def clear_vehicle_dtc(car_id, dtc_id):
+    """
+    Mark a DTC occurrence as cleared while preserving history.
+    """
+
+    car = Car.query.get_or_404(car_id)
+
+    dtc = VehicleDTC.query.filter_by(
+        id=dtc_id,
+        car_id=car.id,
+    ).first_or_404()
+
+    if dtc.status == "cleared":
+        flash(
+            f"{dtc.code} has already been cleared.",
+            "info",
+        )
+
+        return redirect(
+            url_for(
+                "admin.view_vehicle",
+                car_id=car.id,
+            )
+        )
+
+    service = DTCDecoderService()
+
+    cleared = service.clear_vehicle_dtc(
+        car=car,
+        dtc_id=dtc.id,
+        cleared_by_user_id=current_user.id,
+    )
+
+    if cleared:
+        flash(
+            f"{dtc.code} marked as cleared.",
+            "success",
+        )
+    else:
+        flash(
+            f"Unable to clear {dtc.code}.",
+            "danger",
+        )
+
+    return redirect(
+        url_for(
+            "admin.view_vehicle",
+            car_id=car.id,
+        )
     )
 
 

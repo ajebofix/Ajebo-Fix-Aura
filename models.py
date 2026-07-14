@@ -1,9 +1,11 @@
 # models.py
 
 from datetime import datetime
+
 # from enum import unique
 
 from flask_login import UserMixin
+
 # from httpx._transports import default
 # from sqlalchemy.orm import foreign
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -134,6 +136,14 @@ class Car(db.Model):
 
     color = db.Column(db.String(50), nullable=True)
 
+    vehicle_identity_source = db.Column(
+        db.String(20),
+        default="manual",
+        nullable=False,
+        server_default="manual",
+    )
+    # manual | vin | oem
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     ownerships = db.relationship(
@@ -196,6 +206,16 @@ class Car(db.Model):
         ownership = self.active_ownership
         return ownership.user if ownership else None
 
+    @property
+    def decoded_display_name(self):
+        profile = self.vehicle_profile
+
+        if profile and profile.vin_decoded:
+            if profile.trim:
+                return f"{self.brand} {profile.trim}"
+
+        return self.display_name
+
 
 # =========================================================
 # VEHICLE PROFILE
@@ -219,6 +239,7 @@ class VehicleProfile(db.Model):
     fuel_type = db.Column(db.String(50))
     drive_type = db.Column(db.String(50))
     plant_country = db.Column(db.String(100))
+    engine_model = db.Column(db.String(100))
 
     vin_decoded = db.Column(
         db.Boolean,
@@ -250,24 +271,39 @@ class VehicleProfile(db.Model):
 
 
 # =========================================================
-# VEHICLE DTC
+# DIAGNOSTIC CODE DEFINITIONS
 # =========================================================
 
 
-class VehicleDTC(db.Model):
-    __tablename__ = "vehicle_dtcs"
+class DiagnosticCodeDefinition(db.Model):
+    """
+    Reusable diagnostic-code knowledge.
+
+    This table stores the meaning of a DTC independently
+    from any particular vehicle.
+
+    Examples:
+    - P0300 generic SAE definition
+    - Mercedes-specific manufacturer definition
+    """
+
+    __tablename__ = "diagnostic_code_definitions"
 
     __table_args__ = (
-        db.Index("idx_vehicle_dtc_car", "car_id"),
-        db.Index("idx_vehicle_dtc_status", "status"),
+        db.UniqueConstraint(
+            "code",
+            "manufacturer",
+            name="uq_diagnostic_code_manufacturer",
+        ),
+        db.Index(
+            "idx_diagnostic_code",
+            "code",
+        ),
     )
 
-    id = db.Column(db.Integer, primary_key=True)
-
-    car_id = db.Column(
+    id = db.Column(
         db.Integer,
-        db.ForeignKey("cars.id", ondelete="CASCADE"),
-        nullable=False,
+        primary_key=True,
     )
 
     code = db.Column(
@@ -278,6 +314,19 @@ class VehicleDTC(db.Model):
     code_type = db.Column(
         db.String(20),
         default="SAE",
+        nullable=False,
+    )
+
+    manufacturer = db.Column(
+        db.String(100),
+        nullable=True,
+        default="GENERIC",
+        server_default="GENERIC",
+    )
+
+    is_generic = db.Column(
+        db.Boolean,
+        default=True,
         nullable=False,
     )
 
@@ -297,13 +346,151 @@ class VehicleDTC(db.Model):
         nullable=False,
     )
 
+    possible_causes = db.Column(
+        db.Text,
+        nullable=True,
+    )
+
+    recommended_action = db.Column(
+        db.Text,
+        nullable=True,
+    )
+
+    source = db.Column(
+        db.String(100),
+        default="manual",
+        nullable=False,
+    )
+
+    last_verified_at = db.Column(
+        db.DateTime,
+        nullable=True,
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    vehicle_dtcs = db.relationship(
+        "VehicleDTC",
+        back_populates="definition",
+    )
+
+    def __repr__(self):
+        manufacturer = self.manufacturer or "Generic"
+        return (
+            f"<DiagnosticCodeDefinition "
+            f"code={self.code} manufacturer={manufacturer}>"
+        )
+
+
+# =========================================================
+# VEHICLE DTC
+# =========================================================
+
+
+class VehicleDTC(db.Model):
+    """
+    A DTC occurrence recorded against one particular vehicle.
+
+    DiagnosticCodeDefinition stores what the code means.
+    VehicleDTC stores when and where it occurred.
+    """
+
+    __tablename__ = "vehicle_dtcs"
+
+    __table_args__ = (
+        db.Index(
+            "idx_vehicle_dtc_car",
+            "car_id",
+        ),
+        db.Index(
+            "idx_vehicle_dtc_status",
+            "status",
+        ),
+        db.Index(
+            "idx_vehicle_dtc_definition",
+            "definition_id",
+        ),
+    )
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True,
+    )
+
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "cars.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+
+    definition_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "diagnostic_code_definitions.id",
+            name="fk_vehicle_dtcs_definition_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    code = db.Column(
+        db.String(20),
+        nullable=False,
+    )
+
+    code_type = db.Column(
+        db.String(20),
+        default="SAE",
+        nullable=False,
+    )
+
+    # -----------------------------------------------------
+    # LEGACY SNAPSHOT FIELDS
+    # -----------------------------------------------------
+    # Keep these temporarily so existing records remain
+    # readable while definitions are being backfilled.
+    # They can be removed in a later dedicated migration.
+
+    description = db.Column(
+        db.Text,
+        nullable=True,
+    )
+
+    affected_system = db.Column(
+        db.String(100),
+        nullable=True,
+    )
+
+    severity = db.Column(
+        db.String(20),
+        default="attention",
+        nullable=True,
+    )
+
     status = db.Column(
         db.String(20),
         default="active",
         nullable=False,
     )
 
-    advisor_note = db.Column(db.Text)
+    advisor_note = db.Column(
+        db.Text,
+        nullable=True,
+    )
 
     detected_at = db.Column(
         db.DateTime,
@@ -311,11 +498,24 @@ class VehicleDTC(db.Model):
         nullable=False,
     )
 
-    cleared_at = db.Column(db.DateTime)
+    cleared_at = db.Column(
+        db.DateTime,
+        nullable=True,
+    )
+
+    cleared_by = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            name="fk_vehicle_dtcs_cleared_by",
+        ),
+        nullable=True,
+    )
 
     source = db.Column(
         db.String(100),
         default="manual",
+        nullable=False,
     )
 
     car = db.relationship(
@@ -323,6 +523,42 @@ class VehicleDTC(db.Model):
         back_populates="dtcs",
     )
 
+    definition = db.relationship(
+        "DiagnosticCodeDefinition",
+        back_populates="vehicle_dtcs",
+    )
+
+    clearing_advisor = db.relationship(
+        "User",
+        foreign_keys=[cleared_by],
+    )
+
+    @property
+    def resolved_description(self):
+        if self.definition and self.definition.description:
+            return self.definition.description
+
+        return self.description or "Diagnostic code pending interpretation"
+
+    @property
+    def resolved_affected_system(self):
+        if self.definition and self.definition.affected_system:
+            return self.definition.affected_system
+
+        return self.affected_system or "Unknown"
+
+    @property
+    def resolved_severity(self):
+        if self.definition and self.definition.severity:
+            return self.definition.severity
+
+        return self.severity or "information"
+
+    def __repr__(self):
+        return (
+            f"<VehicleDTC car_id={self.car_id} "
+            f"code={self.code} status={self.status}>"
+        )
 
 # =========================================================
 # VEHICLE RECALLS
@@ -332,9 +568,7 @@ class VehicleDTC(db.Model):
 class VehicleRecall(db.Model):
     __tablename__ = "vehicle_recalls"
 
-    __table_args__ = (
-        db.Index("idx_vehicle_recall_car", "car_id"),
-    )
+    __table_args__ = (db.Index("idx_vehicle_recall_car", "car_id"),)
 
     id = db.Column(db.Integer, primary_key=True)
 

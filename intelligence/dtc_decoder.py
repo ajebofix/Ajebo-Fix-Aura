@@ -25,22 +25,13 @@ from models import (
 )
 
 from .providers.base import IntelligenceResult
-from .providers.mock import MockDTCProvider
+from .providers.provider_factory import get_default_provider
 
 
 DTC_PATTERN = re.compile(
     r"^[PBCU][0-3][0-9A-F]{3}$",
     re.IGNORECASE,
 )
-
-
-def get_default_provider():
-    """
-    Temporary development provider.
-
-    Replace this later with a real SAE/OEM/API provider.
-    """
-    return MockDTCProvider()
 
 
 class DTCDecoderService:
@@ -73,26 +64,44 @@ class DTCDecoderService:
     # =====================================================
 
     @staticmethod
+    def normalize_code(code: str | None) -> str:
+        """
+        Normalize a raw DTC string into Aura's canonical format:
+        uppercase, no surrounding whitespace.
+        """
+
+        return (code or "").strip().upper()
+
+    @classmethod
     def normalize_manufacturer(
         cls,
         manufacturer: str | None,
     ) -> str:
+        """
+        Normalize a manufacturer name into a canonical value.
+
+        Unknown/blank manufacturers resolve to "GENERIC" so that
+        generic SAE definitions always have a consistent,
+        non-NULL manufacturer value (see the manufacturer column's
+        NOT NULL constraint on DiagnosticCodeDefinition).
+        """
+
         if not manufacturer:
             return "GENERIC"
 
         normalized = (
             manufacturer.strip()
+            .upper()
+            .replace("_", " ")
         )
 
+        if not normalized:
+            return "GENERIC"
 
-    @staticmethod
-    def normalize_manufacturer(manufacturer: str | None) -> str | None:
-        if not manufacturer:
-            return None
-
-        value = manufacturer.strip()
-
-        return value or None
+        return cls.MANUFACTURER_ALIASES.get(
+            normalized,
+            normalized,
+        )
 
     # =====================================================
     # VALIDATION
@@ -146,14 +155,12 @@ class DTCDecoderService:
         normalized_code = self.normalize_code(code)
         normalized_manufacturer = self.normalize_manufacturer(manufacturer)
 
-        if normalized_manufacturer:
+        if normalized_manufacturer != "GENERIC":
             manufacturer_match = (
                 DiagnosticCodeDefinition.query.filter(
                     DiagnosticCodeDefinition.code == normalized_code,
-                    db.func.lower(
-                        DiagnosticCodeDefinition.manufacturer
-                    )
-                    == normalized_manufacturer.lower(),
+                    DiagnosticCodeDefinition.manufacturer
+                    == normalized_manufacturer,
                 )
                 .order_by(
                     DiagnosticCodeDefinition.updated_at.desc()
@@ -167,6 +174,7 @@ class DTCDecoderService:
         generic_match = (
             DiagnosticCodeDefinition.query.filter(
                 DiagnosticCodeDefinition.code == normalized_code,
+                DiagnosticCodeDefinition.manufacturer == "GENERIC",
                 DiagnosticCodeDefinition.is_generic.is_(True),
             )
             .order_by(
@@ -234,15 +242,14 @@ class DTCDecoderService:
 
         data = result.data or {}
 
-        resolved_manufacturer = (
-            data.get("manufacturer")
-            or manufacturer
+        resolved_manufacturer = self.normalize_manufacturer(
+            data.get("manufacturer") or manufacturer
         )
 
         is_generic = data.get("is_generic")
 
         if is_generic is None:
-            is_generic = not bool(resolved_manufacturer)
+            is_generic = resolved_manufacturer == "GENERIC"
 
         definition = self.find_definition(
             code=code,

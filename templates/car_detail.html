@@ -314,9 +314,19 @@ Vehicle Health Record
 
 
 <!-- ========================= -->
-<!-- ACTIVE DTCS -->
+<!-- ACTIVE / CLEARED DTCS -->
 <!-- ========================= -->
-{% if car.dtcs %}
+{% set active_dtcs = car.dtcs
+    | selectattr("status", "equalto", "active")
+    | list
+%}
+
+{% set cleared_dtcs = car.dtcs
+    | selectattr("status", "equalto", "cleared")
+    | list
+%}
+
+{% if active_dtcs %}
 
 <table class="table table-sm mt-3">
 
@@ -330,24 +340,22 @@ Vehicle Health Record
             {% if is_admin_view %}
             <th></th>
             {% endif %}
-
         </tr>
     </thead>
 
     <tbody>
 
-
-    {% for dtc in car.dtcs if dtc.status == "active" %}
+    {% for dtc in active_dtcs %}
 
         <tr>
 
             <td>{{ dtc.code }}</td>
 
-            <td>{{ dtc.description }}</td>
+            <td>{{ dtc.resolved_description }}</td>
 
-            <td>{{ dtc.affected_system }}</td>
+            <td>{{ dtc.resolved_affected_system }}</td>
 
-            <td>{{ dtc.severity|title }}</td>
+            <td>{{ dtc.resolved_severity|title }}</td>
 
             <td>
                 <span class="badge bg-warning">
@@ -384,13 +392,22 @@ Vehicle Health Record
 
     {% endfor %}
 
-<!-- ========================= -->
- <!-- CLEARED DTCS -->
-<!-- ========================= -->
-    {% set cleared_dtcs = car.dtcs
-    | selectattr("status", "equalto", "cleared")
-    | list %}
+    </tbody>
 
+</table>
+
+{% else %}
+
+<p class="text-muted mb-0">
+    No active Diagnostic Trouble Codes recorded.
+</p>
+
+{% endif %}
+
+
+<!-- ========================= -->
+<!-- CLEARED DTCS -->
+<!-- ========================= -->
 {% if cleared_dtcs %}
 
 <h5 class="mt-4">
@@ -403,7 +420,9 @@ Vehicle Health Record
         <tr>
             <th>Code</th>
             <th>Description</th>
+            <th>System</th>
             <th>Cleared</th>
+            <th>Cleared By</th>
         </tr>
     </thead>
 
@@ -415,16 +434,25 @@ Vehicle Health Record
 
             <td>{{ dtc.code }}</td>
 
-            <td>{{ dtc.description }}</td>
+            <td>{{ dtc.resolved_description }}</td>
+
+            <td>{{ dtc.resolved_affected_system }}</td>
 
             <td>
-
                 {% if dtc.cleared_at %}
                     {{ dtc.cleared_at.strftime("%Y-%m-%d") }}
                 {% else %}
                     —
                 {% endif %}
+            </td>
 
+            <td>
+                {% if dtc.clearing_advisor %}
+                    {{ dtc.clearing_advisor.name
+                       or dtc.clearing_advisor.email }}
+                {% else %}
+                    —
+                {% endif %}
             </td>
 
         </tr>
@@ -434,18 +462,6 @@ Vehicle Health Record
     </tbody>
 
 </table>
-
-{% endif %}
-
-    </tbody>
-
-</table>
-
-{% else %}
-
-<p class="text-muted mb-0">
-    No active Diagnostic Trouble Codes recorded.
-</p>
 
 {% endif %}
 

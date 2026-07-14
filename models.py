@@ -319,7 +319,7 @@ class DiagnosticCodeDefinition(db.Model):
 
     manufacturer = db.Column(
         db.String(100),
-        nullable=True,
+        nullable=False,
         default="GENERIC",
         server_default="GENERIC",
     )

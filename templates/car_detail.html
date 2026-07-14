@@ -5,7 +5,7 @@
 {% block title %}Vehicle Profile Health Record{% endblock %}
 
 {% block page_title %}
-{{ car.brand }} {{ car.model }} {{ car.year }}
+{{ car.decoded_display_name }} {{ car.year }}
 {% endblock %}
 
 {% block page_subtitle %}
@@ -24,7 +24,7 @@ Vehicle Health Record
 
         <h1 class="page-heading">
 
-            {{ car.brand }} {{ car.model }} {{ car.year }}
+            {{ car.decoded_display_name }} {{ car.year }}
 
             {% if is_admin_view %}
             <span class="pill">ADVISOR</span>
@@ -123,14 +123,53 @@ Vehicle Health Record
     </div>
 
             <div class="info-row">
-                <span class="label">VIN</span>
-                <span class="value">{{ car.vin or "—" }}</span>
-            </div>
+    <span class="label">VIN</span>
+    <span class="value">{{ car.vin }}</span>
+</div>
 
-            <div class="info-row">
-                <span class="label">Recorded Mileage</span>
-                <span class="value">{{ car.current_mileage or "—" }}</span>
-            </div>
+<div class="info-row">
+    <span class="label">Recorded Mileage</span>
+    <span class="value">{{ car.current_mileage or "—" }}</span>
+</div>
+
+{% if car.vehicle_profile %}
+
+<div class="info-row">
+    <span class="label">Trim</span>
+    <span class="value">{{ car.vehicle_profile.trim or "—" }}</span>
+</div>
+
+<div class="info-row">
+    <span class="label">Engine</span>
+    <span class="value">{{ car.vehicle_profile.engine_model or "—" }}</span>
+</div>
+
+<div class="info-row">
+    <span class="label">Fuel Type</span>
+    <span class="value">{{ car.vehicle_profile.fuel_type or "—" }}</span>
+</div>
+
+<div class="info-row">
+    <span class="label">Body Style</span>
+    <span class="value">{{ car.vehicle_profile.body_style or "—" }}</span>
+</div>
+
+<div class="info-row">
+    <span class="label">Drive Type</span>
+    <span class="value">{{ car.vehicle_profile.drive_type or "—" }}</span>
+</div>
+
+<div class="info-row">
+    <span class="label">Plant Country</span>
+    <span class="value">{{ car.vehicle_profile.plant_country or "—" }}</span>
+</div>
+
+<div class="info-row">
+    <span class="label">Identity Source</span>
+    <span class="value">{{ car.vehicle_profile.source|upper }}</span>
+</div>
+
+{% endif %}
 
 
 
@@ -230,6 +269,185 @@ Vehicle Health Record
         Informational and non-diagnostic.
         Based on monitoring and professional review.
     </p>
+
+
+<!-- ========================= -->
+<!-- DIAGNOSTICS -->
+<!-- ========================= -->
+<div class="card mt-4">
+    <div class="card-header">
+        <strong>Diagnostic Trouble Codes</strong>
+    </div>
+
+    <div class="card-body">
+
+        <form
+            method="POST"
+            action="{{ url_for('admin.add_vehicle_dtc', car_id=car.id) }}"
+            class="row g-2"
+        >
+
+            <div class="col-md-8">
+                <input
+                    type="text"
+                    name="code"
+                    class="form-control"
+                    placeholder="Example: P0300"
+                    maxlength="10"
+                    required
+                >
+            </div>
+
+            <div class="col-md-4">
+                <button
+                    type="submit"
+                    class="btn btn-primary w-100"
+                >
+                    Add DTC
+                </button>
+            </div>
+
+        </form>
+
+    </div>
+</div>
+
+
+<!-- ========================= -->
+<!-- ACTIVE DTCS -->
+<!-- ========================= -->
+{% if car.dtcs %}
+
+<table class="table table-sm mt-3">
+
+    <thead>
+        <tr>
+            <th>Code</th>
+            <th>Description</th>
+            <th>System</th>
+            <th>Severity</th>
+            <th>Status</th>
+            {% if is_admin_view %}
+            <th></th>
+            {% endif %}
+
+        </tr>
+    </thead>
+
+    <tbody>
+
+
+    {% for dtc in car.dtcs if dtc.status == "active" %}
+
+        <tr>
+
+            <td>{{ dtc.code }}</td>
+
+            <td>{{ dtc.description }}</td>
+
+            <td>{{ dtc.affected_system }}</td>
+
+            <td>{{ dtc.severity|title }}</td>
+
+            <td>
+                <span class="badge bg-warning">
+                    {{ dtc.status|title }}
+                </span>
+            </td>
+
+            {% if is_admin_view %}
+
+            <td>
+                <form
+                    method="POST"
+                    action="{{ url_for(
+                        'admin.clear_vehicle_dtc',
+                        car_id=car.id,
+                        dtc_id=dtc.id
+                    )}}"
+                >
+
+                    <button
+                            class="btn btn-sm btn-success"
+                            onclick="return confirm('Mark this DTC as cleared?');"
+                    >
+                        Clear
+
+                    </button>
+                </form>
+
+            </td>
+
+            {% endif %}
+
+        </tr>
+
+    {% endfor %}
+
+<!-- ========================= -->
+ <!-- CLEARED DTCS -->
+<!-- ========================= -->
+    {% set cleared_dtcs = car.dtcs
+    | selectattr("status", "equalto", "cleared")
+    | list %}
+
+{% if cleared_dtcs %}
+
+<h5 class="mt-4">
+    Cleared Diagnostic Codes
+</h5>
+
+<table class="table table-sm">
+
+    <thead>
+        <tr>
+            <th>Code</th>
+            <th>Description</th>
+            <th>Cleared</th>
+        </tr>
+    </thead>
+
+    <tbody>
+
+    {% for dtc in cleared_dtcs %}
+
+        <tr>
+
+            <td>{{ dtc.code }}</td>
+
+            <td>{{ dtc.description }}</td>
+
+            <td>
+
+                {% if dtc.cleared_at %}
+                    {{ dtc.cleared_at.strftime("%Y-%m-%d") }}
+                {% else %}
+                    —
+                {% endif %}
+
+            </td>
+
+        </tr>
+
+    {% endfor %}
+
+    </tbody>
+
+</table>
+
+{% endif %}
+
+    </tbody>
+
+</table>
+
+{% else %}
+
+<p class="text-muted mb-0">
+    No active Diagnostic Trouble Codes recorded.
+</p>
+
+{% endif %}
 
 </section>
 
@@ -866,6 +1084,29 @@ Vehicle Health Record
 </section>
 
 {% endif %}
+
+<!-- ========================= -->
+<!-- DECODE VIN -->
+<!-- ========================= -->
+
+<section class="card fade-up">
+{% if is_admin_view %}
+
+<form
+    method="POST"
+    action="{{ url_for('admin.decode_vehicle_vin', car_id=car.id) }}"
+>
+    <button
+        type="submit"
+        class="btn btn-outline-primary"
+    >
+        Decode VIN
+    </button>
+</form>
+
+{% endif %}
+</section>
+
 
 
 

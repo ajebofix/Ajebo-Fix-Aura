@@ -84,24 +84,43 @@ margin-bottom: 12px
     pointer-events: none;
 }
 
-/* Small pulsing "live" dot signalling real-time status.
-   Inset slightly so it stays inside the wrap's overflow:hidden
-   clip instead of being cut off at the very edge. */
-.mini-health-wrap::after{
+/* Small "health cross" badge signalling real-time status -
+   a green disc with a white plus/cross clipped into it, like a
+   pharmacy/medical sign, rather than a plain dot.
+   ::before = the colored disc, ::after = the white cross on top. */
+.mini-health-wrap::before{
     content: "";
     position: absolute;
     top: 1px;
     right: 1px;
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--green);
+    box-shadow: 0 0 0 1.5px var(--white);
+    animation: auraLiveDot 2.4s ease-out infinite;
+}
+
+.mini-health-wrap::after{
+    content: "";
+    position: absolute;
+    top: 3.5px;
+    right: 3.5px;
+    width: 5px;
+    height: 5px;
+    background: var(--white);
+    clip-path: polygon(
+        35% 0%, 65% 0%, 65% 35%, 100% 35%,
+        100% 65%, 65% 65%, 65% 100%, 35% 100%,
+        35% 65%, 0% 65%, 0% 35%, 35% 35%
+    );
     animation: auraLiveDot 2.4s ease-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce){
     .mini-health-icon,
     .shimmer,
+    .mini-health-wrap::before,
     .mini-health-wrap::after{
         animation: none;
     }

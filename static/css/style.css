@@ -21,9 +21,3 @@
 
 @import url("mobile.css");
 @import url("animations.css");
-
-/* FORCE SHIMMER (final override */
-.mini-health-wrap::after{
-    animation: auraShimmer 2s linear infinite;
-    background: red;
-}

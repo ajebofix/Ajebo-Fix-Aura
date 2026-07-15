@@ -55,6 +55,7 @@ margin-bottom: 12px
     width: 28px;
     height: 28px;
     overflow: hidden;
+    border-radius: 50%;
 }
 
 .mini-health-icon{
@@ -62,20 +63,46 @@ margin-bottom: 12px
     height: 100%;
     object-fit: contain;
     display: block;
+    animation: auraHeartbeat 2.4s ease-in-out infinite;
+    transform-origin: center;
 }
 
 .shimmer{
     position: absolute;
     top: 0;
-    left: -120%;
+    left: 0;
     width: 60%;
     height: 100%;
     background: linear-gradient(
         120deg,
         rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.7) 50%,
+        rgba(255, 255, 255, 0.85) 50%,
         rgba(255, 255, 255, 0) 100%
     );
-    transform: skewX(-20deg);
-    animation: auraShimmer 2.2s linear infinite;
+    transform: translateX(-160%) skewX(-20deg);
+    animation: auraShimmer 2.4s ease-in-out infinite;
+    pointer-events: none;
+}
+
+/* Small pulsing "live" dot signalling real-time status.
+   Inset slightly so it stays inside the wrap's overflow:hidden
+   clip instead of being cut off at the very edge. */
+.mini-health-wrap::after{
+    content: "";
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: auraLiveDot 2.4s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce){
+    .mini-health-icon,
+    .shimmer,
+    .mini-health-wrap::after{
+        animation: none;
+    }
 }

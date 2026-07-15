@@ -47,7 +47,27 @@ transform:translateY(0);
 }
 }
 
+/* SHIMMER SWEEP - transform-based so it actually moves.
+   (Previously animated background-position on an element with no
+   background-size set, which produced zero visible movement.) */
 @keyframes auraShimmer{
-    0%{ background-position: -120% 0; }
-    100%{ background-position: 120% 0; }
+    0%{ transform: translateX(-160%) skewX(-20deg); }
+    100%{ transform: translateX(260%) skewX(-20deg); }
+}
+
+/* HEARTBEAT PULSE - a "lub-dub" double beat then rest, matching
+   the icon's own ECG-line artwork, rather than a generic uniform
+   pulse. */
+@keyframes auraHeartbeat{
+    0%, 55%, 100%{ transform: scale(1); }
+    8%{ transform: scale(1.14); }
+    16%{ transform: scale(1); }
+    24%{ transform: scale(1.08); }
+    32%{ transform: scale(1); }
+}
+
+/* LIVE DOT - soft breathing pulse signalling real-time status. */
+@keyframes auraLiveDot{
+    0%, 100%{ opacity: 1; transform: scale(1); }
+    50%{ opacity: .35; transform: scale(.75); }
 }

@@ -80,7 +80,27 @@ jobs:
         run: pytest -q --tb=short tests/test_security_foundation.py::test_health_endpoint_is_available
 
       - name: Run Ruff on security changes
-        run: ruff check app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests
+        shell: bash
+        run: |
+          set +e
+          ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests 2>&1 | tee ruff-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Post Ruff failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          {
+            echo "### Aura Ruff failure"
+            echo
+            echo '```text'
+            tail -n 160 ruff-output.txt
+            echo '```'
+          } > ruff-comment.md
+          gh pr comment "$PR_URL" --body-file ruff-comment.md
 
       - name: Run Bandit on security changes
         run: bandit -q -r app.py auth driver events ownership security -x ./tests

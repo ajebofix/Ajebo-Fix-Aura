@@ -39,3 +39,10 @@ def test_root_does_not_disclose_internal_route_inventory(client):
 
     assert response.status_code == 200
     assert payload == {"status": "ok", "service": "Ajebo Fix Aura"}
+
+
+def test_health_endpoint_is_available(client):
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "ok"}

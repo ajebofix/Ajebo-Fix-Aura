@@ -1,13 +1,16 @@
-from flask import Blueprint, request, jsonify
-from flask_login import login_required, current_user
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 import hashlib
 
+from flask import Blueprint, jsonify, request
+from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
+from models import CarOwnership, EventAuditLog, VehicleEvent, db
+from security.access import require_vehicle_access
 from services.health_alert_service import HealthAlertService
 
-from models import db, VehicleEvent, EventAuditLog, CarOwnership
 
 # =====================================================
 # TREATMENT RECORDS
@@ -16,56 +19,72 @@ from models import db, VehicleEvent, EventAuditLog, CarOwnership
 
 treatments_bp = Blueprint("treatments", __name__)
 
-
-# =====================================================
-# SAFE ADVISOR CHECK
-# =====================================================
+_ALLOWED_SEVERITIES = {"low", "monitor", "attention", "high", "critical"}
 
 
-def require_advisor():
-    if not current_user.is_authenticated:
-        return False
-    if not hasattr(current_user, "is_admin"):
-        return False
-    return current_user.is_admin()
+def _json_body() -> dict:
+    return request.get_json(silent=True) or {}
 
 
-# =====================================================
-# RECORD TREATMENT (MANUAL ENTRY)
-# =====================================================
+def _clean_text(value, *, maximum: int, required: bool = False) -> str | None:
+    text = str(value or "").strip()
+
+    if required and not text:
+        return None
+
+    return text[:maximum]
 
 
-@treatments_bp.route("/cars/<int:car_id>/records", methods=["POST"])
-@login_required
-def record_treatment(car_id):
-    """
-    Create a treatment record for a vehicle.
-    This does not imply diagnosis.
-    """
-
-    data = request.get_json()
-
-    ownership = CarOwnership.query.filter_by(
+def _current_owner(car_id: int):
+    return CarOwnership.query.filter_by(
         car_id=car_id,
         user_id=current_user.id,
         is_active=True,
-    ).first_or_404()
+    ).first()
 
-    # ----------------------------------
-    # Deterministic fingerprint
-    # ----------------------------------
-    raw = (
-        f"{car_id}:{data.get('title')}:{data.get('event_type')}:{data.get('severity')}"
-    )
+
+# =====================================================
+# RECORD TREATMENT
+# =====================================================
+
+
+@treatments_bp.post("/cars/<int:car_id>/records")
+@login_required
+def record_treatment(car_id):
+    data = _json_body()
+
+    ownership = _current_owner(car_id)
+    if not ownership:
+        return jsonify({"error": "Vehicle access denied"}), 403
+
+    event_type = _clean_text(data.get("event_type"), maximum=80, required=True)
+    title = _clean_text(data.get("title"), maximum=255, required=True)
+    description = _clean_text(data.get("description"), maximum=5000)
+    severity = str(data.get("severity") or "low").strip().lower()
+
+    if not event_type or not title:
+        return jsonify({"error": "event_type and title are required"}), 400
+
+    if severity not in _ALLOWED_SEVERITIES:
+        return jsonify({"error": "Invalid severity"}), 422
+
+    mileage = data.get("mileage")
+    if mileage is not None:
+        try:
+            mileage = int(mileage)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Mileage must be a number"}), 422
+
+        if mileage < 0 or mileage > 5_000_000:
+            return jsonify({"error": "Mileage is outside the allowed range"}), 422
+
+    raw = f"{car_id}:{title}:{event_type}:{severity}"
     fingerprint = hashlib.sha256(raw.lower().encode()).hexdigest()
 
-    # ----------------------------------
-    # 24-hour duplicate protection
-    # ----------------------------------
     recent = VehicleEvent.query.filter(
         VehicleEvent.car_id == car_id,
-        VehicleEvent.event_type == data.get("event_type"),
-        VehicleEvent.title == data.get("title"),
+        VehicleEvent.event_type == event_type,
+        VehicleEvent.title == title,
         VehicleEvent.created_at >= datetime.utcnow() - timedelta(hours=24),
     ).first()
 
@@ -75,13 +94,13 @@ def record_treatment(car_id):
     treatment = VehicleEvent(
         car_id=car_id,
         ownership_id=ownership.id,
-        event_type=data.get("event_type"),
-        severity=data.get("severity", "low"),
-        title=data.get("title"),
-        description=data.get("description"),
-        mileage=data.get("mileage"),
+        event_type=event_type,
+        severity=severity,
+        title=title,
+        description=description,
+        mileage=mileage,
         source="manual",
-        data=data.get("data"),
+        data=data.get("data") if isinstance(data.get("data"), dict) else None,
         fingerprint=fingerprint,
         created_by=current_user.id,
     )
@@ -103,28 +122,18 @@ def record_treatment(car_id):
             },
             user_id=current_user.id,
         )
-
         db.session.add(history)
         db.session.commit()
-
-        # ----------------------------------
-        # Post-record intelligence hooks
-        # ----------------------------------
-        HealthAlertService.evaluate(car_id)
-
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "Duplicate treatment record blocked"}), 409
+    except Exception:
+        db.session.rollback()
+        raise
 
-    return (
-        jsonify(
-            {
-                "message": "Treatment record added",
-                "record_id": treatment.id,
-            }
-        ),
-        201,
-    )
+    HealthAlertService.evaluate(car_id)
+
+    return jsonify({"message": "Treatment record added", "record_id": treatment.id}), 201
 
 
 # =====================================================
@@ -132,20 +141,21 @@ def record_treatment(car_id):
 # =====================================================
 
 
-@treatments_bp.route("/records/<int:record_id>", methods=["PATCH"])
+@treatments_bp.patch("/records/<int:record_id>")
 @login_required
 def update_treatment_record(record_id):
-    """
-    Update an existing treatment record.
-    Changes are tracked immutably.
-    """
-
-    data = request.get_json()
+    data = _json_body()
     treatment = VehicleEvent.query.get_or_404(record_id)
 
-    # Permission: creator or advisor
-    if treatment.created_by != current_user.id and not require_advisor():
-        return jsonify({"error": "Access denied"}), 403
+    require_vehicle_access(
+        treatment.car_id,
+        allow_owner=True,
+        allow_driver=False,
+        allow_advisor=True,
+    )
+
+    if not current_user.is_admin and treatment.created_by != current_user.id:
+        return jsonify({"error": "Only the creator or an advisor may amend this record"}), 403
 
     previous_entry = {
         "event_type": treatment.event_type,
@@ -156,15 +166,34 @@ def update_treatment_record(record_id):
     }
 
     if "event_type" in data:
-        treatment.event_type = data["event_type"]
+        value = _clean_text(data["event_type"], maximum=80, required=True)
+        if not value:
+            return jsonify({"error": "event_type cannot be empty"}), 422
+        treatment.event_type = value
+
     if "severity" in data:
-        treatment.severity = data["severity"]
+        severity = str(data["severity"] or "").strip().lower()
+        if severity not in _ALLOWED_SEVERITIES:
+            return jsonify({"error": "Invalid severity"}), 422
+        treatment.severity = severity
+
     if "title" in data:
-        treatment.title = data["title"]
+        value = _clean_text(data["title"], maximum=255, required=True)
+        if not value:
+            return jsonify({"error": "title cannot be empty"}), 422
+        treatment.title = value
+
     if "description" in data:
-        treatment.description = data["description"]
+        treatment.description = _clean_text(data["description"], maximum=5000)
+
     if "mileage" in data:
-        treatment.mileage = data["mileage"]
+        try:
+            mileage = int(data["mileage"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "Mileage must be a number"}), 422
+        if mileage < 0 or mileage > 5_000_000:
+            return jsonify({"error": "Mileage is outside the allowed range"}), 422
+        treatment.mileage = mileage
 
     history = EventAuditLog(
         event_id=treatment.id,
@@ -180,31 +209,36 @@ def update_treatment_record(record_id):
         user_id=current_user.id,
     )
 
-    db.session.add(history)
-    db.session.commit()
+    try:
+        db.session.add(history)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
     HealthAlertService.evaluate(treatment.car_id)
-
     return jsonify({"message": "Treatment record updated"}), 200
 
 
 # =====================================================
-# ARCHIVE TREATMENT RECORD (SOFT DELETE)
+# ARCHIVE TREATMENT RECORD
 # =====================================================
 
 
-@treatments_bp.route("/records/<int:record_id>", methods=["DELETE"])
+@treatments_bp.delete("/records/<int:record_id>")
 @login_required
 def archive_treatment_record(record_id):
-    """
-    Archive a treatment record.
-    Record remains in history.
-    """
-
     treatment = VehicleEvent.query.get_or_404(record_id)
 
-    if treatment.created_by != current_user.id and not require_advisor():
-        return jsonify({"error": "Access denied"}), 403
+    require_vehicle_access(
+        treatment.car_id,
+        allow_owner=True,
+        allow_driver=False,
+        allow_advisor=True,
+    )
+
+    if not current_user.is_admin and treatment.created_by != current_user.id:
+        return jsonify({"error": "Only the creator or an advisor may archive this record"}), 403
 
     if treatment.is_deleted:
         return jsonify({"message": "Record already archived"}), 200
@@ -219,11 +253,14 @@ def archive_treatment_record(record_id):
         user_id=current_user.id,
     )
 
-    db.session.add(history)
-    db.session.commit()
+    try:
+        db.session.add(history)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
     HealthAlertService.evaluate(treatment.car_id)
-
     return jsonify({"message": "Treatment record archived"}), 200
 
 
@@ -232,19 +269,15 @@ def archive_treatment_record(record_id):
 # =====================================================
 
 
-@treatments_bp.route("/cars/<int:car_id>/records", methods=["GET"])
+@treatments_bp.get("/cars/<int:car_id>/records")
 @login_required
 def get_treatment_records(car_id):
-    """
-    View non-archived treatment records
-    for an actively owned vehicle.
-    """
-
-    CarOwnership.query.filter_by(
-        car_id=car_id,
-        user_id=current_user.id,
-        is_active=True,
-    ).first_or_404()
+    require_vehicle_access(
+        car_id,
+        allow_owner=True,
+        allow_driver=False,
+        allow_advisor=True,
+    )
 
     records = (
         VehicleEvent.query.filter_by(car_id=car_id, is_deleted=False)
@@ -256,15 +289,15 @@ def get_treatment_records(car_id):
         jsonify(
             [
                 {
-                    "record_id": r.id,
-                    "record_type": r.event_type,
-                    "clinical_priority": r.severity,
-                    "title": r.title,
-                    "summary": r.description,
-                    "mileage": r.mileage,
-                    "recorded_at": r.created_at.isoformat(),
+                    "record_id": record.id,
+                    "record_type": record.event_type,
+                    "clinical_priority": record.severity,
+                    "title": record.title,
+                    "summary": record.description,
+                    "mileage": record.mileage,
+                    "recorded_at": record.created_at.isoformat(),
                 }
-                for r in records
+                for record in records
             ]
         ),
         200,

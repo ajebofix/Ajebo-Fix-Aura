@@ -126,4 +126,24 @@ jobs:
           gh pr comment "$PR_URL" --body-file bandit-comment.md
 
       - name: Audit dependencies
-        run: pip-audit -r requirements.txt
+        shell: bash
+        run: |
+          set +e
+          pip-audit -r requirements.txt 2>&1 | tee pip-audit-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Post dependency audit failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          {
+            echo "### Aura dependency audit failure"
+            echo
+            echo '```text'
+            tail -n 200 pip-audit-output.txt
+            echo '```'
+          } > pip-audit-comment.md
+          gh pr comment "$PR_URL" --body-file pip-audit-comment.md

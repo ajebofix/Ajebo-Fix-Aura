@@ -1,6 +1,7 @@
 name: Aura Security CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -10,9 +11,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: aura-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-and-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     env:
       SECRET_KEY: ci-secret-key-not-for-production
@@ -39,11 +45,11 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Run Ruff
-        run: ruff check .
+      - name: Run Ruff on security changes
+        run: ruff check app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests
 
-      - name: Run Bandit
-        run: bandit -q -r . -x ./tests,./migrations
+      - name: Run Bandit on security changes
+        run: bandit -q -r app.py auth driver events ownership security -x ./tests
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt

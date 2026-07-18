@@ -1,0 +1,55 @@
+name: Aura Security CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - agent/aura-security-hardening
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aura-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SECRET_KEY: ci-secret-key-not-for-production
+      SQLALCHEMY_DATABASE_URI: sqlite:///:memory:
+      APP_ENV: testing
+      PREFERRED_URL_SCHEME: http
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q .
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Run Ruff on security changes
+        run: ruff check app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests
+
+      - name: Run Bandit on security changes
+        run: bandit -q -r app.py auth driver events ownership security -x ./tests
+
+      - name: Audit dependencies
+        run: pip-audit -r requirements.txt

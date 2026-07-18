@@ -8,16 +8,12 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-  push:
-    branches:
-      - main
-      - agent/aura-security-hardening
 
 permissions:
   contents: read
 
 concurrency:
-  group: aura-security-${{ github.workflow }}-${{ github.ref }}
+  group: "aura-security-${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -26,10 +22,10 @@ jobs:
     timeout-minutes: 15
 
     env:
-      SECRET_KEY: ci-secret-key-not-for-production
-      SQLALCHEMY_DATABASE_URI: sqlite:///:memory:
-      APP_ENV: testing
-      PREFERRED_URL_SCHEME: http
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
 
     steps:
       - name: Check out repository

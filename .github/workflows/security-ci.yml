@@ -103,7 +103,27 @@ jobs:
           gh pr comment "$PR_URL" --body-file ruff-comment.md
 
       - name: Run Bandit on security changes
-        run: bandit -q -r app.py auth driver events ownership security -x ./tests
+        shell: bash
+        run: |
+          set +e
+          bandit -q -r app.py auth driver events ownership security -x ./tests 2>&1 | tee bandit-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Post Bandit failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          {
+            echo "### Aura Bandit failure"
+            echo
+            echo '```text'
+            tail -n 200 bandit-output.txt
+            echo '```'
+          } > bandit-comment.md
+          gh pr comment "$PR_URL" --body-file bandit-comment.md
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt

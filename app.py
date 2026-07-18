@@ -171,9 +171,14 @@ def create_app():
     from admin.modules.assessments import assessments_bp
     from driver.routes import driver_bp
 
-    app.register_blueprint(auth_bp, url_prefix="/auth")
+    # These blueprints already define their own URL prefixes.
+    app.register_blueprint(auth_bp)
     app.register_blueprint(advisor_bp)
-    app.register_blueprint(cars_bp, url_prefix="/cars")
+    app.register_blueprint(cars_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(driver_bp)
+
+    # These blueprints intentionally receive their prefix here.
     app.register_blueprint(admin_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(treatments_bp, url_prefix="/treatments")
@@ -183,10 +188,8 @@ def create_app():
     app.register_blueprint(notices_bp, url_prefix="/clinical_notices")
     app.register_blueprint(health_trajectory_bp, url_prefix="/health_trajectory")
     app.register_blueprint(stewardship_bp, url_prefix="/stewardship")
-    app.register_blueprint(dashboard_bp, url_prefix="/dashboard")
     app.register_blueprint(concerns_bp)
     app.register_blueprint(assessments_bp)
-    app.register_blueprint(driver_bp)
 
     @app.get("/")
     def home():

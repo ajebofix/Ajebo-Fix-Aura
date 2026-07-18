@@ -44,7 +44,16 @@ jobs:
         run: python -m compileall -q app.py auth driver events ownership security tests
 
       - name: Run tests
-        run: pytest -q
+        run: pytest -q --tb=short --junitxml=pytest-results.xml
+
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: pytest-results.xml
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Run Ruff on security changes
         run: ruff check app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests

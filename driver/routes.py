@@ -1,94 +1,124 @@
 # driver/routes.py
 
-
-from flask import Blueprint, render_template, redirect, request, url_for, flash
-from flask_login import login_required, current_user
-
-from models import CarDriver, Car, CarOwnership, CarFault, db, DriverCheckIn
+from __future__ import annotations
 
 from datetime import datetime
+
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+
+from models import CarDriver, CarFault, CarOwnership, DriverCheckIn, db
+from security.access import require_vehicle_access
 
 
 driver_bp = Blueprint("driver", __name__, url_prefix="/driver")
 
 
-# ==============================
-# DRIVERS DASHBOARD
-# ==============================
-
-
-@driver_bp.route("/dashboard")
-@login_required
-def driver_dashboard():
-
+def _require_driver_role():
     if not current_user.is_driver:
         flash("Driver access only.", "error")
         return redirect(url_for("dashboard.aura_home"))
+    return None
+
+
+# ==============================
+# DRIVER DASHBOARD
+# ==============================
+
+
+@driver_bp.get("/dashboard")
+@login_required
+def driver_dashboard():
+    denied = _require_driver_role()
+    if denied:
+        return denied
 
     assignments = CarDriver.query.filter_by(
-        user_id=current_user.id, is_active=True
+        user_id=current_user.id,
+        is_active=True,
     ).all()
 
     today = datetime.utcnow().date()
-
-    today_checkin = DriverCheckIn.query.filter(
-        DriverCheckIn.driver_id == current_user.id,
-        db.func.date(DriverCheckIn.created_at) == today,
-    ).first()
+    checkins_today = {
+        checkin.car_id: checkin
+        for checkin in DriverCheckIn.query.filter(
+            DriverCheckIn.driver_id == current_user.id,
+            db.func.date(DriverCheckIn.created_at) == today,
+        ).all()
+    }
 
     vehicles = []
 
-    for a in assignments:
-        car = Car.query.get(a.car_id)
+    for assignment in assignments:
+        car = assignment.car
+        if not car:
+            continue
 
-        ownership = CarOwnership.query.filter_by(car_id=car.id, is_active=True).first()
+        ownership = CarOwnership.query.filter_by(
+            car_id=car.id,
+            is_active=True,
+        ).first()
 
-        vehicles.append({"car": car, "owner": ownership.user if ownership else None})
+        vehicles.append(
+            {
+                "car": car,
+                "owner": ownership.user if ownership else None,
+                "today_checkin": checkins_today.get(car.id),
+            }
+        )
 
     return render_template("driver/dashboard.html", vehicles=vehicles)
 
 
 # ====================================
-# DRIVERS CAR VIEW
+# DRIVER VEHICLE VIEW
 # ====================================
 
 
-@driver_bp.route("/cars/<int:car_id>")
+@driver_bp.get("/cars/<int:car_id>")
 @login_required
 def driver_car_view(car_id):
+    denied = _require_driver_role()
+    if denied:
+        return denied
 
-    assignment = CarDriver.query.filter_by(
-        car_id=car_id, user_id=current_user.id, is_active=True
-    ).first_or_404()
-
-    car = assignment.car
-
-    try:
-        require_driver_access(car_id)
-    except PermissionError:
-        flash("Access denied.", "error")
-        return redirect(url_for("driver.driver_dashboard"))
+    car = require_vehicle_access(
+        car_id,
+        allow_owner=False,
+        allow_driver=True,
+        allow_advisor=False,
+    )
 
     return render_template("driver/car_detail.html", car=car)
 
 
 # ========================================
-# DRIVERS REPORTS ISSUE ROUTE
+# DRIVER REPORTS ISSUE
 # ========================================
 
 
-@driver_bp.route("/cars/<int:car_id>/report", methods=["POST"])
+@driver_bp.post("/cars/<int:car_id>/report")
 @login_required
 def driver_report_issue(car_id):
+    denied = _require_driver_role()
+    if denied:
+        return denied
 
-    assignment = CarDriver.query.filter_by(
-        car_id=car_id, user_id=current_user.id, is_active=True
-    ).first_or_404()
+    require_vehicle_access(
+        car_id,
+        allow_owner=False,
+        allow_driver=True,
+        allow_advisor=False,
+    )
 
-    description = request.form.get("description")
+    description = request.form.get("description", "").strip()
 
     if not description:
         flash("Describe the issue.", "error")
+        return redirect(url_for("driver.driver_car_view", car_id=car_id))
+
+    if len(description) > 5000:
+        flash("The issue description is too long.", "error")
         return redirect(url_for("driver.driver_car_view", car_id=car_id))
 
     fault = CarFault(
@@ -100,50 +130,52 @@ def driver_report_issue(car_id):
         reported_at=datetime.utcnow(),
     )
 
-    db.session.add(fault)
-    db.session.commit()
+    try:
+        db.session.add(fault)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
     flash("Issue reported successfully.", "success")
-    try:
-        require_driver_access(car_id)
-    except PermissionError:
-        flash("Access denied.", "error")
-        return redirect(url_for("driver.driver_dashboard"))
-
     return redirect(url_for("driver.driver_car_view", car_id=car_id))
 
 
-# ===========================================
-# MIDDLEWARE GUARD
-# ============================================
-
-
-def require_driver_access(car_id):
-
-    assignment = CarDriver.query.filter_by(
-        car_id=car_id, user_id=current_user.id, is_active=True
-    ).first()
-
-    if not assignment:
-        raise PermissionError("Driver access not allowed for this vehicle")
-
-    return assignment
-
-
 # ==========================================
-# DRIVER DAILY CHECKIN ROUTE
+# DRIVER DAILY CHECK-IN
 # ==========================================
+
+
 @driver_bp.route("/cars/<int:car_id>/check-in", methods=["GET", "POST"])
 @login_required
 def driver_daily_checkin(car_id):
+    denied = _require_driver_role()
+    if denied:
+        return denied
 
-    assignment = CarDriver.query.filter_by(
-        car_id=car_id, user_id=current_user.id, is_active=True
-    ).first_or_404()
+    car = require_vehicle_access(
+        car_id,
+        allow_owner=False,
+        allow_driver=True,
+        allow_advisor=False,
+    )
 
-    car = assignment.car
+    today = datetime.utcnow().date()
+    existing = DriverCheckIn.query.filter(
+        DriverCheckIn.car_id == car.id,
+        DriverCheckIn.driver_id == current_user.id,
+        db.func.date(DriverCheckIn.created_at) == today,
+    ).first()
+
+    if request.method == "POST" and existing:
+        flash("Today's check-in has already been submitted for this vehicle.", "info")
+        return redirect(url_for("driver.driver_dashboard"))
 
     if request.method == "POST":
+        notes = request.form.get("notes", "").strip()
+        if len(notes) > 2000:
+            flash("Check-in notes are too long.", "error")
+            return render_template("driver/checkin.html", car=car)
 
         checkin = DriverCheckIn(
             car_id=car.id,
@@ -153,22 +185,9 @@ def driver_daily_checkin(car_id):
             dashboard_light=bool(request.form.get("dashboard_light")),
             vibration=bool(request.form.get("vibration")),
             unusual_sound=bool(request.form.get("unusual_sound")),
-            notes=request.form.get("notes", "").strip(),
+            notes=notes,
         )
 
-        # generate alerts
-        alerts = []
-
-        if checkin.dashboard_light:
-            alerts.append("Dashboard warning reported")
-
-        if checkin.vibration:
-            alerts.append("Vibration reported")
-
-        if checkin.unusual_sound:
-            alerts.append("Unusual sound reported")
-
-        # update driver score
         if current_user.driver_score is None:
             current_user.driver_score = 100
 
@@ -176,33 +195,25 @@ def driver_daily_checkin(car_id):
 
         if checkin.dashboard_light:
             current_user.driver_score -= 3
-
         if checkin.vibration:
             current_user.driver_score -= 3
-
         if checkin.unusual_sound:
             current_user.driver_score -= 3
 
-        db.session.add(checkin)
-        db.session.commit()
+        current_user.driver_score = max(0, min(100, current_user.driver_score))
 
-        # send alerts
-        if alerts:
-
-            ownership = CarOwnership.query.filter_by(
-                car_id=car.id, is_active=True
-            ).first()
-
-            if ownership and ownership.user:
-
-                owner_name = ownership.user.name
-
-                flash(
-                    f"Driver {owner_name} has been notified of reported concerns.",
-                    "info",
-                )
+        try:
+            db.session.add(checkin)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
 
         flash("Daily vehicle check-in submitted.", "success")
         return redirect(url_for("driver.driver_dashboard"))
 
-    return render_template("driver/checkin.html", car=car)
+    return render_template(
+        "driver/checkin.html",
+        car=car,
+        existing_checkin=existing,
+    )

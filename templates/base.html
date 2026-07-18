@@ -5,6 +5,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 
 <title>{% block title %}Ajebo Fix{% endblock %}</title>
 
@@ -103,12 +104,17 @@ rel="stylesheet">
             <form method="POST"
                   action="{{ url_for('auth.logout') }}">
 
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
+
                 <button class="btn btn-dark btn-block">
                     Sign Out
                 </button>
 
             </form>
-
         </div>
         {% endif %}
 
@@ -162,6 +168,52 @@ rel="stylesheet">
     </main>
 
 </div>
+
+<script>
+(function () {
+    const tokenElement = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = tokenElement ? tokenElement.content : "";
+
+    if (!csrfToken) {
+        return;
+    }
+
+    document.querySelectorAll("form").forEach(function (form) {
+        const method = (form.getAttribute("method") || "GET").toUpperCase();
+
+        if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+            return;
+        }
+
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "csrf_token";
+            input.value = csrfToken;
+            form.appendChild(input);
+        }
+    });
+
+    const originalFetch = window.fetch;
+    window.fetch = function (resource, options) {
+        const requestOptions = options || {};
+        const method = (requestOptions.method || "GET").toUpperCase();
+        const target = typeof resource === "string" ? resource : resource.url;
+        const url = new URL(target, window.location.origin);
+
+        if (
+            url.origin === window.location.origin &&
+            !["GET", "HEAD", "OPTIONS"].includes(method)
+        ) {
+            const headers = new Headers(requestOptions.headers || {});
+            headers.set("X-CSRF-Token", csrfToken);
+            requestOptions.headers = headers;
+        }
+
+        return originalFetch(resource, requestOptions);
+    };
+})();
+</script>
 
 </body>
 </html>

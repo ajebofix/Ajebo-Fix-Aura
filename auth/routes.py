@@ -1,105 +1,65 @@
 # auth/routes.py
 
+from __future__ import annotations
+
+import os
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from urllib.parse import urlparse
-from itsdangerous import (
-    URLSafeTimedSerializer,
-    SignatureExpired,
-    BadSignature,
-    serializer,
-)
 
 from flask import (
     Blueprint,
-    request,
-    redirect,
-    url_for,
-    render_template,
-    flash,
-    session,
     current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
 )
-from flask_login import (
-    login_user,
-    logout_user,
-    login_required,
-    current_user,
-)
+from flask_login import current_user, login_required, login_user, logout_user
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import func
-from werkzeug.datastructures import auth
 
 from models import (
     AccessCode,
-    CarDriver,
-    db,
-    User,
-    CarOwnership,
     Car,
+    CarDriver,
+    CarOwnership,
+    User,
     VehicleEvent,
+    db,
 )
 
-import os
-
-
-# =====================================================
-# BLUEPRINTS
-# =====================================================
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
-
-advisor_bp = Blueprint(
-    "advisor",
-    __name__,
-    url_prefix="/admin",
-)  # Advisor / Admin console
-
-# ====================================================
-# CONFIG
-# ====================================================
+advisor_bp = Blueprint("advisor", __name__, url_prefix="/admin")
 
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
+PASSWORD_RESET_MAX_AGE = 3600
 
 
-# =====================================================
-# ADVISOR ACCESS CODE
-# =====================================================
-
-ADVISOR_ACCESS_CODE = os.getenv("ADVISOR_ACCESS_CODE")
-
-
-# =====================================================
-# HELPERS
-# =====================================================
-
-
-def safe_next_url(target):
-    """
-    Prevent open redirect attacks.
-    Allows only internal relative paths.
-    """
+def safe_next_url(target: str | None) -> str | None:
+    """Allow redirects only to internal absolute paths."""
 
     if not target:
         return None
 
     parsed = urlparse(target)
 
-    if parsed.scheme != "":
+    if parsed.scheme or parsed.netloc:
         return None
 
-    if parsed.netloc != "":
+    if not target.startswith("/") or target.startswith("//"):
         return None
 
     return target
 
 
 def redirect_by_role(user):
-    """
-    Central role redirect logic.
-    """
     if user.is_admin:
         return redirect(url_for("admin.admin_dashboard"))
 
@@ -109,11 +69,7 @@ def redirect_by_role(user):
     return redirect(url_for("dashboard.aura_home"))
 
 
-def is_locked_out():
-    """
-    Session-based brute force guard,
-    """
-
+def is_locked_out() -> bool:
     locked_until = session.get("locked_until")
 
     if not locked_until:
@@ -121,13 +77,19 @@ def is_locked_out():
 
     try:
         until = datetime.fromisoformat(locked_until)
-        return datetime.utcnow() < until
-    except Exception:
+    except (TypeError, ValueError):
+        session.pop("locked_until", None)
         return False
 
+    if datetime.utcnow() >= until:
+        clear_failed_login()
+        return False
 
-def record_failed_login():
-    attempts = session.get("login_attempts", 0) + 1
+    return True
+
+
+def record_failed_login() -> None:
+    attempts = int(session.get("login_attempts", 0)) + 1
     session["login_attempts"] = attempts
 
     if attempts >= MAX_LOGIN_ATTEMPTS:
@@ -135,74 +97,79 @@ def record_failed_login():
         session["locked_until"] = lock_until.isoformat()
 
 
-def clear_failed_login():
+def clear_failed_login() -> None:
     session.pop("login_attempts", None)
     session.pop("locked_until", None)
 
 
-def get_reset_serializer():
-    return URLSafeTimedSerializer(
-        current_app.config["SECRET_KEY"],
-    )
+def get_reset_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
 
 
-def generate_reset_token(email):
-    serializer = get_reset_serializer()
-    return serializer.dumps(email, salt="password-reset-salt")
+def generate_reset_token(user: User) -> str:
+    """Include the current password hash so a token becomes single-state use."""
+
+    payload = {
+        "email": user.email,
+        "password_hash": user.password_hash,
+    }
+    return get_reset_serializer().dumps(payload, salt="password-reset-salt")
 
 
-def verify_reset_token(token, max_age=3600):
-    """
-    max_age = 1 hour
-    """
-    serializer = get_reset_serializer()
-
+def verify_reset_token(token: str, max_age: int = PASSWORD_RESET_MAX_AGE) -> User | None:
     try:
-        email = serializer.loads(
+        payload = get_reset_serializer().loads(
             token,
             salt="password-reset-salt",
             max_age=max_age,
         )
-
-    except SignatureExpired:
+    except (SignatureExpired, BadSignature):
         return None
 
-    except BadSignature:
+    if not isinstance(payload, dict):
         return None
 
-    return email
+    email = str(payload.get("email", "")).strip().lower()
+    password_hash = payload.get("password_hash")
+
+    user = User.query.filter(func.lower(User.email) == email).first()
+
+    if not user or not user.is_active:
+        return None
+
+    if password_hash != user.password_hash:
+        return None
+
+    return user
 
 
-# =====================================================
-# SEND RESET EMAIL
-# =====================================================
+def send_password_reset_email(user: User) -> bool:
+    sender = current_app.config.get("MAIL_USERNAME")
+    password = current_app.config.get("MAIL_PASSWORD")
 
+    if not sender or not password:
+        current_app.logger.error("Password reset email configuration is incomplete")
+        return False
 
-def send_password_reset_email(user):
-    try:
+    token = generate_reset_token(user)
+    reset_link = url_for(
+        "auth.reset_password",
+        token=token,
+        _external=True,
+        _scheme=current_app.config.get("PREFERRED_URL_SCHEME", "https"),
+    )
 
-        token = generate_reset_token(user.email)
+    msg = MIMEMultipart()
+    msg["From"] = current_app.config.get(
+        "MAIL_DEFAULT_SENDER",
+        "Ajebo Fix Aura <ajebofix@gmail.com>",
+    )
+    msg["To"] = user.email
+    msg["Reply-To"] = sender
+    msg["Subject"] = "Aura Password Reset"
 
-        reset_link = url_for(
-            "auth.reset_password",
-            token=token,
-            _external=True,
-        )
-
-        sender = os.getenv("MAIL_USERNAME")
-        password = os.getenv("MAIL_PASSWORD")
-
-        base_url = "https://ajebo-fix-aura-production.up.railway.app"
-        reset_link = f"{base_url}/auth/reset-password/{token}"
-
-        msg = MIMEMultipart()
-        msg["From"] = "Ajebo Fix Aura <ajebofix@gmail.com>"
-        msg["To"] = user.email
-        msg["Reply-To"] = sender
-        msg["Subject"] = "Aura Password Reset"
-
-        body = f"""
-Hello {user.name},
+    body = f"""
+Hello {user.name or 'there'},
 
 We received a request to reset your Aura password.
 
@@ -210,29 +177,41 @@ Use this secure link:
 
 {reset_link}
 
-This link expires in 1 hour.
+This link expires in 1 hour and becomes invalid after your password changes.
 
 If you did not request this, ignore this email.
 
 Ajebo Fix Aura
 """
 
-        msg.attach(MIMEText(body, "plain"))
+    msg.attach(MIMEText(body, "plain"))
 
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(sender, password)
-        server.sendmail(sender, user.email, msg.as_string())
-        server.quit()
+    try:
+        with smtplib.SMTP(
+            current_app.config.get("MAIL_SERVER", "smtp.gmail.com"),
+            current_app.config.get("MAIL_PORT", 587),
+            timeout=current_app.config.get("MAIL_TIMEOUT", 30),
+        ) as server:
+            server.starttls()
+            server.login(sender, password)
+            server.sendmail(sender, user.email, msg.as_string())
+    except Exception:
+        current_app.logger.exception("Password reset email delivery failed")
+        return False
 
-        print("EMAIL SENT TO:", user.email)
+    return True
 
-    except Exception as e:
-        print("EMAIL ERROR:", str(e))
+
+def password_is_acceptable(password: str) -> bool:
+    return (
+        len(password) >= 10
+        and any(char.isalpha() for char in password)
+        and any(char.isdigit() for char in password)
+    )
 
 
 # =====================================================
-# SIGN UP (CLIENT + ADVISOR + DRIVER)
+# SIGN UP (CLIENT + DRIVER INVITATION)
 # =====================================================
 
 
@@ -252,172 +231,183 @@ def signup():
 
     if not all([name, email, phone_number, password]):
         flash("All fields are required.", "error")
-        return render_template("signup.html")
+        return render_template("signup.html"), 400
 
-    # Existing user checks
+    if len(name) > 120 or len(email) > 120 or len(phone_number) > 20:
+        flash("One or more fields are too long.", "error")
+        return render_template("signup.html"), 400
+
+    if not password_is_acceptable(password):
+        flash(
+            "Password must be at least 10 characters and include letters and numbers.",
+            "error",
+        )
+        return render_template("signup.html"), 400
+
     if User.query.filter(func.lower(User.email) == email).first():
         flash("An account with this email already exists.", "error")
-        return render_template("signup.html")
+        return render_template("signup.html"), 409
 
     if User.query.filter_by(phone_number=phone_number).first():
         flash("An account with this phone number already exists.", "error")
-        return render_template("signup.html")
+        return render_template("signup.html"), 409
 
-    # 🔑 ROLE DECISION (EXPLICIT & SAFE)
     role = "user"
     code_entry = None
 
-    # Optional access code system
     if access_code:
         code_entry = AccessCode.query.filter(
             AccessCode.code == access_code,
-            AccessCode.is_used == False,
+            AccessCode.is_used.is_(False),
             AccessCode.expires_at > datetime.utcnow(),
         ).first()
 
-        if code_entry:
-            role = code_entry.role
+        if not code_entry:
+            flash("This invitation code is invalid or expired.", "error")
+            return render_template("signup.html"), 400
 
-    # Create user
-    user = User(
-        name=name,
-        email=email,
-        phone_number=phone_number,
-        role=role,
-    )
-    user.set_password(password)
+        # Public signup must never mint administrator authority.
+        if code_entry.role != "driver":
+            current_app.logger.warning(
+                "Blocked privileged public signup invitation redemption",
+                extra={"access_code_id": code_entry.id, "role": code_entry.role},
+            )
+            flash("This invitation must be completed by an Aura administrator.", "error")
+            return render_template("signup.html"), 403
 
-    db.session.add(user)
-    db.session.flush()  # get user.id BEFORE commit
+        role = "driver"
 
-    # LINK DRIVER TO CAR
-    if code_entry and role == "driver":
-        link = CarDriver(
-            user_id=user.id,
-            car_id=code_entry.car_id,
-            is_active=True,
+    try:
+        user = User(
+            name=name,
+            email=email,
+            phone_number=phone_number,
+            role=role,
         )
-        db.session.add(link)
-        code_entry.is_used = True
+        user.set_password(password)
 
-    db.session.commit()
+        db.session.add(user)
+        db.session.flush()
 
-    if role == "admin":
-        flash("Advisor account created successfully.", "success")
-    elif role == "driver":
-        flash("Driver account created successfully.", "success")
-    else:
-        flash("Account created successfully.", "success")
+        if code_entry and role == "driver":
+            link = CarDriver(
+                user_id=user.id,
+                car_id=code_entry.car_id,
+                is_active=True,
+            )
+            db.session.add(link)
+            code_entry.is_used = True
 
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Account creation failed")
+        flash("The account could not be created. Please try again.", "error")
+        return render_template("signup.html"), 500
+
+    flash(
+        "Driver account created successfully."
+        if role == "driver"
+        else "Account created successfully.",
+        "success",
+    )
     return redirect(url_for("auth.login"))
 
 
 # =====================================================
-# LOGIN
+# LOGIN / LOGOUT
 # =====================================================
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-
     if current_user.is_authenticated:
         return redirect_by_role(current_user)
 
     if request.method == "GET":
         return render_template("login.html")
 
-    # Brute force lock
     if is_locked_out():
         flash("Too many failed attempts. Try again later.", "error")
+        return render_template("login.html"), 429
 
     email = request.form.get("email", "").strip().lower()
-    password = request.form.get("password", "").strip()
+    password = request.form.get("password", "")
     remember = bool(request.form.get("remember"))
 
     if not email or not password:
         flash("Email and password are required.", "error")
-        return render_template("login.html")
+        return render_template("login.html"), 400
 
     user = User.query.filter(func.lower(User.email) == email).first()
 
     if not user or not user.check_password(password):
+        record_failed_login()
         flash("Invalid email or password.", "error")
-        return render_template("login.html")
+        return render_template("login.html"), 401
 
-    # Success
+    if not user.is_active:
+        record_failed_login()
+        flash("This account is not active.", "error")
+        return render_template("login.html"), 403
+
     clear_failed_login()
+    session.clear()
 
     login_user(
         user,
         remember=remember,
         duration=timedelta(days=30),
+        fresh=True,
     )
 
     session["last_activity"] = datetime.utcnow().isoformat()
+    session.permanent = True
 
     flash("Signed in successfully.", "success")
 
-    # Safe next redirect
     next_page = safe_next_url(request.args.get("next"))
-
     if next_page:
         return redirect(next_page)
 
     return redirect_by_role(user)
 
 
-# =====================================================
-# LOGOUT
-# =====================================================
-
-
-@auth_bp.route("/logout", methods=["GET", "POST"])
+@auth_bp.post("/logout")
 @login_required
 def logout():
-
     logout_user()
     session.clear()
-
     flash("You’ve been signed out.", "info")
     return redirect(url_for("auth.login"))
 
 
-# ====================================================
-# FORGOT PASSWORD
-# ====================================================
+# =====================================================
+# PASSWORD MANAGEMENT
+# =====================================================
 
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
-
     if request.method == "GET":
         return render_template("auth/forgot_password.html")
 
     email = request.form.get("email", "").strip().lower()
-
     user = User.query.filter(func.lower(User.email) == email).first()
 
-    # Quiet response for privacy
-    if user:
+    if user and user.is_active:
         send_password_reset_email(user)
 
     flash(
         "If that account exists, reset instructions will be sent.",
         "info",
     )
-
     return redirect(url_for("auth.login"))
-
-
-# =====================================================
-# CHANGE PASSWORD (LOGGED IN)
-# ====================================================
 
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])
 @login_required
 def change_password():
-
     if request.method == "GET":
         return render_template("auth/change_password.html")
 
@@ -429,8 +419,11 @@ def change_password():
         flash("Current password is incorrect.", "error")
         return redirect(url_for("auth.change_password"))
 
-    if len(new_password) < 8:
-        flash("Password must be at least 8 characters.", "error")
+    if not password_is_acceptable(new_password):
+        flash(
+            "Password must be at least 10 characters and include letters and numbers.",
+            "error",
+        )
         return redirect(url_for("auth.change_password"))
 
     if new_password != confirm_password:
@@ -440,29 +433,21 @@ def change_password():
     current_user.set_password(new_password)
     db.session.commit()
 
-    flash("Password changed successfully.", "success")
-    return redirect_by_role(current_user)
+    # Remove remembered/browser session state after a credential change.
+    logout_user()
+    session.clear()
 
-
-# =====================================================
-# RESET PASSWORD WITH TOKEN
-# =====================================================
+    flash("Password changed. Please sign in again.", "success")
+    return redirect(url_for("auth.login"))
 
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
-
-    email = verify_reset_token(token)
-
-    if not email:
-        flash("Reset link is invalid or expired.", "error")
-        return redirect(url_for("auth.forgot_password"))
-
-    user = User.query.filter(func.lower(User.email) == email).first()
+    user = verify_reset_token(token)
 
     if not user:
-        flash("Invalid reset request.", "error")
-        return redirect(url_for("auth.login"))
+        flash("Reset link is invalid or expired.", "error")
+        return redirect(url_for("auth.forgot_password"))
 
     if request.method == "GET":
         return render_template(
@@ -473,8 +458,11 @@ def reset_password(token):
     new_password = request.form.get("new_password", "")
     confirm_password = request.form.get("confirm_password", "")
 
-    if len(new_password) < 8:
-        flash("Password must be at least 8 characters.", "error")
+    if not password_is_acceptable(new_password):
+        flash(
+            "Password must be at least 10 characters and include letters and numbers.",
+            "error",
+        )
         return redirect(request.url)
 
     if new_password != confirm_password:
@@ -483,40 +471,46 @@ def reset_password(token):
 
     user.set_password(new_password)
     db.session.commit()
+    session.clear()
 
     flash("Password reset successful. You can now sign in.", "success")
     return redirect(url_for("auth.login"))
 
 
 # =====================================================
-# ADVISOR / ADMIN DASHBOARD (AUTHORITATIVE)
+# LEGACY ADVISOR DASHBOARD ROUTE
 # =====================================================
 
 
-@advisor_bp.route("/dashboard", methods=["GET"])
+@advisor_bp.get("/dashboard")
 @login_required
 def admin_dashboard():
     if not current_user.is_admin:
         flash("Advisor authority required.", "error")
         return redirect_by_role(current_user)
 
-    total_events = db.session.query(func.count(VehicleEvent.id)).scalar()
-
+    total_events = db.session.query(func.count(VehicleEvent.id)).scalar() or 0
     archived_events = (
         db.session.query(func.count(VehicleEvent.id))
         .filter(VehicleEvent.is_deleted.is_(True))
         .scalar()
+        or 0
     )
 
     stats = {
-        "clients": db.session.query(func.count(User.id))
-        .filter(User.role == "user")
-        .scalar(),
-        "vehicles": db.session.query(func.count(Car.id)).scalar(),
-        "active_care_assignments": db.session.query(func.count(CarOwnership.id))
-        .filter(CarOwnership.is_active.is_(True))
-        .scalar(),
-        # 🔑 TEMPLATE-COMPATIBLE STRUCTURE
+        "clients": (
+            db.session.query(func.count(User.id))
+            .filter(User.role == "user")
+            .scalar()
+            or 0
+        ),
+        "vehicles": db.session.query(func.count(Car.id)).scalar() or 0,
+        "active_care_assignments": (
+            db.session.query(func.count(CarOwnership.id))
+            .filter(CarOwnership.is_active.is_(True))
+            .scalar()
+            or 0
+        ),
         "events": {
             "total": total_events,
             "archived": archived_events,
@@ -524,7 +518,4 @@ def admin_dashboard():
         },
     }
 
-    return render_template(
-        "admin/dashboard.html",
-        stats=stats,
-    )
+    return render_template("admin/dashboard.html", stats=stats)

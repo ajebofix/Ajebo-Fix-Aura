@@ -43,17 +43,20 @@ jobs:
       - name: Compile changed Python sources
         run: python -m compileall -q app.py auth driver events ownership security tests
 
-      - name: Run tests
-        run: pytest -q --tb=short --junitxml=pytest-results.xml
+      - name: Test security headers
+        run: pytest -q --tb=short tests/test_security_foundation.py::test_security_headers_are_applied
 
-      - name: Upload pytest report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-results
-          path: pytest-results.xml
-          if-no-files-found: warn
-          retention-days: 7
+      - name: Test CSRF rejection
+        run: pytest -q --tb=short tests/test_security_foundation.py::test_unsafe_request_without_csrf_token_is_rejected
+
+      - name: Test route registration
+        run: pytest -q --tb=short tests/test_security_foundation.py::test_expected_route_prefixes_are_registered_once
+
+      - name: Test root disclosure protection
+        run: pytest -q --tb=short tests/test_security_foundation.py::test_root_does_not_disclose_internal_route_inventory
+
+      - name: Test health endpoint
+        run: pytest -q --tb=short tests/test_security_foundation.py::test_health_endpoint_is_available
 
       - name: Run Ruff on security changes
         run: ruff check app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests

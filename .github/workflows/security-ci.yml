@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: "aura-security-${{ github.workflow }}-${{ github.ref }}"
@@ -44,7 +45,27 @@ jobs:
         run: python -m compileall -q app.py auth driver events ownership security tests
 
       - name: Test security headers
-        run: pytest -q --tb=short tests/test_security_foundation.py::test_security_headers_are_applied
+        shell: bash
+        run: |
+          set +e
+          pytest -q --tb=short tests/test_security_foundation.py::test_security_headers_are_applied 2>&1 | tee pytest-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Post pytest failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          {
+            echo "### Aura Security CI failure"
+            echo
+            echo '```text'
+            tail -n 120 pytest-output.txt
+            echo '```'
+          } > pytest-comment.md
+          gh pr comment "$PR_URL" --body-file pytest-comment.md
 
       - name: Test CSRF rejection
         run: pytest -q --tb=short tests/test_security_foundation.py::test_unsafe_request_without_csrf_token_is_rejected

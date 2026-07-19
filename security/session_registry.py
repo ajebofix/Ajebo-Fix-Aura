@@ -7,8 +7,25 @@ import hmac
 import secrets
 from datetime import datetime, timedelta
 
-from flask import Blueprint, Flask, current_app, flash, redirect, render_template, request, session, url_for
-from flask_login import current_user, login_required, logout_user, user_logged_in, user_logged_out
+from flask import (
+    Blueprint,
+    Flask,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from flask_login import (
+    current_user,
+    login_required,
+    logout_user,
+    user_loaded_from_cookie,
+    user_logged_in,
+    user_logged_out,
+)
 
 from extensions import db
 
@@ -71,7 +88,6 @@ def _ip_hash() -> str | None:
 
 def _device_label(user_agent: str) -> str:
     value = user_agent.lower()
-
     if "iphone" in value:
         device = "iPhone"
     elif "ipad" in value:
@@ -97,7 +113,6 @@ def _device_label(user_agent: str) -> str:
         browser = "Edge"
     else:
         browser = "browser"
-
     return f"{device} · {browser}"
 
 
@@ -105,7 +120,11 @@ def _create_session_record(user, remember: bool) -> None:
     raw_token = secrets.token_urlsafe(32)
     token_hash = _token_hash(raw_token)
     now = datetime.utcnow()
-    lifetime = timedelta(days=30) if remember else current_app.permanent_session_lifetime
+    lifetime = (
+        timedelta(days=30)
+        if remember
+        else current_app.permanent_session_lifetime
+    )
     user_agent = request.headers.get("User-Agent", "")[:255]
 
     record = UserSession(
@@ -121,7 +140,6 @@ def _create_session_record(user, remember: bool) -> None:
     )
     db.session.add(record)
     db.session.commit()
-
     session["session_token"] = raw_token
     session["session_token_hash"] = token_hash
 
@@ -130,7 +148,6 @@ def _revoke_current(reason: str) -> None:
     token_hash = session.get("session_token_hash")
     if not token_hash:
         return
-
     record = UserSession.query.filter_by(token_hash=token_hash).first()
     if record and record.revoked_at is None:
         record.revoked_at = datetime.utcnow()
@@ -138,17 +155,9 @@ def _revoke_current(reason: str) -> None:
         db.session.commit()
 
 
-def _invalidate_browser_session(message: str) -> None:
-    _revoke_current("server_invalidated")
-    logout_user()
-    session.clear()
-    flash(message, "info")
-
-
 def _validate_current_session() -> bool:
     raw_token = session.get("session_token")
     token_hash = session.get("session_token_hash")
-
     if not raw_token or not token_hash:
         return False
     if not hmac.compare_digest(_token_hash(raw_token), token_hash):
@@ -168,10 +177,10 @@ def _validate_current_session() -> bool:
         db.session.commit()
         return False
 
-    if datetime.utcnow() - record.last_seen_at >= timedelta(minutes=5):
-        record.last_seen_at = datetime.utcnow()
+    now = datetime.utcnow()
+    if now - record.last_seen_at >= timedelta(minutes=5):
+        record.last_seen_at = now
         db.session.commit()
-
     return True
 
 
@@ -193,17 +202,14 @@ def revoke_session(session_id: int):
         id=session_id,
         user_id=current_user.id,
     ).first_or_404()
-
     if record.token_hash == session.get("session_token_hash"):
         flash("Use Sign Out to end your current session.", "info")
         return redirect(url_for("session_registry.list_sessions"))
-
     if record.revoked_at is None:
         record.revoked_at = datetime.utcnow()
         record.revoked_reason = "user_revoked"
         db.session.commit()
         flash("That session has been signed out.", "success")
-
     return redirect(url_for("session_registry.list_sessions"))
 
 
@@ -212,31 +218,32 @@ def revoke_session(session_id: int):
 def revoke_other_sessions():
     current_hash = session.get("session_token_hash")
     now = datetime.utcnow()
-
-    count = (
-        UserSession.query.filter(
-            UserSession.user_id == current_user.id,
-            UserSession.token_hash != current_hash,
-            UserSession.revoked_at.is_(None),
-        )
-        .update(
-            {
-                UserSession.revoked_at: now,
-                UserSession.revoked_reason: "user_revoked_others",
-            },
-            synchronize_session=False,
-        )
+    count = UserSession.query.filter(
+        UserSession.user_id == current_user.id,
+        UserSession.token_hash != current_hash,
+        UserSession.revoked_at.is_(None),
+    ).update(
+        {
+            UserSession.revoked_at: now,
+            UserSession.revoked_reason: "user_revoked_others",
+        },
+        synchronize_session=False,
     )
     db.session.commit()
-    flash(f"Signed out {count} other session{'s' if count != 1 else ''}.", "success")
+    suffix = "s" if count != 1 else ""
+    flash(f"Signed out {count} other session{suffix}.", "success")
     return redirect(url_for("session_registry.list_sessions"))
 
 
 def init_session_registry(app: Flask) -> None:
     @user_logged_in.connect_via(app)
     def register_login(_sender, user, **_extra):
-        remember = bool(request.form.get("remember"))
-        _create_session_record(user, remember)
+        _create_session_record(user, bool(request.form.get("remember")))
+
+    @user_loaded_from_cookie.connect_via(app)
+    def register_remembered_login(_sender, user, **_extra):
+        if not session.get("session_token_hash"):
+            _create_session_record(user, True)
 
     @user_logged_out.connect_via(app)
     def revoke_logout(_sender, user, **_extra):
@@ -247,14 +254,16 @@ def init_session_registry(app: Flask) -> None:
     def enforce_registered_session():
         if not current_user.is_authenticated:
             return None
-
         if request.endpoint in {"static", "auth.logout"}:
             return None
-
         if _validate_current_session():
             return None
 
-        _invalidate_browser_session(
-            "Your Aura session ended or was revoked. Please sign in again."
+        _revoke_current("server_invalidated")
+        logout_user()
+        session.clear()
+        flash(
+            "Your Aura session ended or was revoked. Please sign in again.",
+            "info",
         )
         return redirect(url_for("auth.login", next=request.path))

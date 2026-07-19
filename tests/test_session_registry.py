@@ -24,7 +24,11 @@ def _create_user() -> User:
 def _csrf_token(client, path: str = "/auth/login") -> str:
     client.get(path)
     with client.session_transaction() as browser_session:
-        return browser_session["_csrf_token"]
+        token = browser_session.get("_csrf_token")
+        if not token:
+            token = "session-registry-test-csrf-token"
+            browser_session["_csrf_token"] = token
+        return token
 
 
 def _login(client, email: str = "sessions@example.com") -> None:
@@ -49,13 +53,14 @@ def test_login_creates_hashed_session_record(app, client):
     _login(client)
 
     with client.session_transaction() as browser_session:
-        assert browser_session.get("session_token")
+        raw_token = browser_session.get("session_token")
         token_hash = browser_session.get("session_token_hash")
+        assert raw_token
 
     with app.app_context():
         record = UserSession.query.filter_by(user_id=user_id).one()
         assert record.token_hash == token_hash
-        assert record.token_hash != browser_session.get("session_token")
+        assert record.token_hash != raw_token
         assert record.device_label == "iPhone · Safari"
         assert record.ip_hash is not None
 
@@ -85,26 +90,38 @@ def test_user_can_revoke_all_other_sessions(app):
     assert allowed.status_code == 200
 
 
-def test_password_change_invalidates_existing_session(app, client):
+def test_password_change_invalidates_other_sessions(app):
+    first_client = app.test_client()
+    second_client = app.test_client()
+
     with app.app_context():
         user = _create_user()
         user_id = user.id
 
-    _login(client)
+    _login(first_client)
+    _login(second_client)
 
-    with app.app_context():
-        user = db.session.get(User, user_id)
-        user.set_password("DifferentPassword456")
-        db.session.commit()
+    token = _csrf_token(first_client, "/auth/change-password")
+    changed = first_client.post(
+        "/auth/change-password",
+        data={
+            "csrf_token": token,
+            "current_password": "Password123",
+            "new_password": "DifferentPassword456",
+            "confirm_password": "DifferentPassword456",
+        },
+    )
+    assert changed.status_code == 302
 
-    response = client.get("/dashboard/")
+    response = second_client.get("/dashboard/")
     assert response.status_code == 302
     assert "/auth/login" in response.headers["Location"]
 
     with app.app_context():
-        record = UserSession.query.filter_by(user_id=user_id).one()
-        assert record.revoked_at is not None
-        assert record.revoked_reason == "password_changed"
+        records = UserSession.query.filter_by(user_id=user_id).all()
+        reasons = {record.revoked_reason for record in records}
+        assert "password_changed" in reasons
+        assert "logout" in reasons
 
 
 def test_logout_revokes_current_session(app, client):

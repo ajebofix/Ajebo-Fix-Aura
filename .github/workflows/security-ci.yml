@@ -27,6 +27,7 @@ jobs:
       SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
       APP_ENV: "testing"
       PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
 
     steps:
       - name: Check out repository
@@ -78,6 +79,9 @@ jobs:
 
       - name: Test health endpoint
         run: pytest -q --tb=short tests/test_security_foundation.py::test_health_endpoint_is_available
+
+      - name: Test sensitive-route rate limiting
+        run: pytest -q --tb=short tests/test_rate_limits.py
 
       - name: Run Ruff on security changes
         shell: bash

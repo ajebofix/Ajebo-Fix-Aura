@@ -11,6 +11,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db
 from security.csrf import init_csrf
+from security.email_verification import (
+    email_verification_bp,
+    init_email_verification,
+    register_email_verification_gates,
+)
 from security.rate_limits import init_rate_limiting, register_rate_limits
 from services.feature_gateways import has_feature
 
@@ -109,6 +114,7 @@ def create_app():
 
     init_csrf(app)
     init_rate_limiting(app)
+    init_email_verification(app)
 
     # =================================================
     # User Loader
@@ -182,6 +188,7 @@ def create_app():
     # These blueprints already define their own URL prefixes.
     app.register_blueprint(auth_bp)
     app.register_blueprint(advisor_bp)
+    app.register_blueprint(email_verification_bp)
     app.register_blueprint(cars_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(driver_bp)
@@ -200,6 +207,7 @@ def create_app():
     app.register_blueprint(assessments_bp)
 
     register_rate_limits(app)
+    register_email_verification_gates(app)
 
     @app.get("/")
     def home():

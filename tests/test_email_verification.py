@@ -43,7 +43,7 @@ def _sign_in(client, user: User) -> None:
     assert response.status_code == 302
 
 
-def test_verification_token_marks_account_verified(app, client):
+def test_verification_token_marks_account_verified_and_is_consumed(app, client):
     with app.app_context():
         user = _create_user()
         token = generate_email_verification_token(user)
@@ -55,6 +55,7 @@ def test_verification_token_marks_account_verified(app, client):
     with app.app_context():
         refreshed = db.session.get(User, user_id)
         assert refreshed.email_verified_at is not None
+        assert verify_email_token(token) is None
 
 
 def test_verification_token_is_bound_to_password_state(app):

@@ -43,7 +43,7 @@ jobs:
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
       - name: Compile changed Python sources
-        run: python -m compileall -q app.py auth driver events ownership security tests
+        run: python -m compileall -q app.py auth driver events ownership security migrations tests
 
       - name: Test security headers
         shell: bash
@@ -82,6 +82,9 @@ jobs:
 
       - name: Test sensitive-route rate limiting
         run: pytest -q --tb=short tests/test_rate_limits.py
+
+      - name: Test email verification
+        run: pytest -q --tb=short tests/test_email_verification.py
 
       - name: Run Ruff on security changes
         shell: bash

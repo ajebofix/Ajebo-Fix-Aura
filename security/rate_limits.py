@@ -44,10 +44,7 @@ def _normalized_identity() -> str:
         return f"user:{current_user.get_id()}"
 
     payload = request.get_json(silent=True) if request.is_json else None
-    email = (
-        request.form.get("email", "")
-        or (payload or {}).get("email", "")
-    )
+    email = request.form.get("email", "") or (payload or {}).get("email", "")
     normalized_email = str(email).strip().lower()
 
     if normalized_email:
@@ -93,6 +90,7 @@ def register_rate_limits(app: Flask) -> None:
         "auth.forgot_password": "3 per hour",
         "auth.reset_password": "5 per hour",
         "auth.change_password": "5 per hour",
+        "email_verification.resend_verification": "3 per hour",
         # AI and commercial actions.
         "chat.chat": "30 per minute; 300 per day",
         "cars.book_consultation": "5 per hour",

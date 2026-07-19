@@ -91,6 +91,10 @@ def verify_email_token(
     if not user or not user.is_active:
         return None
 
+    # Once email_verified_at is set, every previously issued token is consumed.
+    if user.email_verified_at is not None:
+        return None
+
     expected_email = user.email.strip().lower()
     if payload.get("email") != expected_email:
         return None
@@ -187,17 +191,14 @@ def verify_email():
 
     if not user:
         flash(
-            "This verification link is invalid or has expired. Please request a new one.",
+            "This verification link is invalid, expired, or already used.",
             "error",
         )
         return redirect(url_for("auth.login"))
 
-    if user.email_verified_at is None:
-        user.email_verified_at = datetime.utcnow()
-        db.session.commit()
-        flash("Your email address has been verified.", "success")
-    else:
-        flash("Your email address is already verified.", "info")
+    user.email_verified_at = datetime.utcnow()
+    db.session.commit()
+    flash("Your email address has been verified.", "success")
 
     if current_user.is_authenticated and current_user.id == user.id:
         next_page = _safe_next_url(request.args.get("next"))
@@ -266,10 +267,7 @@ def _apply_verification_gate(app: Flask, endpoint: str) -> None:
 
     @wraps(view)
     def protected_view(*args, **kwargs):
-        if (
-            current_user.is_authenticated
-            and current_user.email_verified_at is None
-        ):
+        if current_user.is_authenticated and current_user.email_verified_at is None:
             return _verification_response()
         return view(*args, **kwargs)
 

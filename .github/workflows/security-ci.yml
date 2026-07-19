@@ -43,7 +43,7 @@ jobs:
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
       - name: Compile changed Python sources
-        run: python -m compileall -q app.py auth driver events ownership security tests
+        run: python -m compileall -q app.py auth driver events ownership security migrations tests
 
       - name: Test security headers
         shell: bash
@@ -82,6 +82,30 @@ jobs:
 
       - name: Test sensitive-route rate limiting
         run: pytest -q --tb=short tests/test_rate_limits.py
+
+      - name: Test email verification
+        id: email_verification_tests
+        shell: bash
+        run: |
+          set +e
+          pytest -q --tb=short tests/test_email_verification.py 2>&1 | tee email-verification-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Post email verification failure to PR
+        if: always() && steps.email_verification_tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          {
+            echo "### Aura email verification test failure"
+            echo
+            echo '```text'
+            tail -n 160 email-verification-output.txt
+            echo '```'
+          } > email-verification-comment.md
+          gh pr comment "$PR_URL" --body-file email-verification-comment.md
 
       - name: Run Ruff on security changes
         shell: bash

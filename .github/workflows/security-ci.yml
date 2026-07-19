@@ -45,133 +45,43 @@ jobs:
       - name: Compile changed Python sources
         run: python -m compileall -q app.py auth driver events ownership security migrations tests
 
-      - name: Test security headers
-        shell: bash
-        run: |
-          set +e
-          pytest -q --tb=short tests/test_security_foundation.py::test_security_headers_are_applied 2>&1 | tee pytest-output.txt
-          status=${PIPESTATUS[0]}
-          exit "$status"
-
-      - name: Post pytest failure to PR
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          {
-            echo "### Aura Security CI failure"
-            echo
-            echo '```text'
-            tail -n 120 pytest-output.txt
-            echo '```'
-          } > pytest-comment.md
-          gh pr comment "$PR_URL" --body-file pytest-comment.md
-
-      - name: Test CSRF rejection
-        run: pytest -q --tb=short tests/test_security_foundation.py::test_unsafe_request_without_csrf_token_is_rejected
-
-      - name: Test route registration
-        run: pytest -q --tb=short tests/test_security_foundation.py::test_expected_route_prefixes_are_registered_once
-
-      - name: Test root disclosure protection
-        run: pytest -q --tb=short tests/test_security_foundation.py::test_root_does_not_disclose_internal_route_inventory
-
-      - name: Test health endpoint
-        run: pytest -q --tb=short tests/test_security_foundation.py::test_health_endpoint_is_available
+      - name: Test security foundation
+        run: pytest -q --tb=short tests/test_security_foundation.py
 
       - name: Test sensitive-route rate limiting
         run: pytest -q --tb=short tests/test_rate_limits.py
 
       - name: Test email verification
-        id: email_verification_tests
+        run: pytest -q --tb=short tests/test_email_verification.py
+
+      - name: Test session registry and revocation
         shell: bash
         run: |
           set +e
-          pytest -q --tb=short tests/test_email_verification.py 2>&1 | tee email-verification-output.txt
+          pytest -q --tb=short tests/test_session_registry.py 2>&1 | tee session-registry-output.txt
           status=${PIPESTATUS[0]}
           exit "$status"
 
-      - name: Post email verification failure to PR
-        if: always() && steps.email_verification_tests.outcome == 'failure' && github.event_name == 'pull_request'
+      - name: Post session registry failure to PR
+        if: always() && failure() && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           {
-            echo "### Aura email verification test failure"
+            echo "### Aura session registry test failure"
             echo
             echo '```text'
-            tail -n 160 email-verification-output.txt
+            tail -n 180 session-registry-output.txt
             echo '```'
-          } > email-verification-comment.md
-          gh pr comment "$PR_URL" --body-file email-verification-comment.md
+          } > session-registry-comment.md
+          gh pr comment "$PR_URL" --body-file session-registry-comment.md
 
       - name: Run Ruff on security changes
-        shell: bash
-        run: |
-          set +e
-          ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests 2>&1 | tee ruff-output.txt
-          status=${PIPESTATUS[0]}
-          exit "$status"
-
-      - name: Post Ruff failure to PR
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          {
-            echo "### Aura Ruff failure"
-            echo
-            echo '```text'
-            tail -n 160 ruff-output.txt
-            echo '```'
-          } > ruff-comment.md
-          gh pr comment "$PR_URL" --body-file ruff-comment.md
+        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests
 
       - name: Run Bandit on security changes
-        shell: bash
-        run: |
-          set +e
-          bandit -q -r app.py auth driver events ownership security -x ./tests 2>&1 | tee bandit-output.txt
-          status=${PIPESTATUS[0]}
-          exit "$status"
-
-      - name: Post Bandit failure to PR
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          {
-            echo "### Aura Bandit failure"
-            echo
-            echo '```text'
-            tail -n 200 bandit-output.txt
-            echo '```'
-          } > bandit-comment.md
-          gh pr comment "$PR_URL" --body-file bandit-comment.md
+        run: bandit -q -r app.py auth driver events ownership security -x ./tests
 
       - name: Audit dependencies
-        shell: bash
-        run: |
-          set +e
-          pip-audit -r requirements.txt 2>&1 | tee pip-audit-output.txt
-          status=${PIPESTATUS[0]}
-          exit "$status"
-
-      - name: Post dependency audit failure to PR
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          {
-            echo "### Aura dependency audit failure"
-            echo
-            echo '```text'
-            tail -n 200 pip-audit-output.txt
-            echo '```'
-          } > pip-audit-comment.md
-          gh pr comment "$PR_URL" --body-file pip-audit-comment.md
+        run: pip-audit -r requirements.txt

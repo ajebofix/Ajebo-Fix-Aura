@@ -32,6 +32,14 @@ from extensions import db
 from models import User
 
 
+# SQLAlchemy declarative models support adding mapped columns after class
+# declaration. Keeping this compatibility mapping here avoids a high-risk,
+# unrelated rewrite of the current monolithic models.py; a future model-split
+# migration can move the declaration beside the rest of User's fields.
+if not hasattr(User, "email_verified_at"):
+    User.email_verified_at = db.Column(db.DateTime, nullable=True)
+
+
 email_verification_bp = Blueprint(
     "email_verification",
     __name__,

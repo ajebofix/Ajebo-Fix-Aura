@@ -24,16 +24,23 @@ def _create_user(*, verified: bool = False) -> User:
     return user
 
 
-def _sign_in(client, user: User) -> None:
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user.id)
-        session["_fresh"] = True
-
-
-def _csrf_token(client) -> str:
-    client.get("/auth/verification-required")
+def _csrf_token_for(client, path: str) -> str:
+    client.get(path)
     with client.session_transaction() as session:
         return session["_csrf_token"]
+
+
+def _sign_in(client, user: User) -> None:
+    token = _csrf_token_for(client, "/auth/login")
+    response = client.post(
+        "/auth/login",
+        data={
+            "csrf_token": token,
+            "email": user.email,
+            "password": "Password123",
+        },
+    )
+    assert response.status_code == 302
 
 
 def test_verification_token_marks_account_verified(app, client):
@@ -63,10 +70,7 @@ def test_verification_token_is_bound_to_password_state(app):
 def test_unverified_account_is_blocked_from_booking(app, client):
     with app.app_context():
         user = _create_user()
-        user_id = user.id
-
-    with app.app_context():
-        _sign_in(client, db.session.get(User, user_id))
+        _sign_in(client, user)
 
     response = client.get("/cars/999/consultations/book")
 
@@ -77,10 +81,7 @@ def test_unverified_account_is_blocked_from_booking(app, client):
 def test_verified_account_passes_email_gate(app, client):
     with app.app_context():
         user = _create_user(verified=True)
-        user_id = user.id
-
-    with app.app_context():
-        _sign_in(client, db.session.get(User, user_id))
+        _sign_in(client, user)
 
     response = client.get("/cars/999/consultations/book")
 
@@ -90,12 +91,9 @@ def test_verified_account_passes_email_gate(app, client):
 def test_resend_verification_is_rate_limited(app, client):
     with app.app_context():
         user = _create_user()
-        user_id = user.id
+        _sign_in(client, user)
 
-    with app.app_context():
-        _sign_in(client, db.session.get(User, user_id))
-
-    token = _csrf_token(client)
+    token = _csrf_token_for(client, "/auth/verification-required")
 
     for _ in range(3):
         response = client.post(

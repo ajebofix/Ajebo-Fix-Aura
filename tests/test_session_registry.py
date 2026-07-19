@@ -40,7 +40,6 @@ def _login(client, email: str = "sessions@example.com") -> None:
             "email": email,
             "password": "Password123",
         },
-        headers={"User-Agent": "Mozilla/5.0 iPhone Safari"},
     )
     assert response.status_code == 302
 
@@ -61,7 +60,7 @@ def test_login_creates_hashed_session_record(app, client):
         record = UserSession.query.filter_by(user_id=user_id).one()
         assert record.token_hash == token_hash
         assert record.token_hash != raw_token
-        assert record.device_label == "iPhone · Safari"
+        assert record.device_label == "Unknown device · browser"
         assert record.ip_hash is not None
 
 

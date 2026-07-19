@@ -93,7 +93,7 @@ jobs:
           exit "$status"
 
       - name: Post email verification failure to PR
-        if: steps.email_verification_tests.outcome == 'failure' && github.event_name == 'pull_request'
+        if: always() && steps.email_verification_tests.outcome == 'failure' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}

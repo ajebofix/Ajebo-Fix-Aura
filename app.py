@@ -20,6 +20,8 @@ from security.rate_limits import init_rate_limiting, register_rate_limits
 from security.session_registry import init_session_registry, session_registry_bp
 from services.feature_gateways import has_feature
 
+import security.session_events  # noqa: F401, E402
+
 
 load_dotenv(override=True)
 

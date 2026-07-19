@@ -11,6 +11,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db
 from security.csrf import init_csrf
+from security.rate_limits import init_rate_limiting, register_rate_limits
 from services.feature_gateways import has_feature
 
 
@@ -44,12 +45,18 @@ def create_app():
     # =================================================
     # Configuration
     # =================================================
+    app.config["APP_ENV"] = environment
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
         "SQLALCHEMY_DATABASE_URI",
         "sqlite:///aura.db",
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["RATELIMIT_STORAGE_URI"] = (
+        os.getenv("RATE_LIMIT_STORAGE_URI")
+        or os.getenv("REDIS_URL")
+        or "memory://"
+    )
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError("SECRET_KEY is not set. Check your environment variables.")
@@ -101,6 +108,7 @@ def create_app():
     login_manager.init_app(app)
 
     init_csrf(app)
+    init_rate_limiting(app)
 
     # =================================================
     # User Loader
@@ -190,6 +198,8 @@ def create_app():
     app.register_blueprint(stewardship_bp, url_prefix="/stewardship")
     app.register_blueprint(concerns_bp)
     app.register_blueprint(assessments_bp)
+
+    register_rate_limits(app)
 
     @app.get("/")
     def home():

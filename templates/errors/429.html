@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Please Pause{% endblock %}
+
+{% block page_title %}Request Paused{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>Please wait a moment</h2>
+
+    <p>{{ message }}</p>
+
+    <p class="text-muted">
+        This temporary pause helps protect client accounts, vehicle records,
+        and advisor access from repeated automated requests.
+    </p>
+
+    <a href="javascript:history.back()" class="btn btn-primary">
+        Return
+    </a>
+</section>
+{% endblock %}

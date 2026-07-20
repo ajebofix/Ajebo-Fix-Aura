@@ -252,9 +252,22 @@ def init_session_registry(app: Flask) -> None:
 
     @app.before_request
     def enforce_registered_session():
-        if not current_user.is_authenticated:
+        public_endpoints = {
+            "static",
+            "home",
+            "healthz",
+            "version",
+            "auth.login",
+            "auth.signup",
+            "auth.forgot_password",
+            "auth.reset_password",
+            "auth.logout",
+            "email_verification.verify_email",
+        }
+
+        if request.endpoint in public_endpoints:
             return None
-        if request.endpoint in {"static", "auth.logout"}:
+        if not current_user.is_authenticated:
             return None
         if _validate_current_session():
             return None

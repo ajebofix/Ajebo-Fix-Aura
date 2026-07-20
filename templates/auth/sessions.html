@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Active Sessions{% endblock %}
+{% block page_title %}Active Sessions{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>Devices signed into Aura</h2>
+    <p class="text-muted">
+        Review where your account is active. You can sign out any other browser
+        or device you no longer recognise.
+    </p>
+
+    <form method="POST" action="{{ url_for('session_registry.revoke_other_sessions') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-secondary">
+            Sign out all other sessions
+        </button>
+    </form>
+</section>
+
+{% for item in sessions %}
+<section class="card mt-3">
+    <h3>
+        {{ item.device_label }}
+        {% if item.is_current %}
+            <span class="badge bg-success">Current session</span>
+        {% elif item.revoked_at %}
+            <span class="badge bg-secondary">Signed out</span>
+        {% elif not item.is_active %}
+            <span class="badge bg-secondary">Expired</span>
+        {% else %}
+            <span class="badge bg-warning">Active</span>
+        {% endif %}
+    </h3>
+
+    <p class="text-muted mb-1">
+        Started: {{ item.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
+    </p>
+    <p class="text-muted mb-1">
+        Last active: {{ item.last_seen_at.strftime('%Y-%m-%d %H:%M') }} UTC
+    </p>
+    <p class="text-muted">
+        Expires: {{ item.expires_at.strftime('%Y-%m-%d %H:%M') }} UTC
+    </p>
+
+    {% if item.is_active and not item.is_current %}
+    <form method="POST" action="{{ url_for('session_registry.revoke_session', session_id=item.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger">Sign out this session</button>
+    </form>
+    {% endif %}
+</section>
+{% else %}
+<section class="card mt-3">
+    <p>No registered sessions were found.</p>
+</section>
+{% endfor %}
+{% endblock %}

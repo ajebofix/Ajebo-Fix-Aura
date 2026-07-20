@@ -2,7 +2,7 @@
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
     "preDeployCommand": [
-      "python -m flask db upgrade"
+      "python scripts/reconcile_alembic_history.py && python -m flask db upgrade"
     ],
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 120,

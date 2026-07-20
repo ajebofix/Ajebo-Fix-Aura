@@ -17,25 +17,18 @@ from security.email_verification import (
     register_email_verification_gates,
 )
 from security.rate_limits import init_rate_limiting, register_rate_limits
+from security.session_registry import init_session_registry, session_registry_bp
 from services.feature_gateways import has_feature
 
+import security.session_events  # noqa: F401, E402
 
-# =====================================================
-# Load environment variables FIRST
-# =====================================================
+
 load_dotenv(override=True)
-
-
-# =====================================================
-# AURA — PRIVATE AUTOMOTIVE HEALTH PORTAL
-# Application Factory
-# =====================================================
 
 
 def create_app():
     app = Flask(__name__)
 
-    # Railway and other production platforms terminate TLS at a reverse proxy.
     app.wsgi_app = ProxyFix(
         app.wsgi_app,
         x_for=1,
@@ -47,9 +40,6 @@ def create_app():
     environment = os.getenv("APP_ENV", "development").strip().lower()
     is_production = environment == "production"
 
-    # =================================================
-    # Configuration
-    # =================================================
     app.config["APP_ENV"] = environment
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
@@ -96,14 +86,8 @@ def create_app():
         "https" if is_production else "http",
     )
 
-    # =================================================
-    # Jinja Globals
-    # =================================================
     app.jinja_env.globals.update(has_feature=has_feature)
 
-    # =================================================
-    # Extensions
-    # =================================================
     db.init_app(app)
     Migrate(app, db)
 
@@ -115,10 +99,8 @@ def create_app():
     init_csrf(app)
     init_rate_limiting(app)
     init_email_verification(app)
+    init_session_registry(app)
 
-    # =================================================
-    # User Loader
-    # =================================================
     from models import User
 
     @login_manager.user_loader
@@ -128,9 +110,6 @@ def create_app():
         except (TypeError, ValueError):
             return None
 
-    # =================================================
-    # Security Headers
-    # =================================================
     @app.after_request
     def apply_security_headers(response):
         response.headers["Cache-Control"] = "no-store"
@@ -144,9 +123,6 @@ def create_app():
         )
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-
-        # This CSP matches Aura's current Google Fonts usage and inline scripts.
-        # Inline script/style allowances should be removed later with nonces.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "img-src 'self' data:; "
@@ -166,9 +142,6 @@ def create_app():
 
         return response
 
-    # =================================================
-    # Blueprint Registration
-    # =================================================
     from auth.routes import auth_bp, advisor_bp
     from cars.routes import cars_bp
     from admin.routes import admin_bp
@@ -185,15 +158,14 @@ def create_app():
     from admin.modules.assessments import assessments_bp
     from driver.routes import driver_bp
 
-    # These blueprints already define their own URL prefixes.
     app.register_blueprint(auth_bp)
     app.register_blueprint(advisor_bp)
     app.register_blueprint(email_verification_bp)
+    app.register_blueprint(session_registry_bp)
     app.register_blueprint(cars_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(driver_bp)
 
-    # These blueprints intentionally receive their prefix here.
     app.register_blueprint(admin_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(treatments_bp, url_prefix="/treatments")

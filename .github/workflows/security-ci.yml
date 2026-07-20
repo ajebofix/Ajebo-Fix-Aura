@@ -43,7 +43,64 @@ jobs:
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
       - name: Compile changed Python sources
-        run: python -m compileall -q app.py auth driver events ownership security migrations tests
+        run: python -m compileall -q app.py auth driver events ownership security migrations scripts tests
+
+      - name: Rehearse production schema reconciliation
+        env:
+          SQLALCHEMY_DATABASE_URI: "sqlite:////tmp/aura-schema-drift.db"
+        run: |
+          rm -f /tmp/aura-schema-drift.db
+          python - <<'PY'
+          from sqlalchemy import text
+
+          from app import app
+          from extensions import db
+
+          with app.app_context():
+              db.create_all()
+              with db.engine.begin() as connection:
+                  connection.execute(
+                      text(
+                          "CREATE TABLE alembic_version "
+                          "(version_num VARCHAR(32) NOT NULL)"
+                      )
+                  )
+                  connection.execute(
+                      text(
+                          "INSERT INTO alembic_version (version_num) "
+                          "VALUES ('82c0c175b392')"
+                      )
+                  )
+          PY
+          python scripts/reconcile_alembic_history.py
+          python -m flask db upgrade
+          python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine("sqlite:////tmp/aura-schema-drift.db")
+          tables = set(inspect(engine).get_table_names())
+          required = {
+              "maintenance_schedules",
+              "vehicle_recalls",
+              "user_sessions",
+              "alembic_version",
+          }
+          missing = required - tables
+          if missing:
+              raise SystemExit(
+                  f"Schema reconciliation missing tables: {sorted(missing)}"
+              )
+
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+
+          if version != "7f3a9c2d5e81":
+              raise SystemExit(f"Unexpected reconciled head: {version}")
+
+          print("Production schema reconciliation rehearsal passed.")
+          PY
 
       - name: Rehearse production session migration
         env:
@@ -115,10 +172,10 @@ jobs:
           gh pr comment "$PR_URL" --body-file session-registry-comment.md
 
       - name: Run Ruff on security changes
-        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security tests
+        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py security scripts tests
 
       - name: Run Bandit on security changes
-        run: bandit -q -r app.py auth driver events ownership security -x ./tests
+        run: bandit -q -r app.py auth driver events ownership security scripts -x ./tests
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt

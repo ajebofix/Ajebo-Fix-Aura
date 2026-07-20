@@ -5,8 +5,9 @@ Revises: dd71355ad494
 Create Date: 2026-07-20 18:00:00.000000
 
 Existing accounts are backfilled as verified so deployment does not
-unexpectedly block established clients, drivers, or advisors. New accounts
-created after this migration keep the nullable default until they verify.
+unexpectedly block established clients, drivers, or advisors. The migration
+also tolerates a production schema where the column was created before
+Alembic history was reconciled.
 """
 
 from alembic import op
@@ -20,14 +21,22 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table("users", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column(
-                "email_verified_at",
-                sa.DateTime(),
-                nullable=True,
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    user_columns = {
+        column["name"]
+        for column in inspector.get_columns("users")
+    }
+
+    if "email_verified_at" not in user_columns:
+        with op.batch_alter_table("users", schema=None) as batch_op:
+            batch_op.add_column(
+                sa.Column(
+                    "email_verified_at",
+                    sa.DateTime(),
+                    nullable=True,
+                )
             )
-        )
 
     op.execute(
         "UPDATE users "
@@ -37,5 +46,13 @@ def upgrade():
 
 
 def downgrade():
-    with op.batch_alter_table("users", schema=None) as batch_op:
-        batch_op.drop_column("email_verified_at")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    user_columns = {
+        column["name"]
+        for column in inspector.get_columns("users")
+    }
+
+    if "email_verified_at" in user_columns:
+        with op.batch_alter_table("users", schema=None) as batch_op:
+            batch_op.drop_column("email_verified_at")

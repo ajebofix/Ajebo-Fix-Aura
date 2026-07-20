@@ -24,7 +24,6 @@ from services.feature_gateways import has_feature
 import security.session_events  # noqa: F401, E402
 
 
-# Never allow a local .env file to override Railway-provided production values.
 load_dotenv(override=False)
 
 
@@ -73,8 +72,14 @@ def create_app():
     is_production = environment == "production" or bool(
         os.getenv("RAILWAY_ENVIRONMENT_NAME")
     )
+    runtime_commit = (
+        os.getenv("RAILWAY_GIT_COMMIT_SHA")
+        or os.getenv("GIT_COMMIT_SHA")
+        or "unknown"
+    )
 
     app.config["APP_ENV"] = environment
+    app.config["RUNTIME_COMMIT"] = runtime_commit
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
     app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri(
         is_production=is_production
@@ -221,15 +226,26 @@ def create_app():
             "service": "Ajebo Fix Aura",
         }
 
+    @app.get("/version")
+    def version():
+        return {
+            "service": "Ajebo Fix Aura",
+            "commit": app.config["RUNTIME_COMMIT"],
+            "environment": app.config["APP_ENV"],
+            "database": db.engine.url.get_backend_name(),
+        }, 200
+
     @app.get("/healthz")
     def healthz():
         try:
             db.session.execute(text("SELECT 1"))
             inspector = inspect(db.engine)
             tables = set(inspector.get_table_names())
-            user_columns = {
-                column["name"] for column in inspector.get_columns("users")
-            } if "users" in tables else set()
+            user_columns = (
+                {column["name"] for column in inspector.get_columns("users")}
+                if "users" in tables
+                else set()
+            )
 
             required_tables = {"users", "user_sessions"}
             missing_tables = required_tables - tables
@@ -238,17 +254,30 @@ def create_app():
             if missing_tables or missing_columns:
                 return {
                     "status": "not_ready",
+                    "commit": app.config["RUNTIME_COMMIT"],
                     "missing_tables": sorted(missing_tables),
                     "missing_columns": sorted(missing_columns),
                 }, 503
 
             return {
                 "status": "ok",
+                "commit": app.config["RUNTIME_COMMIT"],
                 "database": db.engine.url.get_backend_name(),
             }, 200
         except Exception:
             app.logger.exception("Aura readiness check failed")
-            return {"status": "not_ready"}, 503
+            return {
+                "status": "not_ready",
+                "commit": app.config["RUNTIME_COMMIT"],
+            }, 503
+
+    with app.app_context():
+        app.logger.warning(
+            "Aura runtime identity commit=%s environment=%s database=%s",
+            app.config["RUNTIME_COMMIT"],
+            app.config["APP_ENV"],
+            db.engine.url.get_backend_name(),
+        )
 
     return app
 

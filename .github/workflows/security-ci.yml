@@ -45,14 +45,24 @@ jobs:
       - name: Compile changed Python sources
         run: python -m compileall -q app.py auth driver events ownership security migrations tests
 
-      - name: Rehearse production migrations
+      - name: Rehearse production session migration
         env:
           SQLALCHEMY_DATABASE_URI: "sqlite:////tmp/aura-migration-test.db"
         run: |
           rm -f /tmp/aura-migration-test.db
+          python - <<'PY'
+          from app import app
+          from extensions import db
+          from security.session_registry import UserSession
+
+          with app.app_context():
+              db.create_all()
+              UserSession.__table__.drop(db.engine, checkfirst=True)
+          PY
+          python -m flask db stamp 4d2b9e7a1c60
           python -m flask db upgrade
           python - <<'PY'
-          from sqlalchemy import create_engine, inspect
+          from sqlalchemy import create_engine, inspect, text
 
           engine = create_engine("sqlite:////tmp/aura-migration-test.db")
           tables = set(inspect(engine).get_table_names())
@@ -60,7 +70,16 @@ jobs:
           missing = required - tables
           if missing:
               raise SystemExit(f"Migration rehearsal missing tables: {sorted(missing)}")
-          print("Migration rehearsal created required tables.")
+
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+
+          if version != "7f3a9c2d5e81":
+              raise SystemExit(f"Unexpected migration head: {version}")
+
+          print("Production session migration rehearsal passed.")
           PY
 
       - name: Test security foundation

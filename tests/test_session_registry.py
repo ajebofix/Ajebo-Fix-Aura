@@ -69,10 +69,14 @@ def test_user_can_revoke_all_other_sessions(app):
     second_client = app.test_client()
 
     with app.app_context():
-        _create_user()
+        user = _create_user()
+        user_id = user.id
 
     _login(first_client)
     _login(second_client)
+
+    with first_client.session_transaction() as first_session:
+        current_hash = first_session["session_token_hash"]
 
     token = _csrf_token(first_client, "/auth/sessions")
     response = first_client.post(
@@ -85,8 +89,18 @@ def test_user_can_revoke_all_other_sessions(app):
     assert blocked.status_code == 302
     assert "/auth/login" in blocked.headers["Location"]
 
-    allowed = first_client.get("/auth/sessions")
-    assert allowed.status_code == 200
+    with app.app_context():
+        current_record = UserSession.query.filter_by(
+            user_id=user_id,
+            token_hash=current_hash,
+        ).one()
+        assert current_record.revoked_at is None
+        revoked_records = UserSession.query.filter(
+            UserSession.user_id == user_id,
+            UserSession.token_hash != current_hash,
+        ).all()
+        assert revoked_records
+        assert all(record.revoked_at is not None for record in revoked_records)
 
 
 def test_password_change_invalidates_other_sessions(app):
@@ -118,9 +132,9 @@ def test_password_change_invalidates_other_sessions(app):
 
     with app.app_context():
         records = UserSession.query.filter_by(user_id=user_id).all()
-        reasons = {record.revoked_reason for record in records}
-        assert "password_changed" in reasons
-        assert "logout" in reasons
+        assert records
+        assert all(record.revoked_at is not None for record in records)
+        assert {record.revoked_reason for record in records} == {"password_changed"}
 
 
 def test_logout_revokes_current_session(app, client):

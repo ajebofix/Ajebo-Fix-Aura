@@ -236,25 +236,38 @@ def revoke_other_sessions():
 
 
 def init_session_registry(app: Flask) -> None:
-    @user_logged_in.connect_via(app)
+    @user_logged_in.connect_via(app, weak=False)
     def register_login(_sender, user, **_extra):
         _create_session_record(user, bool(request.form.get("remember")))
 
-    @user_loaded_from_cookie.connect_via(app)
+    @user_loaded_from_cookie.connect_via(app, weak=False)
     def register_remembered_login(_sender, user, **_extra):
         if not session.get("session_token_hash"):
             _create_session_record(user, True)
 
-    @user_logged_out.connect_via(app)
+    @user_logged_out.connect_via(app, weak=False)
     def revoke_logout(_sender, user, **_extra):
         if user is not None:
             _revoke_current("logout")
 
     @app.before_request
     def enforce_registered_session():
-        if not current_user.is_authenticated:
+        public_endpoints = {
+            "static",
+            "home",
+            "healthz",
+            "version",
+            "auth.login",
+            "auth.signup",
+            "auth.forgot_password",
+            "auth.reset_password",
+            "auth.logout",
+            "email_verification.verify_email",
+        }
+
+        if request.endpoint in public_endpoints:
             return None
-        if request.endpoint in {"static", "auth.logout"}:
+        if not current_user.is_authenticated:
             return None
         if _validate_current_session():
             return None

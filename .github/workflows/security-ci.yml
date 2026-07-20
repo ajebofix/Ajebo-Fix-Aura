@@ -45,6 +45,24 @@ jobs:
       - name: Compile changed Python sources
         run: python -m compileall -q app.py auth driver events ownership security migrations tests
 
+      - name: Rehearse production migrations
+        env:
+          SQLALCHEMY_DATABASE_URI: "sqlite:////tmp/aura-migration-test.db"
+        run: |
+          rm -f /tmp/aura-migration-test.db
+          python -m flask db upgrade
+          python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine("sqlite:////tmp/aura-migration-test.db")
+          tables = set(inspect(engine).get_table_names())
+          required = {"users", "user_sessions", "alembic_version"}
+          missing = required - tables
+          if missing:
+              raise SystemExit(f"Migration rehearsal missing tables: {sorted(missing)}")
+          print("Migration rehearsal created required tables.")
+          PY
+
       - name: Test security foundation
         run: pytest -q --tb=short tests/test_security_foundation.py
 

@@ -236,16 +236,16 @@ def revoke_other_sessions():
 
 
 def init_session_registry(app: Flask) -> None:
-    @user_logged_in.connect_via(app)
+    @user_logged_in.connect_via(app, weak=False)
     def register_login(_sender, user, **_extra):
         _create_session_record(user, bool(request.form.get("remember")))
 
-    @user_loaded_from_cookie.connect_via(app)
+    @user_loaded_from_cookie.connect_via(app, weak=False)
     def register_remembered_login(_sender, user, **_extra):
         if not session.get("session_token_hash"):
             _create_session_record(user, True)
 
-    @user_logged_out.connect_via(app)
+    @user_logged_out.connect_via(app, weak=False)
     def revoke_logout(_sender, user, **_extra):
         if user is not None:
             _revoke_current("logout")

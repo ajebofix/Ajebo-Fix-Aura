@@ -15,10 +15,18 @@ All other database states are left untouched.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from sqlalchemy import inspect, text
 
-from app import app
-from extensions import db
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app import app  # noqa: E402
+from extensions import db  # noqa: E402
 
 
 SOURCE_REVISION = "82c0c175b392"

@@ -4,10 +4,11 @@ from datetime import timedelta
 import os
 
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, session
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db
@@ -146,6 +147,13 @@ def create_app():
         try:
             return db.session.get(User, int(user_id))
         except (TypeError, ValueError):
+            return None
+        except SQLAlchemyError:
+            db.session.rollback()
+            session.clear()
+            app.logger.exception(
+                "Discarded an incompatible or stale authenticated session"
+            )
             return None
 
     @app.after_request

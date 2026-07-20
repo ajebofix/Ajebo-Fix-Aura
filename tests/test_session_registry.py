@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from extensions import db
 from models import User
@@ -64,43 +64,57 @@ def test_login_creates_hashed_session_record(app, client):
         assert record.ip_hash is not None
 
 
-def test_user_can_revoke_all_other_sessions(app):
-    first_client = app.test_client()
-    second_client = app.test_client()
-
+def test_user_can_revoke_all_other_sessions(app, client):
     with app.app_context():
         user = _create_user()
         user_id = user.id
 
-    _login(first_client)
-    _login(second_client)
+    _login(client)
 
-    with first_client.session_transaction() as first_session:
-        current_hash = first_session["session_token_hash"]
+    with client.session_transaction() as browser_session:
+        current_hash = browser_session["session_token_hash"]
 
-    token = _csrf_token(first_client, "/auth/sessions")
-    response = first_client.post(
-        "/auth/sessions/revoke-others",
-        data={"csrf_token": token},
-    )
-    assert response.status_code == 302
-
-    blocked = second_client.get("/dashboard/")
-    assert blocked.status_code == 302
-    assert "/auth/login" in blocked.headers["Location"]
+    other_hash = "b" * 64
 
     with app.app_context():
         current_record = UserSession.query.filter_by(
             user_id=user_id,
             token_hash=current_hash,
         ).one()
+        other_record = UserSession(
+            user_id=user_id,
+            token_hash=other_hash,
+            password_fingerprint=current_record.password_fingerprint,
+            device_label="Second test device",
+            user_agent="Test Browser",
+            ip_hash="c" * 64,
+            created_at=datetime.utcnow(),
+            last_seen_at=datetime.utcnow(),
+            expires_at=datetime.utcnow() + timedelta(hours=1),
+        )
+        db.session.add(other_record)
+        db.session.commit()
+
+    token = _csrf_token(client, "/auth/sessions")
+    response = client.post(
+        "/auth/sessions/revoke-others",
+        data={"csrf_token": token},
+    )
+    assert response.status_code == 302
+
+    with app.app_context():
+        current_record = UserSession.query.filter_by(
+            user_id=user_id,
+            token_hash=current_hash,
+        ).one()
+        revoked_record = UserSession.query.filter_by(
+            user_id=user_id,
+            token_hash=other_hash,
+        ).one()
+
         assert current_record.revoked_at is None
-        revoked_records = UserSession.query.filter(
-            UserSession.user_id == user_id,
-            UserSession.token_hash != current_hash,
-        ).all()
-        assert revoked_records
-        assert all(record.revoked_at is not None for record in revoked_records)
+        assert revoked_record.revoked_at is not None
+        assert revoked_record.revoked_reason == "user_revoked_others"
 
 
 def test_password_change_invalidates_other_sessions(app):

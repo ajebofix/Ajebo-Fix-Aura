@@ -1,0 +1,6 @@
+Aura production deployment trigger.
+
+Purpose: force Railway to deploy commit history containing PR #13 after the prior 02:43 deployment failed on stale Alembic history.
+
+Expected pre-deploy command:
+python scripts/reconcile_alembic_history.py && python -m flask db upgrade

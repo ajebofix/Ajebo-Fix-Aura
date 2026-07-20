@@ -78,6 +78,18 @@ def test_user_can_revoke_all_other_sessions(app):
     with first_client.session_transaction() as first_session:
         current_hash = first_session["session_token_hash"]
 
+    with second_client.session_transaction() as second_session:
+        second_hash = second_session["session_token_hash"]
+
+    assert current_hash != second_hash
+
+    with app.app_context():
+        records = UserSession.query.filter_by(user_id=user_id).all()
+        assert {record.token_hash for record in records} == {
+            current_hash,
+            second_hash,
+        }
+
     token = _csrf_token(first_client, "/auth/sessions")
     response = first_client.post(
         "/auth/sessions/revoke-others",
@@ -94,13 +106,13 @@ def test_user_can_revoke_all_other_sessions(app):
             user_id=user_id,
             token_hash=current_hash,
         ).one()
+        revoked_record = UserSession.query.filter_by(
+            user_id=user_id,
+            token_hash=second_hash,
+        ).one()
+
         assert current_record.revoked_at is None
-        revoked_records = UserSession.query.filter(
-            UserSession.user_id == user_id,
-            UserSession.token_hash != current_hash,
-        ).all()
-        assert revoked_records
-        assert all(record.revoked_at is not None for record in revoked_records)
+        assert revoked_record.revoked_at is not None
 
 
 def test_password_change_invalidates_other_sessions(app):

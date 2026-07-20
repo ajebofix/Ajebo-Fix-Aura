@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from flask_login import LoginManager
 from flask_migrate import Migrate
+from sqlalchemy import inspect, text
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db
@@ -23,7 +24,38 @@ from services.feature_gateways import has_feature
 import security.session_events  # noqa: F401, E402
 
 
-load_dotenv(override=True)
+# Never allow a local .env file to override Railway-provided production values.
+load_dotenv(override=False)
+
+
+def _environment_name() -> str:
+    return (
+        os.getenv("APP_ENV")
+        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or "development"
+    ).strip().lower()
+
+
+def _database_uri(*, is_production: bool) -> str:
+    uri = (
+        os.getenv("SQLALCHEMY_DATABASE_URI")
+        or os.getenv("DATABASE_URL")
+        or os.getenv("DATABASE_PRIVATE_URL")
+    )
+
+    if uri and uri.startswith("postgres://"):
+        uri = "postgresql://" + uri[len("postgres://") :]
+
+    if uri:
+        return uri
+
+    if is_production or os.getenv("RAILWAY_ENVIRONMENT_NAME"):
+        raise RuntimeError(
+            "Production database is not configured. Set SQLALCHEMY_DATABASE_URI, "
+            "DATABASE_URL, or DATABASE_PRIVATE_URL to the Railway PostgreSQL URL."
+        )
+
+    return "sqlite:///aura.db"
 
 
 def create_app():
@@ -37,14 +69,15 @@ def create_app():
         x_port=1,
     )
 
-    environment = os.getenv("APP_ENV", "development").strip().lower()
-    is_production = environment == "production"
+    environment = _environment_name()
+    is_production = environment == "production" or bool(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+    )
 
     app.config["APP_ENV"] = environment
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-        "SQLALCHEMY_DATABASE_URI",
-        "sqlite:///aura.db",
+    app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri(
+        is_production=is_production
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["RATELIMIT_STORAGE_URI"] = (
@@ -190,7 +223,32 @@ def create_app():
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok"}, 200
+        try:
+            db.session.execute(text("SELECT 1"))
+            inspector = inspect(db.engine)
+            tables = set(inspector.get_table_names())
+            user_columns = {
+                column["name"] for column in inspector.get_columns("users")
+            } if "users" in tables else set()
+
+            required_tables = {"users", "user_sessions"}
+            missing_tables = required_tables - tables
+            missing_columns = {"email_verified_at"} - user_columns
+
+            if missing_tables or missing_columns:
+                return {
+                    "status": "not_ready",
+                    "missing_tables": sorted(missing_tables),
+                    "missing_columns": sorted(missing_columns),
+                }, 503
+
+            return {
+                "status": "ok",
+                "database": db.engine.url.get_backend_name(),
+            }, 200
+        except Exception:
+            app.logger.exception("Aura readiness check failed")
+            return {"status": "not_ready"}, 503
 
     return app
 

@@ -151,7 +151,7 @@ def create_app():
     init_session_registry(app)
 
     from models import User
-    from profiles.models import ClientProfile  # noqa: F401
+    from profiles.models import ClientProfile, ProfileAuditEvent  # noqa: F401
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -214,6 +214,7 @@ def create_app():
     from cars.fault_routes import concerns_bp
     from admin.modules.assessments import assessments_bp
     from driver.routes import driver_bp
+    from profiles.routes import profiles_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(advisor_bp)
@@ -222,6 +223,7 @@ def create_app():
     app.register_blueprint(cars_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(driver_bp)
+    app.register_blueprint(profiles_bp)
 
     app.register_blueprint(admin_bp)
     app.register_blueprint(chat_bp)
@@ -276,7 +278,12 @@ def create_app():
                 else set()
             )
 
-            required_tables = {"users", "user_sessions"}
+            required_tables = {
+                "users",
+                "user_sessions",
+                "client_profiles",
+                "profile_audit_events",
+            }
             missing_tables = required_tables - tables
             missing_columns = {"email_verified_at"} - user_columns
 

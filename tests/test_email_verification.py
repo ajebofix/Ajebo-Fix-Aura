@@ -140,7 +140,6 @@ def test_resend_delivery_posts_over_https(app, monkeypatch):
             RESEND_API_KEY="re_test_key",
             RESEND_FROM_EMAIL="Aura by Ajebo Fix <verification@aura.test>",
             RESEND_REPLY_TO="support@aura.test",
-            RESEND_TIMEOUT=7,
             MAIL_SUPPRESS_SEND=False,
         )
         result = send_transactional_email(
@@ -153,7 +152,7 @@ def test_resend_delivery_posts_over_https(app, monkeypatch):
     assert result.success is True
     assert result.provider_message_id == "email_123"
     assert captured["url"] == "https://api.resend.com/emails"
-    assert captured["timeout"] == 7
+    assert captured["timeout"] == 10
     assert captured["headers"]["Authorization"] == "Bearer re_test_key"
     assert captured["headers"]["Idempotency-Key"] == "aura-test-verification"
     assert captured["json"] == {

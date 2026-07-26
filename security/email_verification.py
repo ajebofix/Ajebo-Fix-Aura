@@ -7,9 +7,7 @@ not unexpectedly lock current clients or advisors out of established flows.
 
 from __future__ import annotations
 
-import smtplib
 from datetime import datetime
-from email.mime.text import MIMEText
 from functools import wraps
 from urllib.parse import urlparse
 
@@ -30,6 +28,10 @@ from sqlalchemy import func
 
 from extensions import db
 from models import User
+from services.email_delivery import (
+    build_email_idempotency_key,
+    send_transactional_email,
+)
 
 
 # SQLAlchemy declarative models support adding mapped columns after class
@@ -118,22 +120,12 @@ def _safe_next_url(target: str | None) -> str | None:
 
 
 def send_email_verification(user: User) -> bool:
-    sender = current_app.config.get("MAIL_USERNAME")
-    password = current_app.config.get("MAIL_PASSWORD")
-
     if current_app.config.get("MAIL_SUPPRESS_SEND"):
         current_app.logger.info(
             "Email verification delivery suppressed",
             extra={"user_id": user.id},
         )
         return True
-
-    if not sender or not password:
-        current_app.logger.warning(
-            "Email verification configuration is incomplete",
-            extra={"user_id": user.id},
-        )
-        return False
 
     token = generate_email_verification_token(user)
     verification_link = url_for(
@@ -155,33 +147,30 @@ If you did not create this account, you can ignore this message.
 Ajebo Fix Aura
 """
 
-    message = MIMEText(body, "plain", "utf-8")
-    message["From"] = current_app.config.get(
-        "MAIL_DEFAULT_SENDER",
-        "Ajebo Fix Aura <ajebofix@gmail.com>",
+    result = send_transactional_email(
+        to=user.email,
+        subject="Confirm your Aura email address",
+        text=body,
+        idempotency_key=build_email_idempotency_key(
+            "email-verification",
+            user.id,
+            user.email.strip().lower(),
+            user.password_hash,
+            token,
+        ),
     )
-    message["To"] = user.email
-    message["Reply-To"] = sender
-    message["Subject"] = "Confirm your Aura email address"
 
-    try:
-        with smtplib.SMTP(
-            current_app.config.get("MAIL_SERVER", "smtp.gmail.com"),
-            current_app.config.get("MAIL_PORT", 587),
-            timeout=current_app.config.get("MAIL_TIMEOUT", 30),
-        ) as server:
-            if current_app.config.get("MAIL_USE_TLS", True):
-                server.starttls()
-            server.login(sender, password)
-            server.sendmail(sender, user.email, message.as_string())
-    except Exception:
-        current_app.logger.exception(
+    if not result.success:
+        current_app.logger.warning(
             "Email verification delivery failed",
-            extra={"user_id": user.id},
+            extra={
+                "user_id": user.id,
+                "provider": "resend",
+                "error_code": result.error_code,
+            },
         )
-        return False
 
-    return True
+    return result.success
 
 
 @email_verification_bp.get("/verify-email")

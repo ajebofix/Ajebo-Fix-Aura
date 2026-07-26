@@ -50,7 +50,9 @@ def test_sensitive_profile_fields_are_encrypted_at_rest(app):
     assert "4 Executive Avenue" not in stored.office_address_ciphertext
     assert "Trusted Contact" not in stored.emergency_contact_name_ciphertext
     assert "+2348000000002" not in stored.emergency_contact_phone_ciphertext
-    assert stored.home_address_ciphertext.startswith("test-v1:")
+
+    active_version = app.config["PROFILE_ENCRYPTION_ACTIVE_KEY_VERSION"]
+    assert stored.home_address_ciphertext.startswith(f"{active_version}:")
 
 
 def test_client_profile_is_one_to_one_with_user(app):

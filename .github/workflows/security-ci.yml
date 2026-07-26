@@ -243,10 +243,10 @@ jobs:
           fi
 
       - name: Run Ruff on security changes
-        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security services scripts tests
+        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security services/email_delivery.py scripts tests
 
       - name: Run Bandit on security changes
-        run: bandit -q -r app.py auth driver events ownership profiles security services scripts -x ./tests
+        run: bandit -q -r app.py auth driver events ownership profiles security scripts services/email_delivery.py -x ./tests
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt

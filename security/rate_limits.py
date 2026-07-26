@@ -91,6 +91,8 @@ def register_rate_limits(app: Flask) -> None:
         "auth.reset_password": "5 per hour",
         "auth.change_password": "5 per hour",
         "email_verification.resend_verification": "3 per hour",
+        # Account/profile mutations.
+        "profiles.edit_profile": "10 per hour",
         # AI and commercial actions.
         "chat.chat": "30 per minute; 300 per day",
         "cars.book_consultation": "5 per hour",

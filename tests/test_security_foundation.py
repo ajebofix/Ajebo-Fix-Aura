@@ -28,6 +28,7 @@ def test_unsafe_request_without_csrf_token_is_rejected(client):
 def test_expected_route_prefixes_are_registered_once(app):
     rules = {rule.rule for rule in app.url_map.iter_rules()}
 
+    assert "/login" in rules
     assert "/auth/login" in rules
     assert "/cars/" in rules
     assert "/dashboard/" in rules
@@ -37,6 +38,32 @@ def test_expected_route_prefixes_are_registered_once(app):
     assert "/auth/auth/login" not in rules
     assert "/cars/cars/" not in rules
     assert "/dashboard/dashboard/" not in rules
+
+
+def test_login_alias_redirects_to_canonical_login(client):
+    response = client.get("/login?next=/dashboard/")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(
+        "/auth/login?next=/dashboard/"
+    )
+
+
+def test_login_alias_preserves_post_method(client):
+    with client.session_transaction() as browser_session:
+        browser_session["_csrf_token"] = "login-alias-csrf-token"
+
+    response = client.post(
+        "/login",
+        data={
+            "csrf_token": "login-alias-csrf-token",
+            "email": "someone@example.com",
+            "password": "wrong-password",
+        },
+    )
+
+    assert response.status_code == 307
+    assert response.headers["Location"].endswith("/auth/login")
 
 
 def test_root_does_not_disclose_internal_route_inventory(client):

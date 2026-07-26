@@ -138,6 +138,43 @@ class ClientProfile(db.Model):
         return f"<ClientProfile user_id={self.user_id}>"
 
 
+class ProfileAuditEvent(db.Model):
+    """Privacy-safe record of client profile mutations.
+
+    Only field names and outcome metadata are stored. Personal values, addresses,
+    phone numbers, and submitted form contents must never be written here.
+    """
+
+    __tablename__ = "profile_audit_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    action = db.Column(db.String(40), nullable=False)
+    changed_fields = db.Column(db.JSON, nullable=False, default=list)
+    request_id = db.Column(db.String(64), nullable=False, index=True)
+    success = db.Column(db.Boolean, nullable=False, default=True)
+    reason_code = db.Column(db.String(80), nullable=True)
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+    )
+
+    user = db.relationship("User")
+
+    def __repr__(self) -> str:
+        return (
+            f"<ProfileAuditEvent user_id={self.user_id} "
+            f"action={self.action!r} success={self.success}>"
+        )
+
+
 # The project currently keeps User in a monolithic models.py. Register this
 # relationship here so the new domain can remain isolated until the planned
 # model split, matching the existing compatibility approach used by security

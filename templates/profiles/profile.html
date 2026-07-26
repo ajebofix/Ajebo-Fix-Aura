@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | My Profile{% endblock %}
+{% block page_title %}My Profile{% endblock %}
+{% block page_subtitle %}Your private automotive care identity and preferences.{% endblock %}
+
+{% block content %}
+<div class="profile-page">
+
+    <section class="card profile-hero">
+        <div class="profile-avatar" aria-label="Profile initials">
+            {{ initials }}
+        </div>
+
+        <div class="profile-hero-copy">
+            <p class="profile-eyebrow">{{ client_type }}</p>
+            <h2>{{ current_user.name or "Aura Client" }}</h2>
+            <p>{{ values.occupation or "Occupation not added" }}</p>
+
+            {% if values.organisation %}
+            <p class="profile-muted">{{ values.organisation }}</p>
+            {% endif %}
+        </div>
+
+        <div class="profile-hero-actions">
+            <a href="{{ url_for('profiles.edit_profile') }}" class="btn btn-primary">
+                Edit Profile
+            </a>
+        </div>
+    </section>
+
+    <section class="card profile-completeness-card">
+        <div class="profile-section-heading">
+            <div>
+                <p class="profile-eyebrow">Profile readiness</p>
+                <h3>{{ profile_completeness }}% complete</h3>
+            </div>
+            <span class="pill">Protected</span>
+        </div>
+
+        <div class="profile-progress" role="progressbar"
+             aria-valuenow="{{ profile_completeness }}"
+             aria-valuemin="0" aria-valuemax="100">
+            <span style="width: {{ profile_completeness }}%"></span>
+        </div>
+
+        <p class="profile-muted">
+            A complete profile helps your advisor communicate and coordinate care in the way you prefer.
+        </p>
+    </section>
+
+    <div class="profile-grid">
+        <section class="card profile-card">
+            <div class="profile-section-heading">
+                <h3>Personal Details</h3>
+            </div>
+
+            <dl class="profile-details">
+                <div>
+                    <dt>Email</dt>
+                    <dd>{{ values.email }}</dd>
+                </div>
+                <div>
+                    <dt>Phone</dt>
+                    <dd>{{ values.phone_number }}</dd>
+                </div>
+                <div>
+                    <dt>Gender</dt>
+                    <dd>{{ values.gender|replace('_', ' ')|title if values.gender else "Not provided" }}</dd>
+                </div>
+                <div>
+                    <dt>Location</dt>
+                    <dd>
+                        {% if values.city or values.state_region %}
+                            {{ values.city }}{% if values.city and values.state_region %}, {% endif %}{{ values.state_region }}{% if values.country %}, {{ values.country }}{% endif %}
+                        {% else %}
+                            {{ values.country or "Not provided" }}
+                        {% endif %}
+                    </dd>
+                </div>
+                <div>
+                    <dt>Home address</dt>
+                    <dd>{{ values.home_address or "Not provided" }}</dd>
+                </div>
+                <div>
+                    <dt>Office address</dt>
+                    <dd>{{ values.office_address or "Not provided" }}</dd>
+                </div>
+            </dl>
+
+            {% if not protected_data_available %}
+            <div class="profile-notice warning">
+                Some protected fields are temporarily unavailable. Aura has not exposed their encrypted values.
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="card profile-card">
+            <div class="profile-section-heading">
+                <h3>Communication Preferences</h3>
+            </div>
+
+            <dl class="profile-details">
+                <div>
+                    <dt>Preferred channel</dt>
+                    <dd>{{ values.preferred_communication|replace('_', ' ')|title if values.preferred_communication else "Not provided" }}</dd>
+                </div>
+                <div>
+                    <dt>Preferred time</dt>
+                    <dd>{{ values.preferred_communication_time or "Not provided" }}</dd>
+                </div>
+                <div>
+                    <dt>Language</dt>
+                    <dd>{{ values.preferred_language or "Not provided" }}</dd>
+                </div>
+                <div>
+                    <dt>Time zone</dt>
+                    <dd>{{ values.timezone }}</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="card profile-card">
+            <div class="profile-section-heading">
+                <h3>Automotive Care Preferences</h3>
+            </div>
+
+            <p class="profile-long-value">
+                {{ values.care_preference or "Tell Aura how you prefer your vehicle care, progress updates and preventive monitoring to be handled." }}
+            </p>
+
+            <dl class="profile-details compact">
+                <div>
+                    <dt>Emergency contact</dt>
+                    <dd>{{ values.emergency_contact_name or "Not provided" }}</dd>
+                </div>
+                <div>
+                    <dt>Emergency phone</dt>
+                    <dd>{{ values.emergency_contact_phone or "Not provided" }}</dd>
+                </div>
+                <div>
+                    <dt>Product updates</dt>
+                    <dd>{{ "Allowed" if values.marketing_consent else "Not allowed" }}</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="card profile-card">
+            <div class="profile-section-heading">
+                <h3>Relationship Summary</h3>
+            </div>
+
+            <div class="profile-stat-grid">
+                <div class="profile-stat">
+                    <span>{{ vehicle_count }}</span>
+                    <small>Active vehicles</small>
+                </div>
+                <div class="profile-stat">
+                    <span>{{ driver_count }}</span>
+                    <small>Assigned drivers</small>
+                </div>
+            </div>
+
+            <dl class="profile-details compact">
+                <div>
+                    <dt>Client type</dt>
+                    <dd>{{ client_type }}</dd>
+                </div>
+                <div>
+                    <dt>Care access</dt>
+                    <dd>{{ access_tier }}</dd>
+                </div>
+                <div>
+                    <dt>Member since</dt>
+                    <dd>{{ current_user.created_at.strftime('%d %b %Y') if current_user.created_at else "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Profile updated</dt>
+                    <dd>{{ profile.updated_at.strftime('%d %b %Y, %H:%M') if profile and profile.updated_at else "Not yet" }}</dd>
+                </div>
+            </dl>
+        </section>
+    </div>
+
+    <section class="card profile-security-card">
+        <div class="profile-security-icon" aria-hidden="true">✓</div>
+        <div>
+            <p class="profile-eyebrow">Privacy and account protection</p>
+            <h3>Your information is protected</h3>
+            <p>
+                Aura uses encrypted connections, restricted access, secure password handling and layered security controls. Only authorised Aura personnel may access information required to manage your automotive care. No online service can eliminate every risk, but Aura is designed to minimise exposure and safeguard your information.
+            </p>
+
+            <div class="profile-security-status">
+                <span class="pill {{ 'success' if email_verified else 'warning' }}">
+                    Email {{ "verified" if email_verified else "not verified" }}
+                </span>
+                <span class="pill success">Sensitive fields encrypted</span>
+                <span class="pill success">Restricted access</span>
+            </div>
+        </div>
+
+        <div class="profile-security-actions">
+            <a href="{{ url_for('profiles.privacy') }}" class="btn btn-secondary">
+                Privacy Centre
+            </a>
+            <a href="{{ url_for('auth.change_password') }}" class="btn btn-secondary">
+                Security Settings
+            </a>
+            <a href="{{ url_for('session_registry.list_sessions') }}" class="btn btn-secondary">
+                Active Sessions
+            </a>
+        </div>
+    </section>
+
+</div>
+{% endblock %}

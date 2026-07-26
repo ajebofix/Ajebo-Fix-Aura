@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Edit Profile{% endblock %}
+{% block page_title %}Edit Profile{% endblock %}
+{% block page_subtitle %}Keep your communication and automotive care preferences current.{% endblock %}
+
+{% block content %}
+<div class="profile-page profile-edit-page">
+
+    <section class="card profile-edit-intro">
+        <div class="profile-avatar small" aria-label="Profile initials">
+            {{ initials }}
+        </div>
+        <div>
+            <p class="profile-eyebrow">Private profile</p>
+            <h2>{{ current_user.name or "Aura Client" }}</h2>
+            <p class="profile-muted">
+                Email, phone number, role, care access and vehicle relationships cannot be changed from this form.
+            </p>
+        </div>
+    </section>
+
+    {% if not email_verified %}
+    <section class="card profile-notice warning">
+        Verify your email address before saving protected profile information.
+        <a href="{{ url_for('email_verification.verification_required') }}">Verify email</a>
+    </section>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('profiles.edit_profile') }}" class="profile-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <section class="card profile-form-section">
+            <div class="profile-section-heading">
+                <div>
+                    <p class="profile-eyebrow">Identity</p>
+                    <h3>Personal Details</h3>
+                </div>
+            </div>
+
+            <div class="profile-form-grid">
+                <div class="form-group full-width">
+                    <label for="name">Full name</label>
+                    <input id="name" name="name" type="text" maxlength="120"
+                           value="{{ values.name }}" required autocomplete="name">
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email address</label>
+                    <input id="email" type="email" value="{{ values.email }}" disabled>
+                    <small>Changing email requires a separate verification process.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="phone_number">Phone number</label>
+                    <input id="phone_number" type="text" value="{{ values.phone_number }}" disabled>
+                    <small>Contact Aura support when a verified phone change is required.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="occupation">Occupation or job title</label>
+                    <input id="occupation" name="occupation" type="text" maxlength="120"
+                           value="{{ values.occupation }}" autocomplete="organization-title">
+                </div>
+
+                <div class="form-group">
+                    <label for="organisation">Organisation or company</label>
+                    <input id="organisation" name="organisation" type="text" maxlength="120"
+                           value="{{ values.organisation }}" autocomplete="organization">
+                </div>
+
+                <div class="form-group">
+                    <label for="gender">Gender</label>
+                    <select id="gender" name="gender">
+                        <option value="">Not provided</option>
+                        {% for option in gender_values %}
+                        <option value="{{ option }}" {% if values.gender == option %}selected{% endif %}>
+                            {{ option|replace('_', ' ')|title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <section class="card profile-form-section">
+            <div class="profile-section-heading">
+                <div>
+                    <p class="profile-eyebrow">Location</p>
+                    <h3>Addresses</h3>
+                </div>
+                <span class="pill success">Encrypted at rest</span>
+            </div>
+
+            <p class="profile-muted">
+                Home and office addresses are encrypted before they are stored. They are optional.
+            </p>
+
+            <div class="profile-form-grid">
+                <div class="form-group">
+                    <label for="city">City</label>
+                    <input id="city" name="city" type="text" maxlength="120"
+                           value="{{ values.city }}" autocomplete="address-level2">
+                </div>
+
+                <div class="form-group">
+                    <label for="state_region">State or region</label>
+                    <input id="state_region" name="state_region" type="text" maxlength="120"
+                           value="{{ values.state_region }}" autocomplete="address-level1">
+                </div>
+
+                <div class="form-group">
+                    <label for="country">Country</label>
+                    <select id="country" name="country">
+                        {% for option in countries %}
+                        <option value="{{ option }}" {% if values.country == option %}selected{% endif %}>
+                            {{ option }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="home_address">Home address</label>
+                    <textarea id="home_address" name="home_address" rows="3" maxlength="500"
+                              autocomplete="street-address">{{ values.home_address }}</textarea>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="office_address">Office address</label>
+                    <textarea id="office_address" name="office_address" rows="3" maxlength="500">{{ values.office_address }}</textarea>
+                </div>
+            </div>
+        </section>
+
+        <section class="card profile-form-section">
+            <div class="profile-section-heading">
+                <div>
+                    <p class="profile-eyebrow">Communication</p>
+                    <h3>How Aura Should Reach You</h3>
+                </div>
+            </div>
+
+            <div class="profile-form-grid">
+                <div class="form-group">
+                    <label for="preferred_communication">Preferred channel</label>
+                    <select id="preferred_communication" name="preferred_communication">
+                        <option value="">Not provided</option>
+                        {% for option in communication_values %}
+                        <option value="{{ option }}" {% if values.preferred_communication == option %}selected{% endif %}>
+                            {{ option|replace('_', ' ')|title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="preferred_communication_time">Preferred communication time</label>
+                    <input id="preferred_communication_time" name="preferred_communication_time"
+                           type="text" maxlength="120"
+                           placeholder="Weekdays, 9:00 AM–5:00 PM"
+                           value="{{ values.preferred_communication_time }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="preferred_language">Preferred language</label>
+                    <input id="preferred_language" name="preferred_language" type="text"
+                           maxlength="80" value="{{ values.preferred_language }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="timezone">Time zone</label>
+                    <select id="timezone" name="timezone">
+                        {% for option in timezones %}
+                        <option value="{{ option }}" {% if values.timezone == option %}selected{% endif %}>
+                            {{ option }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <section class="card profile-form-section">
+            <div class="profile-section-heading">
+                <div>
+                    <p class="profile-eyebrow">Care relationship</p>
+                    <h3>Automotive Care Preferences</h3>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="care_preference">How do you prefer your vehicle care and updates to be handled?</label>
+                <textarea id="care_preference" name="care_preference" rows="5" maxlength="1000"
+                          placeholder="Preventive management and calm progress updates">{{ values.care_preference }}</textarea>
+                <small>This is client-authored. Private advisor notes remain separate and are never shown here.</small>
+            </div>
+        </section>
+
+        <section class="card profile-form-section">
+            <div class="profile-section-heading">
+                <div>
+                    <p class="profile-eyebrow">Optional safeguard</p>
+                    <h3>Emergency Contact</h3>
+                </div>
+                <span class="pill success">Encrypted at rest</span>
+            </div>
+
+            <div class="profile-form-grid">
+                <div class="form-group">
+                    <label for="emergency_contact_name">Contact name</label>
+                    <input id="emergency_contact_name" name="emergency_contact_name"
+                           type="text" maxlength="120"
+                           value="{{ values.emergency_contact_name }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="emergency_contact_phone">Contact phone</label>
+                    <input id="emergency_contact_phone" name="emergency_contact_phone"
+                           type="tel" maxlength="30"
+                           value="{{ values.emergency_contact_phone }}">
+                </div>
+            </div>
+        </section>
+
+        <section class="card profile-form-section compact-section">
+            <label class="profile-checkbox">
+                <input type="checkbox" name="marketing_consent"
+                       {% if values.marketing_consent %}checked{% endif %}>
+                <span>
+                    <strong>Product and service updates</strong>
+                    <small>Allow Aura to send relevant product, care-plan and service updates. Essential account and vehicle-care communications are unaffected.</small>
+                </span>
+            </label>
+        </section>
+
+        <div class="profile-form-actions">
+            <a href="{{ url_for('profiles.profile') }}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary" {% if not email_verified %}disabled{% endif %}>
+                Save Profile Securely
+            </button>
+        </div>
+    </form>
+
+</div>
+{% endblock %}

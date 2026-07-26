@@ -84,6 +84,12 @@ rel="stylesheet">
             </a>
             {% endif %}
 
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('profiles.profile') }}" class="nav-item">
+                Profile
+            </a>
+            {% endif %}
+
             <a href="/auth/change-password" class="nav-item">
                 Security
             </a>

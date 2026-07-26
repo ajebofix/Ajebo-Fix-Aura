@@ -316,3 +316,8 @@ def create_app():
         )
 
     return app
+
+
+# Railway currently starts Aura with ``gunicorn app:app``. Expose a WSGI
+# application object while keeping ``create_app`` available to tests and tools.
+app = create_app()

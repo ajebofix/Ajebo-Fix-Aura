@@ -180,12 +180,11 @@ def test_email_verification_uses_transactional_delivery(app, monkeypatch):
         fake_delivery,
     )
 
-    with app.app_context():
-        app.config.update(
-            SERVER_NAME="aura.example",
-            PREFERRED_URL_SCHEME="https",
-            MAIL_SUPPRESS_SEND=False,
-        )
+    with app.test_request_context(
+        "/auth/verification-required",
+        base_url="https://aura.example",
+    ):
+        app.config["MAIL_SUPPRESS_SEND"] = False
         user = _create_user()
         delivered = send_email_verification(user)
 

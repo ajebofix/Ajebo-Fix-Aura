@@ -45,7 +45,7 @@ jobs:
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
       - name: Compile changed Python sources
-        run: python -m compileall -q app.py auth driver events ownership profiles security migrations scripts tests
+        run: python -m compileall -q app.py auth driver events ownership profiles security services migrations scripts tests
 
       - name: Rehearse production schema reconciliation
         env:
@@ -164,7 +164,30 @@ jobs:
         run: pytest -q --tb=short tests/test_rate_limits.py
 
       - name: Test email verification
-        run: pytest -q --tb=short tests/test_email_verification.py
+        id: email_verification_tests
+        shell: bash
+        run: |
+          set +e
+          pytest -q --tb=short tests/test_email_verification.py 2>&1 | tee email-verification-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Post email verification failure to PR
+        if: always() && steps.email_verification_tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -f email-verification-output.txt ]; then
+            {
+              echo "### Aura email verification test failure"
+              echo
+              echo '```text'
+              tail -n 180 email-verification-output.txt
+              echo '```'
+            } > email-verification-comment.md
+            gh pr comment "$PR_URL" --body-file email-verification-comment.md
+          fi
 
       - name: Test client profile encryption and integrity
         run: pytest -q --tb=short tests/test_client_profile_model.py
@@ -220,10 +243,10 @@ jobs:
           fi
 
       - name: Run Ruff on security changes
-        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security scripts tests
+        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security services scripts tests
 
       - name: Run Bandit on security changes
-        run: bandit -q -r app.py auth driver events ownership profiles security scripts -x ./tests
+        run: bandit -q -r app.py auth driver events ownership profiles security services scripts -x ./tests
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt

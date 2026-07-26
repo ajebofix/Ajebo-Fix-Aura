@@ -16,7 +16,6 @@ import requests
 from flask import current_app
 
 _RESEND_API_URL = "https://api.resend.com/emails"
-_DEFAULT_TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True)
@@ -46,14 +45,6 @@ def _setting(name: str, default: Any = None) -> Any:
         return environment_value
 
     return default
-
-
-def _timeout_seconds() -> int:
-    configured = _setting("RESEND_TIMEOUT", _DEFAULT_TIMEOUT_SECONDS)
-    try:
-        return max(1, int(configured))
-    except (TypeError, ValueError):
-        return _DEFAULT_TIMEOUT_SECONDS
 
 
 def _provider_error_code(response: requests.Response) -> str:
@@ -117,7 +108,7 @@ def send_transactional_email(
             _setting("RESEND_API_URL", _RESEND_API_URL),
             json=payload,
             headers=headers,
-            timeout=_timeout_seconds(),
+            timeout=10,
         )
     except requests.RequestException:
         current_app.logger.exception(

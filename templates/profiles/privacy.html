@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Privacy Centre{% endblock %}
+{% block page_title %}Privacy Centre{% endblock %}
+{% block page_subtitle %}How Aura protects and uses your profile information.{% endblock %}
+
+{% block content %}
+<div class="profile-page privacy-page">
+
+    <section class="card privacy-hero">
+        <div class="profile-security-icon large" aria-hidden="true">✓</div>
+        <div>
+            <p class="profile-eyebrow">Private automotive health</p>
+            <h2>Your information is handled with care</h2>
+            <p>
+                Aura uses encrypted connections, restricted access, secure password handling and layered security controls to protect your profile. Only authorised Aura personnel may access information required to manage your automotive care. No online service can eliminate every risk, but Aura is designed to minimise exposure and safeguard your information.
+            </p>
+        </div>
+    </section>
+
+    <div class="profile-grid privacy-grid">
+        <section class="card profile-card">
+            <h3>What Aura stores</h3>
+            <p>Aura may store information you provide for account management and automotive care coordination, including:</p>
+            <ul class="privacy-list">
+                <li>Your name, verified contact details and account status.</li>
+                <li>Occupation, organisation, location and communication preferences.</li>
+                <li>Your client-authored automotive care preferences.</li>
+                <li>Optional addresses and emergency-contact information.</li>
+                <li>Vehicle ownership, assigned drivers, consultations and care records.</li>
+            </ul>
+        </section>
+
+        <section class="card profile-card">
+            <h3>Why Aura stores it</h3>
+            <p>Profile information is used to:</p>
+            <ul class="privacy-list">
+                <li>Identify and protect your Aura account.</li>
+                <li>Coordinate consultations and vehicle-care communication.</li>
+                <li>Respect your preferred communication channel and care style.</li>
+                <li>Maintain continuity between you, your vehicles, assigned drivers and authorised advisors.</li>
+                <li>Meet security, operational and legal responsibilities.</li>
+            </ul>
+        </section>
+
+        <section class="card profile-card">
+            <h3>Who may access it</h3>
+            <p>
+                You may access your own client profile. Authorised Aura personnel may access only the information reasonably required to provide, secure or administer your automotive care.
+            </p>
+            <p>
+                Internal advisor notes, risk flags and private assessment material are kept separate from your editable client profile. They are not exposed through the client profile page.
+            </p>
+        </section>
+
+        <section class="card profile-card">
+            <h3>How sensitive fields are protected</h3>
+            <ul class="privacy-list">
+                <li>Connections to Aura are protected with HTTPS in production.</li>
+                <li>Passwords are one-way hashed and are never stored as readable text.</li>
+                <li>Home address, office address and emergency-contact fields are encrypted before database storage.</li>
+                <li>Profile updates require an authenticated, registered session and CSRF protection.</li>
+                <li>Profile mutation attempts are rate-limited and recorded without copying sensitive values into audit logs.</li>
+            </ul>
+        </section>
+
+        <section class="card profile-card">
+            <h3>Retention</h3>
+            <p>
+                Aura keeps profile information while it is needed to operate your account, maintain automotive-care continuity, meet legitimate business obligations or comply with applicable requirements. Information should not be retained longer than reasonably necessary for those purposes.
+            </p>
+        </section>
+
+        <section class="card profile-card">
+            <h3>Correction, export and deletion requests</h3>
+            <p>
+                You can correct approved profile fields from the Edit Profile page. For verified contact changes, a copy of your information, account deletion or another privacy request, contact Ajebo Fix through an official support channel. Aura may need to verify your identity before processing a sensitive request.
+            </p>
+        </section>
+    </div>
+
+    <section class="card privacy-contact-card">
+        <div>
+            <p class="profile-eyebrow">Privacy concern</p>
+            <h3>Report something that does not look right</h3>
+            <p>
+                Sign out of unfamiliar sessions immediately and contact Ajebo Fix through an official channel if you suspect unauthorised access, incorrect profile information or misuse of your data.
+            </p>
+        </div>
+        <div class="profile-security-actions">
+            <a href="{{ url_for('session_registry.list_sessions') }}" class="btn btn-secondary">
+                Review Active Sessions
+            </a>
+            <a href="{{ url_for('profiles.edit_profile') }}" class="btn btn-primary">
+                Correct My Profile
+            </a>
+        </div>
+    </section>
+
+    <p class="privacy-note">
+        This page explains Aura's current profile-handling practices in plain language. It does not replace any formal privacy notice or rights available under applicable law.
+    </p>
+
+</div>
+{% endblock %}

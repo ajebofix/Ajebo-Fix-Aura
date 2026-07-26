@@ -57,11 +57,12 @@ jobs:
 
           from app import create_app
           from extensions import db
-          from profiles.models import ClientProfile
+          from profiles.models import ClientProfile, ProfileAuditEvent
 
           app = create_app()
           with app.app_context():
               db.create_all()
+              ProfileAuditEvent.__table__.drop(db.engine, checkfirst=True)
               ClientProfile.__table__.drop(db.engine, checkfirst=True)
               with db.engine.begin() as connection:
                   connection.execute(
@@ -89,6 +90,7 @@ jobs:
               "vehicle_recalls",
               "user_sessions",
               "client_profiles",
+              "profile_audit_events",
               "alembic_version",
           }
           missing = required - tables
@@ -102,7 +104,7 @@ jobs:
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "c19f2a8b6d41":
+          if version != "d42e7a1c9b50":
               raise SystemExit(f"Unexpected reconciled head: {version}")
 
           print("Production schema reconciliation rehearsal passed.")
@@ -116,12 +118,13 @@ jobs:
           python - <<'PY'
           from app import create_app
           from extensions import db
-          from profiles.models import ClientProfile
+          from profiles.models import ClientProfile, ProfileAuditEvent
           from security.session_registry import UserSession
 
           app = create_app()
           with app.app_context():
               db.create_all()
+              ProfileAuditEvent.__table__.drop(db.engine, checkfirst=True)
               ClientProfile.__table__.drop(db.engine, checkfirst=True)
               UserSession.__table__.drop(db.engine, checkfirst=True)
           PY
@@ -136,6 +139,7 @@ jobs:
               "users",
               "user_sessions",
               "client_profiles",
+              "profile_audit_events",
               "alembic_version",
           }
           missing = required - tables
@@ -147,7 +151,7 @@ jobs:
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "c19f2a8b6d41":
+          if version != "d42e7a1c9b50":
               raise SystemExit(f"Unexpected migration head: {version}")
 
           print("Production session and profile migration rehearsal passed.")
@@ -165,6 +169,31 @@ jobs:
       - name: Test client profile encryption and integrity
         run: pytest -q --tb=short tests/test_client_profile_model.py
 
+      - name: Test client profile self-service
+        shell: bash
+        run: |
+          set +e
+          pytest -q --tb=short tests/test_client_profile_routes.py 2>&1 | tee client-profile-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Post client profile failure to PR
+        if: always() && failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -f client-profile-output.txt ]; then
+            {
+              echo "### Aura client profile test failure"
+              echo
+              echo '```text'
+              tail -n 180 client-profile-output.txt
+              echo '```'
+            } > client-profile-comment.md
+            gh pr comment "$PR_URL" --body-file client-profile-comment.md
+          fi
+
       - name: Test session registry and revocation
         shell: bash
         run: |
@@ -179,14 +208,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          {
-            echo "### Aura session registry test failure"
-            echo
-            echo '```text'
-            tail -n 180 session-registry-output.txt
-            echo '```'
-          } > session-registry-comment.md
-          gh pr comment "$PR_URL" --body-file session-registry-comment.md
+          if [ -f session-registry-output.txt ]; then
+            {
+              echo "### Aura session registry test failure"
+              echo
+              echo '```text'
+              tail -n 180 session-registry-output.txt
+              echo '```'
+            } > session-registry-comment.md
+            gh pr comment "$PR_URL" --body-file session-registry-comment.md
+          fi
 
       - name: Run Ruff on security changes
         run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security scripts tests

@@ -180,6 +180,7 @@ def test_email_verification_uses_transactional_delivery(app, monkeypatch):
         fake_delivery,
     )
 
+    app.config["PREFERRED_URL_SCHEME"] = "https"
     with app.test_request_context(
         "/auth/verification-required",
         base_url="https://aura.example",

@@ -51,7 +51,6 @@ class ClientProfile(db.Model):
         db.ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
-        index=True,
     )
 
     profile_photo_key = db.Column(db.String(255), nullable=True)
@@ -90,7 +89,7 @@ class ClientProfile(db.Model):
         db.Boolean,
         nullable=False,
         default=False,
-        server_default=db.false(),
+        server_default="false",
     )
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

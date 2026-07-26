@@ -215,6 +215,7 @@ def create_app():
     from admin.modules.assessments import assessments_bp
     from driver.routes import driver_bp
     from profiles.routes import profiles_bp
+    from services.owner_driver_management import init_owner_driver_management
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(advisor_bp)
@@ -237,6 +238,7 @@ def create_app():
     app.register_blueprint(concerns_bp)
     app.register_blueprint(assessments_bp)
 
+    init_owner_driver_management(app)
     register_rate_limits(app)
     register_email_verification_gates(app)
 

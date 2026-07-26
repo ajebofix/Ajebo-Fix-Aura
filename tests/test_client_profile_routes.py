@@ -206,7 +206,7 @@ def test_profile_update_rejects_overlong_care_preference(app, client):
     )
 
     assert response.status_code == 400
-    assert "1,000 characters or fewer" in response.get_data(as_text=True)
+    assert "1000 characters or fewer" in response.get_data(as_text=True)
 
 
 def test_profile_mutation_requires_csrf(app, client):

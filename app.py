@@ -91,6 +91,16 @@ def create_app():
         or os.getenv("REDIS_URL")
         or "memory://"
     )
+    app.config["PROFILE_ENCRYPTION_KEY"] = os.getenv("PROFILE_ENCRYPTION_KEY")
+    app.config["PROFILE_ENCRYPTION_KEY_VERSION"] = os.getenv(
+        "PROFILE_ENCRYPTION_KEY_VERSION",
+        "v1",
+    )
+    app.config["PROFILE_ENCRYPTION_KEYS"] = os.getenv("PROFILE_ENCRYPTION_KEYS")
+    app.config["PROFILE_ENCRYPTION_ACTIVE_KEY_VERSION"] = os.getenv(
+        "PROFILE_ENCRYPTION_ACTIVE_KEY_VERSION",
+        app.config["PROFILE_ENCRYPTION_KEY_VERSION"],
+    )
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError("SECRET_KEY is not set. Check your environment variables.")
@@ -141,6 +151,7 @@ def create_app():
     init_session_registry(app)
 
     from models import User
+    from profiles.models import ClientProfile  # noqa: F401
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -298,13 +309,3 @@ def create_app():
         )
 
     return app
-
-
-app = create_app()
-
-if __name__ == "__main__":
-    app.run(
-        host=os.getenv("HOST", "127.0.0.1"),
-        port=int(os.getenv("PORT", "5000")),
-        debug=os.getenv("FLASK_DEBUG") == "1",
-    )

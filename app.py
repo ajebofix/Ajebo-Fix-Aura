@@ -4,7 +4,7 @@ from datetime import timedelta
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, session
+from flask import Flask, redirect, request, session, url_for
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from sqlalchemy import inspect, text
@@ -233,6 +233,16 @@ def create_app():
             "status": "ok",
             "service": "Ajebo Fix Aura",
         }
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login_alias():
+        next_path = request.args.get("next")
+        target = (
+            url_for("auth.login", next=next_path)
+            if next_path
+            else url_for("auth.login")
+        )
+        return redirect(target, code=307 if request.method == "POST" else 302)
 
     @app.get("/version")
     def version():

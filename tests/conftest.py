@@ -13,6 +13,11 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("SQLALCHEMY_DATABASE_URI", "sqlite:///:memory:")
 os.environ.setdefault("APP_ENV", "testing")
+os.environ.setdefault(
+    "PROFILE_ENCRYPTION_KEY",
+    "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0=",
+)
+os.environ.setdefault("PROFILE_ENCRYPTION_KEY_VERSION", "test-v1")
 
 from app import create_app  # noqa: E402
 from extensions import db  # noqa: E402

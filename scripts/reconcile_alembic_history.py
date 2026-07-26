@@ -25,9 +25,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app import app  # noqa: E402
+from app import create_app  # noqa: E402
 from extensions import db  # noqa: E402
 
+
+app = create_app()
 
 SOURCE_REVISION = "82c0c175b392"
 RECONCILED_REVISION = "737b4134e370"

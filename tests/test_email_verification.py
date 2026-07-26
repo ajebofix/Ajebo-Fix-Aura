@@ -6,8 +6,10 @@ from extensions import db
 from models import User
 from security.email_verification import (
     generate_email_verification_token,
+    send_email_verification,
     verify_email_token,
 )
+from services.email_delivery import EmailDeliveryResult, send_transactional_email
 
 
 def _create_user(*, verified: bool = False) -> User:
@@ -108,3 +110,104 @@ def test_resend_verification_is_rate_limited(app, client):
         data={"csrf_token": token},
     )
     assert blocked.status_code == 429
+
+
+def test_resend_delivery_posts_over_https(app, monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"id": "email_123"}
+
+    def fake_post(url, *, json, headers, timeout):
+        captured.update(
+            {
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "timeout": timeout,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr("services.email_delivery.requests.post", fake_post)
+
+    with app.app_context():
+        app.config.update(
+            RESEND_API_KEY="re_test_key",
+            RESEND_FROM_EMAIL="Aura by Ajebo Fix <verification@aura.test>",
+            RESEND_REPLY_TO="support@aura.test",
+            MAIL_SUPPRESS_SEND=False,
+        )
+        result = send_transactional_email(
+            to="delivered@resend.dev",
+            subject="Confirm your Aura email address",
+            text="Verification body",
+            idempotency_key="aura-test-verification",
+        )
+
+    assert result.success is True
+    assert result.provider_message_id == "email_123"
+    assert captured["url"] == "https://api.resend.com/emails"
+    assert captured["timeout"] == 10
+    assert captured["headers"]["Authorization"] == "Bearer re_test_key"
+    assert captured["headers"]["Idempotency-Key"] == "aura-test-verification"
+    assert captured["json"] == {
+        "from": "Aura by Ajebo Fix <verification@aura.test>",
+        "to": ["delivered@resend.dev"],
+        "subject": "Confirm your Aura email address",
+        "text": "Verification body",
+        "reply_to": "support@aura.test",
+    }
+
+
+def test_email_verification_uses_transactional_delivery(app, monkeypatch):
+    captured = {}
+
+    def fake_delivery(**kwargs):
+        captured.update(kwargs)
+        return EmailDeliveryResult(
+            success=True,
+            provider_message_id="email_verification_123",
+        )
+
+    monkeypatch.setattr(
+        "security.email_verification.send_transactional_email",
+        fake_delivery,
+    )
+
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+    with app.test_request_context(
+        "/auth/verification-required",
+        base_url="https://aura.example",
+    ):
+        app.config["MAIL_SUPPRESS_SEND"] = False
+        user = _create_user()
+        delivered = send_email_verification(user)
+
+    assert delivered is True
+    assert captured["to"] == "verification@example.com"
+    assert captured["subject"] == "Confirm your Aura email address"
+    assert "https://aura.example/auth/verify-email?token=" in captured["text"]
+    assert captured["idempotency_key"].startswith("aura-email-verification-")
+
+
+def test_resend_delivery_fails_closed_without_configuration(app):
+    with app.app_context():
+        app.config.update(
+            RESEND_API_KEY=None,
+            RESEND_FROM_EMAIL=None,
+            MAIL_DEFAULT_SENDER=None,
+            MAIL_SUPPRESS_SEND=False,
+        )
+        result = send_transactional_email(
+            to="delivered@resend.dev",
+            subject="Configuration test",
+            text="No provider call should be attempted.",
+        )
+
+    assert result.success is False
+    assert result.error_code == "configuration_incomplete"

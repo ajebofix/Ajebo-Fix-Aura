@@ -246,7 +246,35 @@ jobs:
         run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security services/email_delivery.py scripts tests
 
       - name: Run Bandit on security changes
-        run: bandit -q -r app.py auth driver events ownership profiles security scripts services/email_delivery.py -x ./tests
+        id: bandit_tests
+        shell: bash
+        run: |
+          set +e
+          bandit -q -r app.py auth driver events ownership profiles security scripts -x ./tests 2>&1 | tee bandit-output.txt
+          status=${PIPESTATUS[0]}
+          bandit -q services/email_delivery.py 2>&1 | tee -a bandit-output.txt
+          email_status=${PIPESTATUS[0]}
+          if [ "$email_status" -ne 0 ]; then
+            status="$email_status"
+          fi
+          exit "$status"
+
+      - name: Post Bandit failure to PR
+        if: always() && steps.bandit_tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -f bandit-output.txt ]; then
+            {
+              echo "### Aura Bandit failure"
+              echo
+              echo '```text'
+              tail -n 180 bandit-output.txt
+              echo '```'
+            } > bandit-comment.md
+            gh pr comment "$PR_URL" --body-file bandit-comment.md
+          fi
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt

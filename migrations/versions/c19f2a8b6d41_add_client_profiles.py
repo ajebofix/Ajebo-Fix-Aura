@@ -76,17 +76,7 @@ def upgrade():
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", name="uq_client_profiles_user_id"),
     )
-    op.create_index(
-        op.f("ix_client_profiles_user_id"),
-        "client_profiles",
-        ["user_id"],
-        unique=True,
-    )
 
 
 def downgrade():
-    op.drop_index(
-        op.f("ix_client_profiles_user_id"),
-        table_name="client_profiles",
-    )
     op.drop_table("client_profiles")

@@ -255,6 +255,7 @@ def init_session_registry(app: Flask) -> None:
         public_endpoints = {
             "static",
             "home",
+            "login_alias",
             "healthz",
             "version",
             "auth.login",

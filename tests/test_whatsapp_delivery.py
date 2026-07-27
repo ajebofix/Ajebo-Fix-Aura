@@ -31,8 +31,11 @@ def _clear_whatsapp_environment(monkeypatch) -> None:
         "WHATSAPP_ADMIN_PHONE_NUMBER",
         "WHATSAPP_GRAPH_API_VERSION",
         "WHATSAPP_ADMIN_TEMPLATE",
+        "WHATSAPP_BOOKING_TEMPLATE",
         "WHATSAPP_ADMIN_TEMPLATE_USES_PARAMETERS",
         "WHATSAPP_TEMPLATE_LANGUAGE",
+        "WHATSAPP_ADMIN_TEMPLATE_LANGUAGE",
+        "WHATSAPP_BOOKING_TEMPLATE_LANGUAGE",
     }
     for name in names:
         monkeypatch.delenv(name, raising=False)
@@ -43,7 +46,6 @@ def _set_valid_environment(monkeypatch) -> None:
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123456789012345")
     monkeypatch.setenv("WHATSAPP_ADMIN_PHONE_NUMBER", "+234 707 449 0640")
     monkeypatch.setenv("WHATSAPP_GRAPH_API_VERSION", "23.0")
-    monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE", "admin_booking_alert_v1")
     monkeypatch.setenv("WHATSAPP_TEMPLATE_LANGUAGE", "en")
 
 
@@ -68,7 +70,7 @@ def test_missing_phone_number_id_never_calls_meta(monkeypatch):
     assert "WHATSAPP_PHONE_NUMBER_ID" in result["message"]
 
 
-def test_admin_booking_alert_uses_runtime_railway_configuration(monkeypatch):
+def test_admin_booking_alert_uses_approved_static_template(monkeypatch):
     _clear_whatsapp_environment(monkeypatch)
     _set_valid_environment(monkeypatch)
     captured: dict[str, Any] = {}
@@ -102,15 +104,75 @@ def test_admin_booking_alert_uses_runtime_railway_configuration(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer test-token"
     assert captured["json"]["to"] == "2347074490640"
     assert captured["json"]["template"] == {
-        "name": "admin_booking_alert_v1",
+        "name": "admin_booking_alert",
         "language": {"code": "en"},
     }
     assert captured["timeout"] == 15
 
 
+def test_booking_confirmation_uses_two_body_parameters(monkeypatch):
+    _clear_whatsapp_environment(monkeypatch)
+    _set_valid_environment(monkeypatch)
+    captured: dict[str, Any] = {}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured["payload"] = json
+        return FakeResponse(200, {"messages": [{"id": "wamid.test"}]})
+
+    monkeypatch.setattr(whatsapp.requests, "post", fake_post)
+
+    result = whatsapp.send_booking_confirmation(
+        phone="08012345678",
+        name="Femi Adebayo",
+        vehicle="Mercedes-Benz GLE 450",
+    )
+
+    template = captured["payload"]["template"]
+    parameters = template["components"][0]["parameters"]
+
+    assert result["success"] is True
+    assert captured["payload"]["to"] == "2348012345678"
+    assert template["name"] == "booking_confirmation"
+    assert template["language"] == {"code": "en"}
+    assert [item["text"] for item in parameters] == [
+        "Femi Adebayo",
+        "Mercedes-Benz GLE 450",
+    ]
+
+
+def test_scoped_template_languages_override_global_language(monkeypatch):
+    _clear_whatsapp_environment(monkeypatch)
+    _set_valid_environment(monkeypatch)
+    monkeypatch.setenv("WHATSAPP_TEMPLATE_LANGUAGE", "en")
+    monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE_LANGUAGE", "en_US")
+    monkeypatch.setenv("WHATSAPP_BOOKING_TEMPLATE_LANGUAGE", "en_GB")
+    captured: list[dict[str, Any]] = []
+
+    def fake_post(url, *, headers, json, timeout):
+        captured.append(json)
+        return FakeResponse(200, {"messages": [{"id": "wamid.test"}]})
+
+    monkeypatch.setattr(whatsapp.requests, "post", fake_post)
+
+    whatsapp.notify_admin_new_booking(
+        user="Femi Adebayo",
+        vehicle="Mercedes-Benz GLE 450",
+        time="2026-07-27T10:00:00",
+    )
+    whatsapp.send_booking_confirmation(
+        phone="2348012345678",
+        name="Femi Adebayo",
+        vehicle="Mercedes-Benz GLE 450",
+    )
+
+    assert captured[0]["template"]["language"] == {"code": "en_US"}
+    assert captured[1]["template"]["language"] == {"code": "en_GB"}
+
+
 def test_dynamic_admin_template_includes_booking_parameters(monkeypatch):
     _clear_whatsapp_environment(monkeypatch)
     _set_valid_environment(monkeypatch)
+    monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE", "admin_booking_alert_v2")
     monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE_USES_PARAMETERS", "true")
     captured: dict[str, Any] = {}
 
@@ -135,7 +197,7 @@ def test_dynamic_admin_template_includes_booking_parameters(monkeypatch):
     ]
 
 
-def test_meta_400_is_returned_as_structured_provider_error(monkeypatch):
+def test_meta_400_is_returned_and_logs_safe_provider_details(monkeypatch, caplog):
     _clear_whatsapp_environment(monkeypatch)
     _set_valid_environment(monkeypatch)
 
@@ -144,16 +206,20 @@ def test_meta_400_is_returned_as_structured_provider_error(monkeypatch):
             400,
             {
                 "error": {
-                    "message": "Unsupported post request.",
-                    "type": "GraphMethodException",
-                    "code": 100,
-                    "error_subcode": 33,
+                    "message": "(#132000) Number of parameters does not match.",
+                    "type": "OAuthException",
+                    "code": 132000,
+                    "error_data": {
+                        "messaging_product": "whatsapp",
+                        "details": "body: number of localizable_params does not match",
+                    },
                     "fbtrace_id": "trace-test",
                 }
             },
         )
 
     monkeypatch.setattr(whatsapp.requests, "post", fake_post)
+    caplog.set_level("WARNING", logger=whatsapp.__name__)
 
     result = whatsapp.notify_admin_new_booking(
         user="Femi Adebayo",
@@ -165,11 +231,12 @@ def test_meta_400_is_returned_as_structured_provider_error(monkeypatch):
         "success": False,
         "provider": "meta_whatsapp",
         "error_code": "provider_error",
-        "message": "Unsupported post request.",
+        "message": "(#132000) Number of parameters does not match.",
         "status_code": 400,
-        "provider_code": 100,
-        "provider_subcode": 33,
+        "provider_code": 132000,
+        "provider_subcode": None,
     }
+    assert "details=body: number of localizable_params does not match" in caplog.text
 
 
 def test_invalid_admin_recipient_never_calls_meta(monkeypatch):

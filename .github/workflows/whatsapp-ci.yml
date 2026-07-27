@@ -1,0 +1,60 @@
+name: Aura WhatsApp CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "services/whatsapp.py"
+      - "tests/test_whatsapp_delivery.py"
+      - ".github/workflows/whatsapp-ci.yml"
+      - "requirements.txt"
+      - "requirements-dev.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-whatsapp-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  test-whatsapp-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile WhatsApp integration
+        run: python -m compileall -q services/whatsapp.py tests/test_whatsapp_delivery.py
+
+      - name: Test WhatsApp booking alerts
+        run: pytest -q --tb=short tests/test_whatsapp_delivery.py
+
+      - name: Run Ruff
+        run: ruff check --output-format=concise services/whatsapp.py tests/test_whatsapp_delivery.py
+
+      - name: Run Bandit
+        run: bandit -q services/whatsapp.py

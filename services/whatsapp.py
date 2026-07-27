@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 _GRAPH_ROOT = "https://graph.facebook.com"
 _DEFAULT_GRAPH_VERSION = "v23.0"
 _DEFAULT_LANGUAGE = "en"
+_DEFAULT_BOOKING_TEMPLATE = "booking_confirmation"
+_DEFAULT_ADMIN_TEMPLATE = "admin_booking_alert"
 _REQUEST_TIMEOUT_SECONDS = 15
+_PROVIDER_LOG_VALUE_LIMIT = 300
 
 
 class WhatsAppConfigurationError(RuntimeError):
@@ -62,6 +65,24 @@ def _normalise_phone_number(value: str, *, country_code: str = "234") -> str:
         raise ValueError("WhatsApp recipient must be a valid international number.")
 
     return digits
+
+
+def _template_language(scope: str) -> str:
+    return (
+        _first_environment_value(
+            f"WHATSAPP_{scope.upper()}_TEMPLATE_LANGUAGE",
+            "WHATSAPP_TEMPLATE_LANGUAGE",
+        )
+        or _DEFAULT_LANGUAGE
+    )
+
+
+def _compact_log_value(value: Any) -> str:
+    if value is None:
+        return ""
+
+    compact = re.sub(r"\s+", " ", str(value)).strip()
+    return compact[:_PROVIDER_LOG_VALUE_LIMIT]
 
 
 def _gateway_settings() -> dict[str, str]:
@@ -161,14 +182,22 @@ def _send_message(payload: dict[str, Any]) -> dict[str, Any]:
     provider_code = provider_error.get("code")
     provider_subcode = provider_error.get("error_subcode")
     trace_id = provider_error.get("fbtrace_id")
+    provider_message = _compact_log_value(provider_error.get("message"))
+
+    error_data = provider_error.get("error_data")
+    provider_details = ""
+    if isinstance(error_data, dict):
+        provider_details = _compact_log_value(error_data.get("details"))
 
     logger.warning(
         "WhatsApp Cloud API rejected a message status=%s code=%s subcode=%s "
-        "trace_id=%s",
+        "trace_id=%s message=%s details=%s",
         response.status_code,
         provider_code,
         provider_subcode,
         trace_id,
+        provider_message,
+        provider_details,
     )
 
     return _error_result(
@@ -190,11 +219,7 @@ def send_booking_confirmation(phone: str, name: str, vehicle: str) -> dict[str, 
 
     template_name = (
         _first_environment_value("WHATSAPP_BOOKING_TEMPLATE")
-        or "booking_confirmation"
-    )
-    language = (
-        _first_environment_value("WHATSAPP_TEMPLATE_LANGUAGE")
-        or _DEFAULT_LANGUAGE
+        or _DEFAULT_BOOKING_TEMPLATE
     )
 
     payload = {
@@ -203,7 +228,7 @@ def send_booking_confirmation(phone: str, name: str, vehicle: str) -> dict[str, 
         "type": "template",
         "template": {
             "name": template_name,
-            "language": {"code": language},
+            "language": {"code": _template_language("booking")},
             "components": [
                 {
                     "type": "body",
@@ -242,15 +267,11 @@ def send_template_admin(user: str, vehicle: str, time: str) -> dict[str, Any]:
 
     template_name = (
         _first_environment_value("WHATSAPP_ADMIN_TEMPLATE")
-        or "admin_booking_alert_v1"
-    )
-    language = (
-        _first_environment_value("WHATSAPP_TEMPLATE_LANGUAGE")
-        or _DEFAULT_LANGUAGE
+        or _DEFAULT_ADMIN_TEMPLATE
     )
     template: dict[str, Any] = {
         "name": template_name,
-        "language": {"code": language},
+        "language": {"code": _template_language("admin")},
     }
 
     if _admin_template_uses_parameters():

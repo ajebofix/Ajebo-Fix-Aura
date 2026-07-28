@@ -23,9 +23,10 @@ _GRAPH_ROOT = "https://graph.facebook.com"
 _DEFAULT_GRAPH_VERSION = "v23.0"
 _DEFAULT_LANGUAGE = "en"
 _DEFAULT_BOOKING_TEMPLATE = "booking_confirmation"
-_DEFAULT_ADMIN_TEMPLATE = "admin_booking_alert"
+_DEFAULT_ADMIN_TEMPLATE = "admin_booking_alert_v1"
 _REQUEST_TIMEOUT_SECONDS = 15
 _PROVIDER_LOG_VALUE_LIMIT = 300
+_MAX_TEMPLATE_TEXT_LENGTH = 1024
 
 
 class WhatsAppConfigurationError(RuntimeError):
@@ -77,12 +78,99 @@ def _template_language(scope: str) -> str:
     )
 
 
+def _template_parameter_names(scope: str) -> list[str]:
+    raw = _first_environment_value(
+        f"WHATSAPP_{scope.upper()}_TEMPLATE_PARAMETER_NAMES"
+    )
+    if not raw:
+        return []
+
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _normalise_template_text(value: Any, *, field_name: str) -> str:
+    text = re.sub(r"[\r\n\t]+", " ", str(value or ""))
+    text = re.sub(r" {2,}", " ", text).strip()
+
+    if not text:
+        raise ValueError(f"WhatsApp template field '{field_name}' cannot be empty.")
+
+    return text[:_MAX_TEMPLATE_TEXT_LENGTH]
+
+
+def _text_parameters(
+    *,
+    scope: str,
+    values: list[tuple[str, Any]],
+) -> list[dict[str, str]]:
+    parameter_names = _template_parameter_names(scope)
+    if parameter_names and len(parameter_names) != len(values):
+        raise WhatsAppConfigurationError(
+            f"WHATSAPP_{scope.upper()}_TEMPLATE_PARAMETER_NAMES must contain "
+            f"exactly {len(values)} comma-separated names."
+        )
+
+    parameters: list[dict[str, str]] = []
+    for index, (field_name, raw_value) in enumerate(values):
+        parameter = {
+            "type": "text",
+            "text": _normalise_template_text(
+                raw_value,
+                field_name=field_name,
+            ),
+        }
+        if parameter_names:
+            parameter["parameter_name"] = parameter_names[index]
+        parameters.append(parameter)
+
+    return parameters
+
+
 def _compact_log_value(value: Any) -> str:
     if value is None:
         return ""
 
     compact = re.sub(r"\s+", " ", str(value)).strip()
     return compact[:_PROVIDER_LOG_VALUE_LIMIT]
+
+
+def _message_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    template = payload.get("template")
+    if not isinstance(template, dict):
+        return {
+            "message_type": payload.get("type"),
+            "template_name": "",
+            "language": "",
+            "body_parameter_count": 0,
+            "named_parameter_count": 0,
+            "recipient_digits": len(str(payload.get("to") or "")),
+        }
+
+    language = template.get("language")
+    language_code = language.get("code") if isinstance(language, dict) else ""
+    body_parameters: list[dict[str, Any]] = []
+
+    components = template.get("components")
+    if isinstance(components, list):
+        for component in components:
+            if not isinstance(component, dict) or component.get("type") != "body":
+                continue
+            parameters = component.get("parameters")
+            if isinstance(parameters, list):
+                body_parameters.extend(
+                    item for item in parameters if isinstance(item, dict)
+                )
+
+    return {
+        "message_type": payload.get("type"),
+        "template_name": template.get("name", ""),
+        "language": language_code,
+        "body_parameter_count": len(body_parameters),
+        "named_parameter_count": sum(
+            1 for item in body_parameters if item.get("parameter_name")
+        ),
+        "recipient_digits": len(str(payload.get("to") or "")),
+    }
 
 
 def _gateway_settings() -> dict[str, str]:
@@ -139,6 +227,7 @@ def _send_message(payload: dict[str, Any]) -> dict[str, Any]:
             message=str(exc),
         )
 
+    contract = _message_contract(payload)
     url = (
         f"{_GRAPH_ROOT}/{settings['graph_version']}/"
         f"{settings['phone_number_id']}/messages"
@@ -156,7 +245,12 @@ def _send_message(payload: dict[str, Any]) -> dict[str, Any]:
             timeout=_REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:
-        logger.warning("WhatsApp network request failed: %s", exc.__class__.__name__)
+        logger.warning(
+            "WhatsApp network request failed error=%s template=%s language=%s",
+            exc.__class__.__name__,
+            contract["template_name"],
+            contract["language"],
+        )
         return _error_result(
             error_code="network_error",
             message="The WhatsApp provider could not be reached.",
@@ -165,8 +259,14 @@ def _send_message(payload: dict[str, Any]) -> dict[str, Any]:
     response_payload = _safe_response_payload(response)
     if response.ok:
         logger.info(
-            "WhatsApp message accepted by Meta",
-            extra={"message_type": payload.get("type")},
+            "WhatsApp message accepted by Meta type=%s template=%s language=%s "
+            "body_parameters=%s named_parameters=%s recipient_digits=%s",
+            contract["message_type"],
+            contract["template_name"],
+            contract["language"],
+            contract["body_parameter_count"],
+            contract["named_parameter_count"],
+            contract["recipient_digits"],
         )
         return {
             "success": True,
@@ -191,11 +291,18 @@ def _send_message(payload: dict[str, Any]) -> dict[str, Any]:
 
     logger.warning(
         "WhatsApp Cloud API rejected a message status=%s code=%s subcode=%s "
-        "trace_id=%s message=%s details=%s",
+        "trace_id=%s type=%s template=%s language=%s body_parameters=%s "
+        "named_parameters=%s recipient_digits=%s message=%s details=%s",
         response.status_code,
         provider_code,
         provider_subcode,
         trace_id,
+        contract["message_type"],
+        contract["template_name"],
+        contract["language"],
+        contract["body_parameter_count"],
+        contract["named_parameter_count"],
+        contract["recipient_digits"],
         provider_message,
         provider_details,
     )
@@ -214,8 +321,19 @@ def send_booking_confirmation(phone: str, name: str, vehicle: str) -> dict[str, 
 
     try:
         recipient = _normalise_phone_number(phone)
-    except ValueError as exc:
-        return _error_result(error_code="invalid_recipient", message=str(exc))
+        parameters = _text_parameters(
+            scope="booking",
+            values=[
+                ("client_name", name),
+                ("vehicle", vehicle),
+            ],
+        )
+    except (ValueError, WhatsAppConfigurationError) as exc:
+        logger.warning("WhatsApp booking confirmation skipped: %s", exc)
+        return _error_result(
+            error_code="configuration_error",
+            message=str(exc),
+        )
 
     template_name = (
         _first_environment_value("WHATSAPP_BOOKING_TEMPLATE")
@@ -224,6 +342,7 @@ def send_booking_confirmation(phone: str, name: str, vehicle: str) -> dict[str, 
 
     payload = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": recipient,
         "type": "template",
         "template": {
@@ -232,10 +351,7 @@ def send_booking_confirmation(phone: str, name: str, vehicle: str) -> dict[str, 
             "components": [
                 {
                     "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": name},
-                        {"type": "text", "text": vehicle},
-                    ],
+                    "parameters": parameters,
                 }
             ],
         },
@@ -244,10 +360,9 @@ def send_booking_confirmation(phone: str, name: str, vehicle: str) -> dict[str, 
 
 
 def _admin_template_uses_parameters() -> bool:
-    value = (
-        _first_environment_value("WHATSAPP_ADMIN_TEMPLATE_USES_PARAMETERS")
-        or "0"
-    )
+    value = _first_environment_value("WHATSAPP_ADMIN_TEMPLATE_USES_PARAMETERS")
+    if value is None:
+        return True
     return value.lower() in {"1", "true", "yes", "on"}
 
 
@@ -275,20 +390,33 @@ def send_template_admin(user: str, vehicle: str, time: str) -> dict[str, Any]:
     }
 
     if _admin_template_uses_parameters():
+        try:
+            parameters = _text_parameters(
+                scope="admin",
+                values=[
+                    ("client_name", user),
+                    ("vehicle", vehicle),
+                    ("preferred_time", time),
+                ],
+            )
+        except (ValueError, WhatsAppConfigurationError) as exc:
+            logger.warning("WhatsApp admin alert skipped: %s", exc)
+            return _error_result(
+                error_code="configuration_error",
+                message=str(exc),
+            )
+
         template["components"] = [
             {
                 "type": "body",
-                "parameters": [
-                    {"type": "text", "text": user},
-                    {"type": "text", "text": vehicle},
-                    {"type": "text", "text": time},
-                ],
+                "parameters": parameters,
             }
         ]
 
     return _send_message(
         {
             "messaging_product": "whatsapp",
+            "recipient_type": "individual",
             "to": recipient,
             "type": "template",
             "template": template,
@@ -324,6 +452,7 @@ def send_text_admin(user: str, vehicle: str, time: str) -> dict[str, Any]:
     return _send_message(
         {
             "messaging_product": "whatsapp",
+            "recipient_type": "individual",
             "to": recipient,
             "type": "text",
             "text": {"body": body},

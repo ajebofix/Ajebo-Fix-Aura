@@ -36,6 +36,8 @@ def _clear_whatsapp_environment(monkeypatch) -> None:
         "WHATSAPP_TEMPLATE_LANGUAGE",
         "WHATSAPP_ADMIN_TEMPLATE_LANGUAGE",
         "WHATSAPP_BOOKING_TEMPLATE_LANGUAGE",
+        "WHATSAPP_ADMIN_TEMPLATE_PARAMETER_NAMES",
+        "WHATSAPP_BOOKING_TEMPLATE_PARAMETER_NAMES",
     }
     for name in names:
         monkeypatch.delenv(name, raising=False)
@@ -70,7 +72,9 @@ def test_missing_phone_number_id_never_calls_meta(monkeypatch):
     assert "WHATSAPP_PHONE_NUMBER_ID" in result["message"]
 
 
-def test_admin_booking_alert_uses_approved_static_template(monkeypatch):
+def test_admin_booking_alert_uses_known_v1_template_with_three_parameters(
+    monkeypatch,
+):
     _clear_whatsapp_environment(monkeypatch)
     _set_valid_environment(monkeypatch)
     captured: dict[str, Any] = {}
@@ -84,10 +88,46 @@ def test_admin_booking_alert_uses_approved_static_template(monkeypatch):
                 "timeout": timeout,
             }
         )
-        return FakeResponse(
-            200,
-            {"messages": [{"id": "wamid.test"}]},
-        )
+        return FakeResponse(200, {"messages": [{"id": "wamid.test"}]})
+
+    monkeypatch.setattr(whatsapp.requests, "post", fake_post)
+
+    result = whatsapp.notify_admin_new_booking(
+        user="Femi Adebayo",
+        vehicle="Mercedes-Benz GLE 450",
+        time="2026-07-27T10:00:00",
+    )
+
+    template = captured["json"]["template"]
+    parameters = template["components"][0]["parameters"]
+
+    assert result["success"] is True
+    assert captured["url"] == (
+        "https://graph.facebook.com/v23.0/123456789012345/messages"
+    )
+    assert captured["headers"]["Authorization"] == "Bearer test-token"
+    assert captured["json"]["recipient_type"] == "individual"
+    assert captured["json"]["to"] == "2347074490640"
+    assert template["name"] == "admin_booking_alert_v1"
+    assert template["language"] == {"code": "en"}
+    assert [item["text"] for item in parameters] == [
+        "Femi Adebayo",
+        "Mercedes-Benz GLE 450",
+        "2026-07-27T10:00:00",
+    ]
+    assert captured["timeout"] == 15
+
+
+def test_admin_template_can_be_configured_without_parameters(monkeypatch):
+    _clear_whatsapp_environment(monkeypatch)
+    _set_valid_environment(monkeypatch)
+    monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE", "static_admin_notice")
+    monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE_USES_PARAMETERS", "0")
+    captured: dict[str, Any] = {}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured["payload"] = json
+        return FakeResponse(200, {"messages": [{"id": "wamid.test"}]})
 
     monkeypatch.setattr(whatsapp.requests, "post", fake_post)
 
@@ -98,19 +138,13 @@ def test_admin_booking_alert_uses_approved_static_template(monkeypatch):
     )
 
     assert result["success"] is True
-    assert captured["url"] == (
-        "https://graph.facebook.com/v23.0/123456789012345/messages"
-    )
-    assert captured["headers"]["Authorization"] == "Bearer test-token"
-    assert captured["json"]["to"] == "2347074490640"
-    assert captured["json"]["template"] == {
-        "name": "admin_booking_alert",
+    assert captured["payload"]["template"] == {
+        "name": "static_admin_notice",
         "language": {"code": "en"},
     }
-    assert captured["timeout"] == 15
 
 
-def test_booking_confirmation_uses_two_body_parameters(monkeypatch):
+def test_booking_confirmation_uses_two_sanitised_body_parameters(monkeypatch):
     _clear_whatsapp_environment(monkeypatch)
     _set_valid_environment(monkeypatch)
     captured: dict[str, Any] = {}
@@ -123,14 +157,15 @@ def test_booking_confirmation_uses_two_body_parameters(monkeypatch):
 
     result = whatsapp.send_booking_confirmation(
         phone="08012345678",
-        name="Femi Adebayo",
-        vehicle="Mercedes-Benz GLE 450",
+        name="Femi\nAdebayo",
+        vehicle="Mercedes-Benz   GLE 450",
     )
 
     template = captured["payload"]["template"]
     parameters = template["components"][0]["parameters"]
 
     assert result["success"] is True
+    assert captured["payload"]["recipient_type"] == "individual"
     assert captured["payload"]["to"] == "2348012345678"
     assert template["name"] == "booking_confirmation"
     assert template["language"] == {"code": "en"}
@@ -138,6 +173,67 @@ def test_booking_confirmation_uses_two_body_parameters(monkeypatch):
         "Femi Adebayo",
         "Mercedes-Benz GLE 450",
     ]
+
+
+def test_named_booking_parameters_are_supported(monkeypatch):
+    _clear_whatsapp_environment(monkeypatch)
+    _set_valid_environment(monkeypatch)
+    monkeypatch.setenv(
+        "WHATSAPP_BOOKING_TEMPLATE_PARAMETER_NAMES",
+        "client_name,vehicle_name",
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured["payload"] = json
+        return FakeResponse(200, {"messages": [{"id": "wamid.test"}]})
+
+    monkeypatch.setattr(whatsapp.requests, "post", fake_post)
+
+    result = whatsapp.send_booking_confirmation(
+        phone="2348012345678",
+        name="Femi Adebayo",
+        vehicle="Mercedes-Benz GLE 450",
+    )
+
+    parameters = captured["payload"]["template"]["components"][0]["parameters"]
+    assert result["success"] is True
+    assert parameters == [
+        {
+            "type": "text",
+            "text": "Femi Adebayo",
+            "parameter_name": "client_name",
+        },
+        {
+            "type": "text",
+            "text": "Mercedes-Benz GLE 450",
+            "parameter_name": "vehicle_name",
+        },
+    ]
+
+
+def test_wrong_named_parameter_count_fails_before_meta(monkeypatch):
+    _clear_whatsapp_environment(monkeypatch)
+    _set_valid_environment(monkeypatch)
+    monkeypatch.setenv(
+        "WHATSAPP_BOOKING_TEMPLATE_PARAMETER_NAMES",
+        "client_name",
+    )
+
+    def unexpected_post(*_args, **_kwargs):
+        raise AssertionError("Meta must not receive an invalid template contract")
+
+    monkeypatch.setattr(whatsapp.requests, "post", unexpected_post)
+
+    result = whatsapp.send_booking_confirmation(
+        phone="2348012345678",
+        name="Femi Adebayo",
+        vehicle="Mercedes-Benz GLE 450",
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "configuration_error"
+    assert "exactly 2" in result["message"]
 
 
 def test_scoped_template_languages_override_global_language(monkeypatch):
@@ -169,49 +265,23 @@ def test_scoped_template_languages_override_global_language(monkeypatch):
     assert captured[1]["template"]["language"] == {"code": "en_GB"}
 
 
-def test_dynamic_admin_template_includes_booking_parameters(monkeypatch):
-    _clear_whatsapp_environment(monkeypatch)
-    _set_valid_environment(monkeypatch)
-    monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE", "admin_booking_alert_v2")
-    monkeypatch.setenv("WHATSAPP_ADMIN_TEMPLATE_USES_PARAMETERS", "true")
-    captured: dict[str, Any] = {}
-
-    def fake_post(url, *, headers, json, timeout):
-        captured["payload"] = json
-        return FakeResponse(200, {"messages": [{"id": "wamid.test"}]})
-
-    monkeypatch.setattr(whatsapp.requests, "post", fake_post)
-
-    result = whatsapp.notify_admin_new_booking(
-        user="Femi Adebayo",
-        vehicle="Mercedes-Benz GLE 450",
-        time="2026-07-27T10:00:00",
-    )
-
-    parameters = captured["payload"]["template"]["components"][0]["parameters"]
-    assert result["success"] is True
-    assert [item["text"] for item in parameters] == [
-        "Femi Adebayo",
-        "Mercedes-Benz GLE 450",
-        "2026-07-27T10:00:00",
-    ]
-
-
-def test_meta_400_is_returned_and_logs_safe_provider_details(monkeypatch, caplog):
+def test_meta_rejection_logs_safe_template_contract(monkeypatch, caplog):
     _clear_whatsapp_environment(monkeypatch)
     _set_valid_environment(monkeypatch)
 
     def fake_post(url, *, headers, json, timeout):
         return FakeResponse(
-            400,
+            404,
             {
                 "error": {
-                    "message": "(#132000) Number of parameters does not match.",
+                    "message": "(#132001) Template name does not exist.",
                     "type": "OAuthException",
-                    "code": 132000,
+                    "code": 132001,
                     "error_data": {
                         "messaging_product": "whatsapp",
-                        "details": "body: number of localizable_params does not match",
+                        "details": (
+                            "template name (admin_booking_alert) does not exist in en"
+                        ),
                     },
                     "fbtrace_id": "trace-test",
                 }
@@ -227,16 +297,15 @@ def test_meta_400_is_returned_and_logs_safe_provider_details(monkeypatch, caplog
         time="2026-07-27T10:00:00",
     )
 
-    assert result == {
-        "success": False,
-        "provider": "meta_whatsapp",
-        "error_code": "provider_error",
-        "message": "(#132000) Number of parameters does not match.",
-        "status_code": 400,
-        "provider_code": 132000,
-        "provider_subcode": None,
-    }
-    assert "details=body: number of localizable_params does not match" in caplog.text
+    assert result["success"] is False
+    assert result["provider_code"] == 132001
+    assert "template=admin_booking_alert_v1" in caplog.text
+    assert "language=en" in caplog.text
+    assert "body_parameters=3" in caplog.text
+    assert "named_parameters=0" in caplog.text
+    assert "recipient_digits=13" in caplog.text
+    assert "test-token" not in caplog.text
+    assert "2347074490640" not in caplog.text
 
 
 def test_invalid_admin_recipient_never_calls_meta(monkeypatch):

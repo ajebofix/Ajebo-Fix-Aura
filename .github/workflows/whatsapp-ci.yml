@@ -10,9 +10,11 @@ on:
       - ready_for_review
     paths:
       - "services/whatsapp.py"
+      - "services/rina_chat_engine.py"
       - "rina/__init__.py"
       - "tests/test_whatsapp_delivery.py"
       - "tests/test_rina_configuration.py"
+      - "tests/test_rina_provider_failures.py"
       - ".github/workflows/whatsapp-ci.yml"
       - "requirements.txt"
       - "requirements-dev.txt"
@@ -53,23 +55,32 @@ jobs:
         run: >-
           python -m compileall -q
           services/whatsapp.py
+          services/rina_chat_engine.py
           rina/__init__.py
           tests/test_whatsapp_delivery.py
           tests/test_rina_configuration.py
+          tests/test_rina_provider_failures.py
 
       - name: Test messaging configuration
         run: >-
           pytest -q --tb=short
           tests/test_whatsapp_delivery.py
           tests/test_rina_configuration.py
+          tests/test_rina_provider_failures.py
 
       - name: Run Ruff
         run: >-
           ruff check --output-format=concise
           services/whatsapp.py
+          services/rina_chat_engine.py
           rina/__init__.py
           tests/test_whatsapp_delivery.py
           tests/test_rina_configuration.py
+          tests/test_rina_provider_failures.py
 
       - name: Run Bandit
-        run: bandit -q services/whatsapp.py rina/__init__.py
+        run: >-
+          bandit -q
+          services/whatsapp.py
+          services/rina_chat_engine.py
+          rina/__init__.py

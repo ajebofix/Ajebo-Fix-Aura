@@ -1,10 +1,21 @@
 # services/rina_chat_engine.py
 
+import logging
 from typing import Dict, List, Optional
+
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    AuthenticationError,
+    RateLimitError,
+)
 
 from rina.memory import update_user_behavior, get_user_behavior_profile
 from rina.ai_brain import generate_rina_response
 from models import CarOwnership, CarDriver, User
+
+
+logger = logging.getLogger(__name__)
 
 
 class RinaChatEngine:
@@ -224,23 +235,18 @@ class RinaChatEngine:
         )
 
         # =========================
-        # AI RESPONSE (DEBUG)
+        # AI RESPONSE (SAFE DIAGNOSTICS)
         # =========================
-        print("\n====== RINA DEBUG ======")
-        print("Vehicle:", context.get("vehicle_identity"))
-        print("Score:", context.get("health_score"))
-        print("Alerts:", context.get("alerts"))
-        print("Events:", context.get("events"))
-        print("Consultations:", context.get("consultations"))
-        print("Situation:", context.get("situation"))
-        print("Tone:", context.get("tone"))
-        print("Intent:", context.get("intent"))
-        print("Urgency:", context.get("urgency"))
-        print("Timeline:", context.get("timeline"))
-        print("Message:", context.get("message"))
-        print("Role:", context.get("role"))
-        print("Context:", context)
-        print("============================\n")
+        logger.debug(
+            "Rina response requested user_id=%s car_id=%s role=%s intent=%s "
+            "status=%s escalation=%s",
+            user_id,
+            car_id,
+            role,
+            intent,
+            status,
+            escalation_level,
+        )
 
         # =========================
         # AI RESPONSE (PRIMARY)
@@ -249,8 +255,22 @@ class RinaChatEngine:
             ai_response = generate_rina_response(context)
             if ai_response:
                 return ai_response
-        except Exception as e:
-            print("AI ERROR:", e)
+        except AuthenticationError:
+            logger.error("Rina provider authentication failed code=invalid_api_key")
+        except RateLimitError:
+            logger.warning("Rina provider rate limit reached")
+        except APIConnectionError:
+            logger.warning("Rina provider connection failed")
+        except APIStatusError as exc:
+            logger.warning(
+                "Rina provider request failed status=%s",
+                exc.status_code,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Rina response generation failed error=%s",
+                exc.__class__.__name__,
+            )
 
         # =========================
         # FALLBACK RESPONSE (SAFE)

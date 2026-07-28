@@ -12,5 +12,16 @@ import os
 _CANONICAL_OPENAI_KEY = "OPENAI_API_KEY"
 _LEGACY_OPENAI_KEY = "OPEN_AI_KEY"
 
-if not os.getenv(_CANONICAL_OPENAI_KEY) and os.getenv(_LEGACY_OPENAI_KEY):
-    os.environ[_CANONICAL_OPENAI_KEY] = os.environ[_LEGACY_OPENAI_KEY]
+
+def _normalise_openai_key() -> None:
+    """Copy the configured key into the canonical variable without whitespace."""
+
+    canonical_value = (os.getenv(_CANONICAL_OPENAI_KEY) or "").strip()
+    legacy_value = (os.getenv(_LEGACY_OPENAI_KEY) or "").strip()
+    resolved_value = canonical_value or legacy_value
+
+    if resolved_value:
+        os.environ[_CANONICAL_OPENAI_KEY] = resolved_value
+
+
+_normalise_openai_key()

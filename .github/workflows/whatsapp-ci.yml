@@ -1,4 +1,4 @@
-name: Aura WhatsApp CI
+name: Aura Messaging CI
 
 on:
   workflow_dispatch:
@@ -10,7 +10,9 @@ on:
       - ready_for_review
     paths:
       - "services/whatsapp.py"
+      - "rina/__init__.py"
       - "tests/test_whatsapp_delivery.py"
+      - "tests/test_rina_configuration.py"
       - ".github/workflows/whatsapp-ci.yml"
       - "requirements.txt"
       - "requirements-dev.txt"
@@ -19,11 +21,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: "aura-whatsapp-${{ github.workflow }}-${{ github.ref }}"
+  group: "aura-messaging-${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
-  test-whatsapp-delivery:
+  test-messaging-configuration:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -47,14 +49,27 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
-      - name: Compile WhatsApp integration
-        run: python -m compileall -q services/whatsapp.py tests/test_whatsapp_delivery.py
+      - name: Compile messaging integration
+        run: >-
+          python -m compileall -q
+          services/whatsapp.py
+          rina/__init__.py
+          tests/test_whatsapp_delivery.py
+          tests/test_rina_configuration.py
 
-      - name: Test WhatsApp booking alerts
-        run: pytest -q --tb=short tests/test_whatsapp_delivery.py
+      - name: Test messaging configuration
+        run: >-
+          pytest -q --tb=short
+          tests/test_whatsapp_delivery.py
+          tests/test_rina_configuration.py
 
       - name: Run Ruff
-        run: ruff check --output-format=concise services/whatsapp.py tests/test_whatsapp_delivery.py
+        run: >-
+          ruff check --output-format=concise
+          services/whatsapp.py
+          rina/__init__.py
+          tests/test_whatsapp_delivery.py
+          tests/test_rina_configuration.py
 
       - name: Run Bandit
-        run: bandit -q services/whatsapp.py
+        run: bandit -q services/whatsapp.py rina/__init__.py

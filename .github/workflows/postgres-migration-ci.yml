@@ -1,0 +1,236 @@
+name: Aura PostgreSQL Migration CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/**"
+      - "models.py"
+      - "profiles/**"
+      - "security/**"
+      - "scripts/**"
+      - "requirements*.txt"
+      - ".github/workflows/postgres-migration-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-postgres-migrations-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Show Alembic heads
+        run: python -m flask db heads
+
+      - name: Upgrade fresh PostgreSQL database to head
+        run: python -m flask db upgrade
+
+      - name: Verify fresh-upgrade head and critical tables
+        run: |
+          python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          import os
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          tables = set(inspector.get_table_names())
+          required = {
+              "users",
+              "cars",
+              "car_ownership",
+              "vehicle_events",
+              "event_audit_logs",
+              "vehicle_health_snapshots",
+              "vehicle_health_alerts",
+              "diagnostic_code_definitions",
+              "vehicle_dtcs",
+              "user_sessions",
+              "client_profiles",
+              "profile_audit_events",
+              "alembic_version",
+          }
+          missing = required - tables
+          if missing:
+              raise SystemExit(f"Fresh PostgreSQL upgrade missing tables: {sorted(missing)}")
+
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+
+          if version != "d42e7a1c9b50":
+              raise SystemExit(f"Unexpected PostgreSQL head: {version}")
+
+          print("Fresh PostgreSQL upgrade reached d42e7a1c9b50.")
+          PY
+
+      - name: Recreate production-shaped baseline at d42e7a1c9b50
+        run: |
+          python - <<'PY'
+          from sqlalchemy import create_engine, text
+          import os
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              schema_names = connection.execute(
+                  text(
+                      "SELECT schema_name FROM information_schema.schemata "
+                      "WHERE schema_name NOT IN ('pg_catalog', 'information_schema')"
+                  )
+              ).scalars().all()
+              for schema_name in schema_names:
+                  if schema_name == "public":
+                      connection.execute(text("DROP SCHEMA public CASCADE"))
+                      connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade d42e7a1c9b50
+
+      - name: Verify production-shaped baseline
+        run: |
+          python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          import os
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          tables = set(inspect(engine).get_table_names())
+          required = {
+              "vehicle_events",
+              "event_audit_logs",
+              "vehicle_health_snapshots",
+              "vehicle_health_alerts",
+              "diagnostic_code_definitions",
+              "vehicle_dtcs",
+              "client_profiles",
+              "profile_audit_events",
+              "alembic_version",
+          }
+          missing = required - tables
+          if missing:
+              raise SystemExit(
+                  f"Production-shaped PostgreSQL baseline missing tables: {sorted(missing)}"
+              )
+
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+
+          if version != "d42e7a1c9b50":
+              raise SystemExit(f"Unexpected production-shaped head: {version}")
+
+          print("Production-shaped PostgreSQL baseline verified.")
+          PY
+
+      - name: Re-run upgrade idempotently
+        run: python -m flask db upgrade
+
+      - name: Verify JSON and uniqueness behaviour on PostgreSQL
+        run: |
+          python - <<'PY'
+          from datetime import datetime
+          from sqlalchemy import create_engine, text
+          import os
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              user_id = connection.execute(
+                  text(
+                      "INSERT INTO users "
+                      "(name, email, phone_number, password_hash, role, is_active, created_at, email_verified_at) "
+                      "VALUES ('CI User', 'ci@example.com', '+2348000000000', 'hash', 'user', TRUE, :created_at, :created_at) "
+                      "RETURNING id"
+                  ),
+                  {"created_at": datetime.utcnow()},
+              ).scalar_one()
+              car_id = connection.execute(
+                  text(
+                      "INSERT INTO cars "
+                      "(brand, model, year, vin, current_mileage, created_at, vehicle_identity_source) "
+                      "VALUES ('Mercedes-Benz', 'C-Class', 2020, 'WDDCI000000000001', 10000, :created_at, 'manual') "
+                      "RETURNING id"
+                  ),
+                  {"created_at": datetime.utcnow()},
+              ).scalar_one()
+              ownership_id = connection.execute(
+                  text(
+                      "INSERT INTO car_ownership "
+                      "(user_id, car_id, start_date, is_active, care_plan, priority_access) "
+                      "VALUES (:user_id, :car_id, :created_at, TRUE, 'active_monitoring', FALSE) "
+                      "RETURNING id"
+                  ),
+                  {"user_id": user_id, "car_id": car_id, "created_at": datetime.utcnow()},
+              ).scalar_one()
+              connection.execute(
+                  text(
+                      "INSERT INTO vehicle_events "
+                      "(car_id, ownership_id, event_type, severity, event_date, title, description, mileage, source, data, fingerprint, created_by, is_deleted, created_at) "
+                      "VALUES (:car_id, :ownership_id, 'service', 'low', CURRENT_DATE, 'CI event', 'Migration test', 10000, 'ci', CAST(:data AS JSON), :fingerprint, :user_id, FALSE, :created_at)"
+                  ),
+                  {
+                      "car_id": car_id,
+                      "ownership_id": ownership_id,
+                      "data": '{"source":"postgres-ci","verified":true}',
+                      "fingerprint": "postgres-ci-event-0001",
+                      "user_id": user_id,
+                      "created_at": datetime.utcnow(),
+                  },
+              )
+              payload = connection.execute(
+                  text(
+                      "SELECT data->>'source' FROM vehicle_events "
+                      "WHERE fingerprint = 'postgres-ci-event-0001'"
+                  )
+              ).scalar_one()
+
+          if payload != "postgres-ci":
+              raise SystemExit(f"Unexpected JSON payload value: {payload!r}")
+
+          print("PostgreSQL JSON behaviour verified.")
+          PY

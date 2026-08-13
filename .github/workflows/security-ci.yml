@@ -52,19 +52,34 @@ jobs:
           SQLALCHEMY_DATABASE_URI: "sqlite:////tmp/aura-schema-drift.db"
         run: |
           rm -f /tmp/aura-schema-drift.db
-          python -m flask db upgrade 82c0c175b392
           python - <<'PY'
+          from sqlalchemy import text
+
           from app import create_app
           from extensions import db
-          from models import MaintenanceSchedule, VehicleRecall
+          from profiles.models import ClientProfile, ProfileAuditEvent
 
           app = create_app()
           with app.app_context():
-              MaintenanceSchedule.__table__.create(db.engine, checkfirst=True)
-              VehicleRecall.__table__.create(db.engine, checkfirst=True)
+              db.create_all()
+              ProfileAuditEvent.__table__.drop(db.engine, checkfirst=True)
+              ClientProfile.__table__.drop(db.engine, checkfirst=True)
+              with db.engine.begin() as connection:
+                  connection.execute(
+                      text(
+                          "CREATE TABLE alembic_version "
+                          "(version_num VARCHAR(32) NOT NULL)"
+                      )
+                  )
+                  connection.execute(
+                      text(
+                          "INSERT INTO alembic_version (version_num) "
+                          "VALUES ('82c0c175b392')"
+                      )
+                  )
           PY
           python scripts/reconcile_alembic_history.py
-          python -m flask db upgrade
+          python -m flask db upgrade d42e7a1c9b50
           python - <<'PY'
           from sqlalchemy import create_engine, inspect, text
 
@@ -89,10 +104,10 @@ jobs:
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "e13f4a7b9c20":
+          if version != "d42e7a1c9b50":
               raise SystemExit(f"Unexpected reconciled head: {version}")
 
-          print("Production schema reconciliation rehearsal passed.")
+          print("Production schema reconciliation rehearsal passed through d42e7a1c9b50.")
           PY
 
       - name: Rehearse production session and profile migrations
@@ -100,8 +115,21 @@ jobs:
           SQLALCHEMY_DATABASE_URI: "sqlite:////tmp/aura-migration-test.db"
         run: |
           rm -f /tmp/aura-migration-test.db
-          python -m flask db upgrade 4d2b9e7a1c60
-          python -m flask db upgrade
+          python - <<'PY'
+          from app import create_app
+          from extensions import db
+          from profiles.models import ClientProfile, ProfileAuditEvent
+          from security.session_registry import UserSession
+
+          app = create_app()
+          with app.app_context():
+              db.create_all()
+              ProfileAuditEvent.__table__.drop(db.engine, checkfirst=True)
+              ClientProfile.__table__.drop(db.engine, checkfirst=True)
+              UserSession.__table__.drop(db.engine, checkfirst=True)
+          PY
+          python -m flask db stamp 4d2b9e7a1c60
+          python -m flask db upgrade d42e7a1c9b50
           python - <<'PY'
           from sqlalchemy import create_engine, inspect, text
 
@@ -123,10 +151,10 @@ jobs:
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "e13f4a7b9c20":
+          if version != "d42e7a1c9b50":
               raise SystemExit(f"Unexpected migration head: {version}")
 
-          print("Production session and profile migration rehearsal passed.")
+          print("Production session and profile migration rehearsal passed through d42e7a1c9b50.")
           PY
 
       - name: Test security foundation

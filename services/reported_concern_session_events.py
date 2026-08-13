@@ -19,7 +19,7 @@ from typing import Any
 
 from flask import has_request_context, request
 from flask_login import current_user
-from sqlalchemy import event, inspect
+from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
 
 from extensions import db
@@ -195,6 +195,26 @@ def _plan_status_transition(
     )
 
 
+def _persisted_status(session: Session, concern: CarFault) -> str | None:
+    """Read the pre-flush status when SQLAlchemy expired the old attribute.
+
+    Flask-SQLAlchemy expires objects after commit. A route normally reloads the
+    concern before mutating it, but services/tests may assign a new status to an
+    expired instance. In that case SQLAlchemy history contains the new value but
+    not the deleted value. Reading through the current transaction connection
+    recovers the persisted state without flushing the pending mutation.
+    """
+
+    if concern.id is None:
+        return None
+
+    return session.connection().execute(
+        select(CarFault.__table__.c.status).where(
+            CarFault.__table__.c.id == concern.id
+        )
+    ).scalar_one_or_none()
+
+
 def _collect_pending_events(session: Session) -> list[_PendingConcernEvent]:
     now = _utcnow_naive()
     pending: list[_PendingConcernEvent] = []
@@ -208,11 +228,21 @@ def _collect_pending_events(session: Session) -> list[_PendingConcernEvent]:
             continue
 
         history = inspect(obj).attrs.status.history
-        if not history.has_changes() or not history.deleted or not history.added:
+        if not history.has_changes():
             continue
 
-        previous_state = history.deleted[0]
-        new_state = history.added[0]
+        new_state = history.added[-1] if history.added else obj.status
+        previous_state = (
+            history.deleted[-1]
+            if history.deleted
+            else _persisted_status(session, obj)
+        )
+
+        if previous_state is None or new_state is None:
+            raise ReportedConcernIntegrationError(
+                "reported concern status transition is missing persisted state evidence"
+            )
+
         if previous_state == new_state:
             continue
 

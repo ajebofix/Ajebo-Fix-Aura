@@ -159,8 +159,12 @@ def _query_visible_events(
             VehicleEvent.is_deleted.is_(False),
         )
         .order_by(
-            occurred_order.asc(),
+            # The ledger is append-oriented: recorded chronology preserves the
+            # causal state-transition sequence even when an occurrence timestamp
+            # is later corrected or supplied out of order. occurred_at remains
+            # exposed as the factual occurrence time, not silently rewritten.
             recorded_order.asc(),
+            occurred_order.asc(),
             VehicleEvent.id.asc(),
         )
         .all()

@@ -245,8 +245,11 @@ jobs:
       - name: Test owner driver management authorization
         run: pytest -q --tb=short tests/test_owner_driver_management.py
 
+      - name: Test canonical event emission
+        run: pytest -q --tb=short tests/test_event_emission.py
+
       - name: Run Ruff on security changes
-        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security services/email_delivery.py services/owner_driver_management.py scripts tests
+        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles security services/email_delivery.py services/owner_driver_management.py services/event_emission.py scripts tests
 
       - name: Run Bandit on security changes
         id: bandit_tests
@@ -255,7 +258,7 @@ jobs:
           set +e
           bandit -q -r app.py auth driver events ownership profiles security scripts -x ./tests 2>&1 | tee bandit-output.txt
           status=${PIPESTATUS[0]}
-          bandit -q services/email_delivery.py services/owner_driver_management.py 2>&1 | tee -a bandit-output.txt
+          bandit -q services/email_delivery.py services/owner_driver_management.py services/event_emission.py 2>&1 | tee -a bandit-output.txt
           service_status=${PIPESTATUS[0]}
           if [ "$service_status" -ne 0 ]; then
             status="$service_status"

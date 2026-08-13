@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -90,7 +90,7 @@ def test_progression_does_not_promote_unvalidated_strong_direction(
             created_by=owner.id,
             schema_version=1,
             occurred_at=datetime(2026, 8, 13, 9, 0, 0),
-            recorded_at=datetime(2026, 8, 13, 9, 0, 0),
+            recorded_at=datetime.now(timezone.utc).replace(tzinfo=None),
             subject_type="reported_concern",
             subject_id=concern.id,
             actor_type="user",

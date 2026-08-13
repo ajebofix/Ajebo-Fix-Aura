@@ -1,6 +1,6 @@
 """Vehicle-scoped, visibility-aware memory service for A.J. Rina.
 
-Memory retrieval happens only after authority resolution.  Raw chat continuity,
+Memory retrieval happens only after authority resolution. Raw chat continuity,
 durable conversation summaries and advisor-only notes remain separate layers;
 this service does not merge them into a generic provider memory blob.
 """
@@ -47,6 +47,10 @@ CHANNELS: Final = frozenset(
 )
 
 CHAT_ROLES: Final = frozenset({"user", "assistant"})
+_CLIENT_AUTHORITIES: Final = frozenset({AUTHORITY_OWNER, AUTHORITY_DRIVER})
+_PRIVILEGED_AUTHORITIES: Final = frozenset(
+    {AUTHORITY_ADVISOR, AUTHORITY_ADMINISTRATOR}
+)
 
 
 class RinaMemoryError(ValueError):
@@ -123,13 +127,13 @@ class RinaMemoryBundle:
 
 
 def _visibility_scope(authority: str) -> tuple[str, ...]:
-    if authority in {AUTHORITY_ADVISOR, AUTHORITY_ADMINISTRATOR}:
+    if authority in _PRIVILEGED_AUTHORITIES:
         return (VISIBILITY_CLIENT, VISIBILITY_ADVISOR, VISIBILITY_INTERNAL)
     return (VISIBILITY_CLIENT,)
 
 
 def _default_chat_visibility(authority: str) -> str:
-    if authority in {AUTHORITY_ADVISOR, AUTHORITY_ADMINISTRATOR}:
+    if authority in _PRIVILEGED_AUTHORITIES:
         return VISIBILITY_ADVISOR
     return VISIBILITY_CLIENT
 
@@ -166,7 +170,7 @@ def save_rina_chat_turn(
 ) -> ChatMessage:
     """Persist one raw chat turn inside the caller's vehicle authority boundary.
 
-    The caller owns transaction control by default.  This lets a later
+    The caller owns transaction control by default. This lets a later
     orchestration cutover persist user turn, material summary/audit and response
     atomically where the workflow requires it.
     """
@@ -188,7 +192,7 @@ def save_rina_chat_turn(
         visibility or _default_chat_visibility(authority.authority)
     )
     if (
-        authority.authority in {AUTHORITY_OWNER, AUTHORITY_DRIVER}
+        authority.authority in _CLIENT_AUTHORITIES
         and resolved_visibility != VISIBILITY_CLIENT
     ):
         raise RinaMemoryPolicyError(
@@ -276,6 +280,11 @@ def _summary_query(
         ConversationRecord.visibility.in_(_visibility_scope(authority.authority)),
     )
 
+    if authority.authority in _CLIENT_AUTHORITIES:
+        # A client-facing memory row is usable only when a deliberately
+        # sanitized client summary exists. Never fall back to advisor_summary.
+        query = query.filter(ConversationRecord.client_summary.isnot(None))
+
     # Drivers must not automatically inherit owner/private client history.
     if authority.authority == AUTHORITY_DRIVER:
         query = query.filter(ConversationRecord.user_id == authority.user_id)
@@ -284,6 +293,32 @@ def _summary_query(
         query.order_by(ConversationRecord.created_at.desc(), ConversationRecord.id.desc())
         .limit(max(1, min(int(limit), 25)))
         .all()
+    )
+
+
+def _summary_memory(
+    *,
+    row: ConversationRecord,
+    authority: str,
+) -> RinaSummaryMemory:
+    if authority in _CLIENT_AUTHORITIES:
+        concern = None
+        summary = row.client_summary
+    else:
+        # Advisor/administrator context may use the operational summary and
+        # source concern, but the provider layer still decides what minimum
+        # subset is necessary for a particular request.
+        concern = row.concern
+        summary = row.advisor_summary or row.client_summary
+
+    return RinaSummaryMemory(
+        record_id=row.id,
+        visibility=row.visibility or VISIBILITY_INTERNAL,
+        provenance=row.provenance,
+        verification_state=row.verification_state,
+        created_at=row.created_at,
+        concern=concern,
+        summary=summary,
     )
 
 
@@ -297,16 +332,7 @@ def load_rina_summaries(
     rows = _summary_query(authority=authority, limit=limit)
 
     return tuple(
-        RinaSummaryMemory(
-            record_id=row.id,
-            visibility=row.visibility or VISIBILITY_INTERNAL,
-            provenance=row.provenance,
-            verification_state=row.verification_state,
-            created_at=row.created_at,
-            concern=row.concern,
-            summary=row.advisor_summary,
-        )
-        for row in rows
+        _summary_memory(row=row, authority=authority.authority) for row in rows
     )
 
 
@@ -364,7 +390,7 @@ def load_rina_memory_bundle(
     )
 
     advisor_memory: tuple[RinaAdvisorMemory, ...] = ()
-    if authority.authority in {AUTHORITY_ADVISOR, AUTHORITY_ADMINISTRATOR}:
+    if authority.authority in _PRIVILEGED_AUTHORITIES:
         advisor_memory = load_rina_advisor_memory(
             user_id=user_id,
             car_id=car_id,

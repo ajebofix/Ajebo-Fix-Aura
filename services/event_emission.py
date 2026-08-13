@@ -102,6 +102,10 @@ def _normalise_datetime(value: datetime) -> datetime:
     return value
 
 
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _assert_safe_json(value: Any, *, label: str, max_bytes: int) -> None:
     def walk(node: Any) -> None:
         if isinstance(node, dict):
@@ -407,7 +411,9 @@ def emit_vehicle_event(
 
     ownership = _active_ownership_for(car_id)
 
-    assert actor_user_id is not None  # established by contract validation
+    if actor_user_id is None:
+        raise EventEmissionError("canonical human event is missing actor_user_id")
+
     actor_authority = resolve_vehicle_authority(actor_user_id, car_id)
     if actor_authority is None:
         raise EventAuthorityError("actor has no proven authority for this vehicle")
@@ -477,7 +483,7 @@ def emit_vehicle_event(
         fingerprint=fingerprint,
         schema_version=CANONICAL_EVENT_SCHEMA_VERSION,
         occurred_at=occurred_at,
-        recorded_at=datetime.utcnow(),
+        recorded_at=_utcnow_naive(),
         subject_type=subject_type,
         subject_id=subject_id,
         actor_type=actor_type,

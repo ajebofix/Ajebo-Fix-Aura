@@ -105,10 +105,10 @@ jobs:
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "e13f4a7b9c20":
+          if version != "f24c8d1e6a90":
               raise SystemExit(f"Unexpected PostgreSQL head: {version}")
 
-          print("Fresh PostgreSQL upgrade reached e13f4a7b9c20.")
+          print("Fresh PostgreSQL upgrade reached f24c8d1e6a90.")
           PY
 
       - name: Recreate production-shaped baseline at d42e7a1c9b50
@@ -171,7 +171,7 @@ jobs:
       - name: Upgrade production-shaped baseline to proposed head
         run: python -m flask db upgrade
 
-      - name: Verify Wave 1.2 envelope migration
+      - name: Verify Wave 1.2 envelope migration and hardening
         run: |
           python - <<'PY'
           from sqlalchemy import create_engine, inspect, text
@@ -207,15 +207,100 @@ jobs:
           if not vehicle_event_columns["mileage"]["nullable"]:
               raise SystemExit("VehicleEvent mileage must be nullable at Wave 1.2 head")
 
+          check_names = {
+              constraint["name"]
+              for constraint in inspector.get_check_constraints("vehicle_events")
+          }
+          required_checks = {
+              "ck_vehicle_events_actor_type",
+              "ck_vehicle_events_actor_authority",
+              "ck_vehicle_events_visibility",
+              "ck_vehicle_events_progression_direction",
+              "ck_vehicle_events_schema_version",
+          }
+          missing_checks = required_checks - check_names
+          if missing_checks:
+              raise SystemExit(
+                  f"VehicleEvent envelope missing CHECK constraints: {sorted(missing_checks)}"
+              )
+
+          index_names = {
+              index["name"] for index in inspector.get_indexes("vehicle_events")
+          }
+          if "ix_vehicle_events_timeline_scope" not in index_names:
+              raise SystemExit("VehicleEvent timeline scope index is missing")
+
           with engine.connect() as connection:
               version = connection.execute(
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "e13f4a7b9c20":
+          if version != "f24c8d1e6a90":
               raise SystemExit(f"Unexpected proposed migration head: {version}")
 
-          print("Wave 1.2 VehicleEvent envelope migration verified.")
+          print("Wave 1.2 VehicleEvent envelope hardening verified.")
+          PY
+
+      - name: Verify constraint enforcement on PostgreSQL
+        run: |
+          python - <<'PY'
+          from datetime import datetime
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.exc import IntegrityError
+          import os
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              user_id = connection.execute(
+                  text(
+                      "INSERT INTO users "
+                      "(name, email, phone_number, password_hash, role, is_active, created_at, email_verified_at) "
+                      "VALUES ('Constraint User', 'constraint@example.com', '+2348000000099', 'hash', 'user', TRUE, :created_at, :created_at) "
+                      "RETURNING id"
+                  ),
+                  {"created_at": datetime.utcnow()},
+              ).scalar_one()
+              car_id = connection.execute(
+                  text(
+                      "INSERT INTO cars "
+                      "(brand, model, year, vin, current_mileage, created_at, vehicle_identity_source) "
+                      "VALUES ('Mercedes-Benz', 'E-Class', 2024, 'WDDCI000000000099', 5000, :created_at, 'manual') "
+                      "RETURNING id"
+                  ),
+                  {"created_at": datetime.utcnow()},
+              ).scalar_one()
+              ownership_id = connection.execute(
+                  text(
+                      "INSERT INTO car_ownership "
+                      "(user_id, car_id, start_date, is_active, care_plan, priority_access) "
+                      "VALUES (:user_id, :car_id, :created_at, TRUE, 'active_monitoring', FALSE) "
+                      "RETURNING id"
+                  ),
+                  {"user_id": user_id, "car_id": car_id, "created_at": datetime.utcnow()},
+              ).scalar_one()
+
+          try:
+              with engine.begin() as connection:
+                  connection.execute(
+                      text(
+                          "INSERT INTO vehicle_events "
+                          "(car_id, ownership_id, event_type, title, fingerprint, created_by, is_deleted, created_at, actor_type, visibility) "
+                          "VALUES (:car_id, :ownership_id, 'concern.reported', 'Invalid actor', :fingerprint, :user_id, FALSE, :created_at, 'robot', 'client')"
+                      ),
+                      {
+                          "car_id": car_id,
+                          "ownership_id": ownership_id,
+                          "fingerprint": "invalid-actor-constraint-test",
+                          "user_id": user_id,
+                          "created_at": datetime.utcnow(),
+                      },
+                  )
+          except IntegrityError:
+              pass
+          else:
+              raise SystemExit("Invalid actor_type bypassed PostgreSQL CHECK constraint")
+
+          print("PostgreSQL envelope CHECK constraints enforce canonical vocabularies.")
           PY
 
       - name: Verify JSON and uniqueness behaviour on PostgreSQL

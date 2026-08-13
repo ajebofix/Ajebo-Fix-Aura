@@ -30,7 +30,11 @@ class FakeProvider:
     provider_name = "cutover-fake"
     model = "cutover-model"
 
-    def __init__(self, *, text: str = "Based on what's recorded, this remains under review."):
+    def __init__(
+        self,
+        *,
+        text: str = "Based on what's recorded, this remains under review.",
+    ) -> None:
         self.text = text
         self.calls: list[RinaProviderRequest] = []
 
@@ -87,18 +91,19 @@ def _own(*, owner: User, car: Car, suffix: int) -> CarOwnership:
 
 
 def _csrf_token(client) -> str:
-    with client.session_transaction() as sess:
-        token = sess.get("_csrf_token")
-    if token:
-        return token
-
+    # Safe GETs seed Aura's signed-session CSRF token. Keep a deterministic
+    # fallback for isolated route tests so the helper does not depend on a
+    # particular HTML template being rendered first.
     client.get("/auth/login")
-    with client.session_transaction() as sess:
-        return sess["_csrf_token"]
+    with client.session_transaction() as flask_session:
+        token = flask_session.get("_csrf_token")
+        if not token:
+            token = "rina-cutover-test-csrf-token"
+            flask_session["_csrf_token"] = token
+        return str(token)
 
 
 def _sign_in(client, user: User) -> None:
-    client.get("/auth/login")
     token = _csrf_token(client)
     response = client.post(
         "/auth/login",
@@ -119,7 +124,11 @@ def _post_json(client, path: str, payload: dict):
     )
 
 
-def _fake_provider(monkeypatch, *, text: str = "Based on what's recorded, this remains under review.") -> FakeProvider:
+def _fake_provider(
+    monkeypatch,
+    *,
+    text: str = "Based on what's recorded, this remains under review.",
+) -> FakeProvider:
     provider = FakeProvider(text=text)
     monkeypatch.setattr(
         "services.rina_orchestrator._provider_for_runtime",
@@ -137,21 +146,26 @@ def test_dashboard_default_vehicle_does_not_silently_bind_rina(app, client):
         _own(owner=owner, car=first, suffix=1)
         _own(owner=owner, car=second, suffix=2)
         db.session.commit()
+        first_id = first.id
+        second_id = second.id
         _sign_in(client, owner)
 
     dashboard = client.get("/dashboard/")
     assert dashboard.status_code == 200
 
-    with client.session_transaction() as sess:
-        assert sess.get("active_vehicle_id") == first.id
-        assert sess.get("rina_active_car_id") is None
-        assert "rina_context" not in sess
+    with client.session_transaction() as flask_session:
+        assert flask_session.get("active_vehicle_id") == first_id
+        assert flask_session.get("rina_active_car_id") is None
+        assert "rina_context" not in flask_session
 
     context = client.get("/chat/context")
     assert context.status_code == 200
     payload = context.get_json()
     assert payload["active_car_id"] is None
-    assert {item["car_id"] for item in payload["vehicles"]} == {first.id, second.id}
+    assert {item["car_id"] for item in payload["vehicles"]} == {
+        first_id,
+        second_id,
+    }
 
     chat = _post_json(client, "/chat", {"message": "What is recorded?"})
     assert chat.status_code == 200
@@ -163,7 +177,11 @@ def test_dashboard_default_vehicle_does_not_silently_bind_rina(app, client):
         assert RinaAIAuditEvent.query.one().outcome == "vehicle_required"
 
 
-def test_explicit_rina_vehicle_selection_persists_only_scoped_chat(app, client, monkeypatch):
+def test_explicit_vehicle_selection_persists_only_scoped_chat(
+    app,
+    client,
+    monkeypatch,
+):
     provider = _fake_provider(monkeypatch)
 
     with app.app_context():
@@ -205,7 +223,11 @@ def test_explicit_rina_vehicle_selection_persists_only_scoped_chat(app, client, 
         assert RinaAIAuditEvent.query.one().car_id == car_id
 
 
-def test_free_text_vehicle_name_cannot_switch_selected_vehicle(app, client, monkeypatch):
+def test_free_text_vehicle_name_cannot_switch_selected_vehicle(
+    app,
+    client,
+    monkeypatch,
+):
     provider = _fake_provider(monkeypatch)
 
     with app.app_context():
@@ -281,7 +303,6 @@ def test_history_is_vehicle_scoped_even_for_same_owner(app, client, monkeypatch)
 
     first_history = client.get(f"/chat/history?car_id={first_id}")
     second_history = client.get(f"/chat/history?car_id={second_id}")
-
     assert first_history.status_code == 200
     assert second_history.status_code == 200
 
@@ -335,7 +356,9 @@ def test_revoked_driver_session_loses_rina_vehicle_and_history(app, client):
     assert selected.get_json()["authority"] == "driver"
 
     with app.app_context():
-        db.session.get(CarDriver, assignment_id).is_active = False
+        assignment_row = db.session.get(CarDriver, assignment_id)
+        assert assignment_row is not None
+        assignment_row.is_active = False
         db.session.commit()
 
     history = client.get(f"/chat/history?car_id={car_id}")
@@ -348,12 +371,15 @@ def test_revoked_driver_session_loses_rina_vehicle_and_history(app, client):
     assert payload["active_car_id"] is None
     assert payload["vehicles"] == []
 
-    with client.session_transaction() as sess:
-        assert sess.get("rina_active_car_id") is None
-        assert sess.get("rina_conversation_id") is None
+    with client.session_transaction() as flask_session:
+        assert flask_session.get("rina_active_car_id") is None
+        assert flask_session.get("rina_conversation_id") is None
 
 
-def test_dashboard_explicit_selection_sets_rina_binding_and_removes_legacy_context(app, client):
+def test_dashboard_explicit_selection_sets_rina_binding_and_clears_legacy_context(
+    app,
+    client,
+):
     with app.app_context():
         owner = _user(suffix=12)
         car = _car(suffix=12)
@@ -362,11 +388,11 @@ def test_dashboard_explicit_selection_sets_rina_binding_and_removes_legacy_conte
         car_id = car.id
         _sign_in(client, owner)
 
-    with client.session_transaction() as sess:
-        sess["rina_context"] = {"vehicle_id": 999, "private": "legacy"}
-        sess["rina_context_full"] = {"legacy": True}
-        sess["selected_vehicle_id"] = 999
-        sess["rina_conversation_id"] = "old-conversation"
+    with client.session_transaction() as flask_session:
+        flask_session["rina_context"] = {"vehicle_id": 999, "private": "legacy"}
+        flask_session["rina_context_full"] = {"legacy": True}
+        flask_session["selected_vehicle_id"] = 999
+        flask_session["rina_conversation_id"] = "old-conversation"
 
     response = _post_json(
         client,
@@ -375,16 +401,16 @@ def test_dashboard_explicit_selection_sets_rina_binding_and_removes_legacy_conte
     )
     assert response.status_code == 200
 
-    with client.session_transaction() as sess:
-        assert sess["active_vehicle_id"] == car_id
-        assert sess["rina_active_car_id"] == car_id
-        assert "rina_context" not in sess
-        assert "rina_context_full" not in sess
-        assert "selected_vehicle_id" not in sess
-        assert "rina_conversation_id" not in sess
+    with client.session_transaction() as flask_session:
+        assert flask_session["active_vehicle_id"] == car_id
+        assert flask_session["rina_active_car_id"] == car_id
+        assert "rina_context" not in flask_session
+        assert "rina_context_full" not in flask_session
+        assert "selected_vehicle_id" not in flask_session
+        assert "rina_conversation_id" not in flask_session
 
 
-def test_booking_and_safety_escalation_create_rules_only_material_summaries(app, client, monkeypatch):
+def test_material_chat_outcomes_use_rules_only_summaries(app, client, monkeypatch):
     _fake_provider(monkeypatch)
 
     with app.app_context():
@@ -426,6 +452,7 @@ def test_booking_and_safety_escalation_create_rules_only_material_summaries(app,
             "A consultation booking request was raised through A.J. Rina."
         )
         assert records[0].recommended_action == "request_consultation"
+        assert records[0].concern is None
         assert records[0].emotional_state is None
         assert records[0].urgency_level is None
         assert booking_message not in repr(records[0].__dict__)
@@ -434,12 +461,17 @@ def test_booking_and_safety_escalation_create_rules_only_material_summaries(app,
             "A question requiring advisor review was recorded through A.J. Rina."
         )
         assert records[1].recommended_action == "advisor_review"
+        assert records[1].concern is None
         assert records[1].emotional_state is None
         assert records[1].urgency_level is None
         assert safety_message not in repr(records[1].__dict__)
 
 
-def test_chat_transaction_rolls_back_audit_and_first_turn_when_second_turn_fails(app, client, monkeypatch):
+def test_chat_transaction_rolls_back_audit_and_first_turn_when_second_turn_fails(
+    app,
+    client,
+    monkeypatch,
+):
     _fake_provider(monkeypatch)
 
     with app.app_context():
@@ -456,7 +488,7 @@ def test_chat_transaction_rolls_back_audit_and_first_turn_when_second_turn_fails
         {"car_id": car_id},
     ).status_code == 200
 
-    from routes import chat as chat_routes
+    import routes.chat as chat_routes
 
     real_save = chat_routes.save_rina_chat_turn
     call_count = {"value": 0}
@@ -500,7 +532,7 @@ def test_runtime_cutover_defaults_and_provider_credentials_are_fail_safe(monkeyp
     assert rina_openai_provider_enabled() is False
 
 
-def test_rina_chat_template_does_not_inject_model_or_user_text_with_inner_html():
+def test_rina_chat_template_is_vehicle_explicit_csrf_safe_and_dom_safe():
     template = (
         Path(__file__).resolve().parents[1]
         / "templates"
@@ -511,4 +543,5 @@ def test_rina_chat_template_does_not_inject_model_or_user_text_with_inner_html()
     assert "innerHTML" not in template
     assert "textContent" in template
     assert "X-CSRF-Token" in template
-    assert 'JSON.stringify({\n                    message: text,\n                    car_id: selectedCarId,' in template
+    assert "car_id: selectedCarId" in template
+    assert "/chat/select-vehicle" in template

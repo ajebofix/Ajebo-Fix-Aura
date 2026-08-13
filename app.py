@@ -23,6 +23,7 @@ from security.session_registry import init_session_registry, session_registry_bp
 from services.feature_gateways import has_feature
 
 import security.session_events  # noqa: F401, E402
+import services.reported_concern_session_events  # noqa: F401, E402
 
 
 load_dotenv(override=False)

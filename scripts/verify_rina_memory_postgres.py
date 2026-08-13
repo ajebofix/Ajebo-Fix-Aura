@@ -5,6 +5,7 @@ Run only against a disposable CI database after ``flask db upgrade``.
 
 from __future__ import annotations
 
+import secrets
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -32,7 +33,12 @@ from services.rina_memory_service import (  # noqa: E402
 )
 
 
-PASSWORD = "Password123"
+PASSWORD = secrets.token_urlsafe(18)
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(message)
 
 
 def make_user(*, suffix: int, role: str = "user") -> User:
@@ -161,49 +167,72 @@ def main() -> None:
         db.session.commit()
 
         history = load_rina_chat_history(user_id=owner.id, car_id=car_one.id)
-        assert [turn.content for turn in history] == ["Car one PostgreSQL memory."]
-        assert all(turn.content != "Car two PostgreSQL memory." for turn in history)
+        require(
+            [turn.content for turn in history] == ["Car one PostgreSQL memory."],
+            "owner chat history was not isolated to car one",
+        )
+        require(
+            all(turn.content != "Car two PostgreSQL memory." for turn in history),
+            "car two chat leaked into car one memory",
+        )
 
         try:
             load_rina_chat_history(user_id=outsider.id, car_id=car_one.id)
         except RinaVehicleAuthorityDenied:
             pass
         else:
-            raise AssertionError("unrelated user gained Rina memory access")
+            raise SystemExit("unrelated user gained Rina memory access")
 
         owner_summaries = load_rina_summaries(user_id=owner.id, car_id=car_one.id)
         owner_payload = repr([item.to_dict() for item in owner_summaries])
-        assert "Client-safe PostgreSQL continuity summary." in owner_payload
-        assert "POSTGRES INTERNAL ADVISOR SUMMARY" not in owner_payload
-        assert "POSTGRES INTERNAL ONLY" not in owner_payload
-        assert "Raw concern" not in owner_payload
+        require(
+            "Client-safe PostgreSQL continuity summary." in owner_payload,
+            "client-safe summary was not available to owner",
+        )
+        require(
+            "POSTGRES INTERNAL ADVISOR SUMMARY" not in owner_payload,
+            "advisor summary leaked into owner memory",
+        )
+        require(
+            "POSTGRES INTERNAL ONLY" not in owner_payload,
+            "internal record leaked into owner memory",
+        )
+        require(
+            "Raw concern" not in owner_payload,
+            "raw concern text leaked into owner memory",
+        )
 
         driver_summaries = load_rina_summaries(user_id=driver.id, car_id=car_one.id)
-        assert [item.summary for item in driver_summaries] == [
-            "Driver client-safe continuity summary."
-        ]
+        require(
+            [item.summary for item in driver_summaries]
+            == ["Driver client-safe continuity summary."],
+            "driver inherited memory outside their own client-safe summaries",
+        )
 
         try:
             load_rina_advisor_memory(user_id=owner.id, car_id=car_one.id)
         except RinaVehicleAuthorityDenied:
             pass
         else:
-            raise AssertionError("owner gained advisor-only memory access")
+            raise SystemExit("owner gained advisor-only memory access")
 
         admin_summaries = load_rina_summaries(
             user_id=administrator.id,
             car_id=car_one.id,
         )
-        assert {item.record_id for item in admin_summaries} == {
-            client_record.id,
-            internal_record.id,
-            driver_record.id,
-        }
+        require(
+            {item.record_id for item in admin_summaries}
+            == {client_record.id, internal_record.id, driver_record.id},
+            "administrator did not receive the expected privileged summary scope",
+        )
         admin_notes = load_rina_advisor_memory(
             user_id=administrator.id,
             car_id=car_one.id,
         )
-        assert [item.content for item in admin_notes] == ["POSTGRES ADVISOR ONLY NOTE"]
+        require(
+            [item.content for item in admin_notes] == ["POSTGRES ADVISOR ONLY NOTE"],
+            "administrator advisor-note scope was not preserved",
+        )
 
         assignment.is_active = False
         db.session.commit()
@@ -212,7 +241,7 @@ def main() -> None:
         except RinaVehicleAuthorityDenied:
             pass
         else:
-            raise AssertionError("revoked driver retained Rina memory access")
+            raise SystemExit("revoked driver retained Rina memory access")
 
         print("Wave 1.3 PostgreSQL Rina memory isolation verified.")
 

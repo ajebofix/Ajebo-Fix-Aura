@@ -921,13 +921,107 @@ class VehicleEvent(db.Model):
 
     description = db.Column(db.Text, nullable=True)
 
-    mileage = db.Column(db.Integer, nullable=False)
+    mileage = db.Column(db.Integer, nullable=True)
 
     source = db.Column(db.String(50), default="manual")
 
     data = db.Column(JSON)
 
     fingerprint = db.Column(db.String(64), nullable=False)
+
+    # =====================================================
+    # WAVE 1.2 — CANONICAL EVENT ENVELOPE
+    # =====================================================
+
+    schema_version = db.Column(
+        db.Integer,
+        nullable=True,
+    )
+
+    occurred_at = db.Column(
+        db.DateTime,
+        nullable=True,
+    )
+
+    recorded_at = db.Column(
+        db.DateTime,
+        nullable=True,
+    )
+
+    subject_type = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+
+    subject_id = db.Column(
+        db.Integer,
+        nullable=True,
+    )
+
+    actor_type = db.Column(
+        db.String(32),
+        nullable=True,
+    )
+
+    actor_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            name="fk_vehicle_events_actor_user_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    actor_authority = db.Column(
+        db.String(32),
+        nullable=True,
+    )
+
+    visibility = db.Column(
+        db.String(20),
+        nullable=True,
+    )
+
+    previous_state = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+
+    new_state = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+
+    progression_direction = db.Column(
+        db.String(32),
+        nullable=True,
+    )
+
+    correlation_id = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+
+    causation_id = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+
+    evidence_refs = db.Column(
+        db.JSON,
+        nullable=True,
+    )
+
+    correction_of_event_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "vehicle_events.id",
+            name="fk_vehicle_events_correction_of_event_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
 
     created_by = db.Column(
         db.Integer,
@@ -944,6 +1038,17 @@ class VehicleEvent(db.Model):
     car = db.relationship("Car", back_populates="events")
 
     ownership = db.relationship("CarOwnership")
+
+    actor = db.relationship(
+        "User",
+        foreign_keys=[actor_user_id],
+    )
+
+    corrected_event = db.relationship(
+        "VehicleEvent",
+        remote_side=[id],
+        foreign_keys=[correction_of_event_id],
+    )
 
 
 # =========================================================

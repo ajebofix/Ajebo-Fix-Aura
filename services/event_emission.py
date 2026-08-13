@@ -301,6 +301,45 @@ def _same_semantics(
     )
 
 
+def _flush_new_event(
+    event: VehicleEvent,
+    *,
+    fingerprint: str,
+    semantic_kwargs: dict[str, Any],
+) -> VehicleEvent:
+    """Flush one event while preserving caller-owned transaction semantics.
+
+    PostgreSQL uses a SAVEPOINT so a concurrent unique-fingerprint collision
+    can be recovered without invalidating the caller's outer transaction.
+    SQLite is only Aura's local/test compatibility dialect; its SAVEPOINT
+    release can escape a deferred outer transaction, so it deliberately uses a
+    plain flush. Production concurrency guarantees are exercised on PostgreSQL.
+    """
+
+    dialect_name = db.session.get_bind().dialect.name
+
+    if dialect_name == "sqlite":
+        db.session.add(event)
+        db.session.flush()
+        return event
+
+    try:
+        with db.session.begin_nested():
+            db.session.add(event)
+            db.session.flush()
+    except IntegrityError:
+        existing = VehicleEvent.query.filter_by(fingerprint=fingerprint).first()
+        if existing is None:
+            raise
+        if not _same_semantics(existing, **semantic_kwargs):
+            raise EventIdempotencyConflict(
+                "concurrent idempotency replay used different event semantics"
+            )
+        return existing
+
+    return event
+
+
 def emit_vehicle_event(
     *,
     car_id: int,
@@ -455,19 +494,11 @@ def emit_vehicle_event(
         created_by=actor_user_id,
     )
 
-    try:
-        with db.session.begin_nested():
-            db.session.add(event)
-            db.session.flush()
-    except IntegrityError:
-        existing = VehicleEvent.query.filter_by(fingerprint=fingerprint).first()
-        if existing is None:
-            raise
-        if not _same_semantics(existing, **semantic_kwargs):
-            raise EventIdempotencyConflict(
-                "concurrent idempotency replay used different event semantics"
-            )
-        event = existing
+    event = _flush_new_event(
+        event,
+        fingerprint=fingerprint,
+        semantic_kwargs=semantic_kwargs,
+    )
 
     logger.info(
         "canonical_vehicle_event_emitted event_id=%s car_id=%s event_type=%s subject_type=%s subject_id=%s actor_authority=%s visibility=%s",

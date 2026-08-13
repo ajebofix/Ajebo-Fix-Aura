@@ -45,6 +45,11 @@ def init_csrf(app: Flask, *, exemptions: set[str] | None = None) -> None:
     @app.before_request
     def protect_unsafe_requests():
         if request.method in _SAFE_METHODS:
+            # Seed the signed-session token on the first safe request. This
+            # guarantees HTML forms and same-origin JSON clients can obtain the
+            # same expected token without relying on a particular template to
+            # call the Jinja helper before session inspection.
+            generate_csrf_token()
             return None
 
         if _is_exempt(request.endpoint, exempt_endpoints):

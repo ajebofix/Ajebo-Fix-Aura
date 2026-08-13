@@ -5,11 +5,17 @@ Run only against a disposable CI database after ``flask db upgrade``.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
+from pathlib import Path
 
-from app import create_app
-from extensions import db
-from models import (
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app import create_app  # noqa: E402
+from extensions import db  # noqa: E402
+from models import (  # noqa: E402
     AdvisorNote,
     Car,
     CarDriver,
@@ -17,8 +23,8 @@ from models import (
     ConversationRecord,
     User,
 )
-from services.rina_authority import RinaVehicleAuthorityDenied
-from services.rina_memory_service import (
+from services.rina_authority import RinaVehicleAuthorityDenied  # noqa: E402
+from services.rina_memory_service import (  # noqa: E402
     load_rina_advisor_memory,
     load_rina_chat_history,
     load_rina_summaries,

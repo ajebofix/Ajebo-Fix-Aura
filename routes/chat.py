@@ -310,6 +310,7 @@ def chat():
                     ),
                     "intent": intent,
                     "car_id": car_id,
+                    "authority": None,
                     "state": "provider_unavailable",
                     "conversation_id": None,
                     "uncertainty": "the chat transaction did not complete",
@@ -327,6 +328,7 @@ def chat():
                 "reply": response.message,
                 "intent": intent,
                 "car_id": response.car_id if response.car_id > 0 else None,
+                "authority": response.authority or None,
                 "state": response.state,
                 "conversation_id": (
                     conversation_id

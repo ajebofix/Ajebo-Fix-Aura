@@ -34,7 +34,7 @@ def test_progression_does_not_promote_unvalidated_strong_direction(
         owner = User(
             name=f"Guardrail Owner {suffix}",
             email=f"progression-guardrail-{suffix}@example.com",
-            phone=f"0800400000{suffix}",
+            phone_number=f"0800400000{suffix}",
             role="user",
             is_active=True,
             email_verified_at=datetime(2026, 8, 13, 7, 0, 0),

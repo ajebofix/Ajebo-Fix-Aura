@@ -1,0 +1,60 @@
+name: Aura Wave 1.2 Closure CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/versions/f24c8d1e6a90_harden_vehicle_event_envelope.py"
+      - "tests/test_concern_progression_guardrails.py"
+      - "docs/AURA_WAVE_1_2_EVENT_OBSERVABILITY.md"
+      - ".github/workflows/wave-1-2-closure-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-wave-1-2-closure-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  closure-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile closure migration and guardrail tests
+        run: python -m compileall -q migrations/versions/f24c8d1e6a90_harden_vehicle_event_envelope.py tests/test_concern_progression_guardrails.py
+
+      - name: Verify improvement and deterioration guardrails
+        run: pytest -q --tb=short tests/test_concern_progression_guardrails.py
+
+      - name: Ruff closure code
+        run: ruff check --output-format=concise migrations/versions/f24c8d1e6a90_harden_vehicle_event_envelope.py tests/test_concern_progression_guardrails.py
+
+      - name: Verify observability plan exists
+        run: test -s docs/AURA_WAVE_1_2_EVENT_OBSERVABILITY.md

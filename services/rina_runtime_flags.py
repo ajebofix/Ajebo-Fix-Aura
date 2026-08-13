@@ -6,34 +6,49 @@ import os
 
 
 _TRUTHY = {"1", "true", "yes", "on"}
+_FALSY = {"0", "false", "no", "off"}
 
 
-def _env_bool(name: str, *, default: bool = False) -> bool:
+def _optional_env_bool(name: str) -> bool | None:
     raw = os.getenv(name)
     if raw is None:
-        return default
-    return raw.strip().lower() in _TRUTHY
+        return None
+    normalized = raw.strip().lower()
+    if normalized in _TRUTHY:
+        return True
+    if normalized in _FALSY:
+        return False
+    return None
 
 
 def rina_orchestration_enabled() -> bool:
-    """Gate the new authority/memory/provider orchestration path.
+    """Gate the authority-first Rina orchestration path.
 
-    Default-off keeps the current production chat route unchanged until the
-    dedicated cutover PR explicitly enables it.
+    Wave 1.3 chat cutover makes the new path the application default. A
+    deployment can still disable it explicitly with
+    ``RINA_ORCHESTRATION_ENABLED=false`` for a compatible emergency fallback.
     """
 
-    return _env_bool("RINA_ORCHESTRATION_ENABLED", default=False)
+    configured = _optional_env_bool("RINA_ORCHESTRATION_ENABLED")
+    return True if configured is None else configured
 
 
 def rina_openai_provider_enabled() -> bool:
-    """Gate outbound OpenAI provider calls independently of orchestration."""
+    """Gate outbound OpenAI calls without requiring a new deployment secret.
 
-    return _env_bool("RINA_OPENAI_PROVIDER_ENABLED", default=False)
+    An explicit ``RINA_OPENAI_PROVIDER_ENABLED`` setting wins. Otherwise Aura
+    enables the provider only when the existing ``OPENAI_API_KEY`` is present;
+    missing credentials therefore produce the structured safe fallback instead
+    of a startup failure.
+    """
+
+    configured = _optional_env_bool("RINA_OPENAI_PROVIDER_ENABLED")
+    if configured is not None:
+        return configured
+    return bool((os.getenv("OPENAI_API_KEY") or "").strip())
 
 
 def rina_openai_model() -> str:
-    # Preserve Aura's existing provider model unless deployment deliberately
-    # selects another supported model.
     return (os.getenv("RINA_OPENAI_MODEL") or "gpt-4o-mini").strip()
 
 

@@ -4,11 +4,10 @@ The existing Aura codebase has several active routes that create or transition
 ``CarFault`` rows (client, driver, advisor, emergency review). Wave 1.2 must
 cover the domain without duplicating event semantics in every route.
 
-This module therefore observes the *domain transaction* immediately before
-commit, flushes the concern mutation so its durable subject id exists, and then
-delegates every canonical write to ``services.event_emission``. The listener
-never commits independently: concern state and event history still succeed or
-fail as one transaction.
+This module observes concern status changes and the caller's transaction, then
+delegates every canonical write to ``services.event_emission`` immediately
+before commit. It never commits independently: concern state and event history
+still succeed or fail as one transaction.
 """
 
 from __future__ import annotations
@@ -19,8 +18,8 @@ from typing import Any
 
 from flask import has_request_context, request
 from flask_login import current_user
-from sqlalchemy import event, inspect, select
-from sqlalchemy.orm import Session
+from sqlalchemy import event
+from sqlalchemy.orm import Session, object_session
 
 from extensions import db
 from models import CarFault
@@ -28,10 +27,19 @@ from services.event_emission import EventEmissionError, emit_vehicle_event
 
 
 _INTEGRATION_GUARD = "aura_reported_concern_event_integration"
+_PENDING_TRANSITIONS = "aura_reported_concern_pending_transitions"
 
 
 class ReportedConcernIntegrationError(EventEmissionError):
     """Raised when a concern transition cannot be represented safely."""
+
+
+@dataclass(frozen=True)
+class _ObservedStatusTransition:
+    concern: CarFault
+    previous_state: str
+    new_state: str
+    observed_at: datetime
 
 
 @dataclass(frozen=True)
@@ -149,14 +157,14 @@ def _plan_new_concern(concern: CarFault, now: datetime) -> list[_PendingConcernE
 
 
 def _plan_status_transition(
-    concern: CarFault,
-    *,
-    previous_state: str,
-    new_state: str,
-    now: datetime,
+    transition: _ObservedStatusTransition,
 ) -> _PendingConcernEvent:
+    concern = transition.concern
+    previous_state = transition.previous_state
+    new_state = transition.new_state
     source = _source_for(concern)
     actor_user_id = _actor_for_transition(concern, new_state)
+    now = transition.observed_at
 
     if previous_state == "reported" and new_state == "under_review":
         occurred_at = _normalise_datetime(concern.reviewed_at, fallback=now)
@@ -195,26 +203,6 @@ def _plan_status_transition(
     )
 
 
-def _persisted_status(session: Session, concern: CarFault) -> str | None:
-    """Read the pre-flush status when SQLAlchemy expired the old attribute.
-
-    Flask-SQLAlchemy expires objects after commit. A route normally reloads the
-    concern before mutating it, but services/tests may assign a new status to an
-    expired instance. In that case SQLAlchemy history contains the new value but
-    not the deleted value. Reading through the current transaction connection
-    recovers the persisted state without flushing the pending mutation.
-    """
-
-    if concern.id is None:
-        return None
-
-    return session.connection().execute(
-        select(CarFault.__table__.c.status).where(
-            CarFault.__table__.c.id == concern.id
-        )
-    ).scalar_one_or_none()
-
-
 def _collect_pending_events(session: Session) -> list[_PendingConcernEvent]:
     now = _utcnow_naive()
     pending: list[_PendingConcernEvent] = []
@@ -223,37 +211,11 @@ def _collect_pending_events(session: Session) -> list[_PendingConcernEvent]:
         if isinstance(obj, CarFault):
             pending.extend(_plan_new_concern(obj, now))
 
-    for obj in list(session.dirty):
-        if not isinstance(obj, CarFault) or obj in session.new:
+    observed = list(session.info.get(_PENDING_TRANSITIONS, []))
+    for transition in observed:
+        if transition.concern in session.new:
             continue
-
-        history = inspect(obj).attrs.status.history
-        if not history.has_changes():
-            continue
-
-        new_state = history.added[-1] if history.added else obj.status
-        previous_state = (
-            history.deleted[-1]
-            if history.deleted
-            else _persisted_status(session, obj)
-        )
-
-        if previous_state is None or new_state is None:
-            raise ReportedConcernIntegrationError(
-                "reported concern status transition is missing persisted state evidence"
-            )
-
-        if previous_state == new_state:
-            continue
-
-        pending.append(
-            _plan_status_transition(
-                obj,
-                previous_state=previous_state,
-                new_state=new_state,
-                now=now,
-            )
-        )
+        pending.append(_plan_status_transition(transition))
 
     return pending
 
@@ -305,6 +267,35 @@ def _emit_pending_event(item: _PendingConcernEvent) -> None:
     )
 
 
+@event.listens_for(CarFault.status, "set", active_history=True)
+def observe_reported_concern_status_transition(
+    concern: CarFault,
+    value: Any,
+    oldvalue: Any,
+    _initiator: Any,
+) -> None:
+    """Capture the old state at assignment time, even for expired instances."""
+
+    if not isinstance(oldvalue, str) or not isinstance(value, str):
+        return
+    if oldvalue == value:
+        return
+
+    session = object_session(concern)
+    if session is None or session.info.get(_INTEGRATION_GUARD):
+        return
+
+    queue = session.info.setdefault(_PENDING_TRANSITIONS, [])
+    queue.append(
+        _ObservedStatusTransition(
+            concern=concern,
+            previous_state=oldvalue,
+            new_state=value,
+            observed_at=_utcnow_naive(),
+        )
+    )
+
+
 @event.listens_for(Session, "before_commit")
 def emit_reported_concern_events_before_commit(session: Session) -> None:
     """Attach canonical events to every Aura Reported Concern transaction."""
@@ -333,3 +324,12 @@ def emit_reported_concern_events_before_commit(session: Session) -> None:
             _emit_pending_event(item)
     finally:
         session.info.pop(_INTEGRATION_GUARD, None)
+
+
+@event.listens_for(Session, "after_commit")
+@event.listens_for(Session, "after_rollback")
+def clear_reported_concern_transition_queue(session: Session) -> None:
+    """Discard captured transitions only after the transaction has ended."""
+
+    session.info.pop(_PENDING_TRANSITIONS, None)
+    session.info.pop(_INTEGRATION_GUARD, None)

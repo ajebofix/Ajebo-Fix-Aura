@@ -105,6 +105,7 @@ def upgrade():
         batch_op.add_column(
             sa.Column("verification_state", sa.String(length=32), nullable=True)
         )
+        batch_op.add_column(sa.Column("client_summary", sa.Text(), nullable=True))
 
     # Do not invent vehicle scope.  Mark legacy records conservatively so they
     # cannot be retrieved as client-visible memory until explicitly reviewed.
@@ -196,6 +197,7 @@ def downgrade():
         )
 
     with op.batch_alter_table("conversation_records") as batch_op:
+        batch_op.drop_column("client_summary")
         batch_op.drop_column("verification_state")
         batch_op.drop_column("provenance")
         batch_op.drop_column("source")

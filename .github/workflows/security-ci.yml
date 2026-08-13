@@ -52,31 +52,16 @@ jobs:
           SQLALCHEMY_DATABASE_URI: "sqlite:////tmp/aura-schema-drift.db"
         run: |
           rm -f /tmp/aura-schema-drift.db
+          python -m flask db upgrade 82c0c175b392
           python - <<'PY'
-          from sqlalchemy import text
-
           from app import create_app
           from extensions import db
-          from profiles.models import ClientProfile, ProfileAuditEvent
+          from models import MaintenanceSchedule, VehicleRecall
 
           app = create_app()
           with app.app_context():
-              db.create_all()
-              ProfileAuditEvent.__table__.drop(db.engine, checkfirst=True)
-              ClientProfile.__table__.drop(db.engine, checkfirst=True)
-              with db.engine.begin() as connection:
-                  connection.execute(
-                      text(
-                          "CREATE TABLE alembic_version "
-                          "(version_num VARCHAR(32) NOT NULL)"
-                      )
-                  )
-                  connection.execute(
-                      text(
-                          "INSERT INTO alembic_version (version_num) "
-                          "VALUES ('82c0c175b392')"
-                      )
-                  )
+              MaintenanceSchedule.__table__.create(db.engine, checkfirst=True)
+              VehicleRecall.__table__.create(db.engine, checkfirst=True)
           PY
           python scripts/reconcile_alembic_history.py
           python -m flask db upgrade
@@ -115,20 +100,7 @@ jobs:
           SQLALCHEMY_DATABASE_URI: "sqlite:////tmp/aura-migration-test.db"
         run: |
           rm -f /tmp/aura-migration-test.db
-          python - <<'PY'
-          from app import create_app
-          from extensions import db
-          from profiles.models import ClientProfile, ProfileAuditEvent
-          from security.session_registry import UserSession
-
-          app = create_app()
-          with app.app_context():
-              db.create_all()
-              ProfileAuditEvent.__table__.drop(db.engine, checkfirst=True)
-              ClientProfile.__table__.drop(db.engine, checkfirst=True)
-              UserSession.__table__.drop(db.engine, checkfirst=True)
-          PY
-          python -m flask db stamp 4d2b9e7a1c60
+          python -m flask db upgrade 4d2b9e7a1c60
           python -m flask db upgrade
           python - <<'PY'
           from sqlalchemy import create_engine, inspect, text

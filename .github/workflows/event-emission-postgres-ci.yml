@@ -71,4 +71,4 @@ jobs:
         run: python -m flask db upgrade
 
       - name: Verify caller transaction and concurrent idempotency
-        run: python scripts/verify_event_emission_postgres.py
+        run: python -m scripts.verify_event_emission_postgres

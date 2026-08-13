@@ -77,6 +77,11 @@ def apply_rina_memory_model_extensions() -> None:
         "verification_state",
         db.Column(db.String(32), nullable=True),
     )
+    _attach_column(
+        ConversationRecord,
+        "client_summary",
+        db.Column(db.Text, nullable=True),
+    )
 
 
 apply_rina_memory_model_extensions()

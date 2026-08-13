@@ -105,10 +105,10 @@ jobs:
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "d42e7a1c9b50":
+          if version != "e13f4a7b9c20":
               raise SystemExit(f"Unexpected PostgreSQL head: {version}")
 
-          print("Fresh PostgreSQL upgrade reached d42e7a1c9b50.")
+          print("Fresh PostgreSQL upgrade reached e13f4a7b9c20.")
           PY
 
       - name: Recreate production-shaped baseline at d42e7a1c9b50
@@ -168,8 +168,55 @@ jobs:
           print("Production-shaped PostgreSQL baseline verified.")
           PY
 
-      - name: Re-run upgrade idempotently
+      - name: Upgrade production-shaped baseline to proposed head
         run: python -m flask db upgrade
+
+      - name: Verify Wave 1.2 envelope migration
+        run: |
+          python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          import os
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          vehicle_event_columns = {
+              column["name"]: column for column in inspector.get_columns("vehicle_events")
+          }
+          expected_columns = {
+              "schema_version",
+              "occurred_at",
+              "recorded_at",
+              "subject_type",
+              "subject_id",
+              "actor_type",
+              "actor_user_id",
+              "actor_authority",
+              "visibility",
+              "previous_state",
+              "new_state",
+              "progression_direction",
+              "correlation_id",
+              "causation_id",
+              "evidence_refs",
+              "correction_of_event_id",
+          }
+          missing = expected_columns - set(vehicle_event_columns)
+          if missing:
+              raise SystemExit(f"VehicleEvent envelope missing columns: {sorted(missing)}")
+
+          if not vehicle_event_columns["mileage"]["nullable"]:
+              raise SystemExit("VehicleEvent mileage must be nullable at Wave 1.2 head")
+
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+
+          if version != "e13f4a7b9c20":
+              raise SystemExit(f"Unexpected proposed migration head: {version}")
+
+          print("Wave 1.2 VehicleEvent envelope migration verified.")
+          PY
 
       - name: Verify JSON and uniqueness behaviour on PostgreSQL
         run: |

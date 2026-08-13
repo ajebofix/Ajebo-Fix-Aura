@@ -55,6 +55,12 @@ Secure access to your vehicle health records.
             class="login-form"
         >
 
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="{{ csrf_token() }}"
+            >
+
             <!-- EMAIL -->
             <label for="email">
                 Email Address

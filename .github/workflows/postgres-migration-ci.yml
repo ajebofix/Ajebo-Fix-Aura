@@ -13,6 +13,8 @@ on:
       - "models.py"
       - "profiles/**"
       - "security/**"
+      - "rina/**"
+      - "services/**"
       - "scripts/**"
       - "requirements*.txt"
       - ".github/workflows/postgres-migration-ci.yml"
@@ -72,11 +74,11 @@ jobs:
       - name: Upgrade fresh PostgreSQL database to head
         run: python -m flask db upgrade
 
-      - name: Verify fresh-upgrade head and critical tables
+      - name: Verify fresh PostgreSQL head and critical schema
         run: |
           python - <<'PY'
-          from sqlalchemy import create_engine, inspect, text
           import os
+          from sqlalchemy import create_engine, inspect, text
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
           inspector = inspect(engine)
@@ -91,6 +93,8 @@ jobs:
               "vehicle_health_alerts",
               "diagnostic_code_definitions",
               "vehicle_dtcs",
+              "chat_messages",
+              "conversation_records",
               "user_sessions",
               "client_profiles",
               "profile_audit_events",
@@ -100,53 +104,66 @@ jobs:
           if missing:
               raise SystemExit(f"Fresh PostgreSQL upgrade missing tables: {sorted(missing)}")
 
+          chat_columns = {c["name"] for c in inspector.get_columns("chat_messages")}
+          expected_chat = {"car_id", "conversation_id", "channel", "visibility"}
+          if expected_chat - chat_columns:
+              raise SystemExit(
+                  f"ChatMessage scope fields missing: {sorted(expected_chat - chat_columns)}"
+              )
+
+          record_columns = {
+              c["name"] for c in inspector.get_columns("conversation_records")
+          }
+          expected_records = {
+              "conversation_id",
+              "visibility",
+              "source",
+              "provenance",
+              "verification_state",
+              "client_summary",
+          }
+          if expected_records - record_columns:
+              raise SystemExit(
+                  "ConversationRecord scope fields missing: "
+                  f"{sorted(expected_records - record_columns)}"
+              )
+
           with engine.connect() as connection:
               version = connection.execute(
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
-
-          if version != "f24c8d1e6a90":
+          if version != "a31c7d2e9f10":
               raise SystemExit(f"Unexpected PostgreSQL head: {version}")
 
-          print("Fresh PostgreSQL upgrade reached f24c8d1e6a90.")
+          print("Fresh PostgreSQL upgrade reached a31c7d2e9f10.")
           PY
 
       - name: Recreate production-shaped baseline at d42e7a1c9b50
         run: |
           python - <<'PY'
-          from sqlalchemy import create_engine, text
           import os
+          from sqlalchemy import create_engine, text
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
           with engine.begin() as connection:
-              schema_names = connection.execute(
-                  text(
-                      "SELECT schema_name FROM information_schema.schemata "
-                      "WHERE schema_name NOT IN ('pg_catalog', 'information_schema')"
-                  )
-              ).scalars().all()
-              for schema_name in schema_names:
-                  if schema_name == "public":
-                      connection.execute(text("DROP SCHEMA public CASCADE"))
-                      connection.execute(text("CREATE SCHEMA public"))
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
           PY
           python -m flask db upgrade d42e7a1c9b50
 
       - name: Verify production-shaped baseline
         run: |
           python - <<'PY'
-          from sqlalchemy import create_engine, inspect, text
           import os
+          from sqlalchemy import create_engine, inspect, text
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
-          tables = set(inspect(engine).get_table_names())
+          inspector = inspect(engine)
+          tables = set(inspector.get_table_names())
           required = {
               "vehicle_events",
-              "event_audit_logs",
-              "vehicle_health_snapshots",
-              "vehicle_health_alerts",
-              "diagnostic_code_definitions",
-              "vehicle_dtcs",
+              "chat_messages",
+              "conversation_records",
               "client_profiles",
               "profile_audit_events",
               "alembic_version",
@@ -157,55 +174,93 @@ jobs:
                   f"Production-shaped PostgreSQL baseline missing tables: {sorted(missing)}"
               )
 
+          chat_columns = {c["name"] for c in inspector.get_columns("chat_messages")}
+          if {"car_id", "conversation_id", "channel", "visibility"} & chat_columns:
+              raise SystemExit("Wave 1.3 ChatMessage fields exist before their migration")
+
           with engine.connect() as connection:
               version = connection.execute(
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
-
           if version != "d42e7a1c9b50":
               raise SystemExit(f"Unexpected production-shaped head: {version}")
 
           print("Production-shaped PostgreSQL baseline verified.")
           PY
 
+      - name: Seed legacy memory before Wave 1.3 upgrade
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          now = datetime.utcnow()
+          with engine.begin() as connection:
+              user_id = connection.execute(
+                  text(
+                      "INSERT INTO users "
+                      "(name, email, phone_number, password_hash, role, is_active, created_at, email_verified_at) "
+                      "VALUES ('Legacy Memory User', 'legacy-memory@example.com', '+2348000000191', 'hash', 'user', TRUE, :now, :now) "
+                      "RETURNING id"
+                  ),
+                  {"now": now},
+              ).scalar_one()
+              car_id = connection.execute(
+                  text(
+                      "INSERT INTO cars "
+                      "(brand, model, year, vin, current_mileage, created_at, vehicle_identity_source) "
+                      "VALUES ('Mercedes-Benz', 'GLE', 2024, 'WDDLEGACYMEM00001', 5000, :now, 'manual') "
+                      "RETURNING id"
+                  ),
+                  {"now": now},
+              ).scalar_one()
+              connection.execute(
+                  text(
+                      "INSERT INTO chat_messages (user_id, role, message, timestamp) "
+                      "VALUES (:user_id, 'user', 'legacy unscoped memory', :now)"
+                  ),
+                  {"user_id": user_id, "now": now},
+              )
+              connection.execute(
+                  text(
+                      "INSERT INTO conversation_records "
+                      "(user_id, vehicle_id, concern, advisor_summary, status, created_at, updated_at) "
+                      "VALUES (:user_id, :car_id, 'legacy concern', 'legacy internal summary', 'logged', :now, :now)"
+                  ),
+                  {"user_id": user_id, "car_id": car_id, "now": now},
+              )
+          print("Legacy memory rows seeded without inventing Wave 1.3 scope.")
+          PY
+
       - name: Upgrade production-shaped baseline to proposed head
         run: python -m flask db upgrade
 
-      - name: Verify Wave 1.2 envelope migration and hardening
+      - name: Verify Wave 1.2 event envelope remains hardened
         run: |
           python - <<'PY'
-          from sqlalchemy import create_engine, inspect, text
           import os
+          from sqlalchemy import create_engine, inspect
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
           inspector = inspect(engine)
-          vehicle_event_columns = {
-              column["name"]: column for column in inspector.get_columns("vehicle_events")
+          event_columns = {
+              column["name"]: column
+              for column in inspector.get_columns("vehicle_events")
           }
           expected_columns = {
-              "schema_version",
-              "occurred_at",
-              "recorded_at",
-              "subject_type",
-              "subject_id",
-              "actor_type",
-              "actor_user_id",
-              "actor_authority",
-              "visibility",
-              "previous_state",
-              "new_state",
-              "progression_direction",
-              "correlation_id",
-              "causation_id",
-              "evidence_refs",
-              "correction_of_event_id",
+              "schema_version", "occurred_at", "recorded_at", "subject_type",
+              "subject_id", "actor_type", "actor_user_id", "actor_authority",
+              "visibility", "previous_state", "new_state",
+              "progression_direction", "correlation_id", "causation_id",
+              "evidence_refs", "correction_of_event_id",
           }
-          missing = expected_columns - set(vehicle_event_columns)
+          missing = expected_columns - set(event_columns)
           if missing:
               raise SystemExit(f"VehicleEvent envelope missing columns: {sorted(missing)}")
-
-          if not vehicle_event_columns["mileage"]["nullable"]:
-              raise SystemExit("VehicleEvent mileage must be nullable at Wave 1.2 head")
+          if not event_columns["mileage"]["nullable"]:
+              raise SystemExit("VehicleEvent mileage must remain nullable")
 
           check_names = {
               constraint["name"]
@@ -218,140 +273,233 @@ jobs:
               "ck_vehicle_events_progression_direction",
               "ck_vehicle_events_schema_version",
           }
-          missing_checks = required_checks - check_names
-          if missing_checks:
+          if required_checks - check_names:
               raise SystemExit(
-                  f"VehicleEvent envelope missing CHECK constraints: {sorted(missing_checks)}"
+                  f"VehicleEvent CHECKs missing: {sorted(required_checks - check_names)}"
               )
 
-          index_names = {
-              index["name"] for index in inspector.get_indexes("vehicle_events")
-          }
+          index_names = {i["name"] for i in inspector.get_indexes("vehicle_events")}
           if "ix_vehicle_events_timeline_scope" not in index_names:
               raise SystemExit("VehicleEvent timeline scope index is missing")
 
+          print("Wave 1.2 event hardening remains intact.")
+          PY
+
+      - name: Verify Wave 1.3 memory migration and conservative backfill
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+
+          chat_columns = {c["name"] for c in inspector.get_columns("chat_messages")}
+          expected_chat = {"car_id", "conversation_id", "channel", "visibility"}
+          if expected_chat - chat_columns:
+              raise SystemExit(
+                  f"Wave 1.3 chat columns missing: {sorted(expected_chat - chat_columns)}"
+              )
+
+          record_columns = {
+              c["name"] for c in inspector.get_columns("conversation_records")
+          }
+          expected_records = {
+              "conversation_id", "visibility", "source", "provenance",
+              "verification_state", "client_summary",
+          }
+          if expected_records - record_columns:
+              raise SystemExit(
+                  "Wave 1.3 conversation columns missing: "
+                  f"{sorted(expected_records - record_columns)}"
+              )
+
+          chat_checks = {
+              c["name"] for c in inspector.get_check_constraints("chat_messages")
+          }
+          expected_chat_checks = {
+              "ck_chat_messages_visibility", "ck_chat_messages_channel",
+          }
+          if expected_chat_checks - chat_checks:
+              raise SystemExit(
+                  f"Chat CHECKs missing: {sorted(expected_chat_checks - chat_checks)}"
+              )
+
+          record_checks = {
+              c["name"]
+              for c in inspector.get_check_constraints("conversation_records")
+          }
+          expected_record_checks = {
+              "ck_conversation_records_visibility",
+              "ck_conversation_records_provenance",
+              "ck_conversation_records_verification_state",
+          }
+          if expected_record_checks - record_checks:
+              raise SystemExit(
+                  "Conversation CHECKs missing: "
+                  f"{sorted(expected_record_checks - record_checks)}"
+              )
+
+          chat_indexes = {i["name"] for i in inspector.get_indexes("chat_messages")}
+          required_chat_indexes = {
+              "ix_chat_messages_user_vehicle_time",
+              "ix_chat_messages_conversation_id",
+          }
+          if required_chat_indexes - chat_indexes:
+              raise SystemExit(
+                  f"Chat indexes missing: {sorted(required_chat_indexes - chat_indexes)}"
+              )
+
+          record_indexes = {
+              i["name"] for i in inspector.get_indexes("conversation_records")
+          }
+          required_record_indexes = {
+              "ix_conversation_records_user_vehicle_visibility_time",
+              "ix_conversation_records_conversation_id",
+          }
+          if required_record_indexes - record_indexes:
+              raise SystemExit(
+                  "Conversation indexes missing: "
+                  f"{sorted(required_record_indexes - record_indexes)}"
+              )
+
           with engine.connect() as connection:
+              legacy_chat = connection.execute(
+                  text(
+                      "SELECT car_id, conversation_id, channel, visibility "
+                      "FROM chat_messages WHERE message = 'legacy unscoped memory'"
+                  )
+              ).one()
+              legacy_record = connection.execute(
+                  text(
+                      "SELECT visibility, provenance, verification_state, client_summary "
+                      "FROM conversation_records WHERE concern = 'legacy concern'"
+                  )
+              ).one()
               version = connection.execute(
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
 
-          if version != "f24c8d1e6a90":
+          if legacy_chat != (None, None, "legacy", "internal"):
+              raise SystemExit(f"Unsafe legacy ChatMessage backfill: {legacy_chat!r}")
+          if legacy_record != ("internal", "legacy", "unverified", None):
+              raise SystemExit(
+                  f"Unsafe legacy ConversationRecord backfill: {legacy_record!r}"
+              )
+          if version != "a31c7d2e9f10":
               raise SystemExit(f"Unexpected proposed migration head: {version}")
 
-          print("Wave 1.2 VehicleEvent envelope hardening verified.")
+          print("Wave 1.3 memory scope and conservative legacy backfill verified.")
           PY
 
-      - name: Verify constraint enforcement on PostgreSQL
+      - name: Verify PostgreSQL canonical CHECK enforcement
         run: |
           python - <<'PY'
+          import os
           from datetime import datetime
           from sqlalchemy import create_engine, text
           from sqlalchemy.exc import IntegrityError
-          import os
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          now = datetime.utcnow()
           with engine.begin() as connection:
               user_id = connection.execute(
                   text(
                       "INSERT INTO users "
                       "(name, email, phone_number, password_hash, role, is_active, created_at, email_verified_at) "
-                      "VALUES ('Constraint User', 'constraint@example.com', '+2348000000099', 'hash', 'user', TRUE, :created_at, :created_at) "
-                      "RETURNING id"
+                      "VALUES ('Constraint User', 'constraint@example.com', '+2348000000099', 'hash', 'user', TRUE, :now, :now) RETURNING id"
                   ),
-                  {"created_at": datetime.utcnow()},
+                  {"now": now},
               ).scalar_one()
               car_id = connection.execute(
                   text(
                       "INSERT INTO cars "
                       "(brand, model, year, vin, current_mileage, created_at, vehicle_identity_source) "
-                      "VALUES ('Mercedes-Benz', 'E-Class', 2024, 'WDDCI000000000099', 5000, :created_at, 'manual') "
-                      "RETURNING id"
+                      "VALUES ('Mercedes-Benz', 'E-Class', 2024, 'WDDCI000000000099', 5000, :now, 'manual') RETURNING id"
                   ),
-                  {"created_at": datetime.utcnow()},
+                  {"now": now},
               ).scalar_one()
               ownership_id = connection.execute(
                   text(
                       "INSERT INTO car_ownership "
                       "(user_id, car_id, start_date, is_active, care_plan, priority_access) "
-                      "VALUES (:user_id, :car_id, :created_at, TRUE, 'active_monitoring', FALSE) "
-                      "RETURNING id"
+                      "VALUES (:user_id, :car_id, :now, TRUE, 'active_monitoring', FALSE) RETURNING id"
                   ),
-                  {"user_id": user_id, "car_id": car_id, "created_at": datetime.utcnow()},
+                  {"user_id": user_id, "car_id": car_id, "now": now},
               ).scalar_one()
 
-          try:
-              with engine.begin() as connection:
-                  connection.execute(
-                      text(
-                          "INSERT INTO vehicle_events "
-                          "(car_id, ownership_id, event_type, title, fingerprint, created_by, is_deleted, created_at, actor_type, visibility) "
-                          "VALUES (:car_id, :ownership_id, 'concern.reported', 'Invalid actor', :fingerprint, :user_id, FALSE, :created_at, 'robot', 'client')"
-                      ),
-                      {
-                          "car_id": car_id,
-                          "ownership_id": ownership_id,
-                          "fingerprint": "invalid-actor-constraint-test",
-                          "user_id": user_id,
-                          "created_at": datetime.utcnow(),
-                      },
-                  )
-          except IntegrityError:
-              pass
-          else:
-              raise SystemExit("Invalid actor_type bypassed PostgreSQL CHECK constraint")
+          def must_fail(sql, params, label):
+              try:
+                  with engine.begin() as connection:
+                      connection.execute(text(sql), params)
+              except IntegrityError:
+                  return
+              raise SystemExit(f"{label} bypassed PostgreSQL CHECK constraint")
 
-          print("PostgreSQL envelope CHECK constraints enforce canonical vocabularies.")
+          must_fail(
+              "INSERT INTO vehicle_events "
+              "(car_id, ownership_id, event_type, title, fingerprint, created_by, is_deleted, created_at, actor_type, visibility) "
+              "VALUES (:car_id, :ownership_id, 'concern.reported', 'Invalid actor', 'invalid-actor-test', :user_id, FALSE, :now, 'robot', 'client')",
+              {"car_id": car_id, "ownership_id": ownership_id, "user_id": user_id, "now": now},
+              "invalid actor_type",
+          )
+          must_fail(
+              "INSERT INTO chat_messages "
+              "(user_id, car_id, conversation_id, role, message, timestamp, channel, visibility) "
+              "VALUES (:user_id, :car_id, 'invalid-visibility', 'user', 'test', :now, 'in_app', 'public')",
+              {"user_id": user_id, "car_id": car_id, "now": now},
+              "invalid chat visibility",
+          )
+
+          print("PostgreSQL canonical vocabularies are enforced.")
           PY
 
-      - name: Verify JSON and uniqueness behaviour on PostgreSQL
+      - name: Verify JSON behavior remains compatible
         run: |
           python - <<'PY'
+          import os
           from datetime import datetime
           from sqlalchemy import create_engine, text
-          import os
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          now = datetime.utcnow()
           with engine.begin() as connection:
               user_id = connection.execute(
                   text(
                       "INSERT INTO users "
                       "(name, email, phone_number, password_hash, role, is_active, created_at, email_verified_at) "
-                      "VALUES ('CI User', 'ci@example.com', '+2348000000000', 'hash', 'user', TRUE, :created_at, :created_at) "
-                      "RETURNING id"
+                      "VALUES ('JSON User', 'json-ci@example.com', '+2348000000000', 'hash', 'user', TRUE, :now, :now) RETURNING id"
                   ),
-                  {"created_at": datetime.utcnow()},
+                  {"now": now},
               ).scalar_one()
               car_id = connection.execute(
                   text(
                       "INSERT INTO cars "
                       "(brand, model, year, vin, current_mileage, created_at, vehicle_identity_source) "
-                      "VALUES ('Mercedes-Benz', 'C-Class', 2020, 'WDDCI000000000001', 10000, :created_at, 'manual') "
-                      "RETURNING id"
+                      "VALUES ('Mercedes-Benz', 'C-Class', 2020, 'WDDCI000000000001', 10000, :now, 'manual') RETURNING id"
                   ),
-                  {"created_at": datetime.utcnow()},
+                  {"now": now},
               ).scalar_one()
               ownership_id = connection.execute(
                   text(
                       "INSERT INTO car_ownership "
                       "(user_id, car_id, start_date, is_active, care_plan, priority_access) "
-                      "VALUES (:user_id, :car_id, :created_at, TRUE, 'active_monitoring', FALSE) "
-                      "RETURNING id"
+                      "VALUES (:user_id, :car_id, :now, TRUE, 'active_monitoring', FALSE) RETURNING id"
                   ),
-                  {"user_id": user_id, "car_id": car_id, "created_at": datetime.utcnow()},
+                  {"user_id": user_id, "car_id": car_id, "now": now},
               ).scalar_one()
               connection.execute(
                   text(
                       "INSERT INTO vehicle_events "
                       "(car_id, ownership_id, event_type, severity, event_date, title, description, mileage, source, data, fingerprint, created_by, is_deleted, created_at) "
-                      "VALUES (:car_id, :ownership_id, 'service', 'low', CURRENT_DATE, 'CI event', 'Migration test', 10000, 'ci', CAST(:data AS JSON), :fingerprint, :user_id, FALSE, :created_at)"
+                      "VALUES (:car_id, :ownership_id, 'service', 'low', CURRENT_DATE, 'CI event', 'Migration test', 10000, 'ci', CAST(:data AS JSON), 'postgres-ci-event-0001', :user_id, FALSE, :now)"
                   ),
                   {
                       "car_id": car_id,
                       "ownership_id": ownership_id,
                       "data": '{"source":"postgres-ci","verified":true}',
-                      "fingerprint": "postgres-ci-event-0001",
                       "user_id": user_id,
-                      "created_at": datetime.utcnow(),
+                      "now": now,
                   },
               )
               payload = connection.execute(
@@ -363,6 +511,5 @@ jobs:
 
           if payload != "postgres-ci":
               raise SystemExit(f"Unexpected JSON payload value: {payload!r}")
-
-          print("PostgreSQL JSON behaviour verified.")
+          print("PostgreSQL JSON behavior verified.")
           PY

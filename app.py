@@ -24,6 +24,7 @@ from services.feature_gateways import has_feature
 
 import security.session_events  # noqa: F401, E402
 import services.reported_concern_session_events  # noqa: F401, E402
+import rina.memory_model_extensions  # noqa: F401, E402
 
 
 load_dotenv(override=False)

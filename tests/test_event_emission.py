@@ -110,11 +110,12 @@ def test_emit_vehicle_event_creates_canonical_owner_event_without_committing(app
         assert event.progression_direction == "insufficient_evidence"
         assert event.mileage is None
         assert event.event_date.isoformat() == "2026-08-13"
+        assert db.session().in_transaction() is True
 
         event_id = event.id
         db.session.rollback()
 
-        assert db.session.get(VehicleEvent, event_id) is None
+        assert VehicleEvent.query.filter_by(id=event_id).count() == 0
 
 
 def test_emit_vehicle_event_returns_existing_event_on_idempotent_replay(app):

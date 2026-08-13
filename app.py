@@ -203,6 +203,7 @@ def create_app():
     from auth.routes import auth_bp, advisor_bp
     from cars.routes import cars_bp
     from admin.routes import admin_bp
+    from admin.progression_routes import concern_progression_bp
     from routes.chat import chat_bp
     from events.routes import treatments_bp
     from events.audit_routes import audit_bp
@@ -228,6 +229,7 @@ def create_app():
     app.register_blueprint(profiles_bp)
 
     app.register_blueprint(admin_bp)
+    app.register_blueprint(concern_progression_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(treatments_bp, url_prefix="/treatments")
     app.register_blueprint(audit_bp, url_prefix="/audit")

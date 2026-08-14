@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
 import rina.memory_model_extensions  # noqa: F401
 from extensions import db
 from models import (

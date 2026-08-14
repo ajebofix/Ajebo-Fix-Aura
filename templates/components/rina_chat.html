@@ -1,10 +1,20 @@
 <!-- templates/components/rina_chat.html -->
 
-<div class="card rina-shell">
+{% set rina_page_car_id = none %}
+{% if car is defined and car and car.id is defined %}
+    {% set rina_page_car_id = car.id %}
+{% endif %}
+
+<div
+    class="card rina-shell"
+    id="rina-chat-shell"
+    data-page-car-id="{{ rina_page_car_id or '' }}"
+    data-csrf-token="{{ csrf_token() }}"
+>
 
     <div class="rina-header">
 
-        <div class="rina-avatar">
+        <div class="rina-avatar" aria-hidden="true">
             A.J
         </div>
 
@@ -15,12 +25,39 @@
             </h3>
 
             <p class="rina-subtitle">
-                I help interpret vehicle health, reported concerns,
+                I help interpret recorded vehicle health, reported concerns,
                 and recommended next steps clearly and calmly.
             </p>
 
         </div>
 
+    </div>
+
+
+    <!-- ===================== -->
+    <!-- VEHICLE SCOPE -->
+    <!-- ===================== -->
+
+    <div class="rina-context-row" style="margin: 14px 0 12px;">
+        <label for="rina-vehicle-select" class="label">
+            Vehicle for this conversation
+        </label>
+
+        <select
+            id="rina-vehicle-select"
+            class="input"
+            aria-describedby="rina-vehicle-status"
+        >
+            <option value="">Choose a vehicle</option>
+        </select>
+
+        <p
+            id="rina-vehicle-status"
+            class="muted"
+            style="margin: 7px 0 0;"
+        >
+            Rina will only use the vehicle you select here.
+        </p>
     </div>
 
 
@@ -31,16 +68,9 @@
     <div
         id="rina-messages"
         class="rina-messages"
-    >
-        <div class="rina-message assistant">
-
-            <div class="rina-bubble">
-                <strong>Rina</strong><br>
-                Welcome. How can I assist you with your vehicle today?
-            </div>
-
-        </div>
-    </div>
+        aria-live="polite"
+        aria-label="A.J. Rina conversation"
+    ></div>
 
 
     <!-- ===================== -->
@@ -53,14 +83,16 @@
             type="text"
             id="rina-input"
             class="rina-input"
-            placeholder="Ask about your vehicle condition or next steps..."
-            onkeydown="if(event.key === 'Enter'){ sendToRina(); }"
+            placeholder="Choose a vehicle to start..."
+            autocomplete="off"
+            disabled
         >
 
         <button
             type="button"
-            onclick="sendToRina()"
+            id="rina-send"
             class="btn btn-primary"
+            disabled
         >
             Ask
         </button>
@@ -73,188 +105,394 @@
     <!-- ===================== -->
 
     <p class="rina-note">
-        Rina provides guidance based on recorded vehicle data.
-        She does not diagnose faults — physical inspection is required for confirmation.
+        Rina uses recorded Aura data and does not diagnose mechanical faults.
+        Physical inspection and advisor review remain necessary where confirmation is required.
     </p>
 
 </div>
 
 
 <script>
-const messagesEl = document.getElementById("rina-messages");
+(() => {
+    "use strict";
 
+    const shell = document.getElementById("rina-chat-shell");
+    if (!shell) return;
 
-// =========================
-// FORMAT MESSAGE
-// =========================
-function formatMessage(role, text) {
+    const messagesEl = document.getElementById("rina-messages");
+    const inputEl = document.getElementById("rina-input");
+    const sendEl = document.getElementById("rina-send");
+    const vehicleSelectEl = document.getElementById("rina-vehicle-select");
+    const vehicleStatusEl = document.getElementById("rina-vehicle-status");
 
-    const isUser = role === "user";
+    const csrfToken = shell.dataset.csrfToken || "";
+    const rawPageCarId = shell.dataset.pageCarId || "";
+    const pageCarId = /^\d+$/.test(rawPageCarId) ? Number(rawPageCarId) : null;
 
-    const name = isUser ? "You" : "Rina";
+    let selectedCarId = null;
+    let selectedAuthority = null;
+    let loading = false;
 
-    return `
-        <div class="rina-message ${isUser ? "user" : "assistant"}">
-            <div class="rina-bubble">
-                <strong>${name}</strong><br>
-                <div style="margin-top:6px; white-space:pre-line;">
-                    ${text}
-                </div>
-            </div>
-        </div>
-    `;
-}
+    function createMessage(role, text) {
+        const wrapper = document.createElement("div");
+        wrapper.className = `rina-message ${role === "user" ? "user" : "assistant"}`;
 
+        const bubble = document.createElement("div");
+        bubble.className = "rina-bubble";
 
-// =========================
-// LOAD CHAT HISTORY
-// =========================
-function loadHistory() {
+        const name = document.createElement("strong");
+        name.textContent = role === "user" ? "You" : "Rina";
 
-    fetch("/chat/history", {
-        credentials: "same-origin"
-    })
-    .then(res => res.json())
-    .then(data => {
+        const body = document.createElement("div");
+        body.style.marginTop = "6px";
+        body.style.whiteSpace = "pre-line";
+        body.textContent = String(text || "");
 
-        messagesEl.innerHTML = "";
+        bubble.appendChild(name);
+        bubble.appendChild(body);
+        wrapper.appendChild(bubble);
+        return wrapper;
+    }
 
-        if (!data.messages.length) {
+    function appendMessage(role, text) {
+        const node = createMessage(role, text);
+        messagesEl.appendChild(node);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return node;
+    }
 
-            messagesEl.innerHTML = `
-                <div class="rina-message assistant">
-                    <div class="rina-bubble">
-                        <strong>Rina</strong><br>
-                        Welcome. How can I assist you with your vehicle today?
-                    </div>
-                </div>
-            `;
+    function showWelcome() {
+        messagesEl.replaceChildren();
+        if (selectedCarId) {
+            appendMessage(
+                "assistant",
+                "Welcome. I’ll use only the selected vehicle’s recorded Aura context. What would you like to understand?"
+            );
+        } else {
+            appendMessage(
+                "assistant",
+                "Choose a vehicle above before we begin. I won’t guess which vehicle you mean."
+            );
+        }
+    }
 
+    function setChatEnabled(enabled) {
+        inputEl.disabled = !enabled;
+        sendEl.disabled = !enabled || loading;
+        inputEl.placeholder = enabled
+            ? "Ask about this vehicle’s recorded condition or next steps..."
+            : "Choose a vehicle to start...";
+    }
+
+    async function fetchJson(url, options = {}) {
+        const headers = new Headers(options.headers || {});
+        if (options.method && options.method.toUpperCase() !== "GET") {
+            headers.set("X-CSRF-Token", csrfToken);
+        }
+
+        const response = await fetch(url, {
+            credentials: "same-origin",
+            ...options,
+            headers,
+        });
+
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = {};
+        }
+
+        if (!response.ok) {
+            const error = new Error(data.error || data.reply || "Request failed");
+            error.status = response.status;
+            error.data = data;
+            throw error;
+        }
+
+        return data;
+    }
+
+    function populateVehicleChoices(vehicles, preferredCarId) {
+        vehicleSelectEl.replaceChildren();
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Choose a vehicle";
+        vehicleSelectEl.appendChild(placeholder);
+
+        for (const vehicle of vehicles || []) {
+            const option = document.createElement("option");
+            option.value = String(vehicle.car_id);
+            option.textContent = String(vehicle.label || `Vehicle ${vehicle.car_id}`);
+            option.dataset.authority = String(vehicle.authority || "");
+            vehicleSelectEl.appendChild(option);
+        }
+
+        if (preferredCarId && [...vehicleSelectEl.options].some(
+            option => Number(option.value) === Number(preferredCarId)
+        )) {
+            vehicleSelectEl.value = String(preferredCarId);
+        } else {
+            vehicleSelectEl.value = "";
+        }
+    }
+
+    function selectedOptionAuthority() {
+        const option = vehicleSelectEl.selectedOptions[0];
+        return option ? (option.dataset.authority || null) : null;
+    }
+
+    async function selectVehicle(carId, { quiet = false } = {}) {
+        const numericCarId = Number(carId);
+        if (!Number.isInteger(numericCarId) || numericCarId <= 0) {
+            selectedCarId = null;
+            selectedAuthority = null;
+            setChatEnabled(false);
+            vehicleStatusEl.textContent = "Choose a vehicle before asking Rina.";
+            showWelcome();
             return;
         }
 
-        data.messages.forEach(msg => {
-            messagesEl.innerHTML += formatMessage(msg.role, msg.message);
-        });
+        try {
+            const data = await fetchJson("/chat/select-vehicle", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ car_id: numericCarId }),
+            });
 
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
-}
+            selectedCarId = Number(data.car_id);
+            selectedAuthority = data.authority || selectedOptionAuthority();
+            vehicleSelectEl.value = String(selectedCarId);
+            vehicleStatusEl.textContent = `Rina is scoped to ${data.label}.`;
+            setChatEnabled(true);
+            await loadHistory();
 
+            if (!quiet) inputEl.focus();
+        } catch (error) {
+            selectedCarId = null;
+            selectedAuthority = null;
+            vehicleSelectEl.value = "";
+            setChatEnabled(false);
+            vehicleStatusEl.textContent = (
+                error.status === 403
+                    ? "That vehicle is no longer available to this account."
+                    : "Rina could not bind that vehicle safely."
+            );
+            showWelcome();
+        }
+    }
 
-// =========================
-// SEND MESSAGE
-// =========================
-function sendToRina() {
+    async function loadContext() {
+        const query = pageCarId ? `?car_id=${encodeURIComponent(pageCarId)}` : "";
 
-    const input = document.getElementById("rina-input");
-    const text = input.value.trim();
+        try {
+            const data = await fetchJson(`/chat/context${query}`);
+            const preferredCarId = data.page_car_id || data.active_car_id || null;
+            populateVehicleChoices(data.vehicles, preferredCarId);
 
-    if (!text) return;
+            if (data.page_car_id) {
+                // A vehicle-specific page already represents an explicit page
+                // context. Re-authorize and bind that exact vehicle to Rina.
+                await selectVehicle(data.page_car_id, { quiet: true });
+                return;
+            }
 
-    messagesEl.innerHTML += formatMessage("user", text);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+            if (data.active_car_id) {
+                selectedCarId = Number(data.active_car_id);
+                selectedAuthority = selectedOptionAuthority();
+                vehicleSelectEl.value = String(selectedCarId);
+                const label = vehicleSelectEl.selectedOptions[0]?.textContent || "the selected vehicle";
+                vehicleStatusEl.textContent = `Rina is scoped to ${label}.`;
+                setChatEnabled(true);
+                await loadHistory();
+                return;
+            }
 
-    input.value = "";
+            selectedCarId = null;
+            selectedAuthority = null;
+            setChatEnabled(false);
+            showWelcome();
+        } catch (_) {
+            selectedCarId = null;
+            selectedAuthority = null;
+            setChatEnabled(false);
+            vehicleStatusEl.textContent = "Rina’s vehicle context is unavailable right now.";
+            showWelcome();
+        }
+    }
 
-    const loadingId = "rina-loading";
-
-    messagesEl.innerHTML += `
-        <div class="rina-message assistant" id="${loadingId}">
-            <div class="rina-bubble">
-                <em>Rina is reviewing this...</em>
-            </div>
-        </div>
-    `;
-
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-
-
-    fetch("/chat", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ message: text })
-    })
-
-    .then(res => res.json())
-
-    .then(data => {
-
-        document.getElementById(loadingId)?.remove();
-
-        messagesEl.innerHTML += formatMessage(
-            "assistant",
-            data.reply
-        );
-
-
-        // =========================
-        // BOOKING CTA
-        // =========================
-
-        if (data.intent === "booking") {
-
-            messagesEl.innerHTML += `
-                <div class="rina-message assistant">
-                    <div class="rina-bubble">
-                        <strong>Continue</strong><br><br>
-
-                        <a
-                            href="/cars/${data.car_id}/consultations/book"
-                            class="btn btn-success"
-                        >
-                            Book a Consultation
-                        </a>
-                    </div>
-                </div>
-            `;
+    async function loadHistory() {
+        if (!selectedCarId) {
+            showWelcome();
+            return;
         }
 
-        speak(data.reply);
+        try {
+            const data = await fetchJson(
+                `/chat/history?car_id=${encodeURIComponent(selectedCarId)}`
+            );
 
+            messagesEl.replaceChildren();
+
+            if (!data.messages || data.messages.length === 0) {
+                showWelcome();
+                return;
+            }
+
+            for (const message of data.messages) {
+                appendMessage(message.role, message.message);
+            }
+        } catch (error) {
+            if (error.status === 403) {
+                selectedCarId = null;
+                selectedAuthority = null;
+                vehicleSelectEl.value = "";
+                setChatEnabled(false);
+                vehicleStatusEl.textContent = "Vehicle access changed. Choose an available vehicle.";
+            }
+            showWelcome();
+        }
+    }
+
+    function appendLoading() {
+        const node = createMessage("assistant", "Rina is reviewing the recorded context...");
+        node.id = "rina-loading";
+        const body = node.querySelector(".rina-bubble div");
+        if (body) body.style.fontStyle = "italic";
+        messagesEl.appendChild(node);
         messagesEl.scrollTop = messagesEl.scrollHeight;
-    })
+        return node;
+    }
 
-    .catch(() => {
+    function appendBookingCTA(carId) {
+        if (selectedAuthority !== "owner") return;
 
-        document.getElementById(loadingId)?.remove();
+        const numericCarId = Number(carId);
+        if (!Number.isInteger(numericCarId) || numericCarId <= 0) return;
 
-        messagesEl.innerHTML += formatMessage(
-            "assistant",
-            "I’m unable to respond right now. Please try again shortly."
-        );
+        const wrapper = document.createElement("div");
+        wrapper.className = "rina-message assistant";
 
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
-}
+        const bubble = document.createElement("div");
+        bubble.className = "rina-bubble";
 
+        const title = document.createElement("strong");
+        title.textContent = "Continue";
 
-// =========================
-// LOAD PAGE
-// =========================
-window.onload = () => {
+        const link = document.createElement("a");
+        link.className = "btn btn-success";
+        link.style.marginTop = "12px";
+        link.href = `/cars/${numericCarId}/consultations/book`;
+        link.textContent = "Book a Consultation";
 
-    loadHistory();
+        bubble.appendChild(title);
+        bubble.appendChild(document.createElement("br"));
+        bubble.appendChild(link);
+        wrapper.appendChild(bubble);
+        messagesEl.appendChild(wrapper);
+    }
 
-    document.getElementById("rina-input")?.focus();
-};
+    async function sendToRina() {
+        if (loading || !selectedCarId) return;
 
+        const text = inputEl.value.trim();
+        if (!text) return;
 
-// =========================
-// TEXT TO SPEECH
-// =========================
-function speak(text) {
+        loading = true;
+        setChatEnabled(true);
+        appendMessage("user", text);
+        inputEl.value = "";
+        const loadingNode = appendLoading();
 
-    const speech = new SpeechSynthesisUtterance(text);
+        try {
+            const data = await fetchJson("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    message: text,
+                    car_id: selectedCarId,
+                }),
+            });
 
-    speech.lang = "en-GB";
-    speech.rate = 0.95;
-    speech.pitch = 1.1;
-    speech.volume = 1;
+            loadingNode.remove();
+            appendMessage("assistant", data.reply || "Rina could not produce a safe response.");
 
-    window.speechSynthesis.speak(speech);
-}
+            if (data.intent === "booking" && data.car_id) {
+                appendBookingCTA(data.car_id);
+            }
+
+            if (typeof data.reply === "string" && "speechSynthesis" in window) {
+                speak(data.reply);
+            }
+        } catch (error) {
+            loadingNode.remove();
+
+            if (error.status === 403) {
+                selectedCarId = null;
+                selectedAuthority = null;
+                vehicleSelectEl.value = "";
+                vehicleStatusEl.textContent = "Vehicle access changed. Choose an available vehicle.";
+                appendMessage("assistant", "I can’t use that vehicle context for this account.");
+            } else {
+                appendMessage(
+                    "assistant",
+                    error.data?.reply || "I’m unable to respond safely right now. Please try again shortly."
+                );
+            }
+        } finally {
+            loading = false;
+            setChatEnabled(Boolean(selectedCarId));
+            if (selectedCarId) inputEl.focus();
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+    }
+
+    function speak(text) {
+        try {
+            window.speechSynthesis.cancel();
+            const speech = new SpeechSynthesisUtterance(text);
+            speech.lang = "en-GB";
+            speech.rate = 0.95;
+            speech.pitch = 1.05;
+            speech.volume = 1;
+            window.speechSynthesis.speak(speech);
+        } catch (_) {
+            // Voice playback is optional UI behavior; it must never affect chat.
+        }
+    }
+
+    function init() {
+        vehicleSelectEl.addEventListener("change", () => {
+            const value = vehicleSelectEl.value;
+            if (!value) {
+                selectedCarId = null;
+                selectedAuthority = null;
+                setChatEnabled(false);
+                vehicleStatusEl.textContent = "Choose a vehicle before asking Rina.";
+                showWelcome();
+                return;
+            }
+            selectVehicle(Number(value));
+        });
+
+        sendEl.addEventListener("click", sendToRina);
+        inputEl.addEventListener("keydown", event => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                sendToRina();
+            }
+        });
+
+        setChatEnabled(false);
+        showWelcome();
+        loadContext();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init, { once: true });
+    } else {
+        init();
+    }
+})();
 </script>

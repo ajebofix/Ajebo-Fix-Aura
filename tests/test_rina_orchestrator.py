@@ -156,8 +156,8 @@ def test_unrelated_user_cannot_expand_authority_through_message(app, monkeypatch
         assert audit.authority is None
 
 
-def test_default_off_rollout_never_calls_injected_provider(app, monkeypatch):
-    monkeypatch.delenv("RINA_ORCHESTRATION_ENABLED", raising=False)
+def test_explicit_rollout_disable_never_calls_injected_provider(app, monkeypatch):
+    monkeypatch.setenv("RINA_ORCHESTRATION_ENABLED", "false")
     with app.app_context():
         owner = _user(suffix=4)
         car = _car(suffix=4)

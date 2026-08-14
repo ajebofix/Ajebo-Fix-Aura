@@ -1,5 +1,5 @@
-from flask import Blueprint, render_template, session, request, jsonify
-from flask_login import login_required, current_user
+from flask import Blueprint, jsonify, render_template, request, session
+from flask_login import current_user, login_required
 
 from models import CarOwnership
 from services.vehicle_intelligence import (
@@ -7,32 +7,30 @@ from services.vehicle_intelligence import (
     get_next_action,
 )
 
+
 dashboard_bp = Blueprint(
     "dashboard",
     __name__,
     url_prefix="/dashboard",
 )
 
+
 # ======================================================
-# DASHBOARD — VEHICLE OVERVIEW (AUTHORITATIVE)
+# DASHBOARD — VEHICLE OVERVIEW
 # ======================================================
 
 
-@dashboard_bp.route("/", methods=["GET"])
+@dashboard_bp.get("/")
 @login_required
 def aura_home():
-    """
-    Aura Home — Vehicle Overview
+    """Render the owner's dashboard vehicle overview.
 
-    SINGLE SOURCE OF TRUTH:
-    - session["active_vehicle_id"]
-    - Dashboard ALWAYS controls the active vehicle
-    - Chat + Rina are READ-ONLY consumers
+    `active_vehicle_id` remains a dashboard presentation state. The dashboard may
+    choose a default card when the page first loads, but that automatic UI choice
+    is no longer copied into Rina authority/memory context. Rina has its own
+    explicit `rina_active_car_id` binding and re-authorizes it per request.
     """
 
-    # ---------------------------------------------
-    # Fetch all ACTIVE vehicles for the user
-    # ---------------------------------------------
     ownerships = (
         CarOwnership.query.filter(
             CarOwnership.user_id == current_user.id,
@@ -42,67 +40,56 @@ def aura_home():
         .all()
     )
 
-    # ---------------------------------------------
-    # Resolve ACTIVE VEHICLE (authoritative)
-    # ---------------------------------------------
     active_vehicle_id = session.get("active_vehicle_id")
     active_ownership = None
 
     if active_vehicle_id:
+        try:
+            active_vehicle_id = int(active_vehicle_id)
+        except (TypeError, ValueError):
+            active_vehicle_id = None
+            session.pop("active_vehicle_id", None)
+
+    if active_vehicle_id:
         active_ownership = next(
-            (o for o in ownerships if o.car and o.car.id == int(active_vehicle_id)),
+            (
+                ownership
+                for ownership in ownerships
+                if ownership.car and ownership.car.id == active_vehicle_id
+            ),
             None,
         )
 
-    # If session missing or stale → auto-select first
+    # This default is dashboard UI state only. It must never silently grant Rina
+    # a vehicle context.
     if active_ownership is None and ownerships:
         active_ownership = ownerships[0]
         session["active_vehicle_id"] = active_ownership.car.id
 
-    # ---------------------------------------------
-    # Build UI-safe vehicle cards
-    # ---------------------------------------------
     vehicles = []
-
     for ownership in ownerships:
         car = ownership.car
         if not car:
             continue
 
         raw_health = calculate_vehicle_health(car, ownership)
-        advisor_guidance = get_next_action(raw_health)
+        get_next_action(raw_health)
 
         vehicles.append(
             {
                 "vehicle_id": car.id,
                 "vehicle_identity": f"{car.brand} {car.model} {car.year}",
-                # HEALTH (SAFE FIELDS ONLY)
                 "health_status": raw_health.get("health_status"),
                 "health_label": raw_health.get("label"),
-                # Timestamp (DEFENSIVE)
                 "last_assessed_at": raw_health.get("generated_at"),
-                # REASSURANCE
                 "advisor_name": "Ajebo Fix",
                 "reassurance": "Your vehicle is under professional monitoring.",
-                # UI STATE
                 "is_active": (
-                    active_ownership is not None and car.id == active_ownership.car.id
+                    active_ownership is not None
+                    and car.id == active_ownership.car.id
                 ),
             }
         )
-
-    # ---------------------------------------------
-    # Persist dashboard → chat alignment
-    # ---------------------------------------------
-    if active_ownership:
-        session["rina_context"] = {
-            "vehicle_id": active_ownership.car.id,
-            "vehicle": (
-                f"{active_ownership.car.brand} "
-                f"{active_ownership.car.model} "
-                f"{active_ownership.car.year}"
-            ),
-        }
 
     return render_template(
         "dashboard.html",
@@ -113,44 +100,58 @@ def aura_home():
 
 
 # ======================================================
-# SET ACTIVE VEHICLE (FROM DASHBOARD UI)
+# SET ACTIVE VEHICLE (EXPLICIT DASHBOARD UI ACTION)
 # ======================================================
 
 
-@dashboard_bp.route("/select-vehicle", methods=["POST"])
+@dashboard_bp.post("/select-vehicle")
 @login_required
 def select_vehicle():
-    """
-    Explicitly sets the active vehicle.
+    """Set dashboard state and explicitly bind the same vehicle to Rina.
 
-    THIS IS THE ONLY PLACE
-    that mutates session["active_vehicle_id"].
+    Unlike the dashboard's initial default card, this endpoint represents a
+    deliberate user action. It is therefore safe to establish Rina's short-lived
+    vehicle binding after ownership is proven.
     """
 
     data = request.get_json(silent=True) or {}
-    vehicle_id = data.get("vehicle_id")
-
-    if not vehicle_id:
+    try:
+        vehicle_id = int(data.get("vehicle_id"))
+    except (TypeError, ValueError):
         return jsonify({"status": "error", "message": "Missing vehicle_id"}), 400
+
+    if vehicle_id <= 0:
+        return jsonify({"status": "error", "message": "Invalid vehicle_id"}), 400
 
     ownership = CarOwnership.query.filter(
         CarOwnership.user_id == current_user.id,
         CarOwnership.is_active.is_(True),
-        CarOwnership.car_id == int(vehicle_id),
+        CarOwnership.car_id == vehicle_id,
     ).first()
 
     if not ownership or not ownership.car:
-        return jsonify({"status": "error", "message": "Invalid vehicle selection"}), 403
+        return (
+            jsonify({"status": "error", "message": "Invalid vehicle selection"}),
+            403,
+        )
 
-    # 🔑 AUTHORITATIVE STATE CHANGE
+    previous_rina_car_id = session.get("rina_active_car_id")
+
     session["active_vehicle_id"] = ownership.car.id
+    session["rina_active_car_id"] = ownership.car.id
 
-    # Keep Rina in sync
-    session["rina_context"] = {
-        "vehicle_id": ownership.car.id,
-        "vehicle": (
-            f"{ownership.car.brand} " f"{ownership.car.model} " f"{ownership.car.year}"
-        ),
-    }
+    try:
+        previous_rina_car_id = int(previous_rina_car_id)
+    except (TypeError, ValueError):
+        previous_rina_car_id = None
 
-    return jsonify({"status": "ok"})
+    if previous_rina_car_id != ownership.car.id:
+        session.pop("rina_conversation_id", None)
+
+    # Remove the legacy broad session context if it exists. Durable facts and
+    # summaries now come from vehicle-scoped persistence after authorization.
+    session.pop("rina_context", None)
+    session.pop("rina_context_full", None)
+    session.pop("selected_vehicle_id", None)
+
+    return jsonify({"status": "ok", "vehicle_id": ownership.car.id})

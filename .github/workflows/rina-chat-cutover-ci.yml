@@ -1,0 +1,153 @@
+name: Aura Rina Chat Cutover CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "routes/chat.py"
+      - "dashboard/routes.py"
+      - "templates/components/rina_chat.html"
+      - "services/rina_material_summary.py"
+      - "services/rina_runtime_flags.py"
+      - "services/rina_orchestrator.py"
+      - "services/rina_memory_service.py"
+      - "services/rina_authority.py"
+      - "tests/test_rina_chat_cutover.py"
+      - "tests/test_rina_orchestrator.py"
+      - "scripts/verify_rina_chat_cutover_postgres.py"
+      - ".github/workflows/rina-chat-cutover-ci.yml"
+      - "requirements*.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-rina-chat-cutover-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  sqlite-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      RINA_OPENAI_PROVIDER_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile chat cutover sources
+        run: >-
+          python -m compileall -q
+          routes/chat.py
+          dashboard/routes.py
+          services/rina_material_summary.py
+          services/rina_runtime_flags.py
+          tests/test_rina_chat_cutover.py
+          tests/test_rina_orchestrator.py
+          scripts/verify_rina_chat_cutover_postgres.py
+
+      - name: Test Rina chat cutover and underlying authority stack
+        run: >-
+          pytest -q --tb=short
+          tests/test_rina_authority_core.py
+          tests/test_rina_memory_scope.py
+          tests/test_rina_orchestrator.py
+          tests/test_rina_openai_provider.py
+          tests/test_rina_chat_cutover.py
+
+      - name: Ruff chat cutover sources
+        run: >-
+          ruff check
+          routes/chat.py
+          dashboard/routes.py
+          services/rina_material_summary.py
+          services/rina_runtime_flags.py
+          tests/test_rina_chat_cutover.py
+          tests/test_rina_orchestrator.py
+          scripts/verify_rina_chat_cutover_postgres.py
+
+      - name: Bandit chat cutover server boundary
+        run: >-
+          bandit -q -r
+          routes/chat.py
+          dashboard/routes.py
+          services/rina_material_summary.py
+          services/rina_runtime_flags.py
+          scripts/verify_rina_chat_cutover_postgres.py
+
+      - name: Verify legacy Rina engine is not referenced by active chat route
+        run: |
+          ! grep -q "RinaChatEngine" routes/chat.py
+          ! grep -q "RinaContextService" routes/chat.py
+          ! grep -q "calculate_vehicle_health" routes/chat.py
+          ! grep -q "rina_context_full" routes/chat.py
+          ! grep -q "_match_vehicle_from_message" routes/chat.py
+
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_rina_chat_cutover
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_rina_chat_cutover"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_rina_chat_cutover"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      RINA_OPENAI_PROVIDER_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Upgrade PostgreSQL to current head
+        run: python -m flask db upgrade
+
+      - name: Verify real Flask chat cutover on PostgreSQL
+        run: python scripts/verify_rina_chat_cutover_postgres.py

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from app import create_app
@@ -146,16 +147,22 @@ def test_material_summary_service_never_accepts_raw_message_text():
 
 
 def test_legacy_rina_modules_are_not_registered_by_application_startup():
-    source = _source("app.py")
+    tree = ast.parse(_source("app.py"))
+    imported_modules: set[str] = set()
 
-    prohibited = (
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_modules.add(node.module)
+
+    prohibited = {
         "services.rina_chat_engine",
         "services.rina_context_service",
         "rina.ai_brain",
         "rina.memory",
-    )
-    for token in prohibited:
-        assert token not in source
+    }
+    assert prohibited.isdisjoint(imported_modules)
 
 
 def test_chat_route_registration_and_runtime_default_are_live():

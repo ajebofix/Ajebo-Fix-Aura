@@ -33,10 +33,16 @@
 
     </div>
 
+    <div
+        id="rina-authority-banner"
+        class="profile-notice"
+        style="margin: 12px 0; display: none;"
+        aria-live="polite"
+    >
+        <strong id="rina-authority-label"></strong>
+        <span id="rina-authority-copy"></span>
+    </div>
 
-    <!-- ===================== -->
-    <!-- VEHICLE SCOPE -->
-    <!-- ===================== -->
 
     <div class="rina-context-row" style="margin: 14px 0 12px;">
         <label for="rina-vehicle-select" class="label">
@@ -61,10 +67,6 @@
     </div>
 
 
-    <!-- ===================== -->
-    <!-- CONVERSATION WINDOW -->
-    <!-- ===================== -->
-
     <div
         id="rina-messages"
         class="rina-messages"
@@ -72,10 +74,6 @@
         aria-label="A.J. Rina conversation"
     ></div>
 
-
-    <!-- ===================== -->
-    <!-- INPUT ROW -->
-    <!-- ===================== -->
 
     <div class="rina-input-row">
 
@@ -100,10 +98,6 @@
     </div>
 
 
-    <!-- ===================== -->
-    <!-- DISCLAIMER -->
-    <!-- ===================== -->
-
     <p class="rina-note">
         Rina uses recorded Aura data and does not diagnose mechanical faults.
         Physical inspection and advisor review remain necessary where confirmation is required.
@@ -124,6 +118,9 @@
     const sendEl = document.getElementById("rina-send");
     const vehicleSelectEl = document.getElementById("rina-vehicle-select");
     const vehicleStatusEl = document.getElementById("rina-vehicle-status");
+    const authorityBannerEl = document.getElementById("rina-authority-banner");
+    const authorityLabelEl = document.getElementById("rina-authority-label");
+    const authorityCopyEl = document.getElementById("rina-authority-copy");
 
     const csrfToken = shell.dataset.csrfToken || "";
     const rawPageCarId = shell.dataset.pageCarId || "";
@@ -132,6 +129,56 @@
     let selectedCarId = null;
     let selectedAuthority = null;
     let loading = false;
+
+    function authorityPresentation(authority) {
+        if (authority === "driver") {
+            return {
+                label: "Assigned Driver",
+                copy: "Rina will keep guidance operational and client-safe. Owner financial and approval authority are not available in this session.",
+                welcome: "Welcome. I recognise you as the assigned driver for this vehicle. I’ll keep this conversation focused on the recorded vehicle condition, observations, check-ins and appropriate next steps."
+            };
+        }
+        if (authority === "owner") {
+            return {
+                label: "Vehicle Owner",
+                copy: "Rina can use the owner-safe vehicle record while keeping advisor-only deliberation private.",
+                welcome: "Welcome. I recognise you as the vehicle owner. I’ll use the selected vehicle’s owner-safe Aura record and keep advisor-only information private."
+            };
+        }
+        if (authority === "advisor") {
+            return {
+                label: "Advisor",
+                copy: "Rina may use professional vehicle context only where advisor scope has been proven for this vehicle.",
+                welcome: "Welcome. I recognise your advisor scope for this vehicle. I’ll keep the discussion clinical, concise and evidence-led without turning uncertainty into diagnosis."
+            };
+        }
+        if (authority === "administrator") {
+            return {
+                label: "Administrator",
+                copy: "Governance access remains distinct from vehicle ownership and professional clinical authority.",
+                welcome: "Welcome. I recognise administrator authority for this vehicle context. I’ll keep governance access separate from ownership and clinical conclusions."
+            };
+        }
+        return {
+            label: "Authority not established",
+            copy: "Choose a vehicle so Aura can prove the relationship before Rina continues.",
+            welcome: "Choose a vehicle above before we begin. I won’t guess which vehicle or relationship you mean."
+        };
+    }
+
+    function updateAuthorityBanner() {
+        const presentation = authorityPresentation(selectedAuthority);
+        if (!selectedAuthority) {
+            authorityBannerEl.style.display = "none";
+            authorityLabelEl.textContent = "";
+            authorityCopyEl.textContent = "";
+            return;
+        }
+
+        authorityLabelEl.textContent = `${presentation.label}: `;
+        authorityCopyEl.textContent = presentation.copy;
+        authorityBannerEl.style.display = "block";
+    }
 
     function createMessage(role, text) {
         const wrapper = document.createElement("div");
@@ -163,17 +210,8 @@
 
     function showWelcome() {
         messagesEl.replaceChildren();
-        if (selectedCarId) {
-            appendMessage(
-                "assistant",
-                "Welcome. I’ll use only the selected vehicle’s recorded Aura context. What would you like to understand?"
-            );
-        } else {
-            appendMessage(
-                "assistant",
-                "Choose a vehicle above before we begin. I won’t guess which vehicle you mean."
-            );
-        }
+        const presentation = authorityPresentation(selectedAuthority);
+        appendMessage("assistant", presentation.welcome);
     }
 
     function setChatEnabled(enabled) {
@@ -248,6 +286,7 @@
         if (!Number.isInteger(numericCarId) || numericCarId <= 0) {
             selectedCarId = null;
             selectedAuthority = null;
+            updateAuthorityBanner();
             setChatEnabled(false);
             vehicleStatusEl.textContent = "Choose a vehicle before asking Rina.";
             showWelcome();
@@ -264,7 +303,9 @@
             selectedCarId = Number(data.car_id);
             selectedAuthority = data.authority || selectedOptionAuthority();
             vehicleSelectEl.value = String(selectedCarId);
-            vehicleStatusEl.textContent = `Rina is scoped to ${data.label}.`;
+            const presentation = authorityPresentation(selectedAuthority);
+            vehicleStatusEl.textContent = `Rina is scoped to ${data.label} as ${presentation.label}.`;
+            updateAuthorityBanner();
             setChatEnabled(true);
             await loadHistory();
 
@@ -272,6 +313,7 @@
         } catch (error) {
             selectedCarId = null;
             selectedAuthority = null;
+            updateAuthorityBanner();
             vehicleSelectEl.value = "";
             setChatEnabled(false);
             vehicleStatusEl.textContent = (
@@ -292,8 +334,6 @@
             populateVehicleChoices(data.vehicles, preferredCarId);
 
             if (data.page_car_id) {
-                // A vehicle-specific page already represents an explicit page
-                // context. Re-authorize and bind that exact vehicle to Rina.
                 await selectVehicle(data.page_car_id, { quiet: true });
                 return;
             }
@@ -303,7 +343,9 @@
                 selectedAuthority = selectedOptionAuthority();
                 vehicleSelectEl.value = String(selectedCarId);
                 const label = vehicleSelectEl.selectedOptions[0]?.textContent || "the selected vehicle";
-                vehicleStatusEl.textContent = `Rina is scoped to ${label}.`;
+                const presentation = authorityPresentation(selectedAuthority);
+                vehicleStatusEl.textContent = `Rina is scoped to ${label} as ${presentation.label}.`;
+                updateAuthorityBanner();
                 setChatEnabled(true);
                 await loadHistory();
                 return;
@@ -311,11 +353,13 @@
 
             selectedCarId = null;
             selectedAuthority = null;
+            updateAuthorityBanner();
             setChatEnabled(false);
             showWelcome();
         } catch (_) {
             selectedCarId = null;
             selectedAuthority = null;
+            updateAuthorityBanner();
             setChatEnabled(false);
             vehicleStatusEl.textContent = "Rina’s vehicle context is unavailable right now.";
             showWelcome();
@@ -347,6 +391,7 @@
             if (error.status === 403) {
                 selectedCarId = null;
                 selectedAuthority = null;
+                updateAuthorityBanner();
                 vehicleSelectEl.value = "";
                 setChatEnabled(false);
                 vehicleStatusEl.textContent = "Vehicle access changed. Choose an available vehicle.";
@@ -416,6 +461,10 @@
             });
 
             loadingNode.remove();
+            if (data.authority) {
+                selectedAuthority = data.authority;
+                updateAuthorityBanner();
+            }
             appendMessage("assistant", data.reply || "Rina could not produce a safe response.");
 
             if (data.intent === "booking" && data.car_id) {
@@ -431,6 +480,7 @@
             if (error.status === 403) {
                 selectedCarId = null;
                 selectedAuthority = null;
+                updateAuthorityBanner();
                 vehicleSelectEl.value = "";
                 vehicleStatusEl.textContent = "Vehicle access changed. Choose an available vehicle.";
                 appendMessage("assistant", "I can’t use that vehicle context for this account.");
@@ -468,6 +518,7 @@
             if (!value) {
                 selectedCarId = null;
                 selectedAuthority = null;
+                updateAuthorityBanner();
                 setChatEnabled(false);
                 vehicleStatusEl.textContent = "Choose a vehicle before asking Rina.";
                 showWelcome();
@@ -485,6 +536,7 @@
         });
 
         setChatEnabled(false);
+        updateAuthorityBanner();
         showWelcome();
         loadContext();
     }

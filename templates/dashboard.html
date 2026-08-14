@@ -7,7 +7,13 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block page_subtitle %}
+{% if dashboard_mode == 'driver' %}
+Your assigned vehicle context and daily operating responsibilities.
+{% elif dashboard_mode in ['advisor', 'administrator'] %}
+Professional automotive health operations and governed vehicle access.
+{% else %}
 Your vehicle is under professional care.
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -18,12 +24,29 @@ Your vehicle is under professional care.
 </div>
 {% endif %}
 
+<div class="card" style="margin-bottom: 18px;">
+    <div class="section-head">
+        <div>
+            <div class="meta">Current Aura relationship</div>
+            <h3>{{ authority_label }}</h3>
+        </div>
+        <span class="pill">{{ authority_label }}</span>
+    </div>
+
+    <p class="subtext">
+        {% if dashboard_mode == 'driver' %}
+        Aura will show only vehicles actively assigned to this driver account. Owner financial and approval authority remain unavailable.
+        {% elif dashboard_mode == 'advisor' %}
+        Vehicle access is limited to professional scope that Aura can prove for the selected client vehicle.
+        {% elif dashboard_mode == 'administrator' %}
+        Governance access remains distinct from vehicle ownership and advisor clinical scope.
+        {% else %}
+        Aura treats this account as the owner only for vehicles with an active ownership relationship.
+        {% endif %}
+    </p>
+</div>
 
 {% if vehicles %}
-
-<!-- ========================= -->
-<!-- VEHICLE GRID -->
-<!-- ========================= -->
 
 <div class="stats-grid aura-dashboard-grid">
 
@@ -31,7 +54,6 @@ Your vehicle is under professional care.
 
     <div class="card vehicle-card aura-vehicle-card {% if v.is_active %}active glow-blue{% endif %}">
 
-        <!-- TOP -->
         <div class="vehicle-header">
 
             <div>
@@ -43,6 +65,11 @@ Your vehicle is under professional care.
                 <div class="meta">
                     Assigned Advisor:
                     <strong>{{ v.advisor_name }}</strong>
+                </div>
+
+                <div class="meta" style="margin-top: 6px;">
+                    Relationship:
+                    <strong>{{ 'Assigned Driver' if v.authority == 'driver' else 'Owner' }}</strong>
                 </div>
 
             </div>
@@ -65,8 +92,6 @@ Your vehicle is under professional care.
 
         </div>
 
-
-        <!-- LAST REVIEW -->
         {% if v.last_assessed_at %}
         <div class="meta vehicle-date">
             Last assessed on
@@ -74,14 +99,10 @@ Your vehicle is under professional care.
         </div>
         {% endif %}
 
-
-        <!-- REASSURANCE -->
         <div class="reassurance vehicle-note">
             {{ v.reassurance }}
         </div>
 
-
-        <!-- ACTIONS -->
         <div class="actions vehicle-actions">
 
             {% if not v.is_active %}
@@ -90,7 +111,7 @@ Your vehicle is under professional care.
                 class="btn btn-primary btn-block"
                 onclick="selectVehicle({{ v.vehicle_id }})"
             >
-                Make Active Vehicle
+                Use This Vehicle
             </button>
 
             {% else %}
@@ -105,10 +126,10 @@ Your vehicle is under professional care.
             {% endif %}
 
             <a
-                href="/cars/{{ v.vehicle_id }}"
+                href="{{ v.view_url }}"
                 class="btn btn-dark btn-block"
             >
-                View Full Record
+                {{ 'Open Driver Vehicle View' if dashboard_mode == 'driver' else 'View Full Record' }}
             </a>
 
         </div>
@@ -120,14 +141,8 @@ Your vehicle is under professional care.
 </div>
 
 
-
-<!-- ========================= -->
-<!-- QUICK ACTIONS -->
-<!-- ========================= -->
-
 <div class="quick-grid aura-quick-grid">
 
-    <!-- VEHICLE MANAGEMENT -->
     <div class="card aura-action-card">
 
         <div class="section-head">
@@ -142,26 +157,38 @@ Your vehicle is under professional care.
             </div>
 
             <h3>
-                Vehicle Management
+                {{ 'Assigned Vehicles' if dashboard_mode == 'driver' else 'Vehicle Management' }}
             </h3>
 
         </div>
 
         <p class="subtext">
+            {% if dashboard_mode == 'driver' %}
+            Review vehicles assigned to you and use the Driver Portal for operational reporting and check-ins.
+            {% else %}
             Add, organize, and manage your private vehicle fleet.
+            {% endif %}
         </p>
 
+        {% if dashboard_mode == 'driver' %}
+        <a
+            href="{{ url_for('driver.driver_dashboard') }}"
+            class="btn btn-primary btn-block"
+        >
+            Open Driver Portal
+        </a>
+        {% elif can_add_vehicle %}
         <a
             href="/cars/add"
             class="btn btn-primary btn-block"
         >
             Add Another Vehicle
         </a>
+        {% endif %}
 
     </div>
 
 
-    <!-- RINA -->
     <div class="card aura-action-card">
 
         <div class="section-head">
@@ -173,7 +200,7 @@ Your vehicle is under professional care.
         </div>
 
         <p class="subtext">
-            Speak with A.J. Rina using your active vehicle profile.
+            Speak with A.J. Rina inside the authority and vehicle scope shown for this account.
         </p>
 
         <a
@@ -188,12 +215,7 @@ Your vehicle is under professional care.
 </div>
 
 
-
 {% else %}
-
-<!-- ========================= -->
-<!-- EMPTY STATE -->
-<!-- ========================= -->
 
 <div class="card aura-empty-card">
 
@@ -209,36 +231,45 @@ Your vehicle is under professional care.
         </div>
 
         <h2>
-            Welcome to Aura
+            {{ empty_title }}
         </h2>
 
     </div>
 
     <p class="subtext">
-        No vehicles have been added yet.
-        Begin your private automotive health journey now.
+        {{ empty_message }}
     </p>
 
+    {% if can_add_vehicle %}
     <a
         href="/cars/add"
         class="btn btn-primary btn-block"
     >
         Add Your First Vehicle
     </a>
+    {% elif dashboard_mode == 'driver' %}
+    <a
+        href="{{ url_for('driver.driver_dashboard') }}"
+        class="btn btn-dark btn-block"
+    >
+        Open Driver Portal
+    </a>
+    {% elif dashboard_mode in ['advisor', 'administrator'] %}
+    <a
+        href="/admin/dashboard"
+        class="btn btn-dark btn-block"
+    >
+        Open Advisor Console
+    </a>
+    {% endif %}
 
 </div>
 
 {% endif %}
 
 
-
 <div class="divider"></div>
 
-
-
-<!-- ========================= -->
-<!-- RINA PANEL -->
-<!-- ========================= -->
 
 <div class="card aura-rina-panel" id="rina-chat">
 
@@ -260,8 +291,7 @@ Your vehicle is under professional care.
     </div>
 
     <p class="subtext">
-        Rina responds based on your
-        <strong>active vehicle</strong>.
+        Rina responds only inside the vehicle and authority scope Aura can prove for this account.
     </p>
 
     {% include "components/rina_chat.html" %}
@@ -269,14 +299,8 @@ Your vehicle is under professional care.
 </div>
 
 
-
 <div class="divider"></div>
 
-
-
-<!-- ========================= -->
-<!-- SIGN OUT -->
-<!-- ========================= -->
 
 <form
     action="{{ url_for('auth.logout') }}"
@@ -291,7 +315,6 @@ Your vehicle is under professional care.
     </button>
 
 </form>
-
 
 
 <script>

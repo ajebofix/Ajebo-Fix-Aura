@@ -21,6 +21,19 @@ def _optional_env_bool(name: str) -> bool | None:
     return None
 
 
+def _openai_key_present() -> bool:
+    """Recognise the canonical key plus Aura's documented Railway alias.
+
+    ``OPENAI_API_KEY`` remains the production source of truth. ``OPEN_AI_KEY``
+    is accepted only as a temporary compatibility path so deployments using the
+    earlier variable spelling do not silently disable Rina's provider.
+    """
+
+    canonical = (os.getenv("OPENAI_API_KEY") or "").strip()
+    legacy = (os.getenv("OPEN_AI_KEY") or "").strip()
+    return bool(canonical or legacy)
+
+
 def rina_orchestration_enabled() -> bool:
     """Gate the authority-first Rina orchestration path.
 
@@ -37,15 +50,14 @@ def rina_openai_provider_enabled() -> bool:
     """Gate outbound OpenAI calls without requiring a new deployment secret.
 
     An explicit ``RINA_OPENAI_PROVIDER_ENABLED`` setting wins. Otherwise Aura
-    enables the provider only when the existing ``OPENAI_API_KEY`` is present;
-    missing credentials therefore produce the structured safe fallback instead
-    of a startup failure.
+    enables the provider when either the canonical ``OPENAI_API_KEY`` or the
+    temporary documented ``OPEN_AI_KEY`` compatibility alias is present.
     """
 
     configured = _optional_env_bool("RINA_OPENAI_PROVIDER_ENABLED")
     if configured is not None:
         return configured
-    return bool((os.getenv("OPENAI_API_KEY") or "").strip())
+    return _openai_key_present()
 
 
 def rina_openai_model() -> str:

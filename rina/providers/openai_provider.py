@@ -53,7 +53,15 @@ class OpenAIRinaProvider:
             self._client = client
             return
 
-        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        # OPENAI_API_KEY is canonical. OPEN_AI_KEY is a temporary compatibility
+        # alias documented for Aura's earlier Railway environment. Check both
+        # here as well as in package/runtime normalization so provider startup
+        # does not depend on import order.
+        api_key = (
+            os.getenv("OPENAI_API_KEY")
+            or os.getenv("OPEN_AI_KEY")
+            or ""
+        ).strip()
         if not api_key:
             raise RinaProviderConfigurationError(
                 "OpenAI provider credentials are not configured"

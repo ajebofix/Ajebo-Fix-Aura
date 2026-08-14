@@ -1,8 +1,18 @@
 {% extends "base.html" %}
 
+{% if current_user.role == 'admin' %}
+    {% set profile_role_label = 'Administrator' %}
+{% elif current_user.role == 'driver' %}
+    {% set profile_role_label = 'Assigned Driver' %}
+{% elif current_user.role == 'advisor' %}
+    {% set profile_role_label = 'Advisor' %}
+{% else %}
+    {% set profile_role_label = 'Private Client / Owner' %}
+{% endif %}
+
 {% block title %}Aura | My Profile{% endblock %}
 {% block page_title %}My Profile{% endblock %}
-{% block page_subtitle %}Your private automotive care identity and preferences.{% endblock %}
+{% block page_subtitle %}Your Aura identity, relationship and communication preferences.{% endblock %}
 
 {% block content %}
 <div class="profile-page">
@@ -13,7 +23,7 @@
         </div>
 
         <div class="profile-hero-copy">
-            <p class="profile-eyebrow">{{ client_type }}</p>
+            <p class="profile-eyebrow">{{ profile_role_label }}</p>
             <h2>{{ current_user.name or "Aura Client" }}</h2>
             <p>{{ values.occupation or "Occupation not added" }}</p>
 
@@ -45,7 +55,7 @@
         </div>
 
         <p class="profile-muted">
-            A complete profile helps your advisor communicate and coordinate care in the way you prefer.
+            A complete profile helps Aura communicate and coordinate care in the way you prefer.
         </p>
     </section>
 
@@ -126,7 +136,7 @@
             </div>
 
             <p class="profile-long-value">
-                {{ values.care_preference or "Tell Aura how you prefer your vehicle care, progress updates and preventive monitoring to be handled." }}
+                {{ values.care_preference or "Tell Aura how you prefer vehicle-care updates, coordination and preventive monitoring to be handled." }}
             </p>
 
             <dl class="profile-details compact">
@@ -151,6 +161,25 @@
             </div>
 
             <div class="profile-stat-grid">
+                {% if current_user.role == 'driver' %}
+                <div class="profile-stat">
+                    <span id="profile-assigned-vehicle-count">—</span>
+                    <small>Assigned vehicles</small>
+                </div>
+                <div class="profile-stat">
+                    <span>Driver</span>
+                    <small>Vehicle relationship</small>
+                </div>
+                {% elif current_user.role in ['admin', 'advisor'] %}
+                <div class="profile-stat">
+                    <span>{{ 'Admin' if current_user.role == 'admin' else 'Advisor' }}</span>
+                    <small>Account authority</small>
+                </div>
+                <div class="profile-stat">
+                    <span>Scoped</span>
+                    <small>Vehicle access</small>
+                </div>
+                {% else %}
                 <div class="profile-stat">
                     <span>{{ vehicle_count }}</span>
                     <small>Active vehicles</small>
@@ -159,12 +188,13 @@
                     <span>{{ driver_count }}</span>
                     <small>Assigned drivers</small>
                 </div>
+                {% endif %}
             </div>
 
             <dl class="profile-details compact">
                 <div>
-                    <dt>Client type</dt>
-                    <dd>{{ client_type }}</dd>
+                    <dt>Relationship</dt>
+                    <dd>{{ profile_role_label }}</dd>
                 </div>
                 <div>
                     <dt>Care access</dt>
@@ -188,7 +218,7 @@
             <p class="profile-eyebrow">Privacy and account protection</p>
             <h3>Your information is protected</h3>
             <p>
-                Aura uses encrypted connections, restricted access, secure password handling and layered security controls. Only authorised Aura personnel may access information required to manage your automotive care. No online service can eliminate every risk, but Aura is designed to minimise exposure and safeguard your information.
+                Aura uses encrypted connections, restricted access, secure password handling and layered security controls. Only authorised Aura personnel may access information required to manage automotive care. No online service can eliminate every risk, but Aura is designed to minimise exposure and safeguard your information.
             </p>
 
             <div class="profile-security-status">
@@ -214,4 +244,25 @@
     </section>
 
 </div>
+
+{% if current_user.role == 'driver' %}
+<script>
+(() => {
+    const countEl = document.getElementById("profile-assigned-vehicle-count");
+    if (!countEl) return;
+
+    fetch("/chat/context", { credentials: "same-origin" })
+        .then(response => response.ok ? response.json() : Promise.reject())
+        .then(data => {
+            const assigned = (data.vehicles || []).filter(
+                vehicle => vehicle.authority === "driver"
+            );
+            countEl.textContent = String(assigned.length);
+        })
+        .catch(() => {
+            countEl.textContent = "Unavailable";
+        });
+})();
+</script>
+{% endif %}
 {% endblock %}

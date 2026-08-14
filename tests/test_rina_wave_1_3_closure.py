@@ -56,8 +56,13 @@ def test_dashboard_default_is_presentation_only_and_explicit_selection_binds_rin
     # That GET path must not rebuild the old broad Rina session context.
     assert 'session["rina_context"] =' not in source
     assert 'session["rina_context_full"] =' not in source
-    # The explicit owner selection path establishes the short-lived Rina binding.
-    assert 'session["rina_active_car_id"] = ownership.car.id' in source
+    # Explicit selection must be re-authorized and then establish the short-lived
+    # Rina binding for the exact selected vehicle. The general dashboard supports
+    # proved owner/driver relationships; professional scope stays in its workflow.
+    assert "resolve_rina_authority" in source
+    assert "AUTHORITY_OWNER" in source
+    assert "AUTHORITY_DRIVER" in source
+    assert 'session["rina_active_car_id"] = vehicle_id' in source
     # Legacy broad context is removed rather than reused.
     assert 'session.pop("rina_context", None)' in source
     assert 'session.pop("rina_context_full", None)' in source

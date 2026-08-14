@@ -9,12 +9,15 @@ on:
       - reopened
       - ready_for_review
     paths:
+      - "app.py"
       - "routes/chat.py"
       - "dashboard/routes.py"
+      - "admin/rina_operations.py"
       - "templates/base.html"
       - "templates/dashboard.html"
       - "templates/profiles/profile.html"
       - "templates/components/rina_chat.html"
+      - "templates/admin/rina_provider_status.html"
       - "rina/**"
       - "services/rina_*.py"
       - "tests/test_rina_*.py"
@@ -59,8 +62,10 @@ jobs:
       - name: Compile Wave 1.3 active closure sources
         run: >-
           python -m compileall -q
+          app.py
           routes/chat.py
           dashboard/routes.py
+          admin/rina_operations.py
           rina/audit_models.py
           rina/providers
           rina/memory_model_extensions.py
@@ -72,15 +77,17 @@ jobs:
           services/rina_memory_service.py
           services/rina_orchestrator.py
           services/rina_provider_context.py
+          services/rina_provider_diagnostics.py
           services/rina_runtime_flags.py
           tests/test_rina_configuration.py
+          tests/test_rina_provider_diagnostics.py
           tests/test_rina_wave_1_3_closure.py
           tests/test_authority_product_surfaces.py
 
       - name: Verify Wave 1.3 architecture closure guardrails
         run: pytest -q --tb=short tests/test_rina_wave_1_3_closure.py
 
-      - name: Re-run authority memory orchestration chat and product contracts
+      - name: Re-run authority memory orchestration chat product and provider operations contracts
         run: >-
           pytest -q --tb=short
           tests/test_rina_authority_core.py
@@ -89,13 +96,16 @@ jobs:
           tests/test_rina_orchestrator.py
           tests/test_rina_openai_provider.py
           tests/test_rina_chat_cutover.py
+          tests/test_rina_provider_diagnostics.py
           tests/test_authority_product_surfaces.py
 
       - name: Ruff Wave 1.3 closure surfaces
         run: >-
           ruff check
+          app.py
           routes/chat.py
           dashboard/routes.py
+          admin/rina_operations.py
           rina/audit_models.py
           rina/providers
           rina/memory_model_extensions.py
@@ -107,8 +117,10 @@ jobs:
           services/rina_memory_service.py
           services/rina_orchestrator.py
           services/rina_provider_context.py
+          services/rina_provider_diagnostics.py
           services/rina_runtime_flags.py
           tests/test_rina_configuration.py
+          tests/test_rina_provider_diagnostics.py
           tests/test_rina_wave_1_3_closure.py
           tests/test_authority_product_surfaces.py
 
@@ -117,6 +129,7 @@ jobs:
           bandit -q -r
           routes/chat.py
           dashboard/routes.py
+          admin/rina_operations.py
           rina/audit_models.py
           rina/providers
           rina/memory_model_extensions.py
@@ -128,6 +141,7 @@ jobs:
           services/rina_memory_service.py
           services/rina_orchestrator.py
           services/rina_provider_context.py
+          services/rina_provider_diagnostics.py
           services/rina_runtime_flags.py
 
       - name: Verify no active legacy Rina imports
@@ -137,10 +151,12 @@ jobs:
           ! grep -Eq "rina_context_full.*=" routes/chat.py
           ! grep -Eq "_match_vehicle_from_message|ownerships\[0\]" routes/chat.py
 
-      - name: Verify direct OpenAI dependency is isolated from active route and orchestration
+      - name: Verify direct OpenAI dependency is isolated from active route orchestration and diagnostics
         run: |
           ! grep -Eq "(^|[[:space:]])(import openai|from openai)" routes/chat.py
           ! grep -Eq "(^|[[:space:]])(import openai|from openai)" services/rina_orchestrator.py
+          ! grep -Eq "(^|[[:space:]])(import openai|from openai)" admin/rina_operations.py
+          ! grep -Eq "(^|[[:space:]])(import openai|from openai)" services/rina_provider_diagnostics.py
           grep -Eq "from openai import OpenAI|import openai" rina/providers/openai_provider.py
 
       - name: Verify release and rollback document exists

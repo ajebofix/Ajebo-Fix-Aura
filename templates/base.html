@@ -25,6 +25,18 @@ rel="stylesheet">
 </head>
 <body>
 
+{% if current_user.is_authenticated %}
+    {% if current_user.role == 'admin' %}
+        {% set aura_role_label = 'Administrator' %}
+    {% elif current_user.role == 'driver' %}
+        {% set aura_role_label = 'Assigned Driver' %}
+    {% elif current_user.role == 'advisor' %}
+        {% set aura_role_label = 'Advisor' %}
+    {% else %}
+        {% set aura_role_label = 'Owner' %}
+    {% endif %}
+{% endif %}
+
 <button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
 
 <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
@@ -64,7 +76,11 @@ rel="stylesheet">
 
             <a href="/dashboard" class="nav-item">Dashboard</a>
 
+            {% if current_user.is_authenticated and current_user.role == 'driver' %}
+            <a href="/driver/dashboard" class="nav-item">Assigned Vehicles</a>
+            {% elif current_user.is_authenticated and current_user.role not in ['admin', 'advisor'] %}
             <a href="/cars" class="nav-item">Vehicles</a>
+            {% endif %}
 
             <a href="/chat" class="nav-item">A.J. Rina</a>
 
@@ -75,12 +91,6 @@ rel="stylesheet">
 
             <a href="/admin/alerts" class="nav-item">
                 Alert Center
-            </a>
-            {% endif %}
-
-            {% if current_user.is_authenticated and current_user.is_driver %}
-            <a href="/driver/dashboard" class="nav-item">
-                Driver Portal
             </a>
             {% endif %}
 
@@ -104,7 +114,7 @@ rel="stylesheet">
             </div>
 
             <div class="user-role">
-                {{ current_user.role|capitalize }}
+                {{ aura_role_label }}
             </div>
 
             <form method="POST"
@@ -146,7 +156,7 @@ rel="stylesheet">
             <div class="topbar-right">
                 {% if current_user.is_authenticated %}
                 <span class="pill">
-                    {{ current_user.role|capitalize }}
+                    {{ aura_role_label }}
                 </span>
                 {% endif %}
             </div>

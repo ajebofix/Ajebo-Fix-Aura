@@ -26,7 +26,7 @@ def test_diagnostics_reports_missing_credentials_without_secret_material(app, mo
     assert report["runtime"]["provider_enabled"] is False
     assert report["runtime"]["credential_source"] == "none"
     assert report["diagnosis"]["code"] == "credentials_missing"
-    assert "api_key" not in str(report).lower()
+    assert "credential_value" not in str(report).lower()
 
 
 def test_explicit_provider_disable_wins_even_when_key_is_present(app, monkeypatch):

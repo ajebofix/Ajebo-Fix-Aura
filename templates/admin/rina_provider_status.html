@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Rina Provider Status{% endblock %}
+{% block page_title %}Rina Provider Status{% endblock %}
+{% block page_subtitle %}Privacy-safe operational telemetry for A.J. Rina's active language-provider boundary.{% endblock %}
+
+{% block content %}
+{% set diagnosis = report.diagnosis %}
+{% set runtime = report.runtime %}
+
+<div class="profile-page">
+    <section class="card profile-card">
+        <div class="profile-section-heading">
+            <div>
+                <p class="profile-eyebrow">Current diagnosis</p>
+                <h2>{{ diagnosis.summary }}</h2>
+            </div>
+            <span class="pill {{ 'success' if diagnosis.status == 'healthy' else 'warning' }}">
+                {{ diagnosis.status|replace('_', ' ')|title }}
+            </span>
+        </div>
+
+        <dl class="profile-details">
+            <div>
+                <dt>Diagnostic code</dt>
+                <dd>{{ diagnosis.code }}</dd>
+            </div>
+            <div>
+                <dt>Recommended next action</dt>
+                <dd>{{ diagnosis.next_action }}</dd>
+            </div>
+        </dl>
+    </section>
+
+    <section class="card profile-card">
+        <div class="profile-section-heading">
+            <div>
+                <p class="profile-eyebrow">Runtime configuration</p>
+                <h3>Provider boundary</h3>
+            </div>
+            <span class="pill">No secrets exposed</span>
+        </div>
+
+        <dl class="profile-details">
+            <div>
+                <dt>Wave 1.3 orchestration</dt>
+                <dd>{{ 'Enabled' if runtime.orchestration_enabled else 'Disabled' }} ({{ runtime.orchestration_flag_state }})</dd>
+            </div>
+            <div>
+                <dt>OpenAI provider</dt>
+                <dd>{{ 'Enabled' if runtime.provider_enabled else 'Disabled' }} ({{ runtime.provider_flag_state }})</dd>
+            </div>
+            <div>
+                <dt>Credential source</dt>
+                <dd>{{ runtime.credential_source }}</dd>
+            </div>
+            <div>
+                <dt>Configured model</dt>
+                <dd>{{ runtime.model }}</dd>
+            </div>
+            <div>
+                <dt>Timeout</dt>
+                <dd>{{ runtime.timeout_seconds }} seconds</dd>
+            </div>
+            <div>
+                <dt>Maximum retries</dt>
+                <dd>{{ runtime.max_retries }}</dd>
+            </div>
+        </dl>
+    </section>
+
+    <section class="card profile-card">
+        <div class="profile-section-heading">
+            <div>
+                <p class="profile-eyebrow">Latest audited request</p>
+                <h3>What happened at the provider boundary</h3>
+            </div>
+        </div>
+
+        {% if report.latest_event %}
+        {% set event = report.latest_event %}
+        <dl class="profile-details">
+            <div>
+                <dt>Authority</dt>
+                <dd>{{ event.authority or '—' }}</dd>
+            </div>
+            <div>
+                <dt>Response state</dt>
+                <dd>{{ event.state or '—' }}</dd>
+            </div>
+            <div>
+                <dt>Provider status</dt>
+                <dd>{{ event.provider_status or '—' }}</dd>
+            </div>
+            <div>
+                <dt>Provider attempted</dt>
+                <dd>{{ 'Yes' if event.provider_attempted else 'No' }}</dd>
+            </div>
+            <div>
+                <dt>Failure class</dt>
+                <dd>{{ event.failure_class or 'None recorded' }}</dd>
+            </div>
+            <div>
+                <dt>Provider</dt>
+                <dd>{{ event.provider or '—' }}</dd>
+            </div>
+            <div>
+                <dt>Provider model</dt>
+                <dd>{{ event.provider_model or '—' }}</dd>
+            </div>
+            <div>
+                <dt>Recorded</dt>
+                <dd>{{ event.created_at or '—' }}</dd>
+            </div>
+        </dl>
+        {% else %}
+        <p class="profile-muted">No Rina AI audit event is available yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card profile-card">
+        <div class="profile-section-heading">
+            <div>
+                <p class="profile-eyebrow">Recent provider outcomes</p>
+                <h3>Last {{ report.recent_events|length }} audited Rina requests</h3>
+            </div>
+        </div>
+
+        {% if report.recent_events %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; min-width: 760px;">
+                <thead>
+                    <tr>
+                        <th style="text-align: left; padding: 0.75rem;">Time</th>
+                        <th style="text-align: left; padding: 0.75rem;">Authority</th>
+                        <th style="text-align: left; padding: 0.75rem;">State</th>
+                        <th style="text-align: left; padding: 0.75rem;">Status</th>
+                        <th style="text-align: left; padding: 0.75rem;">Attempted</th>
+                        <th style="text-align: left; padding: 0.75rem;">Failure class</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in report.recent_events %}
+                    <tr>
+                        <td style="padding: 0.75rem; border-top: 1px solid rgba(100, 116, 139, 0.18);">{{ event.created_at or '—' }}</td>
+                        <td style="padding: 0.75rem; border-top: 1px solid rgba(100, 116, 139, 0.18);">{{ event.authority or '—' }}</td>
+                        <td style="padding: 0.75rem; border-top: 1px solid rgba(100, 116, 139, 0.18);">{{ event.state or '—' }}</td>
+                        <td style="padding: 0.75rem; border-top: 1px solid rgba(100, 116, 139, 0.18);">{{ event.provider_status or '—' }}</td>
+                        <td style="padding: 0.75rem; border-top: 1px solid rgba(100, 116, 139, 0.18);">{{ 'Yes' if event.provider_attempted else 'No' }}</td>
+                        <td style="padding: 0.75rem; border-top: 1px solid rgba(100, 116, 139, 0.18);">{{ event.failure_class or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="profile-muted">No provider outcomes have been recorded.</p>
+        {% endif %}
+
+        <p class="profile-muted" style="margin-top: 1rem;">
+            This surface never displays API keys, prompts, raw messages, provider response bodies, or hidden memory.
+        </p>
+    </section>
+</div>
+{% endblock %}

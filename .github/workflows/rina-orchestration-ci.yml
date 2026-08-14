@@ -20,6 +20,7 @@ on:
       - "services/rina_context_resolver.py"
       - "services/rina_memory_service.py"
       - "migrations/versions/b41d8e3f0a21_add_rina_ai_audit_events.py"
+      - "tests/test_rina_configuration.py"
       - "tests/test_rina_orchestrator.py"
       - "tests/test_rina_openai_provider.py"
       - "scripts/verify_rina_orchestration_postgres.py"
@@ -68,6 +69,7 @@ jobs:
           services/rina_orchestrator.py
           services/rina_provider_context.py
           services/rina_runtime_flags.py
+          tests/test_rina_configuration.py
           tests/test_rina_orchestrator.py
           tests/test_rina_openai_provider.py
           scripts/verify_rina_orchestration_postgres.py
@@ -78,6 +80,7 @@ jobs:
           pytest -q --tb=short
           tests/test_rina_authority_core.py
           tests/test_rina_memory_scope.py
+          tests/test_rina_configuration.py
           tests/test_rina_orchestrator.py
           tests/test_rina_openai_provider.py
 
@@ -90,6 +93,7 @@ jobs:
           services/rina_orchestrator.py
           services/rina_provider_context.py
           services/rina_runtime_flags.py
+          tests/test_rina_configuration.py
           tests/test_rina_orchestrator.py
           tests/test_rina_openai_provider.py
           scripts/verify_rina_orchestration_postgres.py

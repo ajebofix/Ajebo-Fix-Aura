@@ -73,6 +73,7 @@ jobs:
           services/rina_orchestrator.py
           services/rina_provider_context.py
           services/rina_runtime_flags.py
+          tests/test_rina_configuration.py
           tests/test_rina_wave_1_3_closure.py
           tests/test_authority_product_surfaces.py
 
@@ -84,6 +85,7 @@ jobs:
           pytest -q --tb=short
           tests/test_rina_authority_core.py
           tests/test_rina_memory_scope.py
+          tests/test_rina_configuration.py
           tests/test_rina_orchestrator.py
           tests/test_rina_openai_provider.py
           tests/test_rina_chat_cutover.py
@@ -106,6 +108,7 @@ jobs:
           services/rina_orchestrator.py
           services/rina_provider_context.py
           services/rina_runtime_flags.py
+          tests/test_rina_configuration.py
           tests/test_rina_wave_1_3_closure.py
           tests/test_authority_product_surfaces.py
 

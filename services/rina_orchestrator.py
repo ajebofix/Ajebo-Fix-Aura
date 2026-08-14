@@ -1,8 +1,8 @@
 """Authority-first orchestration for Wave 1.3 A.J. Rina.
 
-This service is intentionally not wired into `/chat` yet. It proves the trusted
-request -> context -> memory -> provider -> audit path behind default-off rollout
-flags before the dedicated route cutover.
+The active Rina route passes through this trusted request -> context -> memory ->
+provider -> audit boundary. Authority and vehicle scope are resolved before any
+provider call and remain authoritative when the provider is unavailable.
 """
 
 from __future__ import annotations
@@ -72,9 +72,17 @@ def _requires_driving_safety_escalation(message: str) -> bool:
     return any(phrase in normalized for phrase in _DRIVING_SAFETY_QUESTIONS)
 
 
-def _fallback_message() -> str:
+def _fallback_message(authority: str) -> str:
+    relationship = {
+        "driver": "the assigned driver",
+        "owner": "the vehicle owner",
+        "advisor": "the scoped advisor",
+        "administrator": "the administrator",
+    }.get(authority, "an authorised Aura user")
+
     return (
-        "I can't use Rina's language service right now. Your Aura vehicle "
+        f"I recognise this session as {relationship} for the selected vehicle, "
+        "but I can't use Rina's language service right now. The Aura vehicle "
         "record is still intact; anything time-sensitive should go through "
         "advisor review."
     )
@@ -234,7 +242,7 @@ def orchestrate_rina(
             car_id=context.car_id,
             authority=context.authority,
             state=RINA_STATE_PROVIDER_UNAVAILABLE,
-            message=_fallback_message(),
+            message=_fallback_message(context.authority),
             uncertainty="the Wave 1.3 orchestration rollout flag is disabled",
             escalation=None,
             actions=(),
@@ -328,7 +336,7 @@ def orchestrate_rina(
                 car_id=context.car_id,
                 authority=context.authority,
                 state=RINA_STATE_PROVIDER_UNAVAILABLE,
-                message=_fallback_message(),
+                message=_fallback_message(context.authority),
                 uncertainty="the configured language provider is unavailable",
                 escalation=None,
                 actions=(),
@@ -357,7 +365,7 @@ def orchestrate_rina(
             car_id=context.car_id,
             authority=context.authority,
             state=RINA_STATE_PROVIDER_UNAVAILABLE,
-            message=_fallback_message(),
+            message=_fallback_message(context.authority),
             uncertainty="the language-provider rollout flag is disabled",
             escalation=None,
             actions=(),
@@ -396,7 +404,7 @@ def orchestrate_rina(
             car_id=context.car_id,
             authority=context.authority,
             state=RINA_STATE_PROVIDER_UNAVAILABLE,
-            message=_fallback_message(),
+            message=_fallback_message(context.authority),
             uncertainty="the language provider could not complete this request",
             escalation=None,
             actions=(),

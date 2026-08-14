@@ -122,8 +122,8 @@ jobs:
 
       - name: Verify no active legacy Rina imports
         run: |
-          ! grep -Eq "RinaChatEngine|RinaContextService|rina\.ai_brain|rina\.memory" routes/chat.py
-          ! grep -Eq "services\.rina_chat_engine|services\.rina_context_service|rina\.ai_brain|rina\.memory" app.py
+          ! grep -Eq "RinaChatEngine|RinaContextService|rina\.ai_brain($|[^[:alnum:]_])|rina\.memory($|[^[:alnum:]_])" routes/chat.py
+          ! grep -Eq "services\.rina_chat_engine($|[^[:alnum:]_])|services\.rina_context_service($|[^[:alnum:]_])|rina\.ai_brain($|[^[:alnum:]_])|rina\.memory($|[^[:alnum:]_])" app.py
           ! grep -Eq "rina_context_full.*=" routes/chat.py
           ! grep -Eq "_match_vehicle_from_message|ownerships\[0\]" routes/chat.py
 

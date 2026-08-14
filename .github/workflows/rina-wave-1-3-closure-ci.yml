@@ -1,0 +1,137 @@
+name: Aura Rina Wave 1.3 Closure CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "routes/chat.py"
+      - "dashboard/routes.py"
+      - "templates/components/rina_chat.html"
+      - "rina/**"
+      - "services/rina_*.py"
+      - "tests/test_rina_*.py"
+      - "docs/AURA_WAVE_1_3_RINA_RELEASE_AND_DEPRECATION.md"
+      - ".github/workflows/rina-wave-1-3-closure-ci.yml"
+      - "requirements*.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-rina-wave-1-3-closure-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  closure-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      RINA_OPENAI_PROVIDER_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile Wave 1.3 active closure sources
+        run: >-
+          python -m compileall -q
+          routes/chat.py
+          dashboard/routes.py
+          rina/audit_models.py
+          rina/providers
+          rina/memory_model_extensions.py
+          services/rina_audit.py
+          services/rina_authority.py
+          services/rina_context_resolver.py
+          services/rina_contracts.py
+          services/rina_material_summary.py
+          services/rina_memory_service.py
+          services/rina_orchestrator.py
+          services/rina_provider_context.py
+          services/rina_runtime_flags.py
+          tests/test_rina_wave_1_3_closure.py
+
+      - name: Verify Wave 1.3 architecture closure guardrails
+        run: pytest -q --tb=short tests/test_rina_wave_1_3_closure.py
+
+      - name: Re-run authority memory orchestration and chat contracts
+        run: >-
+          pytest -q --tb=short
+          tests/test_rina_authority_core.py
+          tests/test_rina_memory_scope.py
+          tests/test_rina_orchestrator.py
+          tests/test_rina_openai_provider.py
+          tests/test_rina_chat_cutover.py
+
+      - name: Ruff Wave 1.3 closure surfaces
+        run: >-
+          ruff check
+          routes/chat.py
+          dashboard/routes.py
+          rina/audit_models.py
+          rina/providers
+          rina/memory_model_extensions.py
+          services/rina_audit.py
+          services/rina_authority.py
+          services/rina_context_resolver.py
+          services/rina_contracts.py
+          services/rina_material_summary.py
+          services/rina_memory_service.py
+          services/rina_orchestrator.py
+          services/rina_provider_context.py
+          services/rina_runtime_flags.py
+          tests/test_rina_wave_1_3_closure.py
+
+      - name: Bandit active Rina server surfaces
+        run: >-
+          bandit -q -r
+          routes/chat.py
+          dashboard/routes.py
+          rina/audit_models.py
+          rina/providers
+          rina/memory_model_extensions.py
+          services/rina_audit.py
+          services/rina_authority.py
+          services/rina_context_resolver.py
+          services/rina_contracts.py
+          services/rina_material_summary.py
+          services/rina_memory_service.py
+          services/rina_orchestrator.py
+          services/rina_provider_context.py
+          services/rina_runtime_flags.py
+
+      - name: Verify no active legacy Rina imports
+        run: |
+          ! grep -Eq "RinaChatEngine|RinaContextService|rina\.ai_brain($|[^[:alnum:]_])|rina\.memory($|[^[:alnum:]_])" routes/chat.py
+          ! grep -Eq "services\.rina_chat_engine($|[^[:alnum:]_])|services\.rina_context_service($|[^[:alnum:]_])|rina\.ai_brain($|[^[:alnum:]_])|rina\.memory($|[^[:alnum:]_])" app.py
+          ! grep -Eq "rina_context_full.*=" routes/chat.py
+          ! grep -Eq "_match_vehicle_from_message|ownerships\[0\]" routes/chat.py
+
+      - name: Verify direct OpenAI dependency is isolated from active route and orchestration
+        run: |
+          ! grep -Eq "(^|[[:space:]])(import openai|from openai)" routes/chat.py
+          ! grep -Eq "(^|[[:space:]])(import openai|from openai)" services/rina_orchestrator.py
+          grep -Eq "from openai import OpenAI|import openai" rina/providers/openai_provider.py
+
+      - name: Verify release and rollback document exists
+        run: test -s docs/AURA_WAVE_1_3_RINA_RELEASE_AND_DEPRECATION.md

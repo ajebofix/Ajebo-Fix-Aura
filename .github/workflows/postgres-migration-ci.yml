@@ -14,6 +14,7 @@ on:
       - "profiles/**"
       - "security/**"
       - "rina/**"
+      - "evidence/**"
       - "services/**"
       - "scripts/**"
       - "requirements*.txt"
@@ -74,7 +75,7 @@ jobs:
       - name: Upgrade fresh PostgreSQL database to head
         run: python -m flask db upgrade
 
-      - name: Verify fresh head and Wave 1.2/1.3 schema
+      - name: Verify fresh head and Wave 1.2/1.3/1.4 schema
         run: |
           python - <<'PY'
           import os
@@ -86,6 +87,7 @@ jobs:
           required = {
               "users", "cars", "car_ownership", "vehicle_events",
               "chat_messages", "conversation_records", "rina_ai_audit_events",
+              "vehicle_evidence", "evidence_links", "evidence_extractions",
               "user_sessions", "client_profiles", "profile_audit_events",
               "alembic_version",
           }
@@ -149,13 +151,28 @@ jobs:
                   f"{sorted(prohibited_audit & audit_columns)}"
               )
 
+          evidence_columns = {
+              c["name"] for c in inspector.get_columns("vehicle_evidence")
+          }
+          required_evidence = {
+              "car_id", "uploaded_by_user_id", "evidence_type", "purpose",
+              "source_channel", "visibility", "review_status", "storage_provider",
+              "storage_state", "object_key", "safe_display_name", "content_type",
+              "byte_size", "sha256", "consent_basis", "lawful_purpose",
+              "retention_until", "deleted_at", "reviewed_by_user_id",
+          }
+          if required_evidence - evidence_columns:
+              raise SystemExit(
+                  f"Wave 1.4 evidence schema missing: {sorted(required_evidence - evidence_columns)}"
+              )
+
           with engine.connect() as connection:
               version = connection.execute(
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
-          if version != "b41d8e3f0a21":
+          if version != "c62f1a4e8d30":
               raise SystemExit(f"Unexpected PostgreSQL head: {version}")
-          print("Fresh PostgreSQL upgrade reached b41d8e3f0a21.")
+          print("Fresh PostgreSQL upgrade reached c62f1a4e8d30.")
           PY
 
       - name: Recreate production-shaped baseline at d42e7a1c9b50
@@ -171,7 +188,7 @@ jobs:
           PY
           python -m flask db upgrade d42e7a1c9b50
 
-      - name: Verify Wave 1.3 structures are absent at production baseline
+      - name: Verify Wave 1.3/1.4 structures are absent at production baseline
         run: |
           python - <<'PY'
           import os
@@ -182,6 +199,8 @@ jobs:
           tables = set(inspector.get_table_names())
           if "rina_ai_audit_events" in tables:
               raise SystemExit("Rina AI audit table exists before its migration")
+          if {"vehicle_evidence", "evidence_links", "evidence_extractions"} & tables:
+              raise SystemExit("Wave 1.4 evidence tables exist at d42 baseline")
 
           chat_columns = {c["name"] for c in inspector.get_columns("chat_messages")}
           if {"car_id", "conversation_id", "channel", "visibility"} & chat_columns:
@@ -298,9 +317,9 @@ jobs:
               raise SystemExit(
                   f"Unsafe ConversationRecord legacy backfill: {legacy_record!r}"
               )
-          if version != "b41d8e3f0a21":
+          if version != "c62f1a4e8d30":
               raise SystemExit(f"Unexpected upgraded head: {version}")
-          print("Wave 1.2 hardening and Wave 1.3 conservative memory backfill verified.")
+          print("Wave 1.2 hardening, Wave 1.3 memory, and Wave 1.4 head verified.")
           PY
 
       - name: Verify Rina memory and AI audit PostgreSQL constraints
@@ -388,3 +407,6 @@ jobs:
 
           print("Rina memory and audit PostgreSQL constraints verified.")
           PY
+
+      - name: Verify Wave 1.4 evidence PostgreSQL constraints
+        run: python scripts/verify_evidence_schema_postgres.py

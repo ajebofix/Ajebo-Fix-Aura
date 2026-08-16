@@ -496,6 +496,13 @@ def test_timeline_order_is_deterministic_when_timestamps_match(app):
             key="progression-8-monitoring",
         )
         same_recorded = datetime(2026, 8, 13, 15, 1, 0)
+        reported = review.__class__.query.filter_by(
+            car_id=car.id,
+            subject_type="reported_concern",
+            subject_id=concern.id,
+            event_type="concern.reported",
+        ).one()
+        reported.recorded_at = same_recorded
         review.recorded_at = same_recorded
         monitoring.recorded_at = same_recorded
         db.session.commit()

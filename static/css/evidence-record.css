@@ -1,0 +1,373 @@
+.evidence-record-card {
+    margin-top: 24px;
+}
+
+.evidence-record-header,
+.evidence-record-item-head,
+.evidence-record-link-row,
+.evidence-record-governance,
+.evidence-review-queue-head,
+.evidence-preview-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.evidence-record-kicker {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #6b7280;
+}
+
+.evidence-record-header h2,
+.evidence-upload-copy h3,
+.evidence-review-queue-head h3,
+.evidence-preview-head h3 {
+    margin: 0;
+}
+
+.evidence-record-intro {
+    max-width: 660px;
+    margin: 8px 0 0;
+}
+
+.evidence-record-count {
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #374151;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.evidence-upload-panel,
+.evidence-review-queue {
+    margin-top: 20px;
+    padding: 18px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #fafafa;
+}
+
+.evidence-upload-copy p:last-child,
+.evidence-review-queue-head p:last-child {
+    margin: 7px 0 0;
+}
+
+.evidence-upload-form {
+    display: grid;
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.evidence-field {
+    display: grid;
+    gap: 7px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #374151;
+}
+
+.evidence-field select,
+.evidence-field input[type="file"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 11px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #111827;
+    font: inherit;
+    font-weight: 500;
+}
+
+.evidence-field small {
+    font-weight: 500;
+    color: #6b7280;
+}
+
+.evidence-consent {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    color: #4b5563;
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.evidence-consent input {
+    margin-top: 3px;
+}
+
+.evidence-action-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.evidence-inline-status {
+    min-height: 1em;
+    font-size: 0.78rem;
+    color: #4b5563;
+}
+
+.evidence-review-queue-head {
+    align-items: center;
+}
+
+.evidence-pending-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.evidence-pending-item {
+    padding: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #ffffff;
+}
+
+.evidence-pending-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin: 12px 0;
+    color: #6b7280;
+    font-size: 0.76rem;
+}
+
+.evidence-record-status-pending {
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+.evidence-review-form {
+    margin-top: 16px;
+    padding-top: 15px;
+    border-top: 1px solid #eef0f3;
+}
+
+.evidence-review-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.evidence-workflow-note {
+    margin: 10px 0 0;
+    color: #6b7280;
+    font-size: 0.76rem;
+    line-height: 1.5;
+}
+
+.evidence-record-list {
+    display: grid;
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.evidence-record-item {
+    padding: 18px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #ffffff;
+}
+
+.evidence-record-purpose {
+    font-weight: 750;
+    color: #111827;
+}
+
+.evidence-record-date,
+.evidence-record-self-note,
+.evidence-record-link-status {
+    margin-top: 4px;
+    font-size: 0.78rem;
+    color: #6b7280;
+}
+
+.evidence-record-status {
+    flex: 0 0 auto;
+    padding: 6px 9px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 750;
+}
+
+.evidence-record-status-accepted {
+    background: #ecfdf5;
+    color: #065f46;
+}
+
+.evidence-record-status-rejected {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+.evidence-record-summary {
+    margin: 14px 0 0;
+    color: #374151;
+    line-height: 1.6;
+}
+
+.evidence-record-links {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid #eef0f3;
+}
+
+.evidence-record-links-label {
+    margin-bottom: 8px;
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b7280;
+}
+
+.evidence-record-link-row {
+    padding: 8px 0;
+    color: #1f2937;
+}
+
+.evidence-record-link-status {
+    margin-top: 0;
+    white-space: nowrap;
+}
+
+.evidence-record-governance {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #eef0f3;
+    font-size: 0.76rem;
+    color: #6b7280;
+}
+
+.evidence-record-self-note {
+    margin-top: 12px;
+}
+
+.evidence-record-empty {
+    margin-top: 18px;
+    padding: 18px;
+    border: 1px dashed #d1d5db;
+    border-radius: 14px;
+    background: #fafafa;
+}
+
+.evidence-record-empty p {
+    margin: 6px 0 0;
+}
+
+.evidence-record-safety {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid #eef0f3;
+    color: #6b7280;
+    font-size: 0.78rem;
+    line-height: 1.55;
+}
+
+.evidence-preview-modal[hidden] {
+    display: none;
+}
+
+.evidence-preview-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+}
+
+.evidence-preview-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.72);
+}
+
+.evidence-preview-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(760px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    padding: 18px;
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+.evidence-preview-stage {
+    display: grid;
+    place-items: center;
+    min-height: 220px;
+    margin-top: 14px;
+    border-radius: 12px;
+    background: #111827;
+    overflow: hidden;
+}
+
+.evidence-preview-stage img {
+    display: block;
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+}
+
+.evidence-preview-close {
+    border: 0;
+    background: transparent;
+    color: #374151;
+    font-size: 1.7rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+@media (max-width: 680px) {
+    .evidence-record-header,
+    .evidence-record-item-head,
+    .evidence-record-link-row,
+    .evidence-review-queue-head,
+    .evidence-preview-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .evidence-record-count {
+        align-self: flex-start;
+    }
+
+    .evidence-record-link-status {
+        margin-top: -2px;
+    }
+
+    .evidence-review-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .evidence-action-row .btn {
+        width: 100%;
+    }
+
+    .evidence-preview-modal {
+        padding: 10px;
+    }
+
+    .evidence-preview-dialog {
+        max-height: calc(100vh - 20px);
+        padding: 14px;
+    }
+}

@@ -38,7 +38,6 @@ def _feature_unavailable():
 
 
 @before_render_template.connect
-
 def _provide_vehicle_evidence_record(sender, template, context, **extra):
     """Inject the safe evidence projection only into the shared vehicle record page."""
 

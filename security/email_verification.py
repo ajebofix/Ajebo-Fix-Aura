@@ -93,7 +93,6 @@ def verify_email_token(
     if not user or not user.is_active:
         return None
 
-    # Once email_verified_at is set, every previously issued token is consumed.
     if user.email_verified_at is not None:
         return None
 
@@ -275,6 +274,8 @@ def register_email_verification_gates(app: Flask) -> None:
         "cars.assessment_report",
         "evidence_review.review_vehicle_evidence",
         "evidence_review.link_vehicle_evidence_to_concern",
+        "evidence_timeline.client_evidence_timeline",
+        "advisor_evidence_timeline.advisor_evidence_timeline",
     }
 
     for endpoint in protected_endpoints:

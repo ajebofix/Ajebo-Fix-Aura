@@ -262,6 +262,7 @@ def create_app():
     from driver.routes import driver_bp
     from evidence.routes import evidence_bp
     from evidence.review_routes import evidence_review_bp
+    from evidence.interaction_routes import evidence_interaction_bp
     from evidence.timeline_routes import (
         advisor_evidence_timeline_bp,
         evidence_timeline_bp,
@@ -279,6 +280,7 @@ def create_app():
     app.register_blueprint(profiles_bp)
     app.register_blueprint(evidence_bp)
     app.register_blueprint(evidence_review_bp)
+    app.register_blueprint(evidence_interaction_bp)
     app.register_blueprint(evidence_timeline_bp)
     app.register_blueprint(advisor_evidence_timeline_bp)
 

@@ -122,6 +122,10 @@ def create_app():
         "EVIDENCE_ADVISOR_DELETION_ENABLED",
         default=False,
     )
+    app.config["EVIDENCE_ADVISOR_REVIEW_ENABLED"] = _environment_flag(
+        "EVIDENCE_ADVISOR_REVIEW_ENABLED",
+        default=False,
+    )
     app.config["EVIDENCE_RETENTION_DAYS"] = os.getenv("EVIDENCE_RETENTION_DAYS")
     app.config["EVIDENCE_RETRIEVAL_GRANT_SECONDS"] = os.getenv(
         "EVIDENCE_RETRIEVAL_GRANT_SECONDS"
@@ -253,6 +257,7 @@ def create_app():
     from admin.modules.assessments import assessments_bp
     from driver.routes import driver_bp
     from evidence.routes import evidence_bp
+    from evidence.review_routes import evidence_review_bp
     from profiles.routes import profiles_bp
     from services.owner_driver_management import init_owner_driver_management
 
@@ -265,6 +270,7 @@ def create_app():
     app.register_blueprint(driver_bp)
     app.register_blueprint(profiles_bp)
     app.register_blueprint(evidence_bp)
+    app.register_blueprint(evidence_review_bp)
 
     app.register_blueprint(admin_bp)
     app.register_blueprint(concern_progression_bp)

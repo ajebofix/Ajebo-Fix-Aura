@@ -11,6 +11,10 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from evidence.readiness import (
+    evaluate_evidence_cutover_readiness,
+    require_safe_evidence_cutover_configuration,
+)
 from extensions import db
 from security.csrf import init_csrf
 from security.email_verification import (
@@ -145,6 +149,11 @@ def create_app():
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError("SECRET_KEY is not set. Check your environment variables.")
+
+    evidence_cutover = evaluate_evidence_cutover_readiness(app.config)
+    app.config["EVIDENCE_CUTOVER_STATE"] = evidence_cutover.state
+    if is_production:
+        require_safe_evidence_cutover_configuration(app.config)
 
     app.config.update(
         SESSION_COOKIE_SECURE=is_production,
@@ -348,19 +357,22 @@ def create_app():
             }
             missing_tables = required_tables - tables
             missing_columns = {"email_verified_at"} - user_columns
+            evidence_readiness = evaluate_evidence_cutover_readiness(app.config)
 
-            if missing_tables or missing_columns:
+            if missing_tables or missing_columns or not evidence_readiness.ready:
                 return {
                     "status": "not_ready",
                     "commit": app.config["RUNTIME_COMMIT"],
                     "missing_tables": sorted(missing_tables),
                     "missing_columns": sorted(missing_columns),
+                    "evidence": evidence_readiness.to_public_dict(),
                 }, 503
 
             return {
                 "status": "ok",
                 "commit": app.config["RUNTIME_COMMIT"],
                 "database": db.engine.url.get_backend_name(),
+                "evidence": evidence_readiness.to_public_dict(),
             }, 200
         except Exception:
             app.logger.exception("Aura readiness check failed")

@@ -38,6 +38,13 @@ def _environment_name() -> str:
     ).strip().lower()
 
 
+def _environment_flag(name: str, *, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _database_uri(*, is_production: bool) -> str:
     uri = (
         os.getenv("SQLALCHEMY_DATABASE_URI")
@@ -103,6 +110,19 @@ def create_app():
         "PROFILE_ENCRYPTION_ACTIVE_KEY_VERSION",
         app.config["PROFILE_ENCRYPTION_KEY_VERSION"],
     )
+    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = _environment_flag(
+        "EVIDENCE_IMAGE_INTAKE_ENABLED",
+        default=False,
+    )
+    app.config["EVIDENCE_RETENTION_DAYS"] = os.getenv("EVIDENCE_RETENTION_DAYS")
+    app.config["EVIDENCE_STORAGE_PROVIDER"] = os.getenv(
+        "EVIDENCE_STORAGE_PROVIDER",
+        "r2",
+    )
+    app.config["R2_ACCOUNT_ID"] = os.getenv("R2_ACCOUNT_ID")
+    app.config["R2_ACCESS_KEY_ID"] = os.getenv("R2_ACCESS_KEY_ID")
+    app.config["R2_SECRET_ACCESS_KEY"] = os.getenv("R2_SECRET_ACCESS_KEY")
+    app.config["R2_BUCKET"] = os.getenv("R2_BUCKET")
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError("SECRET_KEY is not set. Check your environment variables.")
@@ -115,7 +135,10 @@ def create_app():
         REMEMBER_COOKIE_HTTPONLY=True,
         REMEMBER_COOKIE_SAMESITE="Lax",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-        MAX_CONTENT_LENGTH=2 * 1024 * 1024,
+        # The image sanitizer enforces a strict 2 MB file limit. Keep a small
+        # multipart/form-data allowance so a 2 MB image plus request framing is
+        # not rejected by Flask before the evidence validator can inspect it.
+        MAX_CONTENT_LENGTH=3 * 1024 * 1024,
     )
 
     app.config["MAIL_SERVER"] = "smtp.gmail.com"
@@ -218,6 +241,7 @@ def create_app():
     from cars.fault_routes import concerns_bp
     from admin.modules.assessments import assessments_bp
     from driver.routes import driver_bp
+    from evidence.routes import evidence_bp
     from profiles.routes import profiles_bp
     from services.owner_driver_management import init_owner_driver_management
 
@@ -229,6 +253,7 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(driver_bp)
     app.register_blueprint(profiles_bp)
+    app.register_blueprint(evidence_bp)
 
     app.register_blueprint(admin_bp)
     app.register_blueprint(concern_progression_bp)

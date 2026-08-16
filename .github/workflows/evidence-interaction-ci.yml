@@ -1,0 +1,89 @@
+name: Aura Wave 1.4 Evidence Interaction CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "app.py"
+      - "evidence/interaction_routes.py"
+      - "evidence/routes.py"
+      - "evidence/retrieval.py"
+      - "evidence/review.py"
+      - "evidence/review_routes.py"
+      - "services/evidence_interaction.py"
+      - "templates/base.html"
+      - "templates/partials/evidence_record.html"
+      - "templates/driver/car_detail.html"
+      - "templates/evidence/**"
+      - "static/css/evidence-interaction.css"
+      - "tests/test_evidence_interaction_ui.py"
+      - "tests/test_evidence_intake.py"
+      - "tests/test_evidence_private_routes.py"
+      - "tests/test_evidence_review_routes.py"
+      - "tests/test_evidence_record_ui.py"
+      - ".github/workflows/evidence-interaction-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-evidence-interaction-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  interaction-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      EVIDENCE_IMAGE_INTAKE_ENABLED: "0"
+      EVIDENCE_RETRIEVAL_ENABLED: "0"
+      EVIDENCE_ADVISOR_REVIEW_ENABLED: "0"
+      EVIDENCE_TIMELINE_ENABLED: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile evidence interaction sources
+        run: |
+          python -m py_compile app.py evidence/interaction_routes.py services/evidence_interaction.py
+          python -m py_compile tests/test_evidence_interaction_ui.py
+
+      - name: Test interaction and existing evidence boundaries
+        run: |
+          pytest -q --tb=short \
+            tests/test_evidence_interaction_ui.py \
+            tests/test_evidence_intake.py \
+            tests/test_evidence_private_routes.py \
+            tests/test_evidence_review_routes.py \
+            tests/test_evidence_record_ui.py
+
+      - name: Ruff evidence interaction
+        run: |
+          ruff check \
+            app.py evidence/interaction_routes.py services/evidence_interaction.py \
+            tests/test_evidence_interaction_ui.py
+
+      - name: Bandit evidence interaction
+        run: |
+          bandit -q evidence/interaction_routes.py services/evidence_interaction.py

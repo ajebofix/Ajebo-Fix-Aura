@@ -13,6 +13,7 @@ from models import Car, CarOwnership, User
 
 
 PASSWORD = "Password123"
+TEST_RETENTION_DAYS = "365"
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,11 @@ def _login(client, email: str) -> None:
     _csrf(client)
 
 
+def _enable_intake(app) -> None:
+    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
+    app.config["EVIDENCE_RETENTION_DAYS"] = TEST_RETENTION_DAYS
+
+
 def _upload_payload(client, *, include_csrf: bool = True):
     data: dict[str, object] = {
         "purpose": "concern_support",
@@ -139,7 +145,7 @@ def test_image_intake_is_feature_disabled_by_default(app, client):
 
 def test_unverified_account_cannot_upload_evidence(app, client):
     identity = _create_owner(suffix=2, verified=False)
-    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
+    _enable_intake(app)
     _login(client, identity.email)
 
     response = client.post(
@@ -154,7 +160,7 @@ def test_unverified_account_cannot_upload_evidence(app, client):
 
 def test_global_csrf_protection_applies_to_multipart_evidence_route(app, client):
     identity = _create_owner(suffix=3)
-    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
+    _enable_intake(app)
     app.extensions["evidence_storage_provider"] = RouteStorageProvider()
     _login(client, identity.email)
 
@@ -167,10 +173,31 @@ def test_global_csrf_protection_applies_to_multipart_evidence_route(app, client)
     assert response.status_code == 400
 
 
+def test_enabled_route_fails_closed_without_retention_policy(app, client):
+    identity = _create_owner(suffix=7)
+    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
+    app.config["EVIDENCE_RETENTION_DAYS"] = None
+    app.extensions["evidence_storage_provider"] = RouteStorageProvider()
+    _login(client, identity.email)
+
+    response = client.post(
+        f"/evidence/vehicles/{identity.car_id}/images",
+        data=_upload_payload(client),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "error": "evidence_configuration_unavailable",
+        "message": "Vehicle evidence intake policy or private storage is not ready yet.",
+    }
+    assert VehicleEvidence.query.count() == 0
+
+
 def test_verified_owner_upload_returns_minimized_pending_review_contract(app, client):
     identity = _create_owner(suffix=4)
     provider = RouteStorageProvider()
-    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
+    _enable_intake(app)
     app.extensions["evidence_storage_provider"] = provider
     _login(client, identity.email)
 
@@ -206,13 +233,14 @@ def test_verified_owner_upload_returns_minimized_pending_review_contract(app, cl
     assert record.object_key in provider.objects
     assert "client-original-name" not in record.object_key
     assert "client-original-name" not in record.safe_display_name
+    assert record.retention_until is not None
 
 
 def test_route_hides_cross_vehicle_existence_behind_generic_access_error(app, client):
     owner_identity = _create_owner(suffix=5)
     other_identity = _create_owner(suffix=6)
     assert other_identity.user_id != owner_identity.user_id
-    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
+    _enable_intake(app)
     app.extensions["evidence_storage_provider"] = RouteStorageProvider()
     _login(client, owner_identity.email)
 

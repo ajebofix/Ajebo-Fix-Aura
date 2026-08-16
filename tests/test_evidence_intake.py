@@ -10,6 +10,7 @@ from PIL import Image
 from evidence.image_sanitizer import EvidenceImageValidationError
 from evidence.intake import (
     EvidenceIntakeAccessError,
+    EvidenceIntakeConfigurationError,
     EvidenceIntakeError,
     create_image_evidence,
 )
@@ -23,6 +24,7 @@ from models import Car, CarDriver, CarOwnership, User
 
 
 PASSWORD = "Password123"
+TEST_RETENTION_DAYS = 365
 
 
 class RecordingStorageProvider:
@@ -129,6 +131,7 @@ def test_owner_upload_stores_only_sanitized_private_image(app):
             declared_content_type="image/jpeg",
             purpose="concern_support",
             consent_confirmed=True,
+            retention_days=TEST_RETENTION_DAYS,
             storage_provider=provider,
         )
 
@@ -162,6 +165,8 @@ def test_owner_upload_stores_only_sanitized_private_image(app):
         assert record.sha256 == result.sha256
         assert record.consent_basis == "explicit_web_upload"
         assert record.lawful_purpose == "vehicle_care"
+        assert record.retention_until is not None
+        assert (record.retention_until - record.uploaded_at).days == TEST_RETENTION_DAYS
         assert record.review_status == "pending_review"
 
 
@@ -179,6 +184,7 @@ def test_cross_vehicle_request_fails_before_reading_upload_bytes(app):
                 declared_content_type="image/jpeg",
                 purpose="concern_support",
                 consent_confirmed=True,
+                retention_days=TEST_RETENTION_DAYS,
                 storage_provider=RecordingStorageProvider(),
             )
 
@@ -201,6 +207,7 @@ def test_driver_is_limited_to_operational_evidence_purposes(app):
                 declared_content_type="image/jpeg",
                 purpose="assessment_evidence",
                 consent_confirmed=True,
+                retention_days=TEST_RETENTION_DAYS,
                 storage_provider=RecordingStorageProvider(),
             )
 
@@ -211,6 +218,7 @@ def test_driver_is_limited_to_operational_evidence_purposes(app):
             declared_content_type="image/jpeg",
             purpose="driver_observation",
             consent_confirmed=True,
+            retention_days=TEST_RETENTION_DAYS,
             storage_provider=RecordingStorageProvider(),
         )
         assert accepted.visibility == "client"
@@ -229,6 +237,7 @@ def test_owner_and_driver_cannot_write_advisor_only_visibility(app):
                 declared_content_type="image/jpeg",
                 purpose="concern_support",
                 consent_confirmed=True,
+                retention_days=TEST_RETENTION_DAYS,
                 requested_visibility="advisor",
                 storage_provider=RecordingStorageProvider(),
             )
@@ -247,8 +256,29 @@ def test_explicit_consent_is_required_before_file_decode(app):
                 declared_content_type="image/jpeg",
                 purpose="concern_support",
                 consent_confirmed=False,
+                retention_days=TEST_RETENTION_DAYS,
                 storage_provider=RecordingStorageProvider(),
             )
+
+
+def test_retention_policy_is_required_before_file_decode(app):
+    with app.app_context():
+        owner = _create_user(suffix=11)
+        car = _create_owned_car(owner, suffix=9)
+
+        with pytest.raises(EvidenceIntakeConfigurationError, match="retention policy"):
+            create_image_evidence(
+                user_id=owner.id,
+                car_id=car.id,
+                file_stream=ExplodingStream(),
+                declared_content_type="image/jpeg",
+                purpose="concern_support",
+                consent_confirmed=True,
+                retention_days=None,
+                storage_provider=RecordingStorageProvider(),
+            )
+
+        assert VehicleEvidence.query.count() == 0
 
 
 def test_mime_validation_happens_before_any_storage_write(app):
@@ -265,6 +295,7 @@ def test_mime_validation_happens_before_any_storage_write(app):
                 declared_content_type="image/png",
                 purpose="concern_support",
                 consent_confirmed=True,
+                retention_days=TEST_RETENTION_DAYS,
                 storage_provider=provider,
             )
 
@@ -285,6 +316,7 @@ def test_storage_failure_is_durable_and_not_reviewable_as_available(app):
                 declared_content_type="image/jpeg",
                 purpose="concern_support",
                 consent_confirmed=True,
+                retention_days=TEST_RETENTION_DAYS,
                 storage_provider=FailingStorageProvider(),
             )
 
@@ -292,6 +324,7 @@ def test_storage_failure_is_durable_and_not_reviewable_as_available(app):
         assert record.storage_state == "failed"
         assert record.storage_failure_reason_code == "write_failed"
         assert record.review_status == "pending_review"
+        assert record.retention_until is not None
 
 
 def test_only_authenticated_web_channel_is_enabled_in_first_slice(app):
@@ -307,6 +340,7 @@ def test_only_authenticated_web_channel_is_enabled_in_first_slice(app):
                 declared_content_type="image/jpeg",
                 purpose="concern_support",
                 consent_confirmed=True,
+                retention_days=TEST_RETENTION_DAYS,
                 source_channel="whatsapp",
                 storage_provider=RecordingStorageProvider(),
             )

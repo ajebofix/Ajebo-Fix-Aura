@@ -16,7 +16,7 @@ from evidence.storage import (
     EvidenceStorageConfigurationError,
     EvidenceStorageError,
     EvidenceStorageProvider,
-    R2EvidenceStorageProvider,
+    build_evidence_storage_provider,
 )
 from extensions import db
 from models import Car
@@ -87,21 +87,6 @@ def _resolved_visibility(authority: str, requested: str | None) -> str:
         return visibility
 
     raise EvidenceIntakeAccessError("No evidence-upload authority exists for this vehicle.")
-
-
-def _storage_provider_from_config(config: Mapping[str, object]) -> EvidenceStorageProvider:
-    provider_name = str(config.get("EVIDENCE_STORAGE_PROVIDER") or "r2").strip().lower()
-    if provider_name != "r2":
-        raise EvidenceIntakeConfigurationError(
-            "Aura's configured private evidence storage provider is not supported."
-        )
-
-    try:
-        return R2EvidenceStorageProvider.from_config(config)
-    except EvidenceStorageConfigurationError as exc:
-        raise EvidenceIntakeConfigurationError(
-            "Private evidence storage is not configured."
-        ) from exc
 
 
 def _retention_deadline(*, uploaded_at: datetime, retention_days: object) -> datetime:
@@ -208,7 +193,12 @@ def create_image_evidence(
             raise EvidenceIntakeConfigurationError(
                 "Private evidence storage is not configured."
             )
-        provider = _storage_provider_from_config(storage_config)
+        try:
+            provider = build_evidence_storage_provider(storage_config)
+        except EvidenceStorageConfigurationError as exc:
+            raise EvidenceIntakeConfigurationError(
+                "Private evidence storage is not configured."
+            ) from exc
 
     sanitized: SanitizedEvidenceImage = sanitize_evidence_image(
         file_stream,

@@ -13,7 +13,6 @@ from services.evidence_timeline import (
     get_advisor_evidence_timeline,
     get_client_safe_evidence_timeline,
 )
-from services.event_emission import emit_vehicle_event
 
 
 PASSWORD = "Password123"
@@ -335,31 +334,20 @@ def test_evidence_governance_events_never_change_concern_progression(app):
         car = _owned_car(owner, suffix=7)
         concern = _concern(car=car, reporter=owner, suffix=2)
 
-        reported_event = emit_vehicle_event(
-            car_id=car.id,
-            event_type="concern.reported",
-            subject_type="reported_concern",
-            subject_id=concern.id,
-            actor_type="user",
-            actor_user_id=owner.id,
-            visibility="client",
-            source="tests.evidence_timeline",
-            occurred_at=concern.reported_at,
-            title="Concern reported",
-            progression_direction="insufficient_evidence",
-            idempotency_key=f"concern-reported:{concern.id}",
-            previous_state=None,
-            new_state="reported",
-        )
-        db.session.commit()
-
         before = get_reported_concern_progression(
             car_id=car.id,
             concern_id=concern.id,
             viewer_user_id=owner.id,
         )
         assert before.progression == "insufficient_evidence"
-        assert tuple(item.event_id for item in before.timeline) == (reported_event.id,)
+        before_event_ids = tuple(item.event_id for item in before.timeline)
+        assert before_event_ids
+        assert all(
+            event.subject_type == "reported_concern"
+            for event in VehicleEvent.query.filter(
+                VehicleEvent.id.in_(before_event_ids)
+            ).all()
+        )
 
         evidence = _evidence(car=car, uploader=owner, suffix=11)
         review_evidence(
@@ -381,7 +369,7 @@ def test_evidence_governance_events_never_change_concern_progression(app):
         )
         assert after.progression == before.progression
         assert after.recurrence == before.recurrence
-        assert tuple(item.event_id for item in after.timeline) == (reported_event.id,)
+        assert tuple(item.event_id for item in after.timeline) == before_event_ids
         assert VehicleEvent.query.filter_by(
             subject_type="vehicle_evidence",
             subject_id=evidence.id,

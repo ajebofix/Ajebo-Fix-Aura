@@ -15,6 +15,28 @@
         {% endif %}
     </div>
 
+    <div class="button-stack" style="margin-bottom: 20px;">
+        {% if evidence_record_surface.viewer_authority in ['advisor', 'administrator'] %}
+            {% if config.get('EVIDENCE_ADVISOR_REVIEW_ENABLED', False) %}
+            <a
+                href="{{ url_for('evidence_interaction.advisor_pending_vehicle_evidence', car_id=car.id) }}"
+                class="btn btn-primary"
+            >
+                Review Pending Evidence
+            </a>
+            {% endif %}
+        {% elif evidence_record_surface.viewer_authority == 'owner' %}
+            {% if config.get('EVIDENCE_IMAGE_INTAKE_ENABLED', False) %}
+            <a
+                href="{{ url_for('evidence_interaction.submit_vehicle_evidence', car_id=car.id) }}"
+                class="btn btn-primary"
+            >
+                Submit Supporting Image
+            </a>
+            {% endif %}
+        {% endif %}
+    </div>
+
     {% if evidence_record_surface.records %}
     <div class="evidence-record-list">
         {% for record in evidence_record_surface.records %}

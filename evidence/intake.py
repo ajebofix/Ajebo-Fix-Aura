@@ -11,7 +11,6 @@ from typing import Mapping
 from sqlalchemy.exc import SQLAlchemyError
 
 from evidence.image_sanitizer import (
-    EvidenceImageValidationError,
     SanitizedEvidenceImage,
     sanitize_evidence_image,
 )
@@ -108,10 +107,12 @@ def _storage_provider_from_config(config: Mapping[str, object]) -> EvidenceStora
         ) from exc
 
 
-def _object_key(*, car_id: int, extension: str) -> tuple[str, str]:
+def _object_key(*, extension: str) -> tuple[str, str]:
+    """Return an opaque object key with no user/vehicle/source identifiers."""
+
     token = uuid.uuid4().hex
     return (
-        f"evidence/vehicles/{car_id}/{token}{extension}",
+        f"evidence/{token[:2]}/{token}{extension}",
         f"vehicle-evidence-{token[:12]}{extension}",
     )
 
@@ -174,13 +175,10 @@ def create_image_evidence(
             "Confirm that this media may be stored for the vehicle-care purpose."
         )
 
-    try:
-        sanitized: SanitizedEvidenceImage = sanitize_evidence_image(
-            file_stream,
-            declared_content_type=declared_content_type,
-        )
-    except EvidenceImageValidationError:
-        raise
+    sanitized: SanitizedEvidenceImage = sanitize_evidence_image(
+        file_stream,
+        declared_content_type=declared_content_type,
+    )
 
     provider = storage_provider
     if provider is None:
@@ -190,10 +188,7 @@ def create_image_evidence(
             )
         provider = _storage_provider_from_config(storage_config)
 
-    object_key, safe_display_name = _object_key(
-        car_id=car_id,
-        extension=sanitized.extension,
-    )
+    object_key, safe_display_name = _object_key(extension=sanitized.extension)
 
     evidence = VehicleEvidence(
         car_id=car_id,

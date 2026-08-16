@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import uuid
 from typing import Mapping
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from evidence.image_sanitizer import (
-    SanitizedEvidenceImage,
-    sanitize_evidence_image,
-)
+from evidence.image_sanitizer import SanitizedEvidenceImage, sanitize_evidence_image
 from evidence.models import EVIDENCE_PURPOSES, EVIDENCE_VISIBILITY, VehicleEvidence
 from evidence.storage import (
     EvidenceStorageConfigurationError,
@@ -42,7 +39,7 @@ class EvidenceIntakeAccessError(EvidenceIntakeError):
 
 
 class EvidenceIntakeConfigurationError(EvidenceIntakeError):
-    """Raised when private evidence storage is not ready."""
+    """Raised when private evidence storage or retention policy is not ready."""
 
 
 @dataclass(frozen=True)
@@ -107,6 +104,29 @@ def _storage_provider_from_config(config: Mapping[str, object]) -> EvidenceStora
         ) from exc
 
 
+def _retention_deadline(*, uploaded_at: datetime, retention_days: object) -> datetime:
+    """Require an approved finite retention period before accepting evidence."""
+
+    try:
+        days = int(str(retention_days).strip())
+    except (TypeError, ValueError) as exc:
+        raise EvidenceIntakeConfigurationError(
+            "Evidence retention policy is not configured."
+        ) from exc
+
+    if days <= 0:
+        raise EvidenceIntakeConfigurationError(
+            "Evidence retention policy is not configured."
+        )
+
+    try:
+        return uploaded_at + timedelta(days=days)
+    except OverflowError as exc:
+        raise EvidenceIntakeConfigurationError(
+            "Evidence retention policy is invalid."
+        ) from exc
+
+
 def _object_key(*, extension: str) -> tuple[str, str]:
     """Return an opaque object key with no user/vehicle/source identifiers."""
 
@@ -142,6 +162,7 @@ def create_image_evidence(
     declared_content_type: str,
     purpose: str,
     consent_confirmed: bool,
+    retention_days: object,
     requested_visibility: str | None = None,
     source_channel: str = "web",
     storage_provider: EvidenceStorageProvider | None = None,
@@ -175,9 +196,10 @@ def create_image_evidence(
             "Confirm that this media may be stored for the vehicle-care purpose."
         )
 
-    sanitized: SanitizedEvidenceImage = sanitize_evidence_image(
-        file_stream,
-        declared_content_type=declared_content_type,
+    uploaded_at = _utcnow_naive()
+    retention_until = _retention_deadline(
+        uploaded_at=uploaded_at,
+        retention_days=retention_days,
     )
 
     provider = storage_provider
@@ -188,6 +210,10 @@ def create_image_evidence(
             )
         provider = _storage_provider_from_config(storage_config)
 
+    sanitized: SanitizedEvidenceImage = sanitize_evidence_image(
+        file_stream,
+        declared_content_type=declared_content_type,
+    )
     object_key, safe_display_name = _object_key(extension=sanitized.extension)
 
     evidence = VehicleEvidence(
@@ -207,9 +233,10 @@ def create_image_evidence(
         sha256=sanitized.sha256,
         captured_at=None,
         capture_time_source=None,
-        uploaded_at=_utcnow_naive(),
+        uploaded_at=uploaded_at,
         consent_basis="explicit_web_upload",
         lawful_purpose="vehicle_care",
+        retention_until=retention_until,
     )
 
     try:

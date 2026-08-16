@@ -115,6 +115,8 @@ def _login(client, email: str) -> None:
         follow_redirects=False,
     )
     assert response.status_code in {302, 303}
+    client.get("/")
+    _csrf(client)
 
 
 def test_interaction_get_surfaces_are_registered_but_disabled_by_default(app, client):

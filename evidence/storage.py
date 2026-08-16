@@ -222,3 +222,16 @@ class R2EvidenceStorageProvider:
             raise EvidenceStorageError("Private evidence storage lookup failed.") from exc
         except BotoCoreError as exc:
             raise EvidenceStorageError("Private evidence storage lookup failed.") from exc
+
+
+def build_evidence_storage_provider(
+    config: Mapping[str, object],
+) -> EvidenceStorageProvider:
+    """Construct the configured private storage provider in one canonical place."""
+
+    provider_name = str(config.get("EVIDENCE_STORAGE_PROVIDER") or "r2").strip().lower()
+    if provider_name != "r2":
+        raise EvidenceStorageConfigurationError(
+            "Configured private evidence storage provider is not supported."
+        )
+    return R2EvidenceStorageProvider.from_config(config)

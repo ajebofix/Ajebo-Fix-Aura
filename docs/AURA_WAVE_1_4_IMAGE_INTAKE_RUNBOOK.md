@@ -10,13 +10,13 @@
 
 This runbook governs the first production-capable Wave 1.4 evidence intake path.
 
-The feature accepts authenticated JPEG, PNG and WebP uploads only after Aura has resolved the user's vehicle authority, confirmed an allowed evidence purpose, received explicit consent, decoded the raster successfully and re-encoded it without source metadata.
+The feature accepts authenticated JPEG, PNG and WebP uploads only after Aura has resolved the user's vehicle authority, confirmed an allowed evidence purpose, received explicit consent, confirmed a finite retention policy, decoded the raster successfully and re-encoded it without source metadata.
 
 An accepted image is **evidence pending advisor review**. It is not a diagnosis, repair instruction, treatment decision or automatically trusted progression fact.
 
 PDF, audio, direct browser-to-object-storage uploads, public media access, AI extraction and Rina multimodal context remain outside this release boundary.
 
-## 2. Rollout switches
+## 2. Rollout switches and policy gate
 
 The application ships with evidence intake closed:
 
@@ -28,6 +28,16 @@ EVIDENCE_STORAGE_PROVIDER=r2
 `EVIDENCE_IMAGE_INTAKE_ENABLED` is the immediate kill switch. Changing it to `false` must prevent new image ingestion without deleting any previously accepted evidence.
 
 The route may remain registered while disabled; disabled requests return the structured `evidence_intake_unavailable` state.
+
+A second independent production gate is mandatory:
+
+```text
+EVIDENCE_RETENTION_DAYS=<approved positive integer>
+```
+
+Aura deliberately has **no default retention duration**. The architecture does not invent how long Ajebo Fix should retain client vehicle evidence. A positive value may be configured only after the applicable evidence-retention/privacy policy is approved. If the variable is missing, empty, zero, negative or invalid, enabled intake fails closed before the uploaded image is decoded or persisted.
+
+Test/CI values such as `365` are synthetic verification fixtures and are not a recommendation for production policy.
 
 ## 3. Private Cloudflare R2 prerequisites
 
@@ -46,9 +56,10 @@ Aura uses the R2 S3-compatible endpoint and does not depend on a public object U
 
 ## 4. Railway configuration
 
-Add these values to the canonical Aura production service in Railway:
+After the retention policy has been approved, add the policy value and private-storage values to the canonical Aura production service in Railway:
 
 ```text
+EVIDENCE_RETENTION_DAYS=<approved positive integer>
 EVIDENCE_STORAGE_PROVIDER=r2
 R2_ACCOUNT_ID=<Cloudflare account ID>
 R2_ACCESS_KEY_ID=<R2 token access key ID>
@@ -61,6 +72,8 @@ Keep this disabled during initial deployment:
 ```text
 EVIDENCE_IMAGE_INTAKE_ENABLED=false
 ```
+
+Do not create an arbitrary `EVIDENCE_RETENTION_DAYS` value merely to make the feature start. The value is a data-governance decision, not an infrastructure placeholder.
 
 Never paste the secret access key into GitHub issues, pull requests, logs, screenshots intended for public sharing or client-facing messages.
 
@@ -75,6 +88,10 @@ Railway deploy with feature disabled
     ↓
 Alembic head confirmed at c62f1a4e8d30 or later compatible head
     ↓
+evidence retention/privacy policy approved
+    ↓
+EVIDENCE_RETENTION_DAYS configured from that policy
+    ↓
 R2 variables present in canonical production service
     ↓
 private bucket/token verified outside client flow
@@ -83,14 +100,14 @@ enable EVIDENCE_IMAGE_INTAKE_ENABLED=true
     ↓
 one authenticated owner test upload
     ↓
-verify DB row + private object + pending_review state
+verify DB row + finite retention_until + private object + pending_review state
     ↓
 one assigned-driver allowed-purpose test
     ↓
 normal monitored operation
 ```
 
-Do not enable the flag merely because the deployment is green. Production storage and object-authorisation behavior must be verified separately.
+Do not enable the flag merely because the deployment is green. Production policy, storage and object-authorisation behavior must be verified separately.
 
 ## 6. Intake limits and accepted media
 
@@ -151,14 +168,17 @@ Every request must preserve Wave 1.3 authority semantics.
 
 Authority is resolved **before file bytes are read**. Cross-vehicle attempts fail closed.
 
-## 9. Consent and identity
+## 9. Consent, identity and retention
 
 Production upload requires:
 
 - authenticated Aura session;
 - verified account email;
 - explicit active-vehicle authority;
-- explicit upload consent for vehicle-care storage.
+- explicit upload consent for vehicle-care storage;
+- an approved positive `EVIDENCE_RETENTION_DAYS` policy value.
+
+For every accepted row, Aura derives `retention_until` from the evidence `uploaded_at` timestamp and the approved configured number of days. The user does not choose the retention duration per upload.
 
 The first source channel is `web` only. WhatsApp/API evidence ingestion must not reuse this route by pretending to be web traffic.
 
@@ -235,10 +255,11 @@ Verify:
 2. response says `pending_review` and does not call the image a diagnosis;
 3. response does not expose object key, bucket, checksum, secret or source filename;
 4. `VehicleEvidence.storage_state = available`;
-5. private object exists at the recorded opaque key;
-6. stored raster has no source EXIF metadata;
-7. an unrelated account cannot use the same vehicle ID to upload;
-8. assigned driver can use an allowed purpose but not advisor visibility.
+5. `VehicleEvidence.retention_until` is populated from the approved policy;
+6. private object exists at the recorded opaque key;
+7. stored raster has no source EXIF metadata;
+8. an unrelated account cannot use the same vehicle ID to upload;
+9. assigned driver can use an allowed purpose but not advisor visibility.
 
 Do not use a real client diagnostic image for the first storage smoke test.
 
@@ -249,10 +270,11 @@ Do not use a real client diagnostic image for the first storage smoke test.
 1. set `EVIDENCE_IMAGE_INTAKE_ENABLED=false`;
 2. leave existing evidence records/objects intact;
 3. inspect `storage_state` and safe failure reason distribution;
-4. verify Railway variable presence without printing secret values;
-5. verify R2 token/bucket scope;
-6. verify whether a DB/object compensation failure created `orphan_risk`;
-7. forward-fix, then perform a controlled smoke test before re-enabling.
+4. verify `EVIDENCE_RETENTION_DAYS` presence/validity against the approved policy;
+5. verify Railway storage-variable presence without printing secret values;
+6. verify R2 token/bucket scope;
+7. verify whether a DB/object compensation failure created `orphan_risk`;
+8. forward-fix, then perform a controlled smoke test before re-enabling.
 
 ### Suspected storage credential compromise
 
@@ -278,6 +300,8 @@ EVIDENCE_IMAGE_INTAKE_ENABLED=false
 Do not destroy the `vehicle_evidence`, `evidence_links` or `evidence_extractions` schema as the routine production rollback. Existing records may represent accepted client evidence and audit continuity.
 
 Do not delete the R2 bucket during application rollback.
+
+Changing the future retention policy must be handled as a deliberate governance/migration decision. Do not silently rewrite existing `retention_until` values just because the default policy changes.
 
 ## 15. Boundary before the next Wave 1.4 slice
 

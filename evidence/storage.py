@@ -31,8 +31,17 @@ class StoredEvidenceObject:
     etag: str | None = None
 
 
+@dataclass(frozen=True)
+class RetrievedEvidenceObject:
+    provider: str
+    object_key: str
+    payload: bytes
+    byte_size: int
+    etag: str | None = None
+
+
 class EvidenceStorageProvider(Protocol):
-    """Minimal storage contract needed by the first evidence intake slice."""
+    """Private object contract used by controlled evidence workflows."""
 
     provider_name: str
 
@@ -43,6 +52,13 @@ class EvidenceStorageProvider(Protocol):
         payload: bytes,
         content_type: str,
     ) -> StoredEvidenceObject: ...
+
+    def get_bytes(
+        self,
+        *,
+        object_key: str,
+        max_bytes: int,
+    ) -> RetrievedEvidenceObject: ...
 
     def delete(self, *, object_key: str) -> None: ...
 
@@ -106,6 +122,11 @@ class R2EvidenceStorageProvider:
             bucket=str(config.get("R2_BUCKET") or ""),
         )
 
+    @staticmethod
+    def _validate_object_key(object_key: str) -> None:
+        if not object_key or object_key.startswith("/") or ".." in object_key.split("/"):
+            raise EvidenceStorageError("Evidence object key is invalid.")
+
     def put_bytes(
         self,
         *,
@@ -113,8 +134,7 @@ class R2EvidenceStorageProvider:
         payload: bytes,
         content_type: str,
     ) -> StoredEvidenceObject:
-        if not object_key or object_key.startswith("/") or ".." in object_key.split("/"):
-            raise EvidenceStorageError("Evidence object key is invalid.")
+        self._validate_object_key(object_key)
         if not payload:
             raise EvidenceStorageError("Evidence payload is empty.")
 
@@ -136,13 +156,61 @@ class R2EvidenceStorageProvider:
             etag=str(etag).strip('"') if etag else None,
         )
 
+    def get_bytes(
+        self,
+        *,
+        object_key: str,
+        max_bytes: int,
+    ) -> RetrievedEvidenceObject:
+        self._validate_object_key(object_key)
+        if max_bytes <= 0:
+            raise EvidenceStorageError("Evidence retrieval size limit is invalid.")
+
+        body = None
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=object_key)
+            declared_length = response.get("ContentLength")
+            if declared_length is not None and int(declared_length) > max_bytes:
+                body = response.get("Body")
+                raise EvidenceStorageError("Private evidence object exceeds retrieval limit.")
+
+            body = response.get("Body")
+            if body is None:
+                raise EvidenceStorageError("Private evidence object body is unavailable.")
+
+            payload = body.read(max_bytes + 1)
+            if len(payload) > max_bytes:
+                raise EvidenceStorageError("Private evidence object exceeds retrieval limit.")
+            if not payload:
+                raise EvidenceStorageError("Private evidence object is empty.")
+
+            etag = response.get("ETag")
+            return RetrievedEvidenceObject(
+                provider=self.provider_name,
+                object_key=object_key,
+                payload=payload,
+                byte_size=len(payload),
+                etag=str(etag).strip('"') if etag else None,
+            )
+        except EvidenceStorageError:
+            raise
+        except (BotoCoreError, ClientError, OSError, ValueError) as exc:
+            raise EvidenceStorageError("Private evidence storage read failed.") from exc
+        finally:
+            if body is not None:
+                close = getattr(body, "close", None)
+                if callable(close):
+                    close()
+
     def delete(self, *, object_key: str) -> None:
+        self._validate_object_key(object_key)
         try:
             self._client.delete_object(Bucket=self._bucket, Key=object_key)
         except (BotoCoreError, ClientError) as exc:
             raise EvidenceStorageError("Private evidence storage delete failed.") from exc
 
     def exists(self, *, object_key: str) -> bool:
+        self._validate_object_key(object_key)
         try:
             self._client.head_object(Bucket=self._bucket, Key=object_key)
             return True

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Pending Evidence Review{% endblock %}
+
+{% block page_title %}Pending Evidence Review{% endblock %}
+
+{% block page_subtitle %}
+Professional review queue for one vehicle.
+{% endblock %}
+
+{% block content %}
+<section class="card evidence-interaction-shell">
+    <div class="evidence-interaction-header">
+        <div>
+            <p class="evidence-interaction-kicker">{{ pending_evidence.vehicle_label }}</p>
+            <h2>Evidence awaiting review</h2>
+            <p class="muted">
+                Only privately stored, available images that have not yet received a professional review appear here.
+            </p>
+        </div>
+        <span class="evidence-queue-count">{{ pending_evidence.record_count }} pending</span>
+    </div>
+
+    {% if pending_evidence.records %}
+    <div class="evidence-queue-list">
+        {% for record in pending_evidence.records %}
+        <article class="evidence-queue-item">
+            <div>
+                <strong>{{ record.purpose_label }}</strong>
+                <p class="muted evidence-queue-meta">
+                    Submitted by {{ record.uploader_label }} · {{ record.uploaded_at[:16]|replace('T', ' ') }}
+                </p>
+                <p class="muted evidence-queue-meta">
+                    {{ record.content_type }} · {{ (record.byte_size / 1024)|round(1) }} KB · {{ record.visibility|title }} visibility
+                </p>
+            </div>
+            <a
+                class="btn btn-primary"
+                href="{{ url_for('evidence_interaction.advisor_evidence_workspace', evidence_id=record.evidence_id) }}"
+            >
+                Review Evidence
+            </a>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="evidence-interaction-empty">
+        <strong>No evidence is waiting for review.</strong>
+        <p class="muted">New owner or driver submissions will appear here after private storage succeeds.</p>
+    </div>
+    {% endif %}
+
+    <div class="evidence-interaction-actions">
+        <a href="{{ vehicle_url }}" class="btn btn-secondary">Back to Vehicle</a>
+    </div>
+</section>
+{% endblock %}

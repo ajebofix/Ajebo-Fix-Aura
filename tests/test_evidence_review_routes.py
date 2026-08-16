@@ -103,12 +103,12 @@ def _csrf(client) -> str:
         return str(flask_session["_csrf_token"])
 
 
-def _login(client, user: User) -> None:
+def _login(client, email: str) -> None:
     client.get("/auth/login")
     response = client.post(
         "/auth/login",
         data={
-            "email": user.email,
+            "email": email,
             "password": PASSWORD,
             "csrf_token": _csrf(client),
         },
@@ -128,8 +128,7 @@ def test_review_routes_are_registered_but_disabled_by_default(app, client):
         advisor_email = advisor.email
         evidence_id = evidence.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     response = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -152,8 +151,7 @@ def test_unverified_advisor_is_blocked_before_review(app, client):
         advisor_email = advisor.email
         evidence_id = evidence.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     response = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -176,8 +174,7 @@ def test_owner_cannot_use_advisor_review_route(app, client):
         owner_email = owner.email
         evidence_id = evidence.id
 
-    owner = User.query.filter_by(email=owner_email).first()
-    _login(client, owner)
+    _login(client, owner_email)
     response = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -203,8 +200,7 @@ def test_advisor_review_route_accepts_without_exposing_storage_or_diagnosis(
         advisor_email = advisor.email
         evidence_id = evidence.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     response = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -239,8 +235,7 @@ def test_invalid_review_reason_returns_conflict_without_mutation(app, client):
         advisor_email = advisor.email
         evidence_id = evidence.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     response = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -273,8 +268,7 @@ def test_advisor_links_accepted_evidence_to_same_vehicle_concern_idempotently(
         evidence_id = evidence.id
         concern_id = concern.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     accepted = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -317,8 +311,7 @@ def test_cross_vehicle_concern_link_fails_closed(app, client):
         evidence_id = evidence.id
         concern_id = other_concern.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     accepted = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -350,8 +343,7 @@ def test_review_route_requires_application_csrf(app, client):
         advisor_email = advisor.email
         evidence_id = evidence.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     response = client.post(
         f"/admin/evidence/{evidence_id}/review",
         data={
@@ -373,8 +365,7 @@ def test_review_and_link_routes_are_post_only(app, client):
         evidence_id = evidence.id
         concern_id = concern.id
 
-    advisor = User.query.filter_by(email=advisor_email).first()
-    _login(client, advisor)
+    _login(client, advisor_email)
     assert client.get(f"/admin/evidence/{evidence_id}/review").status_code == 405
     assert client.get(
         f"/admin/evidence/{evidence_id}/links/reported-concerns/{concern_id}"

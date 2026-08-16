@@ -93,8 +93,11 @@ def register_rate_limits(app: Flask) -> None:
         "email_verification.resend_verification": "3 per hour",
         # Account/profile mutations.
         "profiles.edit_profile": "10 per hour",
-        # Controlled vehicle evidence ingestion.
+        # Controlled vehicle evidence workflows.
         "evidence.upload_vehicle_image": "10 per hour; 30 per day",
+        "evidence.create_private_retrieval_grant": "60 per hour",
+        "evidence.retrieve_evidence_content": "120 per hour",
+        "evidence.delete_vehicle_evidence": "10 per hour",
         # AI and commercial actions.
         "chat.chat": "30 per minute; 300 per day",
         "cars.book_consultation": "5 per hour",

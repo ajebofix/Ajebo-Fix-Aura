@@ -84,26 +84,23 @@ def register_rate_limits(app: Flask) -> None:
     """Apply explicit limits after all blueprints have been registered."""
 
     endpoint_limits = {
-        # Authentication and invitation-code redemption.
         "auth.login": "5 per minute; 20 per hour",
         "auth.signup": "3 per hour",
         "auth.forgot_password": "3 per hour",
         "auth.reset_password": "5 per hour",
         "auth.change_password": "5 per hour",
         "email_verification.resend_verification": "3 per hour",
-        # Account/profile mutations.
         "profiles.edit_profile": "10 per hour",
-        # Controlled vehicle evidence ingestion.
         "evidence.upload_vehicle_image": "10 per hour; 30 per day",
-        # AI and commercial actions.
+        "evidence.create_private_retrieval_grant": "60 per hour",
+        "evidence.retrieve_evidence_content": "120 per hour",
+        "evidence.delete_vehicle_evidence": "10 per hour",
         "chat.chat": "30 per minute; 300 per day",
         "cars.book_consultation": "5 per hour",
         "cars.request_priority_scheduling": "3 per hour",
         "cars.request_emergency_review": "3 per hour",
-        # High-risk ownership changes.
         "stewardship.request_stewardship_transfer": "3 per hour",
         "stewardship.advisor_reassign_stewardship": "10 per hour",
-        # Vehicle-intelligence provider calls.
         "admin.decode_vehicle_vin": "20 per hour",
         "admin.add_vehicle_dtc": "30 per hour",
     }

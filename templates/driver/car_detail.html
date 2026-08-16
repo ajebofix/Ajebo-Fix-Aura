@@ -151,6 +151,26 @@ Submit Concern
 
 </div>
 
+{% if config.get('EVIDENCE_IMAGE_INTAKE_ENABLED', False) and current_user.email_verified_at %}
+<!-- SUPPORTING EVIDENCE -->
+<div class="card">
+
+<h2>Supporting Image</h2>
+
+<p class="muted">
+Submit a vehicle photo for private advisor review when an image helps document an observation.
+</p>
+
+<a
+href="{{ url_for('evidence_interaction.submit_vehicle_evidence', car_id=car.id) }}"
+class="btn btn-secondary btn-block"
+>
+Submit Image for Review
+</a>
+
+</div>
+{% endif %}
+
 </section>
 
 

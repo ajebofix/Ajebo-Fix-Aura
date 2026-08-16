@@ -4,15 +4,24 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
+import sys
 
 from PIL import Image
 
-from app import app
-from evidence.intake import EvidenceIntakeError, create_image_evidence
-from evidence.models import VehicleEvidence
-from evidence.storage import EvidenceStorageError, StoredEvidenceObject
-from extensions import db
-from models import Car, CarOwnership, User
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app import app  # noqa: E402
+from evidence.intake import EvidenceIntakeError, create_image_evidence  # noqa: E402
+from evidence.models import VehicleEvidence  # noqa: E402
+from evidence.storage import (  # noqa: E402
+    EvidenceStorageError,
+    StoredEvidenceObject,
+)
+from extensions import db  # noqa: E402
+from models import Car, CarOwnership, User  # noqa: E402
 
 
 class FakePrivateStore:

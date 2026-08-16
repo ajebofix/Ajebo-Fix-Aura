@@ -1,0 +1,89 @@
+<section class="card evidence-record-card" aria-labelledby="evidence-record-heading">
+    <div class="evidence-record-header">
+        <div>
+            <p class="evidence-record-kicker">Care Record</p>
+            <h2 id="evidence-record-heading">Reviewed Evidence Record</h2>
+            <p class="muted evidence-record-intro">
+                Supporting material that has been reviewed and attached to this vehicle's care record.
+            </p>
+        </div>
+
+        {% if evidence_record_surface.record_count %}
+        <span class="evidence-record-count">
+            {{ evidence_record_surface.record_count }} reviewed
+        </span>
+        {% endif %}
+    </div>
+
+    {% if evidence_record_surface.records %}
+    <div class="evidence-record-list">
+        {% for record in evidence_record_surface.records %}
+        <article class="evidence-record-item">
+            <div class="evidence-record-item-head">
+                <div>
+                    <div class="evidence-record-purpose">
+                        {{ record.purpose_label }}
+                    </div>
+                    <div class="evidence-record-date">
+                        Reviewed {{ record.reviewed_at[:10] }}
+                    </div>
+                </div>
+
+                {% if record.review_status == 'accepted' %}
+                <span class="evidence-record-status evidence-record-status-accepted">
+                    Accepted
+                </span>
+                {% else %}
+                <span class="evidence-record-status evidence-record-status-rejected">
+                    Not used
+                </span>
+                {% endif %}
+            </div>
+
+            <p class="evidence-record-summary">
+                {{ record.review_summary }}
+            </p>
+
+            {% if record.linked_concerns %}
+            <div class="evidence-record-links">
+                <div class="evidence-record-links-label">Associated care record</div>
+                {% for concern in record.linked_concerns %}
+                <div class="evidence-record-link-row">
+                    <span>{{ concern.title }}</span>
+                    <span class="evidence-record-link-status">
+                        {{ concern.status|replace('_', ' ')|title }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if evidence_record_surface.viewer_authority in ['advisor', 'administrator'] %}
+            <div class="evidence-record-governance">
+                <span>
+                    Visibility: {{ record.visibility|replace('_', ' ')|title }}
+                </span>
+                <span>
+                    Review basis: {{ record.review_reason_code|replace('_', ' ')|title }}
+                </span>
+            </div>
+            {% elif record.uploaded_by_self %}
+            <div class="evidence-record-self-note">Submitted by you</div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="evidence-record-empty">
+        <strong>No reviewed evidence has been added yet.</strong>
+        <p class="muted">
+            Reviewed supporting material will appear here when it becomes part of this vehicle's care record.
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="evidence-record-safety">
+        {{ evidence_record_surface.safety_note }}
+        Private media remains protected and is not exposed from this record view.
+    </div>
+</section>

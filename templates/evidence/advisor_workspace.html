@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Evidence Review Workspace{% endblock %}
+
+{% block page_title %}Evidence Review Workspace{% endblock %}
+
+{% block page_subtitle %}
+Private professional review before care-record inclusion.
+{% endblock %}
+
+{% block content %}
+<section class="card evidence-interaction-shell">
+    <div class="evidence-interaction-header">
+        <div>
+            <p class="evidence-interaction-kicker">{{ review_workspace.vehicle_label }}</p>
+            <h2>{{ review_workspace.evidence.purpose_label }}</h2>
+            <p class="muted">
+                Submitted by {{ review_workspace.evidence.uploader_label }} on
+                {{ review_workspace.evidence.uploaded_at[:16]|replace('T', ' ') }}.
+            </p>
+        </div>
+        <span class="pill">Pending Review</span>
+    </div>
+
+    <div class="evidence-review-grid">
+        <div class="evidence-preview-panel">
+            <div class="evidence-preview-placeholder" id="evidence-preview-placeholder">
+                <strong>Private image not loaded</strong>
+                <p class="muted">
+                    Requesting the preview creates a short-lived retrieval grant. The private storage location is never exposed to this page.
+                </p>
+                {% if retrieval_enabled %}
+                <button id="load-evidence-preview" class="btn btn-secondary" type="button">
+                    Securely View Image
+                </button>
+                {% else %}
+                <span class="pill">Private retrieval disabled</span>
+                {% endif %}
+            </div>
+
+            <img
+                id="evidence-private-preview"
+                class="evidence-private-preview"
+                alt="Private vehicle evidence under advisor review"
+                hidden
+            >
+            <div id="evidence-preview-status" class="evidence-interaction-status" role="status" aria-live="polite"></div>
+        </div>
+
+        <div class="evidence-review-controls">
+            <section class="evidence-review-control-block">
+                <h3>Accept for care record</h3>
+                <p class="muted">
+                    Acceptance means the image is suitable supporting evidence. It does not establish a mechanical diagnosis.
+                </p>
+                <form id="accept-evidence-form" action="{{ review_endpoint }}" method="POST">
+                    <input type="hidden" name="decision" value="accepted">
+                    <label for="accept-reason">Review basis</label>
+                    <select id="accept-reason" name="reason_code" class="input" required>
+                        {% for option in review_workspace.accept_reasons %}
+                        <option value="{{ option.value }}">{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-primary evidence-review-action" type="submit" disabled>
+                        Accept Evidence
+                    </button>
+                </form>
+            </section>
+
+            <section class="evidence-review-control-block">
+                <h3>Do not use in care record</h3>
+                <p class="muted">
+                    Rejected evidence remains governed by the retention policy but is not treated as supporting care-record evidence.
+                </p>
+                <form id="reject-evidence-form" action="{{ review_endpoint }}" method="POST">
+                    <input type="hidden" name="decision" value="rejected">
+                    <label for="reject-reason">Reason</label>
+                    <select id="reject-reason" name="reason_code" class="input" required>
+                        {% for option in review_workspace.reject_reasons %}
+                        <option value="{{ option.value }}">{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-secondary evidence-review-action" type="submit" disabled>
+                        Reject Evidence
+                    </button>
+                </form>
+            </section>
+        </div>
+    </div>
+
+    <div id="evidence-review-status" class="evidence-interaction-status" role="status" aria-live="polite">
+        Review actions unlock only after the private image has been loaded successfully.
+    </div>
+
+    <section id="evidence-link-section" class="evidence-link-section" hidden>
+        <h3>Associate accepted evidence with a Reported Concern</h3>
+        <p class="muted">
+            Linking records that this image supports an existing same-vehicle concern. It does not change the concern's progression or create a diagnosis.
+        </p>
+
+        {% if review_workspace.concerns %}
+        <form id="evidence-link-form" method="POST">
+            <label for="evidence-concern">Reported Concern</label>
+            <select id="evidence-concern" class="input" required>
+                <option value="" selected disabled>Select a concern</option>
+                {% for concern in review_workspace.concerns %}
+                <option value="{{ concern.concern_id }}">
+                    {{ concern.title }} — {{ concern.status|replace('_', ' ')|title }}
+                </option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-primary" type="submit">Link to Concern</button>
+        </form>
+        <div id="evidence-link-status" class="evidence-interaction-status" role="status" aria-live="polite"></div>
+        {% else %}
+        <div class="evidence-interaction-empty">
+            <strong>No Reported Concerns are available for this vehicle.</strong>
+        </div>
+        {% endif %}
+    </section>
+
+    <div class="button-stack evidence-interaction-actions">
+        <a href="{{ queue_url }}" class="btn btn-secondary">Back to Pending Queue</a>
+        <a href="{{ vehicle_url }}" class="btn btn-secondary">Open Vehicle Record</a>
+    </div>
+</section>
+
+<script>
+(function () {
+    const grantEndpoint = {{ grant_endpoint|tojson }};
+    const reviewEndpoint = {{ review_endpoint|tojson }};
+    const linkTemplate = {{ link_endpoint_template|tojson }};
+    const linkMarker = {{ link_endpoint_marker|tojson }};
+
+    const previewButton = document.getElementById("load-evidence-preview");
+    const previewImage = document.getElementById("evidence-private-preview");
+    const previewPlaceholder = document.getElementById("evidence-preview-placeholder");
+    const previewStatus = document.getElementById("evidence-preview-status");
+    const reviewStatus = document.getElementById("evidence-review-status");
+    const acceptForm = document.getElementById("accept-evidence-form");
+    const rejectForm = document.getElementById("reject-evidence-form");
+    const reviewButtons = Array.from(document.querySelectorAll(".evidence-review-action"));
+    const linkSection = document.getElementById("evidence-link-section");
+    const linkForm = document.getElementById("evidence-link-form");
+    const concernSelect = document.getElementById("evidence-concern");
+    const linkStatus = document.getElementById("evidence-link-status");
+
+    async function readJson(response) {
+        try {
+            return await response.json();
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function unlockReviewActions() {
+        reviewButtons.forEach(function (button) {
+            button.disabled = false;
+        });
+        if (reviewStatus) {
+            reviewStatus.textContent = "Private image loaded. Professional review actions are now available.";
+            reviewStatus.className = "evidence-interaction-status success";
+        }
+    }
+
+    async function loadPrivateImage() {
+        if (!previewButton || !previewImage || !previewStatus) {
+            return;
+        }
+
+        previewButton.disabled = true;
+        previewButton.textContent = "Loading…";
+        previewStatus.textContent = "Requesting short-lived private access…";
+
+        try {
+            const grantResponse = await fetch(grantEndpoint, {
+                method: "POST",
+                headers: {"Accept": "application/json"},
+            });
+            const grant = await readJson(grantResponse);
+            if (!grantResponse.ok) {
+                throw new Error("Private evidence access could not be granted.");
+            }
+
+            const contentResponse = await fetch(grant.content_endpoint, {
+                method: "POST",
+                headers: {
+                    "Accept": "image/*",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({grant_token: grant.grant_token}),
+            });
+            if (!contentResponse.ok) {
+                throw new Error("Private evidence could not be retrieved.");
+            }
+
+            const blob = await contentResponse.blob();
+            const reader = new FileReader();
+            reader.onload = function () {
+                previewImage.src = reader.result;
+                previewImage.hidden = false;
+                if (previewPlaceholder) {
+                    previewPlaceholder.hidden = true;
+                }
+                previewStatus.textContent = "Private preview loaded for this review session.";
+                previewStatus.className = "evidence-interaction-status success";
+                unlockReviewActions();
+            };
+            reader.onerror = function () {
+                previewStatus.textContent = "The private image could not be rendered in this browser.";
+                previewStatus.className = "evidence-interaction-status error";
+            };
+            reader.readAsDataURL(blob);
+        } catch (error) {
+            previewStatus.textContent = error.message || "Private evidence could not be retrieved.";
+            previewStatus.className = "evidence-interaction-status error";
+            previewButton.disabled = false;
+            previewButton.textContent = "Securely View Image";
+        }
+    }
+
+    async function submitReview(form) {
+        const body = new FormData(form);
+        const decision = body.get("decision");
+        reviewButtons.forEach(function (button) { button.disabled = true; });
+        reviewStatus.textContent = "Recording professional review…";
+        reviewStatus.className = "evidence-interaction-status";
+
+        try {
+            const response = await fetch(reviewEndpoint, {
+                method: "POST",
+                body: body,
+                headers: {"Accept": "application/json"},
+            });
+            const payload = await readJson(response);
+            if (!response.ok) {
+                throw new Error(payload.message || "The evidence review could not be recorded.");
+            }
+
+            reviewStatus.textContent = payload.message || "Evidence review recorded.";
+            reviewStatus.className = "evidence-interaction-status success";
+            if (decision === "accepted" && linkSection) {
+                linkSection.hidden = false;
+            }
+        } catch (error) {
+            reviewStatus.textContent = error.message || "The evidence review could not be recorded.";
+            reviewStatus.className = "evidence-interaction-status error";
+            reviewButtons.forEach(function (button) { button.disabled = false; });
+        }
+    }
+
+    if (previewButton) {
+        previewButton.addEventListener("click", loadPrivateImage);
+    }
+
+    [acceptForm, rejectForm].forEach(function (form) {
+        if (!form) {
+            return;
+        }
+        form.addEventListener("submit", function (event) {
+            event.preventDefault();
+            submitReview(form);
+        });
+    });
+
+    if (linkForm && concernSelect && linkStatus) {
+        linkForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            const concernId = concernSelect.value;
+            if (!concernId) {
+                return;
+            }
+
+            const endpoint = linkTemplate.replace(linkMarker, encodeURIComponent(concernId));
+            const button = linkForm.querySelector("button");
+            button.disabled = true;
+            linkStatus.textContent = "Linking supporting evidence…";
+            linkStatus.className = "evidence-interaction-status";
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: {"Accept": "application/json"},
+                });
+                const payload = await readJson(response);
+                if (!response.ok) {
+                    throw new Error(payload.message || "The evidence link could not be recorded.");
+                }
+                linkStatus.textContent = payload.message || "Evidence linked to the Reported Concern.";
+                linkStatus.className = "evidence-interaction-status success";
+            } catch (error) {
+                linkStatus.textContent = error.message || "The evidence link could not be recorded.";
+                linkStatus.className = "evidence-interaction-status error";
+            } finally {
+                button.disabled = false;
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

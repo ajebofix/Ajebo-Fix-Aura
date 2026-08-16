@@ -131,6 +131,8 @@ def upload_vehicle_image(car_id: int):
             503,
         )
 
+    # The client receives only workflow metadata. Storage identifiers, bucket
+    # details and content checksums remain server-side operational data.
     return (
         jsonify(
             {
@@ -144,7 +146,6 @@ def upload_vehicle_image(car_id: int):
                     "storage_state": result.storage_state,
                     "content_type": result.content_type,
                     "byte_size": result.byte_size,
-                    "sha256": result.sha256,
                     "width": result.width,
                     "height": result.height,
                 },

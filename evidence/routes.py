@@ -76,6 +76,7 @@ def upload_vehicle_image(car_id: int):
             declared_content_type=uploaded.content_type or "",
             purpose=purpose,
             consent_confirmed=consent_confirmed,
+            retention_days=current_app.config.get("EVIDENCE_RETENTION_DAYS"),
             requested_visibility=requested_visibility,
             storage_provider=injected_provider,
             storage_config=current_app.config,
@@ -102,15 +103,17 @@ def upload_vehicle_image(car_id: int):
         )
     except EvidenceIntakeConfigurationError:
         current_app.logger.warning(
-            "evidence_intake_storage_unconfigured user_id=%s car_id=%s",
+            "evidence_intake_configuration_unavailable user_id=%s car_id=%s",
             current_user.id,
             car_id,
         )
         return (
             jsonify(
                 {
-                    "error": "evidence_storage_unavailable",
-                    "message": "Private evidence storage is not available yet.",
+                    "error": "evidence_configuration_unavailable",
+                    "message": (
+                        "Vehicle evidence intake policy or private storage is not ready yet."
+                    ),
                 }
             ),
             503,

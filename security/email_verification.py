@@ -273,6 +273,8 @@ def register_email_verification_gates(app: Flask) -> None:
         "cars.vehicle_report",
         "cars.vehicle_records_pdf",
         "cars.assessment_report",
+        "evidence_review.review_vehicle_evidence",
+        "evidence_review.link_vehicle_evidence_to_concern",
     }
 
     for endpoint in protected_endpoints:

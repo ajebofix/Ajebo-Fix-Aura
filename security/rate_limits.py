@@ -95,6 +95,8 @@ def register_rate_limits(app: Flask) -> None:
         "evidence.create_private_retrieval_grant": "60 per hour",
         "evidence.retrieve_evidence_content": "120 per hour",
         "evidence.delete_vehicle_evidence": "10 per hour",
+        "evidence_review.review_vehicle_evidence": "30 per hour",
+        "evidence_review.link_vehicle_evidence_to_concern": "30 per hour",
         "chat.chat": "30 per minute; 300 per day",
         "cars.book_consultation": "5 per hour",
         "cars.request_priority_scheduling": "3 per hour",

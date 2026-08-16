@@ -9,9 +9,13 @@ on:
       - reopened
       - ready_for_review
     paths:
+      - "app.py"
       - "evidence/review.py"
       - "evidence/review_routes.py"
+      - "security/email_verification.py"
+      - "security/rate_limits.py"
       - "tests/test_evidence_review.py"
+      - "tests/test_evidence_review_routes.py"
       - "scripts/verify_evidence_review_postgres.py"
       - ".github/workflows/evidence-review-ci.yml"
 
@@ -33,6 +37,7 @@ jobs:
       RATE_LIMIT_STORAGE_URI: "memory://"
       PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
       PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      EVIDENCE_ADVISOR_REVIEW_ENABLED: "0"
 
     steps:
       - name: Check out repository
@@ -47,22 +52,33 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
-      - name: Compile evidence review sources
+      - name: Compile evidence review cutover sources
         run: |
-          python -m py_compile evidence/review.py evidence/review_routes.py
-          python -m py_compile tests/test_evidence_review.py scripts/verify_evidence_review_postgres.py
+          python -m py_compile app.py evidence/review.py evidence/review_routes.py
+          python -m py_compile security/email_verification.py security/rate_limits.py
+          python -m py_compile tests/test_evidence_review.py tests/test_evidence_review_routes.py
+          python -m py_compile scripts/verify_evidence_review_postgres.py
 
-      - name: Test evidence review and concern linkage
-        run: pytest -q --tb=short tests/test_evidence_review.py
+      - name: Test evidence review domain and active HTTP boundary
+        run: |
+          pytest -q --tb=short \
+            tests/test_evidence_review.py \
+            tests/test_evidence_review_routes.py
 
-      - name: Ruff evidence review
+      - name: Ruff evidence review cutover
         run: |
           ruff check \
-            evidence/review.py evidence/review_routes.py \
-            tests/test_evidence_review.py scripts/verify_evidence_review_postgres.py
+            app.py evidence/review.py evidence/review_routes.py \
+            security/email_verification.py security/rate_limits.py \
+            tests/test_evidence_review.py tests/test_evidence_review_routes.py \
+            scripts/verify_evidence_review_postgres.py
 
-      - name: Bandit evidence review
-        run: bandit -q -r evidence/review.py evidence/review_routes.py scripts/verify_evidence_review_postgres.py
+      - name: Bandit evidence review cutover
+        run: |
+          bandit -q -r \
+            evidence/review.py evidence/review_routes.py \
+            security/email_verification.py security/rate_limits.py \
+            scripts/verify_evidence_review_postgres.py
 
   postgres-contract:
     runs-on: ubuntu-latest
@@ -91,6 +107,7 @@ jobs:
       RATE_LIMIT_STORAGE_URI: "memory://"
       PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
       PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      EVIDENCE_ADVISOR_REVIEW_ENABLED: "0"
 
     steps:
       - name: Check out repository

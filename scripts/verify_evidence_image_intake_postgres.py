@@ -24,6 +24,9 @@ from extensions import db  # noqa: E402
 from models import Car, CarOwnership, User  # noqa: E402
 
 
+TEST_RETENTION_DAYS = 365
+
+
 class FakePrivateStore:
     provider_name = "ci-private"
 
@@ -103,12 +106,17 @@ def main() -> None:
             declared_content_type="image/jpeg",
             purpose="concern_support",
             consent_confirmed=True,
+            retention_days=TEST_RETENTION_DAYS,
             storage_provider=store,
         )
 
         record = db.session.get(VehicleEvidence, result.evidence_id)
         if record is None or record.storage_state != "available":
             raise SystemExit("Successful image intake did not finalize on PostgreSQL")
+        if record.retention_until is None:
+            raise SystemExit("Successful image intake lacks a finite retention deadline")
+        if (record.retention_until - record.uploaded_at).days != TEST_RETENTION_DAYS:
+            raise SystemExit("Successful image intake used the wrong retention duration")
         if record.object_key not in store.objects:
             raise SystemExit("Finalized evidence is missing from the fake private store")
         if store.objects[record.object_key] == raw:
@@ -128,6 +136,7 @@ def main() -> None:
                 declared_content_type="image/jpeg",
                 purpose="concern_support",
                 consent_confirmed=True,
+                retention_days=TEST_RETENTION_DAYS,
                 storage_provider=failed_store,
             )
         except EvidenceIntakeError:
@@ -140,6 +149,8 @@ def main() -> None:
             raise SystemExit("Failed private-storage write was not durably reconciled")
         if failed_rows[0].storage_failure_reason_code != "write_failed":
             raise SystemExit("Failed storage write lacks the expected reason code")
+        if failed_rows[0].retention_until is None:
+            raise SystemExit("Failed storage record lost its retention deadline")
 
         print("Wave 1.4 image intake verified on PostgreSQL with no external storage call.")
 

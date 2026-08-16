@@ -26,6 +26,19 @@ def _truthy(value: object) -> bool:
 def upload_vehicle_image(car_id: int):
     """Accept one server-mediated, sanitized raster image for advisor review."""
 
+    if getattr(current_user, "email_verified_at", None) is None:
+        return (
+            jsonify(
+                {
+                    "error": "email_verification_required",
+                    "message": (
+                        "Please verify your email address before uploading vehicle evidence."
+                    ),
+                }
+            ),
+            403,
+        )
+
     if not current_app.config.get("EVIDENCE_IMAGE_INTAKE_ENABLED", False):
         return (
             jsonify(

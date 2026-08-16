@@ -78,10 +78,9 @@ def main() -> int:
             raise EvidenceStorageError("Smoke object lookup failed.")
 
         provider.delete(object_key=object_key)
-        object_created = False
-
         if provider.exists(object_key=object_key):
             raise EvidenceStorageError("Smoke object cleanup verification failed.")
+        object_created = False
 
     except EvidenceStorageError:
         print("Evidence storage smoke test failed during private storage verification.")

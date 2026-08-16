@@ -1,7 +1,8 @@
-"""Advisor-governed evidence review and first same-vehicle care linkage.
+"""Advisor-governed evidence review, linkage and canonical audit events.
 
-Wave 1.4 starts linkage with Reported Concerns only. The pattern must be proven
-before additional care domains are enabled, mirroring Aura's Wave 1.2 rollout.
+Wave 1.4 starts linkage with Reported Concerns only. Review/link mutations and
+their canonical VehicleEvents share one transaction so professional record
+state cannot silently diverge from the care timeline.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from evidence.models import EvidenceLink, VehicleEvidence
 from extensions import db
 from models import CarFault
 from security.access import resolve_vehicle_authority
+from services.event_emission import EventEmissionError, emit_vehicle_event
 
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,73 @@ def _advisor_evidence(*, reviewer_user_id: int, evidence_id: int) -> VehicleEvid
     return evidence
 
 
+def _emit_review_event(
+    *,
+    evidence: VehicleEvidence,
+    reviewer_user_id: int,
+) -> None:
+    if (
+        evidence.review_status not in {"accepted", "rejected"}
+        or evidence.reviewed_at is None
+        or not evidence.review_reason_code
+    ):
+        raise EvidenceReviewConflict("Evidence review metadata is incomplete.")
+
+    emit_vehicle_event(
+        car_id=evidence.car_id,
+        event_type="evidence.reviewed",
+        subject_type="vehicle_evidence",
+        subject_id=evidence.id,
+        actor_type="user",
+        actor_user_id=reviewer_user_id,
+        visibility=evidence.visibility,
+        source="evidence.review",
+        occurred_at=evidence.reviewed_at,
+        title="Vehicle evidence reviewed",
+        progression_direction="not_applicable",
+        idempotency_key=(
+            f"evidence-review:{evidence.id}:{evidence.review_status}"
+        ),
+        previous_state="pending_review",
+        new_state=evidence.review_status,
+        evidence_refs=[{"type": "vehicle_evidence", "id": evidence.id}],
+        data={"review_reason_code": evidence.review_reason_code},
+    )
+
+
+def _emit_link_event(
+    *,
+    evidence: VehicleEvidence,
+    concern: CarFault,
+    link: EvidenceLink,
+    reviewer_user_id: int,
+) -> None:
+    if link.id is None or link.created_at is None:
+        raise EvidenceReviewConflict("Evidence link metadata is incomplete.")
+
+    emit_vehicle_event(
+        car_id=evidence.car_id,
+        event_type="evidence.linked",
+        subject_type="vehicle_evidence",
+        subject_id=evidence.id,
+        actor_type="user",
+        actor_user_id=reviewer_user_id,
+        visibility=evidence.visibility,
+        source="evidence.link",
+        occurred_at=link.created_at,
+        title="Evidence linked to reported concern",
+        progression_direction="not_applicable",
+        idempotency_key=f"evidence-link:{link.id}",
+        evidence_refs=[{"type": "vehicle_evidence", "id": evidence.id}],
+        data={
+            "link_id": link.id,
+            "linked_subject_type": "reported_concern",
+            "linked_subject_id": concern.id,
+            "relationship_type": "supports",
+        },
+    )
+
+
 def review_evidence(
     *,
     reviewer_user_id: int,
@@ -93,7 +162,7 @@ def review_evidence(
     decision: str,
     reason_code: str,
 ) -> EvidenceReviewResult:
-    """Accept or reject one pending evidence record without changing media bytes."""
+    """Accept or reject evidence and atomically record its canonical event."""
 
     evidence = _advisor_evidence(
         reviewer_user_id=reviewer_user_id,
@@ -125,6 +194,18 @@ def review_evidence(
             or not evidence.review_reason_code
         ):
             raise EvidenceReviewConflict("Existing review metadata is incomplete.")
+        try:
+            _emit_review_event(
+                evidence=evidence,
+                reviewer_user_id=evidence.reviewed_by_user_id,
+            )
+            db.session.commit()
+        except (SQLAlchemyError, EventEmissionError) as exc:
+            db.session.rollback()
+            raise EvidenceReviewError(
+                "Aura could not reconcile the evidence review event."
+            ) from exc
+
         return EvidenceReviewResult(
             evidence_id=evidence.id,
             car_id=evidence.car_id,
@@ -148,10 +229,16 @@ def review_evidence(
     evidence.updated_at = now
 
     try:
+        _emit_review_event(
+            evidence=evidence,
+            reviewer_user_id=reviewer_user_id,
+        )
         db.session.commit()
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, EventEmissionError) as exc:
         db.session.rollback()
-        raise EvidenceReviewError("Aura could not persist the evidence review.") from exc
+        raise EvidenceReviewError(
+            "Aura could not persist the evidence review and event."
+        ) from exc
 
     logger.info(
         "evidence_reviewed evidence_id=%s car_id=%s reviewer_id=%s decision=%s reason_code=%s visibility=%s",
@@ -174,13 +261,29 @@ def review_evidence(
     )
 
 
+def _return_existing_link(
+    *,
+    evidence: VehicleEvidence,
+    concern: CarFault,
+    existing: EvidenceLink,
+) -> EvidenceConcernLinkResult:
+    return EvidenceConcernLinkResult(
+        link_id=existing.id,
+        evidence_id=evidence.id,
+        car_id=evidence.car_id,
+        concern_id=concern.id,
+        relationship_type="supports",
+        created=False,
+    )
+
+
 def link_evidence_to_reported_concern(
     *,
     reviewer_user_id: int,
     evidence_id: int,
     concern_id: int,
 ) -> EvidenceConcernLinkResult:
-    """Create one immutable, same-vehicle support link to a Reported Concern."""
+    """Create a same-vehicle support link and its canonical event atomically."""
 
     evidence = _advisor_evidence(
         reviewer_user_id=reviewer_user_id,
@@ -209,13 +312,23 @@ def link_evidence_to_reported_concern(
         relationship_type="supports",
     ).first()
     if existing is not None:
-        return EvidenceConcernLinkResult(
-            link_id=existing.id,
-            evidence_id=evidence.id,
-            car_id=evidence.car_id,
-            concern_id=concern.id,
-            relationship_type="supports",
-            created=False,
+        try:
+            _emit_link_event(
+                evidence=evidence,
+                concern=concern,
+                link=existing,
+                reviewer_user_id=existing.created_by_user_id,
+            )
+            db.session.commit()
+        except (SQLAlchemyError, EventEmissionError) as exc:
+            db.session.rollback()
+            raise EvidenceReviewError(
+                "Aura could not reconcile the evidence link event."
+            ) from exc
+        return _return_existing_link(
+            evidence=evidence,
+            concern=concern,
+            existing=existing,
         )
 
     link = EvidenceLink(
@@ -227,7 +340,15 @@ def link_evidence_to_reported_concern(
         created_by_user_id=reviewer_user_id,
     )
     db.session.add(link)
+
     try:
+        db.session.flush()
+        _emit_link_event(
+            evidence=evidence,
+            concern=concern,
+            link=link,
+            reviewer_user_id=reviewer_user_id,
+        )
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -240,17 +361,29 @@ def link_evidence_to_reported_concern(
         ).first()
         if existing is None:
             raise EvidenceReviewError("Aura could not create the evidence link.")
-        return EvidenceConcernLinkResult(
-            link_id=existing.id,
-            evidence_id=evidence.id,
-            car_id=evidence.car_id,
-            concern_id=concern.id,
-            relationship_type="supports",
-            created=False,
+        try:
+            _emit_link_event(
+                evidence=evidence,
+                concern=concern,
+                link=existing,
+                reviewer_user_id=existing.created_by_user_id,
+            )
+            db.session.commit()
+        except (SQLAlchemyError, EventEmissionError) as exc:
+            db.session.rollback()
+            raise EvidenceReviewError(
+                "Aura could not reconcile the evidence link event."
+            ) from exc
+        return _return_existing_link(
+            evidence=evidence,
+            concern=concern,
+            existing=existing,
         )
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, EventEmissionError) as exc:
         db.session.rollback()
-        raise EvidenceReviewError("Aura could not create the evidence link.") from exc
+        raise EvidenceReviewError(
+            "Aura could not create the evidence link and event."
+        ) from exc
 
     logger.info(
         "evidence_concern_link_created link_id=%s evidence_id=%s car_id=%s concern_id=%s reviewer_id=%s",

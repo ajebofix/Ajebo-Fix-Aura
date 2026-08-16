@@ -1,0 +1,477 @@
+<section class="card evidence-record-card" aria-labelledby="evidence-record-heading" data-evidence-record-root>
+    <div class="evidence-record-header">
+        <div>
+            <p class="evidence-record-kicker">Care Record</p>
+            <h2 id="evidence-record-heading">Reviewed Evidence Record</h2>
+            <p class="muted evidence-record-intro">
+                Supporting material that has been reviewed and attached to this vehicle's care record.
+            </p>
+        </div>
+
+        {% if evidence_record_surface.record_count %}
+        <span class="evidence-record-count">
+            {{ evidence_record_surface.record_count }} reviewed
+        </span>
+        {% endif %}
+    </div>
+
+    {% if evidence_interaction_surface and evidence_interaction_surface.can_upload_image %}
+    <div class="evidence-upload-panel">
+        <div class="evidence-upload-copy">
+            <p class="evidence-record-kicker">Supporting Image</p>
+            <h3>Add evidence for review</h3>
+            <p class="muted">
+                Add one JPEG, PNG or WebP image that helps document a concern or consultation.
+                Aura stores a sanitized copy privately. Submission does not create a diagnosis.
+            </p>
+        </div>
+
+        <form
+            id="evidence-image-upload-form"
+            class="evidence-upload-form"
+            action="{{ url_for('evidence.upload_vehicle_image', car_id=car.id) }}"
+            method="post"
+            enctype="multipart/form-data"
+            data-upload-url="{{ url_for('evidence.upload_vehicle_image', car_id=car.id) }}"
+        >
+            <label class="evidence-field">
+                <span>Purpose</span>
+                <select name="purpose" required>
+                    {% for option in evidence_interaction_surface.image_upload_purposes %}
+                    <option value="{{ option.value }}">{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="evidence-field">
+                <span>Image</span>
+                <input
+                    type="file"
+                    name="image"
+                    accept="image/jpeg,image/png,image/webp"
+                    required
+                    data-evidence-image-input
+                >
+                <small>Maximum 2 MB. Animated, SVG and unsupported files are rejected.</small>
+            </label>
+
+            <label class="evidence-consent">
+                <input type="checkbox" name="consent_confirmed" value="true" required>
+                <span>
+                    I consent to this sanitized image being stored privately for this vehicle's care record and reviewed by Ajebo Fix.
+                </span>
+            </label>
+
+            <div class="evidence-action-row">
+                <button type="submit" class="btn btn-primary" data-evidence-upload-submit>
+                    Submit for review
+                </button>
+                <span class="evidence-inline-status" role="status" data-evidence-upload-status></span>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if evidence_record_surface.viewer_authority in ['advisor', 'administrator'] and evidence_interaction_surface %}
+        {% if evidence_interaction_surface.pending_evidence.record_count %}
+        <div class="evidence-review-queue">
+            <div class="evidence-review-queue-head">
+                <div>
+                    <p class="evidence-record-kicker">Advisor Review</p>
+                    <h3>Pending evidence</h3>
+                    <p class="muted">
+                        Open the private image before recording a professional review decision.
+                    </p>
+                </div>
+                <span class="evidence-record-count">
+                    {{ evidence_interaction_surface.pending_evidence.record_count }} pending
+                </span>
+            </div>
+
+            <div class="evidence-pending-list">
+                {% for pending in evidence_interaction_surface.pending_evidence.records %}
+                <article class="evidence-pending-item" data-pending-evidence="{{ pending.evidence_id }}">
+                    <div class="evidence-record-item-head">
+                        <div>
+                            <div class="evidence-record-purpose">{{ pending.purpose_label }}</div>
+                            <div class="evidence-record-date">
+                                Submitted {{ pending.uploaded_at[:10] }} by {{ pending.uploader_label }}
+                            </div>
+                        </div>
+                        <span class="evidence-record-status evidence-record-status-pending">Pending</span>
+                    </div>
+
+                    <div class="evidence-pending-meta">
+                        <span>{{ pending.content_type }}</span>
+                        <span>{{ (pending.byte_size / 1024)|round(1) }} KB</span>
+                        <span>Visibility: {{ pending.visibility|replace('_', ' ')|title }}</span>
+                    </div>
+
+                    {% if evidence_interaction_surface.can_preview_pending_images %}
+                    <div class="evidence-action-row">
+                        <button
+                            type="button"
+                            class="btn btn-outline"
+                            data-evidence-preview-button
+                            data-evidence-id="{{ pending.evidence_id }}"
+                            data-grant-url="{{ url_for('evidence.create_private_retrieval_grant', evidence_id=pending.evidence_id) }}"
+                        >
+                            Open private image
+                        </button>
+                        <span class="evidence-inline-status" role="status" data-evidence-item-status></span>
+                    </div>
+                    {% else %}
+                    <p class="evidence-workflow-note">
+                        Private preview is not enabled yet. No review decision is available from this surface.
+                    </p>
+                    {% endif %}
+
+                    {% if evidence_interaction_surface.can_review_pending_images %}
+                    <form
+                        class="evidence-review-form"
+                        action="{{ url_for('evidence_review.review_vehicle_evidence', evidence_id=pending.evidence_id) }}"
+                        method="post"
+                        data-evidence-review-controls="{{ pending.evidence_id }}"
+                        data-review-url="{{ url_for('evidence_review.review_vehicle_evidence', evidence_id=pending.evidence_id) }}"
+                        hidden
+                    >
+                        <div class="evidence-review-fields">
+                            <label class="evidence-field">
+                                <span>Decision</span>
+                                <select name="decision" data-evidence-review-decision required>
+                                    <option value="accepted">Accept into care record</option>
+                                    <option value="rejected">Do not use as care evidence</option>
+                                </select>
+                            </label>
+
+                            <label class="evidence-field">
+                                <span>Review basis</span>
+                                <select name="reason_code" data-evidence-review-reason required></select>
+                            </label>
+                        </div>
+
+                        <div class="evidence-action-row">
+                            <button type="submit" class="btn btn-primary" data-evidence-review-submit>
+                                Save review decision
+                            </button>
+                            <span class="evidence-inline-status" role="status" data-evidence-review-status></span>
+                        </div>
+                        <p class="evidence-workflow-note">
+                            Accepting evidence records that it is suitable for Aura's care record. It does not confirm a mechanical diagnosis.
+                        </p>
+                    </form>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    {% endif %}
+
+    {% if evidence_record_surface.records %}
+    <div class="evidence-record-list">
+        {% for record in evidence_record_surface.records %}
+        <article class="evidence-record-item">
+            <div class="evidence-record-item-head">
+                <div>
+                    <div class="evidence-record-purpose">
+                        {{ record.purpose_label }}
+                    </div>
+                    <div class="evidence-record-date">
+                        Reviewed {{ record.reviewed_at[:10] }}
+                    </div>
+                </div>
+
+                {% if record.review_status == 'accepted' %}
+                <span class="evidence-record-status evidence-record-status-accepted">
+                    Accepted
+                </span>
+                {% else %}
+                <span class="evidence-record-status evidence-record-status-rejected">
+                    Not used
+                </span>
+                {% endif %}
+            </div>
+
+            <p class="evidence-record-summary">
+                {{ record.review_summary }}
+            </p>
+
+            {% if record.linked_concerns %}
+            <div class="evidence-record-links">
+                <div class="evidence-record-links-label">Associated care record</div>
+                {% for concern in record.linked_concerns %}
+                <div class="evidence-record-link-row">
+                    <span>{{ concern.title }}</span>
+                    <span class="evidence-record-link-status">
+                        {{ concern.status|replace('_', ' ')|title }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if evidence_record_surface.viewer_authority in ['advisor', 'administrator'] %}
+            <div class="evidence-record-governance">
+                <span>
+                    Visibility: {{ record.visibility|replace('_', ' ')|title }}
+                </span>
+                <span>
+                    Review basis: {{ record.review_reason_code|replace('_', ' ')|title }}
+                </span>
+            </div>
+            {% elif record.uploaded_by_self %}
+            <div class="evidence-record-self-note">Submitted by you</div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="evidence-record-empty">
+        <strong>No reviewed evidence has been added yet.</strong>
+        <p class="muted">
+            Reviewed supporting material will appear here when it becomes part of this vehicle's care record.
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="evidence-record-safety">
+        {{ evidence_record_surface.safety_note }}
+        Private media remains protected and is not exposed from this record view.
+    </div>
+
+    {% if evidence_record_surface.viewer_authority in ['advisor', 'administrator'] and evidence_interaction_surface and evidence_interaction_surface.can_preview_pending_images %}
+    <div class="evidence-preview-modal" data-evidence-preview-modal hidden>
+        <div class="evidence-preview-backdrop" data-evidence-preview-close></div>
+        <div class="evidence-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-preview-title">
+            <div class="evidence-preview-head">
+                <div>
+                    <p class="evidence-record-kicker">Private Review</p>
+                    <h3 id="evidence-preview-title">Evidence image</h3>
+                </div>
+                <button type="button" class="evidence-preview-close" aria-label="Close private evidence preview" data-evidence-preview-close>×</button>
+            </div>
+            <div class="evidence-preview-stage">
+                <img alt="Private vehicle evidence submitted for advisor review" data-evidence-preview-image>
+            </div>
+            <p class="evidence-workflow-note">
+                This temporary preview is delivered through Aura's authenticated private retrieval flow. Closing it removes the browser object URL.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+</section>
+
+<script>
+(function () {
+    const root = document.querySelector('[data-evidence-record-root]');
+    if (!root) {
+        return;
+    }
+
+    const maxImageBytes = 2 * 1024 * 1024;
+    const acceptedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const acceptedReasons = [
+        ['advisor_verified', 'Advisor verified'],
+        ['sufficient_for_record', 'Sufficient for care record']
+    ];
+    const rejectedReasons = [
+        ['insufficient_quality', 'Insufficient image quality'],
+        ['not_relevant', 'Not relevant to this care record'],
+        ['wrong_vehicle', 'Wrong vehicle'],
+        ['duplicate', 'Duplicate evidence'],
+        ['privacy_restriction', 'Privacy restriction']
+    ];
+
+    function safeMessage(payload, fallback) {
+        if (payload && typeof payload.message === 'string' && payload.message.trim()) {
+            return payload.message;
+        }
+        return fallback;
+    }
+
+    async function jsonOrEmpty(response) {
+        try {
+            return await response.json();
+        } catch (_error) {
+            return {};
+        }
+    }
+
+    const uploadForm = root.querySelector('#evidence-image-upload-form');
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const status = uploadForm.querySelector('[data-evidence-upload-status]');
+            const submit = uploadForm.querySelector('[data-evidence-upload-submit]');
+            const input = uploadForm.querySelector('[data-evidence-image-input]');
+            const file = input && input.files ? input.files[0] : null;
+
+            if (!file) {
+                status.textContent = 'Select an image first.';
+                return;
+            }
+            if (!acceptedTypes.has(file.type)) {
+                status.textContent = 'Use a JPEG, PNG or WebP image.';
+                return;
+            }
+            if (file.size > maxImageBytes) {
+                status.textContent = 'The image is larger than 2 MB.';
+                return;
+            }
+
+            submit.disabled = true;
+            status.textContent = 'Uploading securely…';
+
+            try {
+                const response = await fetch(uploadForm.dataset.uploadUrl, {
+                    method: 'POST',
+                    body: new FormData(uploadForm),
+                    headers: { 'Accept': 'application/json' }
+                });
+                const payload = await jsonOrEmpty(response);
+                if (!response.ok) {
+                    throw new Error(safeMessage(payload, 'Aura could not accept this image.'));
+                }
+                status.textContent = 'Submitted privately. Pending advisor review.';
+                window.setTimeout(function () { window.location.reload(); }, 700);
+            } catch (error) {
+                status.textContent = error.message || 'Aura could not accept this image.';
+                submit.disabled = false;
+            }
+        });
+    }
+
+    let activeObjectUrl = null;
+    const modal = root.querySelector('[data-evidence-preview-modal]');
+    const previewImage = root.querySelector('[data-evidence-preview-image]');
+
+    function closePreview() {
+        if (modal) {
+            modal.hidden = true;
+        }
+        if (previewImage) {
+            previewImage.removeAttribute('src');
+        }
+        if (activeObjectUrl) {
+            URL.revokeObjectURL(activeObjectUrl);
+            activeObjectUrl = null;
+        }
+    }
+
+    root.querySelectorAll('[data-evidence-preview-close]').forEach(function (button) {
+        button.addEventListener('click', closePreview);
+    });
+
+    root.querySelectorAll('[data-evidence-preview-button]').forEach(function (button) {
+        button.addEventListener('click', async function () {
+            const item = button.closest('[data-pending-evidence]');
+            const status = item ? item.querySelector('[data-evidence-item-status]') : null;
+            button.disabled = true;
+            if (status) {
+                status.textContent = 'Opening private image…';
+            }
+
+            try {
+                const grantResponse = await fetch(button.dataset.grantUrl, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json' }
+                });
+                const grant = await jsonOrEmpty(grantResponse);
+                if (!grantResponse.ok || !grant.grant_token || !grant.content_endpoint) {
+                    throw new Error(safeMessage(grant, 'Aura could not authorize this preview.'));
+                }
+
+                const contentResponse = await fetch(grant.content_endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'image/*',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ grant_token: grant.grant_token })
+                });
+                if (!contentResponse.ok) {
+                    const failure = await jsonOrEmpty(contentResponse);
+                    throw new Error(safeMessage(failure, 'Aura could not retrieve this private image.'));
+                }
+
+                const blob = await contentResponse.blob();
+                if (!blob.type.startsWith('image/')) {
+                    throw new Error('Aura returned an unsupported private media type.');
+                }
+
+                closePreview();
+                activeObjectUrl = URL.createObjectURL(blob);
+                previewImage.src = activeObjectUrl;
+                modal.hidden = false;
+
+                const reviewControls = root.querySelector(
+                    '[data-evidence-review-controls="' + button.dataset.evidenceId + '"]'
+                );
+                if (reviewControls) {
+                    reviewControls.hidden = false;
+                }
+                if (status) {
+                    status.textContent = 'Private image opened for review.';
+                }
+            } catch (error) {
+                if (status) {
+                    status.textContent = error.message || 'Aura could not open this image.';
+                }
+            } finally {
+                button.disabled = false;
+            }
+        });
+    });
+
+    function populateReasons(form) {
+        const decision = form.querySelector('[data-evidence-review-decision]');
+        const reason = form.querySelector('[data-evidence-review-reason]');
+        if (!decision || !reason) {
+            return;
+        }
+        const reasons = decision.value === 'rejected' ? rejectedReasons : acceptedReasons;
+        reason.innerHTML = '';
+        reasons.forEach(function (entry) {
+            const option = document.createElement('option');
+            option.value = entry[0];
+            option.textContent = entry[1];
+            reason.appendChild(option);
+        });
+    }
+
+    root.querySelectorAll('[data-evidence-review-controls]').forEach(function (form) {
+        populateReasons(form);
+        const decision = form.querySelector('[data-evidence-review-decision]');
+        if (decision) {
+            decision.addEventListener('change', function () { populateReasons(form); });
+        }
+
+        form.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const status = form.querySelector('[data-evidence-review-status]');
+            const submit = form.querySelector('[data-evidence-review-submit]');
+            submit.disabled = true;
+            status.textContent = 'Saving review…';
+
+            try {
+                const response = await fetch(form.dataset.reviewUrl, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: { 'Accept': 'application/json' }
+                });
+                const payload = await jsonOrEmpty(response);
+                if (!response.ok) {
+                    throw new Error(safeMessage(payload, 'Aura could not save this review.'));
+                }
+                status.textContent = 'Review saved.';
+                closePreview();
+                window.setTimeout(function () { window.location.reload(); }, 500);
+            } catch (error) {
+                status.textContent = error.message || 'Aura could not save this review.';
+                submit.disabled = false;
+            }
+        });
+    });
+})();
+</script>

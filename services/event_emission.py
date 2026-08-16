@@ -1,8 +1,8 @@
-"""Canonical Wave 1.2 VehicleEvent emission service.
+"""Canonical VehicleEvent emission service.
 
-This module owns creation of new canonical events. It deliberately does not
-commit the SQLAlchemy session: the domain mutation and its event must remain in
-the caller's transaction so they succeed or fail together.
+This module owns creation of canonical events. It deliberately does not commit
+the SQLAlchemy session: the domain mutation and its event must remain in the
+caller's transaction so they succeed or fail together.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 CANONICAL_EVENT_SCHEMA_VERSION = 1
 
-CANONICAL_EVENT_TYPES = frozenset(
+CONCERN_EVENT_TYPES = frozenset(
     {
         "concern.reported",
         "concern.review_started",
@@ -34,6 +34,8 @@ CANONICAL_EVENT_TYPES = frozenset(
         "concern.corrected",
     }
 )
+EVIDENCE_EVENT_TYPES = frozenset({"evidence.reviewed", "evidence.linked"})
+CANONICAL_EVENT_TYPES = CONCERN_EVENT_TYPES | EVIDENCE_EVENT_TYPES
 
 ALLOWED_VISIBILITIES = frozenset({"client", "advisor", "internal"})
 ALLOWED_PROGRESSION_DIRECTIONS = frozenset(
@@ -49,6 +51,11 @@ ALLOWED_PROGRESSION_DIRECTIONS = frozenset(
 )
 RESERVED_ACTOR_TYPES = frozenset({"system", "provider"})
 
+_EVENT_SUBJECT_RULES = {
+    **{event_type: "reported_concern" for event_type in CONCERN_EVENT_TYPES},
+    **{event_type: "vehicle_evidence" for event_type in EVIDENCE_EVENT_TYPES},
+}
+
 _EVENT_DIRECTION_RULES = {
     "concern.reported": frozenset({"insufficient_evidence"}),
     "concern.review_started": frozenset({"stable", "insufficient_evidence"}),
@@ -56,6 +63,8 @@ _EVENT_DIRECTION_RULES = {
     "concern.resolved": frozenset({"resolved"}),
     "concern.reopened": frozenset({"recurring", "insufficient_evidence"}),
     "concern.corrected": frozenset({"not_applicable"}),
+    "evidence.reviewed": frozenset({"not_applicable"}),
+    "evidence.linked": frozenset({"not_applicable"}),
 }
 
 _TRANSITION_EVENT_TYPES = frozenset(
@@ -64,6 +73,7 @@ _TRANSITION_EVENT_TYPES = frozenset(
         "concern.monitoring_started",
         "concern.resolved",
         "concern.reopened",
+        "evidence.reviewed",
     }
 )
 
@@ -111,7 +121,10 @@ def _assert_safe_json(value: Any, *, label: str, max_bytes: int) -> None:
         if isinstance(node, dict):
             for key, child in node.items():
                 key_text = str(key).strip().lower()
-                if any(fragment in key_text for fragment in _FORBIDDEN_PAYLOAD_KEY_FRAGMENTS):
+                if any(
+                    fragment in key_text
+                    for fragment in _FORBIDDEN_PAYLOAD_KEY_FRAGMENTS
+                ):
                     raise EventEmissionError(
                         f"{label} contains a prohibited sensitive key: {key}"
                     )
@@ -195,9 +208,10 @@ def _validate_event_contract(
     if event_type not in CANONICAL_EVENT_TYPES:
         raise EventEmissionError(f"unsupported canonical event type: {event_type}")
 
-    if subject_type != "reported_concern":
+    expected_subject_type = _EVENT_SUBJECT_RULES[event_type]
+    if subject_type != expected_subject_type:
         raise EventEmissionError(
-            "Wave 1.2 first-domain service only accepts reported_concern subjects"
+            f"{event_type} requires subject_type='{expected_subject_type}'"
         )
 
     if not isinstance(subject_id, int) or subject_id <= 0:
@@ -209,7 +223,9 @@ def _validate_event_contract(
         )
 
     if actor_type != "user" or not isinstance(actor_user_id, int):
-        raise EventEmissionError("canonical human events require actor_type='user' and actor_user_id")
+        raise EventEmissionError(
+            "canonical human events require actor_type='user' and actor_user_id"
+        )
 
     if visibility not in ALLOWED_VISIBILITIES:
         raise EventEmissionError(f"invalid canonical event visibility: {visibility}")
@@ -248,6 +264,21 @@ def _validate_event_contract(
     ):
         raise EventEmissionError(
             "concern.reported requires previous_state=None and new_state='reported'"
+        )
+
+    if event_type == "evidence.reviewed" and (
+        previous_state != "pending_review"
+        or new_state not in {"accepted", "rejected"}
+    ):
+        raise EventEmissionError(
+            "evidence.reviewed requires pending_review -> accepted/rejected"
+        )
+
+    if event_type == "evidence.linked" and (
+        previous_state is not None or new_state is not None
+    ):
+        raise EventEmissionError(
+            "evidence.linked is not a state transition"
         )
 
     if event_type == "concern.corrected" and correction_of_event_id is None:
@@ -373,9 +404,7 @@ def emit_vehicle_event(
 
     The function flushes but never commits. Callers own the surrounding
     transaction so a domain mutation cannot succeed while its event silently
-    fails. The first implementation accepts authenticated human actors only;
-    system/provider actor types remain reserved until legacy non-null
-    ``created_by`` compatibility is relaxed in a dedicated schema change.
+    fails. Evidence review/link events additionally require advisor authority.
     """
 
     _validate_event_contract(
@@ -418,7 +447,14 @@ def emit_vehicle_event(
     if actor_authority is None:
         raise EventAuthorityError("actor has no proven authority for this vehicle")
 
-    corrected_event = None
+    if event_type in EVIDENCE_EVENT_TYPES and actor_authority not in {
+        "advisor",
+        "administrator",
+    }:
+        raise EventAuthorityError(
+            "canonical evidence review/link events require advisor authority"
+        )
+
     if correction_of_event_id is not None:
         corrected_event = db.session.get(VehicleEvent, correction_of_event_id)
         if corrected_event is None:

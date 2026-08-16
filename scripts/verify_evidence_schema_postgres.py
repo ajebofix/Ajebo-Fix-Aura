@@ -1,7 +1,9 @@
 """Verify the Wave 1.4 evidence schema on PostgreSQL.
 
 This script intentionally uses metadata and synthetic rows only. It never touches
-object storage or external AI providers.
+object storage or external AI providers. It validates the evidence-domain
+milestone independently of whichever later compatible Alembic revision is the
+current application head.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 
-EXPECTED_HEAD = "c62f1a4e8d30"
+EVIDENCE_SCHEMA_REVISION = "c62f1a4e8d30"
 
 
 def _must_fail(engine, sql: str, params: dict[str, object], label: str) -> None:
@@ -185,11 +187,9 @@ def main() -> None:
 
     now = datetime.utcnow()
     with engine.begin() as connection:
-        version = connection.execute(
+        current_revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        if version != EXPECTED_HEAD:
-            raise SystemExit(f"Unexpected evidence schema head: {version}")
 
         user_id = connection.execute(
             text(
@@ -322,7 +322,10 @@ def main() -> None:
         "corrected extraction without additive encrypted correction",
     )
 
-    print("Wave 1.4 PostgreSQL evidence schema verified at c62f1a4e8d30.")
+    print(
+        "Wave 1.4 PostgreSQL evidence schema milestone "
+        f"{EVIDENCE_SCHEMA_REVISION} verified at current revision {current_revision}."
+    )
 
 
 if __name__ == "__main__":

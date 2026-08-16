@@ -316,8 +316,8 @@ def main() -> None:
     _must_fail(
         engine,
         "INSERT INTO evidence_extractions "
-        "(evidence_id, extraction_type, provider, status, review_status, reviewed_by_user_id, reviewed_at, created_at) "
-        "VALUES (:evidence_id, 'image_observation', 'test-provider', 'completed', 'corrected', :user_id, :now, :now)",
+        "(evidence_id, extraction_type, provider, status, review_status, reviewed_by_user_id, reviewed_at, completed_at, created_at) "
+        "VALUES (:evidence_id, 'image_observation', 'test-provider', 'completed', 'corrected', :user_id, :now, :now, :now)",
         {"evidence_id": evidence_id, "user_id": user_id, "now": now},
         "corrected extraction without additive encrypted correction",
     )

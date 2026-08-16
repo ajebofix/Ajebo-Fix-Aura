@@ -84,6 +84,10 @@ def _evidence(*, car_id: int, uploader_id: int, store: FakePrivateStore, suffix:
 
 def main() -> None:
     with app.app_context():
+        signing_key = app.config.get("SECRET_KEY")
+        if not signing_key:
+            raise SystemExit("SECRET_KEY is required for private-access verification")
+
         now = datetime(2026, 8, 16, 18, 0, 0)
         owner = User(
             name="Private Access Owner",
@@ -136,14 +140,14 @@ def main() -> None:
         grant = create_retrieval_grant(
             user_id=owner.id,
             evidence_id=row.id,
-            secret_key="postgres-private-access-secret",
+            secret_key=signing_key,
             grant_seconds=60,
         )
         content = retrieve_private_content(
             user_id=owner.id,
             evidence_id=row.id,
             token=grant.token,
-            secret_key="postgres-private-access-secret",
+            secret_key=signing_key,
             grant_seconds=60,
             storage_provider=store,
         )

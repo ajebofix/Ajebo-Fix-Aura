@@ -119,32 +119,38 @@ def _login(client, email: str) -> None:
     _csrf(client)
 
 
-def test_interaction_get_surfaces_are_registered_but_disabled_by_default(app, client):
+def test_owner_submission_surface_is_registered_but_disabled_by_default(app, client):
     with app.app_context():
         owner = _user(suffix=1)
-        advisor = _user(suffix=2, role="admin")
         car = _owned_car(owner, suffix=1)
         owner_email = owner.email
-        advisor_email = advisor.email
         car_id = car.id
 
     _login(client, owner_email)
-    submit = client.get(f"/evidence/vehicles/{car_id}/submit")
-    assert submit.status_code == 503
-    assert "Evidence submission is not enabled yet" in submit.get_data(as_text=True)
+    response = client.get(f"/evidence/vehicles/{car_id}/submit")
+    assert response.status_code == 503
+    assert "Evidence submission is not enabled yet" in response.get_data(as_text=True)
 
-    with app.test_client() as advisor_client:
-        _login(advisor_client, advisor_email)
-        pending = advisor_client.get(f"/admin/evidence/vehicles/{car_id}/pending")
-    assert pending.status_code == 503
-    assert "Evidence review is not enabled yet" in pending.get_data(as_text=True)
+
+def test_advisor_pending_surface_is_registered_but_disabled_by_default(app, client):
+    with app.app_context():
+        owner = _user(suffix=2)
+        advisor = _user(suffix=3, role="admin")
+        car = _owned_car(owner, suffix=2)
+        advisor_email = advisor.email
+        car_id = car.id
+
+    _login(client, advisor_email)
+    response = client.get(f"/admin/evidence/vehicles/{car_id}/pending")
+    assert response.status_code == 503
+    assert "Evidence review is not enabled yet" in response.get_data(as_text=True)
 
 
 def test_verified_owner_submission_page_uses_existing_upload_endpoint(app, client):
     app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=3)
-        car = _owned_car(owner, suffix=2)
+        owner = _user(suffix=4)
+        car = _owned_car(owner, suffix=3)
         owner_email = owner.email
         car_id = car.id
 
@@ -166,9 +172,9 @@ def test_verified_owner_submission_page_uses_existing_upload_endpoint(app, clien
 def test_driver_submission_choices_are_limited_to_operational_purposes(app, client):
     app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=4)
-        driver = _user(suffix=5, role="driver")
-        car = _owned_car(owner, suffix=3)
+        owner = _user(suffix=5)
+        driver = _user(suffix=6, role="driver")
+        car = _owned_car(owner, suffix=4)
         _assign_driver(car, driver)
         driver_email = driver.email
         car_id = car.id
@@ -184,14 +190,12 @@ def test_driver_submission_choices_are_limited_to_operational_purposes(app, clie
     assert f'/driver/cars/{car_id}' in html
 
 
-def test_submission_surface_redirects_unverified_identity_and_denies_outsider(app, client):
+def test_submission_surface_redirects_unverified_identity(app, client):
     app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=6)
-        outsider = _user(suffix=7)
+        owner = _user(suffix=7)
         unverified = _user(suffix=8, verified=False)
-        car = _owned_car(owner, suffix=4)
-        outsider_email = outsider.email
+        car = _owned_car(owner, suffix=5)
         unverified_email = unverified.email
         car_id = car.id
 
@@ -200,18 +204,27 @@ def test_submission_surface_redirects_unverified_identity_and_denies_outsider(ap
     assert response.status_code in {302, 303}
     assert "/auth/verification-required" in response.headers["Location"]
 
-    with app.test_client() as outsider_client:
-        _login(outsider_client, outsider_email)
-        denied = outsider_client.get(f"/evidence/vehicles/{car_id}/submit")
-    assert denied.status_code == 403
+
+def test_submission_surface_denies_verified_outsider(app, client):
+    app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
+    with app.app_context():
+        owner = _user(suffix=9)
+        outsider = _user(suffix=10)
+        car = _owned_car(owner, suffix=6)
+        outsider_email = outsider.email
+        car_id = car.id
+
+    _login(client, outsider_email)
+    response = client.get(f"/evidence/vehicles/{car_id}/submit")
+    assert response.status_code == 403
 
 
 def test_advisor_pending_queue_exposes_safe_metadata_only(app, client):
     app.config["EVIDENCE_ADVISOR_REVIEW_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=9)
-        advisor = _user(suffix=10, role="admin")
-        car = _owned_car(owner, suffix=5)
+        owner = _user(suffix=11)
+        advisor = _user(suffix=12, role="admin")
+        car = _owned_car(owner, suffix=7)
         evidence = _evidence(car=car, uploader=owner, suffix=1)
         advisor_email = advisor.email
         car_id = car.id
@@ -224,7 +237,7 @@ def test_advisor_pending_queue_exposes_safe_metadata_only(app, client):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Evidence awaiting review" in html
-    assert "Evidence Interaction User 9" in html
+    assert "Evidence Interaction User 11" in html
     assert "Reported concern support" in html
     assert f"/admin/evidence/{evidence_id}/workspace" in html
     assert object_key not in html
@@ -236,8 +249,8 @@ def test_advisor_pending_queue_exposes_safe_metadata_only(app, client):
 def test_owner_cannot_open_advisor_pending_queue(app, client):
     app.config["EVIDENCE_ADVISOR_REVIEW_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=11)
-        car = _owned_car(owner, suffix=6)
+        owner = _user(suffix=13)
+        car = _owned_car(owner, suffix=8)
         owner_email = owner.email
         car_id = car.id
 
@@ -250,9 +263,9 @@ def test_advisor_workspace_uses_existing_private_and_review_endpoints(app, clien
     app.config["EVIDENCE_ADVISOR_REVIEW_ENABLED"] = True
     app.config["EVIDENCE_RETRIEVAL_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=12)
-        advisor = _user(suffix=13, role="admin")
-        car = _owned_car(owner, suffix=7)
+        owner = _user(suffix=14)
+        advisor = _user(suffix=15, role="admin")
+        car = _owned_car(owner, suffix=9)
         evidence = _evidence(car=car, uploader=owner, suffix=2)
         concern = _concern(car=car, reporter=owner)
         advisor_email = advisor.email
@@ -286,9 +299,9 @@ def test_advisor_workspace_uses_existing_private_and_review_endpoints(app, clien
 def test_completed_review_disappears_from_pending_queue_and_workspace(app, client):
     app.config["EVIDENCE_ADVISOR_REVIEW_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=14)
-        advisor = _user(suffix=15, role="admin")
-        car = _owned_car(owner, suffix=8)
+        owner = _user(suffix=16)
+        advisor = _user(suffix=17, role="admin")
+        car = _owned_car(owner, suffix=10)
         evidence = _evidence(car=car, uploader=owner, suffix=3)
         evidence.review_status = "accepted"
         evidence.reviewed_by_user_id = advisor.id
@@ -311,9 +324,9 @@ def test_completed_review_disappears_from_pending_queue_and_workspace(app, clien
 def test_driver_vehicle_page_surfaces_submission_action_only_when_enabled(app, client):
     app.config["EVIDENCE_IMAGE_INTAKE_ENABLED"] = True
     with app.app_context():
-        owner = _user(suffix=16)
-        driver = _user(suffix=17, role="driver")
-        car = _owned_car(owner, suffix=9)
+        owner = _user(suffix=18)
+        driver = _user(suffix=19, role="driver")
+        car = _owned_car(owner, suffix=11)
         _assign_driver(car, driver)
         driver_email = driver.email
         car_id = car.id

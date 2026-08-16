@@ -1,0 +1,127 @@
+name: Aura Wave 1.4 Image Evidence Intake CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "app.py"
+      - "evidence/**"
+      - "security/rate_limits.py"
+      - "requirements*.txt"
+      - "tests/test_evidence_image_sanitizer.py"
+      - "tests/test_evidence_intake.py"
+      - "tests/test_evidence_routes.py"
+      - "tests/test_evidence_storage.py"
+      - "scripts/verify_evidence_image_intake_postgres.py"
+      - ".github/workflows/evidence-image-intake-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-evidence-image-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  sqlite-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      EVIDENCE_IMAGE_INTAKE_ENABLED: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile evidence image intake sources
+        run: |
+          python -m py_compile evidence/storage.py evidence/image_sanitizer.py evidence/intake.py evidence/routes.py
+          python -m py_compile scripts/verify_evidence_image_intake_postgres.py
+          python -m py_compile tests/test_evidence_image_sanitizer.py tests/test_evidence_intake.py tests/test_evidence_routes.py tests/test_evidence_storage.py
+
+      - name: Test evidence image boundaries
+        run: |
+          pytest -q --tb=short \
+            tests/test_evidence_image_sanitizer.py \
+            tests/test_evidence_storage.py \
+            tests/test_evidence_intake.py \
+            tests/test_evidence_routes.py
+
+      - name: Ruff evidence image intake
+        run: |
+          ruff check \
+            evidence/storage.py evidence/image_sanitizer.py evidence/intake.py evidence/routes.py \
+            scripts/verify_evidence_image_intake_postgres.py \
+            tests/test_evidence_image_sanitizer.py tests/test_evidence_storage.py \
+            tests/test_evidence_intake.py tests/test_evidence_routes.py
+
+      - name: Bandit evidence image intake
+        run: bandit -q -r evidence scripts/verify_evidence_image_intake_postgres.py
+
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      EVIDENCE_IMAGE_INTAKE_ENABLED: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Upgrade PostgreSQL to Wave 1.4 head
+        run: python -m flask db upgrade
+
+      - name: Verify image intake lifecycle without external storage
+        run: python scripts/verify_evidence_image_intake_postgres.py

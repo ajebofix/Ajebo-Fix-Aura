@@ -1,0 +1,95 @@
+name: Aura Wave 1.4 Evidence Cutover CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "app.py"
+      - "evidence/readiness.py"
+      - "evidence/storage.py"
+      - "evidence/retrieval.py"
+      - "evidence/intake.py"
+      - "scripts/smoke_evidence_storage.py"
+      - "tests/test_evidence_cutover_readiness.py"
+      - "tests/test_evidence_cutover_startup.py"
+      - "tests/test_evidence_readiness_flags.py"
+      - "tests/test_evidence_storage_smoke.py"
+      - "tests/test_evidence_storage.py"
+      - "tests/test_evidence_retrieval.py"
+      - "tests/test_evidence_intake.py"
+      - ".github/workflows/evidence-cutover-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-evidence-cutover-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  cutover-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      EVIDENCE_IMAGE_INTAKE_ENABLED: "0"
+      EVIDENCE_RETRIEVAL_ENABLED: "0"
+      EVIDENCE_ADVISOR_REVIEW_ENABLED: "0"
+      EVIDENCE_TIMELINE_ENABLED: "0"
+      EVIDENCE_ADVISOR_DELETION_ENABLED: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile evidence cutover sources
+        run: |
+          python -m py_compile app.py evidence/readiness.py scripts/smoke_evidence_storage.py
+          python -m py_compile \
+            tests/test_evidence_cutover_readiness.py \
+            tests/test_evidence_cutover_startup.py \
+            tests/test_evidence_readiness_flags.py \
+            tests/test_evidence_storage_smoke.py
+
+      - name: Test cutover, storage and retrieval contracts
+        run: |
+          pytest -q --tb=short \
+            tests/test_evidence_cutover_readiness.py \
+            tests/test_evidence_cutover_startup.py \
+            tests/test_evidence_readiness_flags.py \
+            tests/test_evidence_storage_smoke.py \
+            tests/test_evidence_storage.py \
+            tests/test_evidence_retrieval.py \
+            tests/test_evidence_intake.py
+
+      - name: Ruff evidence cutover
+        run: |
+          ruff check \
+            app.py evidence/readiness.py scripts/smoke_evidence_storage.py \
+            tests/test_evidence_cutover_readiness.py \
+            tests/test_evidence_cutover_startup.py \
+            tests/test_evidence_readiness_flags.py \
+            tests/test_evidence_storage_smoke.py
+
+      - name: Bandit evidence cutover
+        run: |
+          bandit -q evidence/readiness.py scripts/smoke_evidence_storage.py

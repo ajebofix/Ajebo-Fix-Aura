@@ -15,6 +15,9 @@
 href="{{ url_for('static', filename='images/aura-icon-health.png')}}">
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% if evidence_record_surface is defined and evidence_record_surface %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/evidence-record.css') }}">
+{% endif %}
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -175,6 +178,9 @@ rel="stylesheet">
 
         <section class="content-area">
             {% block content %}{% endblock %}
+            {% if evidence_record_surface is defined and evidence_record_surface %}
+                {% include 'partials/evidence_record.html' %}
+            {% endif %}
         </section>
 
         <footer class="footer-bar">

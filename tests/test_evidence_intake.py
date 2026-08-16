@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+import re
 
 import pytest
 from PIL import Image
@@ -141,8 +142,11 @@ def test_owner_upload_stores_only_sanitized_private_image(app):
         assert isinstance(stored_payload, bytes)
         assert stored_payload != raw
         assert call["content_type"] == "image/jpeg"
-        assert str(call["object_key"]).startswith(f"evidence/vehicles/{car.id}/")
-        assert str(call["object_key"]).endswith(".jpg")
+        assert re.fullmatch(
+            r"evidence/[0-9a-f]{2}/[0-9a-f]{32}\.jpg",
+            str(call["object_key"]),
+        )
+        assert "vehicles" not in str(call["object_key"])
 
         with Image.open(BytesIO(stored_payload)) as stored_image:
             stored_image.load()

@@ -114,7 +114,18 @@ def create_app():
         "EVIDENCE_IMAGE_INTAKE_ENABLED",
         default=False,
     )
+    app.config["EVIDENCE_RETRIEVAL_ENABLED"] = _environment_flag(
+        "EVIDENCE_RETRIEVAL_ENABLED",
+        default=False,
+    )
+    app.config["EVIDENCE_ADVISOR_DELETION_ENABLED"] = _environment_flag(
+        "EVIDENCE_ADVISOR_DELETION_ENABLED",
+        default=False,
+    )
     app.config["EVIDENCE_RETENTION_DAYS"] = os.getenv("EVIDENCE_RETENTION_DAYS")
+    app.config["EVIDENCE_RETRIEVAL_GRANT_SECONDS"] = os.getenv(
+        "EVIDENCE_RETRIEVAL_GRANT_SECONDS"
+    )
     app.config["EVIDENCE_STORAGE_PROVIDER"] = os.getenv(
         "EVIDENCE_STORAGE_PROVIDER",
         "r2",

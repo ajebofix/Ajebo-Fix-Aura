@@ -72,14 +72,16 @@ jobs:
       - name: Show Alembic heads
         run: python -m flask db heads
 
-      - name: Upgrade fresh PostgreSQL database to head
-        run: python -m flask db upgrade
+      - name: Upgrade fresh PostgreSQL database to repository head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
 
-      - name: Verify fresh head and Wave 1.2/1.3/1.4 schema
+      - name: Verify fresh Wave 1.2/1.3/1.4 schema envelope
         run: |
           python - <<'PY'
           import os
-          from sqlalchemy import create_engine, inspect, text
+          from sqlalchemy import create_engine, inspect
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
           inspector = inspect(engine)
@@ -106,6 +108,24 @@ jobs:
           if required_event - event_columns:
               raise SystemExit(
                   f"VehicleEvent envelope missing: {sorted(required_event - event_columns)}"
+              )
+
+          event_checks = {
+              c["name"] for c in inspector.get_check_constraints("vehicle_events")
+          }
+          required_event_checks = {
+              "ck_vehicle_events_actor_type",
+              "ck_vehicle_events_actor_authority",
+              "ck_vehicle_events_visibility",
+              "ck_vehicle_events_progression_direction",
+              "ck_vehicle_events_schema_version",
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_evidence_contract",
+          }
+          if required_event_checks - event_checks:
+              raise SystemExit(
+                  "VehicleEvent PostgreSQL CHECKs missing: "
+                  f"{sorted(required_event_checks - event_checks)}"
               )
 
           chat_columns = {c["name"] for c in inspector.get_columns("chat_messages")}
@@ -166,14 +186,13 @@ jobs:
                   f"Wave 1.4 evidence schema missing: {sorted(required_evidence - evidence_columns)}"
               )
 
-          with engine.connect() as connection:
-              version = connection.execute(
-                  text("SELECT version_num FROM alembic_version")
-              ).scalar_one()
-          if version != "c62f1a4e8d30":
-              raise SystemExit(f"Unexpected PostgreSQL head: {version}")
-          print("Fresh PostgreSQL upgrade reached c62f1a4e8d30.")
+          print("Fresh PostgreSQL schema envelope verified at repository head.")
           PY
+
+      - name: Verify current evidence schema and canonical evidence events
+        run: |
+          python scripts/verify_evidence_schema_postgres.py
+          python scripts/verify_evidence_events_postgres.py
 
       - name: Recreate production-shaped baseline at d42e7a1c9b50
         run: |
@@ -259,8 +278,10 @@ jobs:
           print("Legacy memory rows seeded without invented Wave 1.3 scope.")
           PY
 
-      - name: Upgrade production-shaped baseline to current head
-        run: python -m flask db upgrade
+      - name: Upgrade production-shaped baseline to repository head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
 
       - name: Verify conservative memory backfill and retained event hardening
         run: |
@@ -276,6 +297,7 @@ jobs:
           }
           if not event_columns["mileage"]["nullable"]:
               raise SystemExit("VehicleEvent mileage compatibility regressed")
+
           event_checks = {
               c["name"] for c in inspector.get_check_constraints("vehicle_events")
           }
@@ -285,11 +307,14 @@ jobs:
               "ck_vehicle_events_visibility",
               "ck_vehicle_events_progression_direction",
               "ck_vehicle_events_schema_version",
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_evidence_contract",
           }
           if required_event_checks - event_checks:
               raise SystemExit(
-                  f"Wave 1.2 checks missing: {sorted(required_event_checks - event_checks)}"
+                  f"VehicleEvent checks missing: {sorted(required_event_checks - event_checks)}"
               )
+
           event_indexes = {i["name"] for i in inspector.get_indexes("vehicle_events")}
           if "ix_vehicle_events_timeline_scope" not in event_indexes:
               raise SystemExit("Wave 1.2 timeline index regressed")
@@ -307,9 +332,6 @@ jobs:
                       "FROM conversation_records WHERE concern = 'legacy concern'"
                   )
               ).one()
-              version = connection.execute(
-                  text("SELECT version_num FROM alembic_version")
-              ).scalar_one()
 
           if legacy_chat != (None, None, "legacy", "internal"):
               raise SystemExit(f"Unsafe ChatMessage legacy backfill: {legacy_chat!r}")
@@ -317,9 +339,7 @@ jobs:
               raise SystemExit(
                   f"Unsafe ConversationRecord legacy backfill: {legacy_record!r}"
               )
-          if version != "c62f1a4e8d30":
-              raise SystemExit(f"Unexpected upgraded head: {version}")
-          print("Wave 1.2 hardening, Wave 1.3 memory, and Wave 1.4 head verified.")
+          print("Wave 1.2 hardening and Wave 1.3 conservative memory backfill verified.")
           PY
 
       - name: Verify Rina memory and AI audit PostgreSQL constraints
@@ -408,5 +428,7 @@ jobs:
           print("Rina memory and audit PostgreSQL constraints verified.")
           PY
 
-      - name: Verify Wave 1.4 evidence PostgreSQL constraints
-        run: python scripts/verify_evidence_schema_postgres.py
+      - name: Verify Wave 1.4 evidence contracts after production-shaped upgrade
+        run: |
+          python scripts/verify_evidence_schema_postgres.py
+          python scripts/verify_evidence_events_postgres.py

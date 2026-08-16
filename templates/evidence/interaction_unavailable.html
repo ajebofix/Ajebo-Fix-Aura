@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Evidence Access{% endblock %}
+
+{% block page_title %}Vehicle Evidence{% endblock %}
+
+{% block page_subtitle %}
+Private supporting material for the vehicle care record.
+{% endblock %}
+
+{% block content %}
+<section class="card evidence-interaction-shell">
+    <p class="evidence-interaction-kicker">Controlled Access</p>
+    <h2>{{ heading }}</h2>
+    <p class="muted">{{ message }}</p>
+    <a href="javascript:history.back()" class="btn btn-secondary">
+        Return
+    </a>
+</section>
+{% endblock %}

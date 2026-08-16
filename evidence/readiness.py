@@ -33,6 +33,9 @@ _STORAGE_DEPENDENT_FLAGS = (
     "EVIDENCE_ADVISOR_DELETION_ENABLED",
 )
 
+_TRUE_FLAG_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_FLAG_VALUES = frozenset({"0", "false", "no", "off", ""})
+
 
 class EvidenceCutoverConfigurationError(RuntimeError):
     """Raised when enabled evidence capabilities are not safe to activate."""
@@ -70,7 +73,15 @@ class EvidenceCutoverReadiness:
 
 
 def _enabled(config: Mapping[str, object], key: str) -> bool:
-    return bool(config.get(key, False))
+    value = config.get(key, False)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _TRUE_FLAG_VALUES:
+            return True
+        if normalized in _FALSE_FLAG_VALUES:
+            return False
+        return False
+    return bool(value)
 
 
 def _positive_integer(value: object) -> int | None:

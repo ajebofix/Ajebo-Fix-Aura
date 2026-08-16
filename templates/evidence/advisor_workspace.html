@@ -61,7 +61,9 @@ Private professional review before care-record inclusion.
                         <option value="{{ option.value }}">{{ option.label }}</option>
                         {% endfor %}
                     </select>
-                    <button class="btn btn-primary" type="submit">Accept Evidence</button>
+                    <button class="btn btn-primary evidence-review-action" type="submit" disabled>
+                        Accept Evidence
+                    </button>
                 </form>
             </section>
 
@@ -78,13 +80,17 @@ Private professional review before care-record inclusion.
                         <option value="{{ option.value }}">{{ option.label }}</option>
                         {% endfor %}
                     </select>
-                    <button class="btn btn-secondary" type="submit">Reject Evidence</button>
+                    <button class="btn btn-secondary evidence-review-action" type="submit" disabled>
+                        Reject Evidence
+                    </button>
                 </form>
             </section>
         </div>
     </div>
 
-    <div id="evidence-review-status" class="evidence-interaction-status" role="status" aria-live="polite"></div>
+    <div id="evidence-review-status" class="evidence-interaction-status" role="status" aria-live="polite">
+        Review actions unlock only after the private image has been loaded successfully.
+    </div>
 
     <section id="evidence-link-section" class="evidence-link-section" hidden>
         <h3>Associate accepted evidence with a Reported Concern</h3>
@@ -133,6 +139,7 @@ Private professional review before care-record inclusion.
     const reviewStatus = document.getElementById("evidence-review-status");
     const acceptForm = document.getElementById("accept-evidence-form");
     const rejectForm = document.getElementById("reject-evidence-form");
+    const reviewButtons = Array.from(document.querySelectorAll(".evidence-review-action"));
     const linkSection = document.getElementById("evidence-link-section");
     const linkForm = document.getElementById("evidence-link-form");
     const concernSelect = document.getElementById("evidence-concern");
@@ -143,6 +150,16 @@ Private professional review before care-record inclusion.
             return await response.json();
         } catch (error) {
             return {};
+        }
+    }
+
+    function unlockReviewActions() {
+        reviewButtons.forEach(function (button) {
+            button.disabled = false;
+        });
+        if (reviewStatus) {
+            reviewStatus.textContent = "Private image loaded. Professional review actions are now available.";
+            reviewStatus.className = "evidence-interaction-status success";
         }
     }
 
@@ -187,6 +204,7 @@ Private professional review before care-record inclusion.
                 }
                 previewStatus.textContent = "Private preview loaded for this review session.";
                 previewStatus.className = "evidence-interaction-status success";
+                unlockReviewActions();
             };
             reader.onerror = function () {
                 previewStatus.textContent = "The private image could not be rendered in this browser.";
@@ -204,11 +222,7 @@ Private professional review before care-record inclusion.
     async function submitReview(form) {
         const body = new FormData(form);
         const decision = body.get("decision");
-        const buttons = [
-            acceptForm && acceptForm.querySelector("button"),
-            rejectForm && rejectForm.querySelector("button"),
-        ].filter(Boolean);
-        buttons.forEach(function (button) { button.disabled = true; });
+        reviewButtons.forEach(function (button) { button.disabled = true; });
         reviewStatus.textContent = "Recording professional review…";
         reviewStatus.className = "evidence-interaction-status";
 
@@ -231,7 +245,7 @@ Private professional review before care-record inclusion.
         } catch (error) {
             reviewStatus.textContent = error.message || "The evidence review could not be recorded.";
             reviewStatus.className = "evidence-interaction-status error";
-            buttons.forEach(function (button) { button.disabled = false; });
+            reviewButtons.forEach(function (button) { button.disabled = false; });
         }
     }
 

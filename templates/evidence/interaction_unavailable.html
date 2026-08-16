@@ -13,8 +13,8 @@ Private supporting material for the vehicle care record.
     <p class="evidence-interaction-kicker">Controlled Access</p>
     <h2>{{ heading }}</h2>
     <p class="muted">{{ message }}</p>
-    <a href="javascript:history.back()" class="btn btn-secondary">
-        Return
+    <a href="{{ url_for('dashboard.aura_home') }}" class="btn btn-secondary">
+        Return to Dashboard
     </a>
 </section>
 {% endblock %}

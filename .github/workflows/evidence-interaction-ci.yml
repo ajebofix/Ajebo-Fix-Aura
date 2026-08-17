@@ -11,6 +11,7 @@ on:
     paths:
       - "app.py"
       - "evidence/interaction_routes.py"
+      - "evidence/timeline_routes.py"
       - "evidence/routes.py"
       - "evidence/retrieval.py"
       - "evidence/review.py"
@@ -26,6 +27,7 @@ on:
       - "tests/test_evidence_private_routes.py"
       - "tests/test_evidence_review_routes.py"
       - "tests/test_evidence_record_ui.py"
+      - "tests/test_owner_evidence_submission_entry.py"
       - ".github/workflows/evidence-interaction-ci.yml"
 
 permissions:
@@ -66,8 +68,14 @@ jobs:
 
       - name: Compile evidence interaction sources
         run: |
-          python -m py_compile app.py evidence/interaction_routes.py services/evidence_interaction.py
-          python -m py_compile tests/test_evidence_interaction_ui.py
+          python -m py_compile \
+            app.py \
+            evidence/interaction_routes.py \
+            evidence/timeline_routes.py \
+            services/evidence_interaction.py
+          python -m py_compile \
+            tests/test_evidence_interaction_ui.py \
+            tests/test_owner_evidence_submission_entry.py
 
       - name: Test interaction and existing evidence boundaries
         run: |
@@ -76,14 +84,22 @@ jobs:
             tests/test_evidence_intake.py \
             tests/test_evidence_private_routes.py \
             tests/test_evidence_review_routes.py \
-            tests/test_evidence_record_ui.py
+            tests/test_evidence_record_ui.py \
+            tests/test_owner_evidence_submission_entry.py
 
       - name: Ruff evidence interaction
         run: |
           ruff check \
-            app.py evidence/interaction_routes.py services/evidence_interaction.py \
-            tests/test_evidence_interaction_ui.py
+            app.py \
+            evidence/interaction_routes.py \
+            evidence/timeline_routes.py \
+            services/evidence_interaction.py \
+            tests/test_evidence_interaction_ui.py \
+            tests/test_owner_evidence_submission_entry.py
 
       - name: Bandit evidence interaction
         run: |
-          bandit -q evidence/interaction_routes.py services/evidence_interaction.py
+          bandit -q \
+            evidence/interaction_routes.py \
+            evidence/timeline_routes.py \
+            services/evidence_interaction.py

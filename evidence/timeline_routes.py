@@ -5,6 +5,11 @@ from __future__ import annotations
 from flask import Blueprint, before_render_template, current_app, jsonify
 from flask_login import current_user, login_required
 
+from services.evidence_interaction import (
+    EvidenceInteractionAccessError,
+    EvidenceInteractionNotFound,
+    get_evidence_submission_context,
+)
 from services.evidence_timeline import (
     EvidenceTimelineAccessError,
     EvidenceTimelineNotFound,
@@ -37,6 +42,36 @@ def _feature_unavailable():
     )
 
 
+def _owner_submission_only_surface(*, car_id: int) -> dict[str, object] | None:
+    """Return a safe owner submission entry when intake precedes timeline cutover."""
+
+    if not current_app.config.get("EVIDENCE_IMAGE_INTAKE_ENABLED", False):
+        return None
+
+    try:
+        submission = get_evidence_submission_context(
+            car_id=car_id,
+            viewer_user_id=current_user.id,
+        )
+    except (EvidenceInteractionAccessError, EvidenceInteractionNotFound):
+        return None
+
+    if submission.viewer_authority != "owner":
+        return None
+
+    return {
+        "mode": "submission_only",
+        "viewer_authority": "owner",
+        "vehicle_label": submission.vehicle_label,
+        "record_count": 0,
+        "records": [],
+        "safety_note": (
+            "Submitted material remains private and pending professional review. "
+            "Submission does not confirm a fault or diagnosis."
+        ),
+    }
+
+
 @before_render_template.connect
 def _provide_vehicle_evidence_record(sender, template, context, **extra):
     """Inject the safe evidence projection only into the shared vehicle record page."""
@@ -46,8 +81,6 @@ def _provide_vehicle_evidence_record(sender, template, context, **extra):
 
     context["evidence_record_surface"] = None
 
-    if not current_app.config.get("EVIDENCE_TIMELINE_ENABLED", False):
-        return
     if not current_user.is_authenticated:
         return
     if getattr(current_user, "email_verified_at", None) is None:
@@ -55,6 +88,13 @@ def _provide_vehicle_evidence_record(sender, template, context, **extra):
 
     car = context.get("car")
     if car is None or getattr(car, "id", None) is None:
+        return
+
+    if not current_app.config.get("EVIDENCE_TIMELINE_ENABLED", False):
+        if not context.get("is_admin_view"):
+            context["evidence_record_surface"] = _owner_submission_only_surface(
+                car_id=car.id,
+            )
         return
 
     try:
@@ -77,7 +117,9 @@ def _provide_vehicle_evidence_record(sender, template, context, **extra):
         )
         return
 
-    context["evidence_record_surface"] = projection.to_dict()
+    payload = projection.to_dict()
+    payload["mode"] = "reviewed_record"
+    context["evidence_record_surface"] = payload
 
 
 @evidence_timeline_bp.get("/vehicles/<int:car_id>/timeline")

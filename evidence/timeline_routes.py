@@ -8,6 +8,7 @@ from flask_login import current_user, login_required
 from services.evidence_interaction import (
     EvidenceInteractionAccessError,
     EvidenceInteractionNotFound,
+    get_advisor_pending_evidence_queue,
     get_evidence_submission_context,
 )
 from services.evidence_timeline import (
@@ -72,6 +73,35 @@ def _owner_submission_only_surface(*, car_id: int) -> dict[str, object] | None:
     }
 
 
+def _advisor_review_only_surface(*, car_id: int) -> dict[str, object] | None:
+    """Return a safe advisor review entry before reviewed timeline cutover."""
+
+    if not current_app.config.get("EVIDENCE_ADVISOR_REVIEW_ENABLED", False):
+        return None
+
+    try:
+        queue = get_advisor_pending_evidence_queue(
+            car_id=car_id,
+            viewer_user_id=current_user.id,
+        )
+    except (EvidenceInteractionAccessError, EvidenceInteractionNotFound):
+        return None
+
+    return {
+        "mode": "advisor_review_only",
+        "viewer_authority": (
+            "administrator" if getattr(current_user, "role", None) == "admin" else "advisor"
+        ),
+        "vehicle_label": queue.vehicle_label,
+        "record_count": len(queue.records),
+        "records": [],
+        "safety_note": (
+            "Pending evidence remains private until an authorized advisor reviews it. "
+            "Review does not by itself confirm a mechanical diagnosis."
+        ),
+    }
+
+
 @before_render_template.connect
 def _provide_vehicle_evidence_record(sender, template, context, **extra):
     """Inject the safe evidence projection only into the shared vehicle record page."""
@@ -91,7 +121,11 @@ def _provide_vehicle_evidence_record(sender, template, context, **extra):
         return
 
     if not current_app.config.get("EVIDENCE_TIMELINE_ENABLED", False):
-        if not context.get("is_admin_view"):
+        if context.get("is_admin_view"):
+            context["evidence_record_surface"] = _advisor_review_only_surface(
+                car_id=car.id,
+            )
+        else:
             context["evidence_record_surface"] = _owner_submission_only_surface(
                 car_id=car.id,
             )

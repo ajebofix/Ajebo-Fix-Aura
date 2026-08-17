@@ -51,8 +51,17 @@
     line-height: 1.45;
 }
 
-.evidence-consent-row input {
+.evidence-consent-row input[type="checkbox"] {
+    width: auto;
+    min-width: 0;
+    flex: 0 0 auto;
     margin-top: 3px;
+}
+
+.evidence-consent-row span {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-wrap: anywhere;
 }
 
 .evidence-interaction-actions {

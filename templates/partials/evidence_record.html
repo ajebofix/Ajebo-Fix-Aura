@@ -1,3 +1,31 @@
+{% if evidence_record_surface.mode == 'submission_only' %}
+<section class="card evidence-record-card" aria-labelledby="evidence-submit-entry-heading">
+    <div class="evidence-record-header">
+        <div>
+            <p class="evidence-record-kicker">Private Care Record</p>
+            <h2 id="evidence-submit-entry-heading">Supporting Evidence</h2>
+            <p class="muted evidence-record-intro">
+                Add a vehicle image when a photo helps document an observation for professional review.
+            </p>
+        </div>
+        <span class="pill">Owner</span>
+    </div>
+
+    <div class="button-stack" style="margin-bottom: 20px;">
+        <a
+            href="{{ url_for('evidence_interaction.submit_vehicle_evidence', car_id=car.id) }}"
+            class="btn btn-primary"
+        >
+            Submit Image for Review
+        </a>
+    </div>
+
+    <div class="evidence-record-safety">
+        {{ evidence_record_surface.safety_note }}
+        Private media remains protected and is not exposed from the vehicle record.
+    </div>
+</section>
+{% else %}
 <section class="card evidence-record-card" aria-labelledby="evidence-record-heading">
     <div class="evidence-record-header">
         <div>
@@ -109,3 +137,4 @@
         Private media remains protected and is not exposed from this record view.
     </div>
 </section>
+{% endif %}

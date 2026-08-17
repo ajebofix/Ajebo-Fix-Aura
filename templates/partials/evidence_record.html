@@ -25,6 +25,37 @@
         Private media remains protected and is not exposed from the vehicle record.
     </div>
 </section>
+{% elif evidence_record_surface.mode == 'advisor_review_only' %}
+<section class="card evidence-record-card" aria-labelledby="evidence-review-entry-heading">
+    <div class="evidence-record-header">
+        <div>
+            <p class="evidence-record-kicker">Professional Review</p>
+            <h2 id="evidence-review-entry-heading">Pending Evidence</h2>
+            <p class="muted evidence-record-intro">
+                Review privately submitted vehicle evidence before anything is added to the reviewed care record.
+            </p>
+        </div>
+        {% if evidence_record_surface.record_count %}
+        <span class="evidence-record-count">
+            {{ evidence_record_surface.record_count }} pending
+        </span>
+        {% endif %}
+    </div>
+
+    <div class="button-stack" style="margin-bottom: 20px;">
+        <a
+            href="{{ url_for('evidence_interaction.advisor_pending_vehicle_evidence', car_id=car.id) }}"
+            class="btn btn-primary"
+        >
+            Review Pending Evidence
+        </a>
+    </div>
+
+    <div class="evidence-record-safety">
+        {{ evidence_record_surface.safety_note }}
+        Private media is retrieved only through Aura's protected review flow.
+    </div>
+</section>
 {% else %}
 <section class="card evidence-record-card" aria-labelledby="evidence-record-heading">
     <div class="evidence-record-header">

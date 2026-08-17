@@ -28,6 +28,7 @@ on:
       - "tests/test_evidence_review_routes.py"
       - "tests/test_evidence_record_ui.py"
       - "tests/test_owner_evidence_submission_entry.py"
+      - "tests/test_advisor_evidence_review_entry.py"
       - ".github/workflows/evidence-interaction-ci.yml"
 
 permissions:
@@ -75,7 +76,8 @@ jobs:
             services/evidence_interaction.py
           python -m py_compile \
             tests/test_evidence_interaction_ui.py \
-            tests/test_owner_evidence_submission_entry.py
+            tests/test_owner_evidence_submission_entry.py \
+            tests/test_advisor_evidence_review_entry.py
 
       - name: Test interaction and existing evidence boundaries
         run: |
@@ -85,7 +87,8 @@ jobs:
             tests/test_evidence_private_routes.py \
             tests/test_evidence_review_routes.py \
             tests/test_evidence_record_ui.py \
-            tests/test_owner_evidence_submission_entry.py
+            tests/test_owner_evidence_submission_entry.py \
+            tests/test_advisor_evidence_review_entry.py
 
       - name: Ruff evidence interaction
         run: |
@@ -95,7 +98,8 @@ jobs:
             evidence/timeline_routes.py \
             services/evidence_interaction.py \
             tests/test_evidence_interaction_ui.py \
-            tests/test_owner_evidence_submission_entry.py
+            tests/test_owner_evidence_submission_entry.py \
+            tests/test_advisor_evidence_review_entry.py
 
       - name: Bandit evidence interaction
         run: |

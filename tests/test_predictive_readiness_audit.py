@@ -14,7 +14,6 @@ from sqlalchemy import (
     Table,
     create_engine,
     insert,
-    select,
     text,
 )
 from sqlalchemy.exc import OperationalError
@@ -240,6 +239,12 @@ def test_report_omits_row_level_private_values(readiness_engine):
 
     serialized = json.dumps(report, sort_keys=True)
 
+    # Aggregate provenance may legitimately contain the category value "vin";
+    # the privacy boundary prohibits actual VIN values and row-level VIN fields.
+    assert report["provenance_distributions"]["cars"]["vehicle_identity_source"] == {
+        "vin": 1,
+        "manual": 1,
+    }
     assert "PRIVATEVIN000000001" not in serialized
     assert "PRIVATEVIN000000002" not in serialized
     assert "PRIVATE FREE TEXT SHOULD NEVER APPEAR" not in serialized
@@ -247,12 +252,11 @@ def test_report_omits_row_level_private_values(readiness_engine):
     assert "secret/private/object-key.png" not in serialized
     assert "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" not in serialized
 
-    forbidden_keys = {
+    forbidden_structural_keys = {
         "car_id",
         "user_id",
         "uploaded_by_user_id",
         "reviewed_by_user_id",
-        "vin",
         "email",
         "phone_number",
         "object_key",
@@ -263,7 +267,7 @@ def test_report_omits_row_level_private_values(readiness_engine):
 
     def walk(value):
         if isinstance(value, dict):
-            assert forbidden_keys.isdisjoint(value.keys())
+            assert forbidden_structural_keys.isdisjoint(value.keys())
             for child in value.values():
                 walk(child)
         elif isinstance(value, list):
@@ -289,12 +293,12 @@ def test_markdown_contains_only_aggregate_readiness_summary(readiness_engine):
 
 def test_report_builder_does_not_change_source_rows(readiness_engine):
     with readiness_engine.connect() as connection:
-        before = connection.execute(select(text("COUNT(*)")).select_from(text("vehicle_events"))).scalar()
+        before = connection.execute(text("SELECT COUNT(*) FROM vehicle_events")).scalar()
 
     with open_read_only_connection(readiness_engine) as connection:
         build_readiness_report(connection)
 
     with readiness_engine.connect() as connection:
-        after = connection.execute(select(text("COUNT(*)")).select_from(text("vehicle_events"))).scalar()
+        after = connection.execute(text("SELECT COUNT(*) FROM vehicle_events")).scalar()
 
     assert before == after == 4

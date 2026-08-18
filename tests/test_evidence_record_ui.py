@@ -153,7 +153,10 @@ def test_verified_owner_sees_empty_reviewed_evidence_record_when_enabled(app, cl
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Reviewed Evidence Record" in html
+    assert "Evidence submitted for this vehicle that has completed professional review." in html
+    assert "Supporting material that has been reviewed and attached" not in html
     assert "No reviewed evidence has been added yet." in html
+    assert "after professional review is completed" in html
     assert "evidence-record.css" in html
 
 
@@ -276,6 +279,7 @@ def test_advisor_vehicle_page_shows_governance_context_without_storage_details(a
     html = response.get_data(as_text=True)
 
     assert "Reviewed Evidence Record" in html
+    assert "Evidence submitted for this vehicle that has completed professional review." in html
     assert "Assessment evidence" in html
     assert "Not used" in html
     assert "Visibility: Advisor" in html

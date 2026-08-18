@@ -19,7 +19,7 @@ Private professional review before care-record inclusion.
                 {{ review_workspace.evidence.uploaded_at[:16]|replace('T', ' ') }}.
             </p>
         </div>
-        <span class="pill">Pending Review</span>
+        <span id="evidence-review-state-pill" class="pill">Pending Review</span>
     </div>
 
     <div class="evidence-review-grid">
@@ -137,6 +137,8 @@ Private professional review before care-record inclusion.
     const previewPlaceholder = document.getElementById("evidence-preview-placeholder");
     const previewStatus = document.getElementById("evidence-preview-status");
     const reviewStatus = document.getElementById("evidence-review-status");
+    const reviewStatePill = document.getElementById("evidence-review-state-pill");
+    const reviewControls = document.querySelector(".evidence-review-controls");
     const acceptForm = document.getElementById("accept-evidence-form");
     const rejectForm = document.getElementById("reject-evidence-form");
     const reviewButtons = Array.from(document.querySelectorAll(".evidence-review-action"));
@@ -161,6 +163,24 @@ Private professional review before care-record inclusion.
             reviewStatus.textContent = "Private image loaded. Professional review actions are now available.";
             reviewStatus.className = "evidence-interaction-status success";
         }
+    }
+
+    function showRecordedReview(decision) {
+        if (reviewControls) {
+            reviewControls.hidden = true;
+        }
+        if (reviewStatePill) {
+            reviewStatePill.textContent = decision === "accepted" ? "Accepted" : "Not used";
+        }
+        if (!reviewStatus) {
+            return;
+        }
+        if (decision === "accepted") {
+            reviewStatus.textContent = "Review recorded — Accepted. This evidence is classified as supporting care-record evidence; it is not a mechanical diagnosis.";
+        } else {
+            reviewStatus.textContent = "Review recorded — Not used. This evidence remains governed by retention policy and is not part of the supporting care record.";
+        }
+        reviewStatus.className = "evidence-interaction-status success";
     }
 
     async function loadPrivateImage() {
@@ -237,8 +257,7 @@ Private professional review before care-record inclusion.
                 throw new Error(payload.message || "The evidence review could not be recorded.");
             }
 
-            reviewStatus.textContent = payload.message || "Evidence review recorded.";
-            reviewStatus.className = "evidence-interaction-status success";
+            showRecordedReview(decision);
             if (decision === "accepted" && linkSection) {
                 linkSection.hidden = false;
             }

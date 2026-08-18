@@ -25,6 +25,10 @@ _PURPOSE_LABELS = {
     "service_document": "Service document",
     "driver_observation": "Driver observation",
 }
+_SUBMISSION_PURPOSE_LABELS = {
+    **_PURPOSE_LABELS,
+    "concern_support": "Dashboard warning or reported concern",
+}
 _OWNER_PURPOSES = (
     "concern_support",
     "consultation_support",
@@ -225,7 +229,7 @@ def get_evidence_submission_context(
         vehicle_label=_vehicle_label(car),
         viewer_authority=authority,
         purposes=tuple(
-            ChoiceOption(value=value, label=_PURPOSE_LABELS[value])
+            ChoiceOption(value=value, label=_SUBMISSION_PURPOSE_LABELS[value])
             for value in purposes
         ),
     )
@@ -257,7 +261,7 @@ def get_advisor_pending_evidence_queue(
     )
 
     return PendingEvidenceQueue(
-        car_id=car_id,
+        car_id=car.id,
         vehicle_label=_vehicle_label(car),
         records=tuple(_pending_item(row) for row in rows),
     )

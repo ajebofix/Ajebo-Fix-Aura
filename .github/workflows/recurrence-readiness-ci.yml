@@ -1,0 +1,80 @@
+name: Aura Wave 1.5 Recurrence Readiness CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "scripts/audit_predictive_readiness.py"
+      - "scripts/audit_recurrence_target_readiness.py"
+      - "tests/test_predictive_readiness_audit.py"
+      - "tests/test_recurrence_target_readiness_audit.py"
+      - "docs/AURA_WAVE_1_5_RECURRENCE_PREDICTION_TARGET_CONTRACT.md"
+      - "docs/AURA_WAVE_1_5_RECURRENCE_DATA_COLLECTION_PLAN.md"
+      - ".github/workflows/recurrence-readiness-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-recurrence-readiness-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  recurrence-readiness-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -q --upgrade pip
+          pip install -q -r requirements-dev.txt
+
+      - name: Compile recurrence readiness sources
+        run: |
+          python -m py_compile \
+            scripts/audit_predictive_readiness.py \
+            scripts/audit_recurrence_target_readiness.py \
+            tests/test_predictive_readiness_audit.py \
+            tests/test_recurrence_target_readiness_audit.py
+
+      - name: Test broad and target-specific read-only contracts
+        run: |
+          pytest -q --tb=short \
+            tests/test_predictive_readiness_audit.py \
+            tests/test_recurrence_target_readiness_audit.py
+
+      - name: Ruff recurrence readiness
+        run: |
+          ruff check \
+            scripts/audit_predictive_readiness.py \
+            scripts/audit_recurrence_target_readiness.py \
+            tests/test_predictive_readiness_audit.py \
+            tests/test_recurrence_target_readiness_audit.py
+
+      - name: Bandit recurrence readiness
+        run: |
+          bandit -q \
+            scripts/audit_predictive_readiness.py \
+            scripts/audit_recurrence_target_readiness.py

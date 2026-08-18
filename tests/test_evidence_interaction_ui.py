@@ -161,7 +161,7 @@ def test_verified_owner_submission_page_uses_existing_upload_endpoint(app, clien
 
     assert "Submit one image for review" in html
     assert f'action="/evidence/vehicles/{car_id}/images"' in html
-    assert "Reported concern support" in html
+    assert "Dashboard warning or reported concern" in html
     assert "Consultation support" in html
     assert "evidence-interaction.css" in html
     assert "stored privately" in html.lower()
@@ -183,7 +183,7 @@ def test_driver_submission_choices_are_limited_to_operational_purposes(app, clie
     response = client.get(f"/evidence/vehicles/{car_id}/submit")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Reported concern support" in html
+    assert "Dashboard warning or reported concern" in html
     assert "Driver observation" in html
     assert "Consultation support" not in html
     assert "Assessment evidence" not in html
@@ -289,6 +289,9 @@ def test_advisor_workspace_uses_existing_private_and_review_endpoints(app, clien
     assert "Reject Evidence" in html
     assert "evidence-review-action\" type=\"submit\" disabled" in html
     assert "Review actions unlock only after the private image has been loaded" in html
+    assert "Review recorded — Accepted" in html
+    assert "Review recorded — Not used" in html
+    assert "reviewControls.hidden = true" in html
     assert "content_endpoint" in html
     assert object_key not in html
     assert digest not in html

@@ -14,8 +14,10 @@ on:
       - "services/evidence_timeline.py"
       - "services/concern_progression.py"
       - "security/email_verification.py"
+      - "templates/partials/evidence_record.html"
       - "tests/test_evidence_timeline.py"
       - "tests/test_evidence_timeline_routes.py"
+      - "tests/test_evidence_record_ui.py"
       - "tests/test_concern_progression.py"
       - "scripts/verify_evidence_timeline_postgres.py"
       - ".github/workflows/evidence-timeline-ci.yml"
@@ -57,7 +59,10 @@ jobs:
         run: |
           python -m py_compile app.py evidence/timeline_routes.py services/evidence_timeline.py
           python -m py_compile security/email_verification.py
-          python -m py_compile tests/test_evidence_timeline.py tests/test_evidence_timeline_routes.py
+          python -m py_compile \
+            tests/test_evidence_timeline.py \
+            tests/test_evidence_timeline_routes.py \
+            tests/test_evidence_record_ui.py
           python -m py_compile scripts/verify_evidence_timeline_postgres.py
 
       - name: Test safe timeline projection and progression isolation
@@ -65,6 +70,7 @@ jobs:
           pytest -q --tb=short \
             tests/test_evidence_timeline.py \
             tests/test_evidence_timeline_routes.py \
+            tests/test_evidence_record_ui.py \
             tests/test_concern_progression.py
 
       - name: Ruff evidence timeline
@@ -73,6 +79,7 @@ jobs:
             app.py evidence/timeline_routes.py services/evidence_timeline.py \
             security/email_verification.py \
             tests/test_evidence_timeline.py tests/test_evidence_timeline_routes.py \
+            tests/test_evidence_record_ui.py \
             scripts/verify_evidence_timeline_postgres.py
 
       - name: Bandit evidence timeline

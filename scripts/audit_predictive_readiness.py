@@ -1,28 +1,26 @@
 """Generate an aggregate, read-only Wave 1.5 predictive-health readiness report.
 
 This tool does not create predictions, export training rows or mutate Aura data.
-It is designed to be run from an authorised deployment shell with the normal
-application database configuration loaded::
+Run it from an authorised deployment shell with Aura's normal database settings:
 
     python scripts/audit_predictive_readiness.py --format markdown
 
-The report intentionally contains aggregate counts/distributions only. It does
-not print vehicle IDs, VINs, user identifiers, chat text, advisor notes, media
-keys, hashes or raw event payloads.
+The report contains aggregate counts/distributions only. It never prints VINs,
+vehicle/user identifiers, free text, media keys, hashes or raw event payloads.
 """
 
 from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 import json
 from pathlib import Path
 import statistics
 import sys
 from typing import Any, Iterator
 
-from sqlalchemy import inspect, text
+from sqlalchemy import MetaData, Table, func, inspect, select, text
 from sqlalchemy.engine import Connection, Engine
 
 
@@ -33,10 +31,6 @@ if str(ROOT) not in sys.path:
 
 REPORT_VERSION = 1
 
-# These are care/intelligence tables whose aggregate population is useful for
-# predictive-readiness analysis. Missing tables are reported as absent rather
-# than treated as an error because Aura is still migrating domains onto the
-# canonical event architecture incrementally.
 TABLE_CANDIDATES = (
     "cars",
     "vehicle_events",
@@ -61,8 +55,8 @@ TABLE_CANDIDATES = (
     "vehicle_health_alerts",
 )
 
-# Wave 1.2 reserved these domain families for later canonical migration after
-# the Reported Concern pattern proof. Presence here is measured, not invented.
+# Wave 1.2 proved the canonical event pattern with Reported Concerns first.
+# Other families are measured here as readiness coverage, never invented.
 EXPECTED_CANONICAL_EVENT_FAMILIES = (
     "concern",
     "consultation",
@@ -103,56 +97,45 @@ EVENT_MISSINGNESS_COLUMNS = (
 )
 
 
-def _quote(connection: Connection, identifier: str) -> str:
-    """Quote one identifier obtained from trusted schema metadata/constants."""
-
-    return connection.dialect.identifier_preparer.quote(identifier)
-
-
-def _scalar(connection: Connection, statement: str) -> Any:
-    return connection.execute(text(statement)).scalar()
-
-
-def _row_count(connection: Connection, table_name: str) -> int:
-    table = _quote(connection, table_name)
-    return int(_scalar(connection, f"SELECT COUNT(*) FROM {table}") or 0)
+def _reflect_candidate_tables(connection: Connection) -> dict[str, Table]:
+    existing = set(inspect(connection).get_table_names())
+    metadata = MetaData()
+    return {
+        name: Table(name, metadata, autoload_with=connection)
+        for name in TABLE_CANDIDATES
+        if name in existing
+    }
 
 
-def _distinct_count(connection: Connection, table_name: str, column_name: str) -> int:
-    table = _quote(connection, table_name)
-    column = _quote(connection, column_name)
-    return int(
-        _scalar(
-            connection,
-            f"SELECT COUNT(DISTINCT {column}) FROM {table} WHERE {column} IS NOT NULL",
-        )
-        or 0
-    )
+def _row_count(connection: Connection, table: Table) -> int:
+    return int(connection.execute(select(func.count()).select_from(table)).scalar() or 0)
 
 
-def _missing_count(connection: Connection, table_name: str, column_name: str) -> int:
-    table = _quote(connection, table_name)
-    column = _quote(connection, column_name)
-    return int(
-        _scalar(connection, f"SELECT COUNT(*) FROM {table} WHERE {column} IS NULL")
-        or 0
-    )
+def _distinct_count(connection: Connection, table: Table, column_name: str) -> int:
+    column = table.c[column_name]
+    statement = select(func.count(func.distinct(column))).where(column.is_not(None))
+    return int(connection.execute(statement).scalar() or 0)
+
+
+def _missing_count(connection: Connection, table: Table, column_name: str) -> int:
+    column = table.c[column_name]
+    statement = select(func.count()).select_from(table).where(column.is_(None))
+    return int(connection.execute(statement).scalar() or 0)
 
 
 def _group_counts(
     connection: Connection,
-    table_name: str,
+    table: Table,
     column_name: str,
 ) -> dict[str, int]:
-    table = _quote(connection, table_name)
-    column = _quote(connection, column_name)
-    rows = connection.execute(
-        text(
-            f"SELECT {column} AS value, COUNT(*) AS count "
-            f"FROM {table} GROUP BY {column} ORDER BY count DESC"
-        )
-    ).mappings()
-
+    column = table.c[column_name]
+    statement = (
+        select(column.label("value"), func.count().label("count"))
+        .select_from(table)
+        .group_by(column)
+        .order_by(func.count().desc())
+    )
+    rows = connection.execute(statement).mappings()
     result: dict[str, int] = {}
     for row in rows:
         value = row["value"]
@@ -173,31 +156,54 @@ def _event_family(event_type: str) -> str:
 def _event_family_counts(event_type_counts: dict[str, int]) -> dict[str, int]:
     families: dict[str, int] = {}
     for event_type, count in event_type_counts.items():
-        if event_type == "(null)":
-            family = "unknown"
-        else:
-            family = _event_family(event_type)
+        family = "unknown" if event_type == "(null)" else _event_family(event_type)
         families[family] = families.get(family, 0) + int(count)
     return dict(sorted(families.items(), key=lambda item: (-item[1], item[0])))
 
 
-def _iso(value: datetime | date | None) -> str | None:
+def _coerce_datetime(value: object) -> datetime | None:
+    """Normalise reflected SQL temporal values without exposing row identity."""
+
     if value is None:
         return None
-    if isinstance(value, datetime) and value.tzinfo is not None:
-        value = value.astimezone(timezone.utc).replace(tzinfo=None)
-    return value.isoformat()
+
+    parsed: datetime | None = None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, time.min)
+    elif isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        try:
+            parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = datetime.combine(date.fromisoformat(candidate), time.min)
+            except ValueError:
+                return None
+
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
 
 
 def _event_longitudinal_summary(
     connection: Connection,
-    *,
-    columns: set[str],
+    table: Table,
 ) -> dict[str, Any]:
+    columns = set(table.c.keys())
     if "car_id" not in columns:
         return {"available": False, "reason": "vehicle_events.car_id missing"}
 
-    time_column = next(
+    time_column_name = next(
         (
             candidate
             for candidate in ("occurred_at", "recorded_at", "created_at", "event_date")
@@ -206,16 +212,15 @@ def _event_longitudinal_summary(
         None,
     )
 
-    table = _quote(connection, "vehicle_events")
-    car_column = _quote(connection, "car_id")
-    count_rows = connection.execute(
-        text(
-            f"SELECT {car_column} AS car_id, COUNT(*) AS event_count "
-            f"FROM {table} GROUP BY {car_column}"
-        )
-    ).mappings().all()
-
+    car_column = table.c.car_id
+    count_statement = (
+        select(car_column.label("car_id"), func.count().label("event_count"))
+        .select_from(table)
+        .group_by(car_column)
+    )
+    count_rows = connection.execute(count_statement).mappings().all()
     event_counts = [int(row["event_count"]) for row in count_rows]
+
     summary: dict[str, Any] = {
         "available": True,
         "vehicles_with_events": len(event_counts),
@@ -228,7 +233,7 @@ def _event_longitudinal_summary(
         "max_events_for_one_vehicle": max(event_counts, default=0),
     }
 
-    if time_column is None:
+    if time_column_name is None:
         summary.update(
             {
                 "time_column": None,
@@ -240,34 +245,36 @@ def _event_longitudinal_summary(
         )
         return summary
 
-    time = _quote(connection, time_column)
-    rows = connection.execute(
-        text(
-            f"SELECT {car_column} AS car_id, MIN({time}) AS first_at, "
-            f"MAX({time}) AS last_at FROM {table} "
-            f"WHERE {time} IS NOT NULL GROUP BY {car_column}"
+    time_column = table.c[time_column_name]
+    span_statement = (
+        select(
+            car_column.label("car_id"),
+            func.min(time_column).label("first_at"),
+            func.max(time_column).label("last_at"),
         )
-    ).mappings().all()
+        .select_from(table)
+        .where(time_column.is_not(None))
+        .group_by(car_column)
+    )
+    rows = connection.execute(span_statement).mappings().all()
 
     spans: list[float] = []
-    earliest: datetime | date | None = None
-    latest: datetime | date | None = None
+    earliest: datetime | None = None
+    latest: datetime | None = None
     for row in rows:
-        first_at = row["first_at"]
-        last_at = row["last_at"]
+        first_at = _coerce_datetime(row["first_at"])
+        last_at = _coerce_datetime(row["last_at"])
         if first_at is None or last_at is None:
             continue
         if earliest is None or first_at < earliest:
             earliest = first_at
         if latest is None or last_at > latest:
             latest = last_at
-        delta = last_at - first_at
-        if hasattr(delta, "total_seconds"):
-            spans.append(max(0.0, float(delta.total_seconds()) / 86400.0))
+        spans.append(max(0.0, (last_at - first_at).total_seconds() / 86400.0))
 
     summary.update(
         {
-            "time_column": time_column,
+            "time_column": time_column_name,
             "earliest_event_at": _iso(earliest),
             "latest_event_at": _iso(latest),
             "median_vehicle_observation_span_days": (
@@ -283,44 +290,38 @@ def _event_longitudinal_summary(
 
 def _distribution_if_present(
     connection: Connection,
-    table_name: str,
-    columns: set[str],
+    table: Table,
     candidates: tuple[str, ...],
 ) -> dict[str, dict[str, int]]:
-    output: dict[str, dict[str, int]] = {}
-    for column in candidates:
-        if column in columns:
-            output[column] = _group_counts(connection, table_name, column)
-    return output
+    columns = set(table.c.keys())
+    return {
+        column: _group_counts(connection, table, column)
+        for column in candidates
+        if column in columns
+    }
 
 
 def build_readiness_report(connection: Connection) -> dict[str, Any]:
-    """Build a PII-free aggregate report from an already read-only connection."""
+    """Build one aggregate, PII-free report from a read-only connection."""
 
-    inspector = inspect(connection)
-    existing_tables = set(inspector.get_table_names())
-
-    table_counts: dict[str, int] = {}
-    table_columns: dict[str, set[str]] = {}
-    for table_name in TABLE_CANDIDATES:
-        if table_name not in existing_tables:
-            continue
-        columns = {column["name"] for column in inspector.get_columns(table_name)}
-        table_columns[table_name] = columns
-        table_counts[table_name] = _row_count(connection, table_name)
+    tables = _reflect_candidate_tables(connection)
+    table_counts = {
+        name: _row_count(connection, table)
+        for name, table in tables.items()
+    }
 
     event_report: dict[str, Any] = {
-        "present": "vehicle_events" in table_counts,
+        "present": "vehicle_events" in tables,
         "total": table_counts.get("vehicle_events", 0),
     }
     event_families: dict[str, int] = {}
 
-    if "vehicle_events" in table_counts:
-        columns = table_columns["vehicle_events"]
+    if "vehicle_events" in tables:
+        event_table = tables["vehicle_events"]
+        event_columns = set(event_table.c.keys())
         distributions = _distribution_if_present(
             connection,
-            "vehicle_events",
-            columns,
+            event_table,
             (
                 "event_type",
                 "subject_type",
@@ -331,52 +332,43 @@ def build_readiness_report(connection: Connection) -> dict[str, Any]:
             ),
         )
         event_report["distributions"] = distributions
-        event_type_counts = distributions.get("event_type", {})
-        event_families = _event_family_counts(event_type_counts)
+        event_families = _event_family_counts(distributions.get("event_type", {}))
         event_report["families"] = event_families
         event_report["distinct_vehicles"] = (
-            _distinct_count(connection, "vehicle_events", "car_id")
-            if "car_id" in columns
+            _distinct_count(connection, event_table, "car_id")
+            if "car_id" in event_columns
             else 0
         )
         event_report["missingness"] = {
-            column: _missing_count(connection, "vehicle_events", column)
+            column: _missing_count(connection, event_table, column)
             for column in EVENT_MISSINGNESS_COLUMNS
-            if column in columns
+            if column in event_columns
         }
         event_report["longitudinal"] = _event_longitudinal_summary(
             connection,
-            columns=columns,
+            event_table,
         )
     else:
-        event_report["distributions"] = {}
-        event_report["families"] = {}
-        event_report["distinct_vehicles"] = 0
-        event_report["missingness"] = {}
-        event_report["longitudinal"] = {
-            "available": False,
-            "reason": "vehicle_events table absent",
-        }
+        event_report.update(
+            {
+                "distributions": {},
+                "families": {},
+                "distinct_vehicles": 0,
+                "missingness": {},
+                "longitudinal": {
+                    "available": False,
+                    "reason": "vehicle_events table absent",
+                },
+            }
+        )
 
     status_distributions: dict[str, dict[str, dict[str, int]]] = {}
     provenance_distributions: dict[str, dict[str, dict[str, int]]] = {}
-
-    for table_name, columns in table_columns.items():
-        status = _distribution_if_present(
-            connection,
-            table_name,
-            columns,
-            STATUS_COLUMNS,
-        )
+    for table_name, table in tables.items():
+        status = _distribution_if_present(connection, table, STATUS_COLUMNS)
         if status:
             status_distributions[table_name] = status
-
-        provenance = _distribution_if_present(
-            connection,
-            table_name,
-            columns,
-            PROVENANCE_COLUMNS,
-        )
+        provenance = _distribution_if_present(connection, table, PROVENANCE_COLUMNS)
         if provenance:
             provenance_distributions[table_name] = provenance
 
@@ -427,7 +419,7 @@ def build_readiness_report(connection: Connection) -> dict[str, Any]:
     if not meaningful_directions:
         constraints.append("no_mechanical_progression_outcomes_observed")
 
-    report = {
+    return {
         "report_version": REPORT_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "database_backend": connection.dialect.name,
@@ -463,12 +455,11 @@ def build_readiness_report(connection: Connection) -> dict[str, Any]:
             ),
         },
     }
-    return report
 
 
 @contextmanager
 def open_read_only_connection(engine: Engine) -> Iterator[Connection]:
-    """Yield a database connection protected against writes where supported."""
+    """Yield a connection whose current audit transaction rejects writes."""
 
     connection = engine.connect()
     transaction = connection.begin()
@@ -481,6 +472,8 @@ def open_read_only_connection(engine: Engine) -> Iterator[Connection]:
     finally:
         if transaction.is_active:
             transaction.rollback()
+        if engine.dialect.name == "sqlite":
+            connection.exec_driver_sql("PRAGMA query_only = OFF")
         connection.close()
 
 
@@ -510,13 +503,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     ]
     lines.extend(f"- `{item}`" for item in report["constraints"])
 
-    lines.extend(
-        [
-            "",
-            "## Aggregate table counts",
-            "",
-        ]
-    )
+    lines.extend(["", "## Aggregate table counts", ""])
     lines.extend(_markdown_mapping(report["table_counts"]))
 
     lines.extend(
@@ -564,7 +551,9 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     lines.extend(["", "## Progression-direction signals", ""])
     lines.extend(
-        _markdown_mapping(report["potential_outcome_signals"]["canonical_progression_directions"])
+        _markdown_mapping(
+            report["potential_outcome_signals"]["canonical_progression_directions"]
+        )
     )
 
     lines.extend(
@@ -572,7 +561,11 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "## Privacy boundary",
             "",
-            "This report contains aggregates only. It deliberately omits vehicle IDs, VINs, user identifiers, free text, raw event payloads and evidence-storage identifiers.",
+            (
+                "This report contains aggregates only. It deliberately omits vehicle "
+                "IDs, VINs, user identifiers, free text, raw event payloads and "
+                "evidence-storage identifiers."
+            ),
             "",
             "## Next gate",
             "",
@@ -606,18 +599,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
-    # Import only for the executable path so unit tests can exercise the report
-    # builder without constructing Aura's full Flask application.
+    # Delay application construction so unit tests can exercise the report
+    # builder without creating Aura's full Flask runtime.
     from app import app  # noqa: PLC0415
     from extensions import db  # noqa: PLC0415
 
     with app.app_context(), open_read_only_connection(db.engine) as connection:
         report = build_readiness_report(connection)
 
-    if args.format == "json":
-        rendered = json.dumps(report, indent=2, sort_keys=True)
-    else:
-        rendered = render_markdown(report)
+    rendered = (
+        json.dumps(report, indent=2, sort_keys=True)
+        if args.format == "json"
+        else render_markdown(report)
+    )
 
     if args.output:
         args.output.write_text(rendered + "\n", encoding="utf-8")

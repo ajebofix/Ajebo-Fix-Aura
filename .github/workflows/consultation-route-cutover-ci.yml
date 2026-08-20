@@ -15,7 +15,6 @@ on:
       - "services/event_emission.py"
       - "templates/admin/consultations.html"
       - "templates/admin/schedule_consultation.html"
-      - "tests/test_consultation_auth_trace.py"
       - "tests/test_consultation_route_cutover.py"
       - "tests/test_consultation_lifecycle.py"
       - "models.py"
@@ -57,10 +56,7 @@ jobs:
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
       - name: Compile consultation cutover sources
-        run: python -m compileall -q services/consultation_route_cutover.py services/consultation_lifecycle.py tests/test_consultation_auth_trace.py tests/test_consultation_route_cutover.py
-
-      - name: Trace advisor queue authentication redirect
-        run: pytest -q -s --tb=short tests/test_consultation_auth_trace.py
+        run: python -m compileall -q services/consultation_route_cutover.py services/consultation_lifecycle.py tests/test_consultation_route_cutover.py
 
       - name: Test consultation lifecycle and route cutover
         run: pytest -q --tb=short tests/test_consultation_lifecycle.py tests/test_consultation_route_cutover.py

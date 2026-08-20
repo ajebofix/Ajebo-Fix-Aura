@@ -13,6 +13,7 @@ on:
       - "services/consultation_route_cutover.py"
       - "services/consultation_lifecycle.py"
       - "services/event_emission.py"
+      - "templates/admin/complete_consultation.html"
       - "templates/admin/consultations.html"
       - "templates/admin/schedule_consultation.html"
       - "tests/test_consultation_route_cutover.py"

@@ -35,7 +35,17 @@ CONCERN_EVENT_TYPES = frozenset(
     }
 )
 EVIDENCE_EVENT_TYPES = frozenset({"evidence.reviewed", "evidence.linked"})
-CANONICAL_EVENT_TYPES = CONCERN_EVENT_TYPES | EVIDENCE_EVENT_TYPES
+CONSULTATION_EVENT_TYPES = frozenset(
+    {
+        "consultation.requested",
+        "consultation.scheduled",
+        "consultation.started",
+        "consultation.completed",
+    }
+)
+CANONICAL_EVENT_TYPES = (
+    CONCERN_EVENT_TYPES | EVIDENCE_EVENT_TYPES | CONSULTATION_EVENT_TYPES
+)
 
 ALLOWED_VISIBILITIES = frozenset({"client", "advisor", "internal"})
 ALLOWED_PROGRESSION_DIRECTIONS = frozenset(
@@ -54,6 +64,7 @@ RESERVED_ACTOR_TYPES = frozenset({"system", "provider"})
 _EVENT_SUBJECT_RULES = {
     **{event_type: "reported_concern" for event_type in CONCERN_EVENT_TYPES},
     **{event_type: "vehicle_evidence" for event_type in EVIDENCE_EVENT_TYPES},
+    **{event_type: "consultation" for event_type in CONSULTATION_EVENT_TYPES},
 }
 
 _EVENT_DIRECTION_RULES = {
@@ -65,6 +76,10 @@ _EVENT_DIRECTION_RULES = {
     "concern.corrected": frozenset({"not_applicable"}),
     "evidence.reviewed": frozenset({"not_applicable"}),
     "evidence.linked": frozenset({"not_applicable"}),
+    "consultation.requested": frozenset({"not_applicable"}),
+    "consultation.scheduled": frozenset({"not_applicable"}),
+    "consultation.started": frozenset({"not_applicable"}),
+    "consultation.completed": frozenset({"not_applicable"}),
 }
 
 _TRANSITION_EVENT_TYPES = frozenset(
@@ -277,8 +292,35 @@ def _validate_event_contract(
     if event_type == "evidence.linked" and (
         previous_state is not None or new_state is not None
     ):
+        raise EventEmissionError("evidence.linked is not a state transition")
+
+    if event_type == "consultation.requested" and (
+        previous_state is not None or new_state != "requested"
+    ):
         raise EventEmissionError(
-            "evidence.linked is not a state transition"
+            "consultation.requested requires previous_state=None and new_state='requested'"
+        )
+
+    if event_type == "consultation.scheduled" and (
+        previous_state not in {None, "requested", "deferred"}
+        or new_state != "scheduled"
+    ):
+        raise EventEmissionError(
+            "consultation.scheduled requires none/requested/deferred -> scheduled"
+        )
+
+    if event_type == "consultation.started" and (
+        previous_state != "scheduled" or new_state != "in_progress"
+    ):
+        raise EventEmissionError(
+            "consultation.started requires scheduled -> in_progress"
+        )
+
+    if event_type == "consultation.completed" and (
+        previous_state != "in_progress" or new_state != "completed"
+    ):
+        raise EventEmissionError(
+            "consultation.completed requires in_progress -> completed"
         )
 
     if event_type == "concern.corrected" and correction_of_event_id is None:
@@ -404,7 +446,8 @@ def emit_vehicle_event(
 
     The function flushes but never commits. Callers own the surrounding
     transaction so a domain mutation cannot succeed while its event silently
-    fails. Evidence review/link events additionally require advisor authority.
+    fails. Family-specific authority rules are enforced after vehicle authority
+    is resolved.
     """
 
     _validate_event_contract(
@@ -453,6 +496,20 @@ def emit_vehicle_event(
     }:
         raise EventAuthorityError(
             "canonical evidence review/link events require advisor authority"
+        )
+
+    if event_type == "consultation.requested" and actor_authority != "owner":
+        raise EventAuthorityError(
+            "consultation requests require current owner authority"
+        )
+
+    if event_type in {
+        "consultation.scheduled",
+        "consultation.started",
+        "consultation.completed",
+    } and actor_authority not in {"advisor", "administrator"}:
+        raise EventAuthorityError(
+            "professional consultation transitions require advisor authority"
         )
 
     if correction_of_event_id is not None:

@@ -31,3 +31,9 @@ def concern_progression(concern_id: int):
         viewer_user_id=current_user.id,
     )
     return jsonify(summary.to_dict()), 200
+
+
+# Import after both cars.routes and admin.routes have been loaded by app.py.
+# The module registers the Wave 2.2A2 compatibility cutover on admin_bp before
+# that blueprint is registered with the Flask application.
+import services.consultation_route_cutover  # noqa: E402,F401

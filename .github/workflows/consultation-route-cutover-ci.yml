@@ -1,0 +1,66 @@
+name: Aura Consultation Route Cutover CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "admin/progression_routes.py"
+      - "services/consultation_route_cutover.py"
+      - "services/consultation_lifecycle.py"
+      - "services/event_emission.py"
+      - "templates/admin/complete_consultation.html"
+      - "templates/admin/consultations.html"
+      - "templates/admin/schedule_consultation.html"
+      - "tests/test_consultation_route_cutover.py"
+      - "tests/test_consultation_lifecycle.py"
+      - "models.py"
+      - "security/access.py"
+      - "requirements*.txt"
+      - ".github/workflows/consultation-route-cutover-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-consultation-route-cutover-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  sqlite-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile consultation cutover sources
+        run: python -m compileall -q services/consultation_route_cutover.py services/consultation_lifecycle.py tests/test_consultation_route_cutover.py
+
+      - name: Test consultation lifecycle and route cutover
+        run: pytest -q --tb=short tests/test_consultation_lifecycle.py tests/test_consultation_route_cutover.py
+
+      - name: Bandit consultation cutover adapter
+        run: bandit -q services/consultation_route_cutover.py

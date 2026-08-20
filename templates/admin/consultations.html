@@ -7,12 +7,10 @@
 {% block page_title %}Consultation Queue{% endblock %}
 
 {% block page_subtitle %}
-Manage scheduled sessions, live consultations, and completed advisory engagements.
+Review incoming requests, manage confirmed sessions, and follow active consultations through completion.
 {% endblock %}
 
 {% block content %}
-
-
 
 <!-- ============================= -->
 <!-- FLASH -->
@@ -28,7 +26,75 @@ Manage scheduled sessions, live consultations, and completed advisory engagement
 {% endif %}
 {% endwith %}
 
+<!-- ======================== -->
+<!-- REQUESTED -->
+<!-- ======================== -->
 
+<section class="card">
+
+<div class="section-head">
+    <h2>Requested</h2>
+    <span class="badge info">
+        {{ grouped.requested|length if grouped.requested else 0 }}
+    </span>
+</div>
+
+<p class="muted">
+    Owner requests awaiting advisor confirmation. Preferred times shown here are not confirmed appointments.
+</p>
+
+{% if grouped.requested %}
+
+{% for c in grouped.requested %}
+
+<div class="list-item">
+
+    <div class="vehicle-name">
+        {{ c.car.display_name }}
+    </div>
+
+    <div class="meta">
+        {{ c.client.email }}
+    </div>
+
+    <div class="timestamp">
+        Preferred time
+        {{ c.scheduled_for.strftime("%Y-%m-%d %H:%M") if c.scheduled_for else "Not provided" }}
+    </div>
+
+    {% if c.created_at and (now - c.created_at).total_seconds() < 300 %}
+        <span class="badge danger">NEW</span>
+    {% endif %}
+
+    <div class="button-grid">
+
+        <a
+            href="{{ url_for('admin.admin_schedule_requested_consultation', consultation_id=c.id) }}"
+            class="btn btn-primary"
+        >
+            Confirm Schedule
+        </a>
+
+        <a
+            href="{{ url_for('admin.view_vehicle', car_id=c.car_id) }}"
+            class="btn btn-secondary"
+        >
+            View Vehicle
+        </a>
+
+    </div>
+
+</div>
+
+{% endfor %}
+
+{% else %}
+
+<p class="muted">No consultation requests awaiting scheduling.</p>
+
+{% endif %}
+
+</section>
 
 <!-- ======================== -->
 <!-- SCHEDULED -->
@@ -98,8 +164,6 @@ Manage scheduled sessions, live consultations, and completed advisory engagement
 
 </section>
 
-
-
 <!-- ======================== -->
 <!-- IN PROGRESS -->
 <!-- ======================== -->
@@ -143,14 +207,12 @@ Manage scheduled sessions, live consultations, and completed advisory engagement
             </button>
         </form>
 
-        <form
-            method="POST"
-            action="{{ url_for('admin.admin_complete_consultation', consultation_id=c.id) }}"
+        <a
+            href="{{ url_for('admin.admin_complete_consultation', consultation_id=c.id) }}"
+            class="btn btn-success"
         >
-            <button class="btn btn-success btn-block">
-                Complete
-            </button>
-        </form>
+            Complete
+        </a>
 
         <a
             href="{{ url_for('admin.view_vehicle', car_id=c.car_id) }}"
@@ -172,8 +234,6 @@ Manage scheduled sessions, live consultations, and completed advisory engagement
 {% endif %}
 
 </section>
-
-
 
 <!-- ======================== -->
 <!-- COMPLETED -->
@@ -229,5 +289,17 @@ Manage scheduled sessions, live consultations, and completed advisory engagement
 {% endif %}
 
 </section>
+
+{% if grouped.other %}
+<section class="card">
+    <div class="section-head">
+        <h2>Needs Review</h2>
+        <span class="badge warning">{{ grouped.other|length }}</span>
+    </div>
+    <p class="muted">
+        These historical consultation rows use a state outside the active Wave 2.2A queue contract and are not treated as scheduled sessions.
+    </p>
+</section>
+{% endif %}
 
 {% endblock %}

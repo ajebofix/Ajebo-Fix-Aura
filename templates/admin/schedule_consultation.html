@@ -2,17 +2,23 @@
 
 {% extends "base.html" %}
 
-{% block title %}Schedule Consultation{% endblock %}
+{% block title %}
+{% if consultation %}Confirm Consultation Request{% else %}Schedule Consultation{% endif %}
+{% endblock %}
 
-{% block page_title %}Schedule Consultation{% endblock %}
+{% block page_title %}
+{% if consultation %}Confirm Consultation Request{% else %}Schedule Consultation{% endif %}
+{% endblock %}
 
 {% block page_subtitle %}
+{% if consultation %}
+Review the owner's preferred time and confirm the professional consultation schedule.
+{% else %}
 Arrange a private advisory session for this vehicle.
+{% endif %}
 {% endblock %}
 
 {% block content %}
-
-
 
 <!-- ============================= -->
 <!-- FLASH -->
@@ -27,8 +33,6 @@ Arrange a private advisory session for this vehicle.
 {% endfor %}
 {% endif %}
 {% endwith %}
-
-
 
 <!-- ============================= -->
 <!-- VEHICLE SUMMARY -->
@@ -55,9 +59,16 @@ Arrange a private advisory session for this vehicle.
         {{ ownership.user.email if ownership and ownership.user else "Unknown Client" }}
     </p>
 
+    {% if consultation %}
+    <div class="notice info" style="margin-top:16px;">
+        <strong>Owner request awaiting confirmation</strong>
+        <p class="muted" style="margin-bottom:0;">
+            The time below is the owner's preferred time. It is not a confirmed appointment until you submit this form.
+        </p>
+    </div>
+    {% endif %}
+
 </section>
-
-
 
 <!-- ============================= -->
 <!-- FORM -->
@@ -65,7 +76,9 @@ Arrange a private advisory session for this vehicle.
 
 <section class="card">
 
-    <h2>Consultation Booking</h2>
+    <h2>
+        {% if consultation %}Confirm Schedule{% else %}Consultation Booking{% endif %}
+    </h2>
 
     <form method="POST">
 
@@ -73,11 +86,18 @@ Arrange a private advisory session for this vehicle.
             Consultation Date & Time
         </label>
 
+        {% set existing_value = '' %}
+        {% if request.form.scheduled_for %}
+            {% set existing_value = request.form.scheduled_for %}
+        {% elif consultation and consultation.scheduled_for %}
+            {% set existing_value = consultation.scheduled_for.strftime('%Y-%m-%dT%H:%M') %}
+        {% endif %}
+
         <input
             type="datetime-local"
             id="scheduled_for"
             name="scheduled_for"
-            value="{{ request.form.scheduled_for or '' }}"
+            value="{{ existing_value }}"
             required
         >
 
@@ -85,14 +105,12 @@ Arrange a private advisory session for this vehicle.
             type="submit"
             class="btn btn-primary btn-block"
         >
-            Schedule Consultation
+            {% if consultation %}Confirm Schedule{% else %}Schedule Consultation{% endif %}
         </button>
 
     </form>
 
 </section>
-
-
 
 <!-- ============================= -->
 <!-- QUICK LINKS -->
@@ -105,10 +123,10 @@ Arrange a private advisory session for this vehicle.
     <div class="button-grid">
 
         <a
-            href="{{ url_for('admin.admin_consultations', car_id=car.id) }}"
+            href="{{ url_for('admin.admin_consultations') }}"
             class="btn btn-secondary"
         >
-            Scheduled Consultations
+            Consultation Queue
         </a>
 
         <a

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Complete Consultation{% endblock %}
+
+{% block page_title %}Complete Consultation{% endblock %}
+
+{% block page_subtitle %}
+Finalize the professional consultation record after the assessment has been completed.
+{% endblock %}
+
+{% block content %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="flash {{ category }}">{{ message }}</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+
+<section class="card">
+    <h2>Consultation Review</h2>
+
+    <div class="vehicle-box">
+        <strong>{{ consultation.car.display_name }}</strong>
+        <div class="meta" style="margin-top:8px;">
+            Client: {{ consultation.client.email if consultation.client else "Unknown Client" }}
+        </div>
+        <div class="meta" style="margin-top:4px;">
+            Status: {{ consultation.status|replace('_', ' ')|title }}
+        </div>
+    </div>
+
+    {% if assessment %}
+    <p class="muted" style="margin-top:16px;">
+        Assessment status:
+        <strong>{{ assessment.status|replace('_', ' ')|title if assessment.status else "Draft" }}</strong>
+        {% if assessment.is_finalized %} · Finalized{% endif %}
+    </p>
+    {% else %}
+    <div class="flash error" style="margin-top:16px;">
+        No assessment is attached to this consultation. Create and finalize the assessment before completion.
+    </div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Completion Record</h2>
+
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="summary">Internal Professional Summary</label>
+        <textarea
+            id="summary"
+            name="summary"
+            rows="6"
+            placeholder="Internal clinical-style notes for the advisor record."
+        >{{ request.form.summary or consultation.summary or '' }}</textarea>
+        <p class="muted">
+            Internal only. This text is not copied into the client-visible canonical event payload.
+        </p>
+
+        <label for="client_visible_summary">Client-Visible Summary</label>
+        <textarea
+            id="client_visible_summary"
+            name="client_visible_summary"
+            rows="5"
+            placeholder="Calm, concise summary suitable for the vehicle owner."
+        >{{ request.form.client_visible_summary or consultation.client_visible_summary or '' }}</textarea>
+
+        <button
+            type="submit"
+            class="btn btn-success btn-block"
+            {% if not assessment or not (assessment.is_finalized or assessment.status == 'finalized') %}disabled{% endif %}
+        >
+            Complete Consultation
+        </button>
+    </form>
+</section>
+
+<section class="card">
+    <div class="button-grid">
+        <a href="{{ url_for('admin.admin_consultations') }}" class="btn btn-secondary">
+            Back to Consultation Queue
+        </a>
+        <a href="{{ url_for('admin.view_vehicle', car_id=consultation.car_id) }}" class="btn btn-neutral">
+            View Vehicle
+        </a>
+    </div>
+</section>
+
+{% endblock %}

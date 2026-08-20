@@ -246,6 +246,18 @@ def test_advisor_queue_confirms_starts_and_completes_requested_consultation(app)
     with app.app_context():
         consultation_id = Consultation.query.filter_by(car_id=car_id).one().id
 
+    # tests/conftest.py intentionally keeps an outer app context alive for each
+    # test. Flask-Login caches current_user on that context's ``g`` object, so
+    # two browser clients can otherwise inherit the first actor in the harness
+    # even though their cookies are isolated. Sign the owner out before the
+    # advisor login so this route test reflects real request isolation.
+    owner_logout = owner_client.post(
+        "/auth/logout",
+        data={"csrf_token": _csrf(owner_client)},
+        follow_redirects=False,
+    )
+    assert owner_logout.status_code in {302, 303}
+
     _login(advisor_client, advisor_email)
 
     queue = advisor_client.get("/admin/consultations")

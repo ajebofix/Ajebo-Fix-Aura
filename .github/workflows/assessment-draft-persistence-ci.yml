@@ -1,0 +1,65 @@
+name: Aura Assessment Draft Persistence CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "services/assessment_draft_cutover.py"
+      - "admin/progression_routes.py"
+      - "tests/test_assessment_draft_persistence.py"
+      - "admin/routes.py"
+      - "templates/admin/edit_assessment.html"
+      - "models.py"
+      - "security/**"
+      - "requirements*.txt"
+      - ".github/workflows/assessment-draft-persistence-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-assessment-draft-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  draft-persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile assessment draft cutover
+        run: python -m compileall -q services/assessment_draft_cutover.py tests/test_assessment_draft_persistence.py
+
+      - name: Test assessment draft persistence
+        run: pytest -q --tb=short tests/test_assessment_draft_persistence.py
+
+      - name: Ruff assessment draft slice
+        run: ruff check services/assessment_draft_cutover.py tests/test_assessment_draft_persistence.py admin/progression_routes.py
+
+      - name: Bandit assessment draft adapter
+        run: bandit -q services/assessment_draft_cutover.py

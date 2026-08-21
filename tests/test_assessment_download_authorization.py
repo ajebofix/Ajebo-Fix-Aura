@@ -81,7 +81,7 @@ def _fixture(*, suffix: int = 1):
     db.session.add(assessment)
     db.session.commit()
 
-    return owner.email, advisor.email, assessment.id
+    return owner.email, advisor.email, assessment.id, ownership.id
 
 
 def _csrf_token_for(client) -> str:
@@ -103,11 +103,11 @@ def _login(client, email: str) -> None:
     assert response.status_code in {302, 303}
 
 
-def test_owner_shared_profile_download_link_routes_to_client_authorization(app):
+def test_active_owner_can_download_finalized_report_from_shared_profile_route(app):
     client = app.test_client()
 
     with app.app_context():
-        owner_email, _, assessment_id = _fixture()
+        owner_email, _, assessment_id, _ = _fixture()
 
     _login(client, owner_email)
 
@@ -116,22 +116,19 @@ def test_owner_shared_profile_download_link_routes_to_client_authorization(app):
         follow_redirects=False,
     )
 
-    assert response.status_code in {302, 303}
-    assert response.headers["Location"].endswith(
-        f"/cars/assessments/{assessment_id}/download"
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert "inline" in response.headers["Content-Disposition"]
+    assert "Advisor-approved assessment recommendation." in response.get_data(
+        as_text=True
     )
 
-    report = client.get(response.headers["Location"], follow_redirects=False)
-    assert report.status_code == 200
-    assert report.mimetype == "text/html"
-    assert "Advisor-approved assessment recommendation." in report.get_data(as_text=True)
 
-
-def test_advisor_keeps_direct_admin_report_access(app):
+def test_advisor_keeps_direct_report_access(app):
     client = app.test_client()
 
     with app.app_context():
-        _, advisor_email, assessment_id = _fixture(suffix=2)
+        _, advisor_email, assessment_id, _ = _fixture(suffix=2)
 
     _login(client, advisor_email)
 
@@ -148,24 +145,37 @@ def test_unrelated_authenticated_user_cannot_receive_owner_report(app):
     client = app.test_client()
 
     with app.app_context():
-        _, _, assessment_id = _fixture(suffix=3)
+        _, _, assessment_id, _ = _fixture(suffix=3)
         outsider = _user(suffix=999)
         outsider_email = outsider.email
         db.session.commit()
 
     _login(client, outsider_email)
 
-    first = client.get(
+    response = client.get(
         f"/admin/assessments/{assessment_id}/download",
         follow_redirects=False,
     )
-    assert first.status_code in {302, 303}
-    assert first.headers["Location"].endswith(
-        f"/cars/assessments/{assessment_id}/download"
+
+    assert response.status_code in {302, 303}
+    assert "/dashboard" in response.headers["Location"]
+
+
+def test_inactive_former_owner_cannot_receive_report(app):
+    client = app.test_client()
+
+    with app.app_context():
+        owner_email, _, assessment_id, ownership_id = _fixture(suffix=4)
+        ownership = db.session.get(CarOwnership, ownership_id)
+        ownership.is_active = False
+        db.session.commit()
+
+    _login(client, owner_email)
+
+    response = client.get(
+        f"/admin/assessments/{assessment_id}/download",
+        follow_redirects=False,
     )
 
-    second = client.get(first.headers["Location"], follow_redirects=False)
-    assert second.status_code in {302, 303}
-    assert not second.headers["Location"].endswith(
-        f"/cars/assessments/{assessment_id}/download"
-    )
+    assert response.status_code in {302, 303}
+    assert "/dashboard" in response.headers["Location"]

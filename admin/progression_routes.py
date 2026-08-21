@@ -34,6 +34,7 @@ def concern_progression(concern_id: int):
 
 
 # Import after both cars.routes and admin.routes have been loaded by app.py.
-# The module registers the Wave 2.2A2 compatibility cutover on admin_bp before
-# that blueprint is registered with the Flask application.
+# These modules register compatibility cutovers on admin_bp before that blueprint
+# is registered with the Flask application.
 import services.consultation_route_cutover  # noqa: E402,F401
+import services.assessment_draft_cutover  # noqa: E402,F401

@@ -4,6 +4,7 @@ from flask import session
 from sqlalchemy.exc import OperationalError
 
 from extensions import db
+from tests import test_assessment_download_authorization as assessment_download_tests
 
 
 def test_security_headers_are_applied(client):
@@ -115,3 +116,16 @@ def test_user_loader_discards_incompatible_session(app, monkeypatch):
 
         assert loaded_user is None
         assert not session
+
+
+def test_assessment_download_authorization_regression(app):
+    """Keep the production shared assessment URL inside the security gate."""
+
+    assessment_download_tests.test_active_owner_can_download_finalized_report_from_shared_profile_route(
+        app
+    )
+    assessment_download_tests.test_advisor_keeps_direct_report_access(app)
+    assessment_download_tests.test_unrelated_authenticated_user_cannot_receive_owner_report(
+        app
+    )
+    assessment_download_tests.test_inactive_former_owner_cannot_receive_report(app)

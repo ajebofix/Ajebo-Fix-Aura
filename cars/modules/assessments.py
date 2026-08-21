@@ -46,10 +46,8 @@ def client_download_assessment_pdf(assessment_id):
         flash("Assessment is not yet available for download.", "error")
         return redirect(url_for("cars.car_detail", car_id=assessment.car_id))
 
-    # 🔥 build report
-    report = build_assessment_report(assessment)
+    report = build_assessment_report(assessment=assessment)
 
-    # 🔥 render HTML (same template used for print)
     html = render_template(
         "reports/assessment_report.html",
         report=report,

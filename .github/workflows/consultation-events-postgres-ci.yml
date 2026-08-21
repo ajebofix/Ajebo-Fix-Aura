@@ -1,0 +1,156 @@
+name: Aura Consultation Events PostgreSQL CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/versions/e8f5c1a7b240_extend_vehicle_event_contract_for_consultations.py"
+      - "scripts/verify_consultation_events_postgres.py"
+      - "scripts/verify_evidence_events_postgres.py"
+      - "services/consultation_lifecycle.py"
+      - "services/event_emission.py"
+      - "models.py"
+      - "security/access.py"
+      - "requirements*.txt"
+      - ".github/workflows/consultation-events-postgres-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-consultation-events-postgres-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile migration and verifier
+        run: >-
+          python -m compileall -q
+          migrations/versions/e8f5c1a7b240_extend_vehicle_event_contract_for_consultations.py
+          scripts/verify_consultation_events_postgres.py
+
+      - name: Upgrade fresh PostgreSQL database to current head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify new constraint is installed
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          checks = {
+              item["name"]
+              for item in inspect(engine).get_check_constraints("vehicle_events")
+          }
+          required = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_evidence_contract",
+              "ck_vehicle_events_consultation_contract",
+          }
+          missing = required - checks
+          if missing:
+              raise SystemExit(f"Missing VehicleEvent checks: {sorted(missing)}")
+          print("Consultation VehicleEvent PostgreSQL checks installed.")
+          PY
+
+      - name: Rehearse downgrade to Wave 1.4 event head
+        run: |
+          python -m flask db downgrade d7e4a9c2f160
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          checks = {
+              item["name"]
+              for item in inspect(engine).get_check_constraints("vehicle_events")
+          }
+          if "ck_vehicle_events_consultation_contract" in checks:
+              raise SystemExit("Consultation constraint survived downgrade unexpectedly")
+          if "ck_vehicle_events_canonical_subject_event" not in checks:
+              raise SystemExit("Previous canonical subject/event constraint was not restored")
+          if "ck_vehicle_events_evidence_contract" not in checks:
+              raise SystemExit("Evidence contract regressed during downgrade")
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+          if version != "d7e4a9c2f160":
+              raise SystemExit(f"Unexpected downgraded Alembic version: {version}")
+          print("Downgrade restored Wave 1.4 VehicleEvent constraints.")
+          PY
+
+      - name: Re-upgrade consultation event contract
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify evidence event regression contract
+        run: python scripts/verify_evidence_events_postgres.py
+
+      - name: Reset database after evidence verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+
+      - name: Verify consultation lifecycle against PostgreSQL constraints
+        run: python scripts/verify_consultation_events_postgres.py
+
+      - name: Bandit migration verifier
+        run: bandit -q scripts/verify_consultation_events_postgres.py

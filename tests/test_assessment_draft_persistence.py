@@ -126,6 +126,8 @@ def _login(client, email: str) -> None:
         follow_redirects=False,
     )
     assert response.status_code in {302, 303}
+    client.get("/")
+    _csrf(client)
 
 
 def test_runtime_replaces_legacy_assessment_edit_endpoint(app):

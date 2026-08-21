@@ -1,0 +1,46 @@
+name: Aura Assessment Download Authorization CI
+
+on:
+  pull_request:
+    paths:
+      - "admin/modules/assessments.py"
+      - "cars/modules/assessments.py"
+      - "templates/car_detail.html"
+      - "tests/test_assessment_download_authorization.py"
+      - ".github/workflows/assessment-download-authorization-ci.yml"
+
+jobs:
+  assessment-download-authorization:
+    runs-on: ubuntu-24.04
+    env:
+      SECRET_KEY: ci-secret-key-not-for-production
+      SQLALCHEMY_DATABASE_URI: sqlite:///:memory:
+      APP_ENV: testing
+      RATE_LIMIT_STORAGE_URI: memory://
+      PROFILE_ENCRYPTION_KEY: Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0=
+      PROFILE_ENCRYPTION_KEY_VERSION: ci-v1
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile authorization slice
+        run: python -m compileall -q admin/modules/assessments.py tests/test_assessment_download_authorization.py
+
+      - name: Test assessment download authorization
+        run: pytest -q --tb=short tests/test_assessment_download_authorization.py
+
+      - name: Ruff assessment download slice
+        run: ruff check admin/modules/assessments.py tests/test_assessment_download_authorization.py
+
+      - name: Bandit assessment download route
+        run: bandit -q admin/modules/assessments.py

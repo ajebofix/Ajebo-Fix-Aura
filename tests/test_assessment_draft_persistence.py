@@ -146,6 +146,7 @@ def test_current_bracketed_template_fields_persist_risks_and_treatments(app):
     response = client.post(
         f"/admin/assessments/{assessment_id}/edit",
         data={
+            "csrf_token": _csrf(client),
             "engine_status": "healthy",
             "transmission_status": "healthy",
             "suspension_status": "attention",
@@ -216,6 +217,7 @@ def test_missing_child_groups_do_not_delete_existing_draft_rows(app):
     response = client.post(
         f"/admin/assessments/{assessment_id}/edit",
         data={
+            "csrf_token": _csrf(client),
             "engine_status": "healthy",
             "transmission_status": "healthy",
             "suspension_status": "monitoring",

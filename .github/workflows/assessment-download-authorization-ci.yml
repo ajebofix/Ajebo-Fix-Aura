@@ -1,6 +1,7 @@
 name: Aura Assessment Download Authorization CI
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "admin/modules/assessments.py"

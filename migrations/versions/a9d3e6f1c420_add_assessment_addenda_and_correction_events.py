@@ -215,6 +215,14 @@ def upgrade():
 def downgrade():
     bind = op.get_bind()
 
+    addenda_count = bind.execute(
+        sa.text("SELECT COUNT(*) FROM vehicle_assessment_addenda")
+    ).scalar_one()
+    if addenda_count:
+        raise RuntimeError(
+            "Cannot downgrade Wave 2.2B3 while assessment addenda history exists"
+        )
+
     if bind.dialect.name != "sqlite":
         corrected_count = bind.execute(
             sa.text(

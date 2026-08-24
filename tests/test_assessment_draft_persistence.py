@@ -133,7 +133,7 @@ def _login(client, email: str) -> None:
 def test_runtime_replaces_legacy_assessment_edit_endpoint(app):
     assert (
         app.view_functions["admin.admin_edit_assessment"].__module__
-        == "services.assessment_draft_cutover"
+        == "services.assessment_route_cutover"
     )
 
 

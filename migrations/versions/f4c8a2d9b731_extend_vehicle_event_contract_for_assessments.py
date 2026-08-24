@@ -64,6 +64,9 @@ def _canonical_pair_condition() -> str:
 
 
 def _assessment_contract_condition() -> str:
+    # PostgreSQL CHECK treats UNKNOWN as passing. Explicit IS [NOT] NULL guards
+    # make this contract fail closed instead of allowing a missing transition
+    # state to turn the predicate into UNKNOWN.
     return (
         "subject_type IS NULL "
         "OR subject_type <> 'vehicle_assessment' "
@@ -73,9 +76,12 @@ def _assessment_contract_condition() -> str:
         "AND ("
         "(event_type = 'assessment.created' "
         "AND previous_state IS NULL "
+        "AND new_state IS NOT NULL "
         "AND new_state = 'draft') "
         "OR (event_type = 'assessment.finalized' "
+        "AND previous_state IS NOT NULL "
         "AND previous_state = 'draft' "
+        "AND new_state IS NOT NULL "
         "AND new_state = 'finalized')"
         ")"
         ")"
@@ -105,7 +111,8 @@ def _preflight() -> None:
             f"""
             SELECT COUNT(*)
             FROM vehicle_events
-            WHERE NOT ({_assessment_contract_condition()})
+            WHERE subject_type = 'vehicle_assessment'
+              AND NOT ({_assessment_contract_condition()})
             """
         )
     ).scalar_one()

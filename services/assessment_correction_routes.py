@@ -18,6 +18,11 @@ from services.assessment_lifecycle import (
 )
 
 
+@admin_bp.route(
+    "/assessments/<int:assessment_id>/addenda",
+    methods=["GET", "POST"],
+    endpoint="admin_assessment_addenda",
+)
 @login_required
 @advisor_required
 def admin_assessment_addenda(assessment_id: int):
@@ -73,18 +78,4 @@ def admin_assessment_addenda(assessment_id: int):
         assessment=assessment,
         addenda=addenda,
         idempotency_key=uuid.uuid4().hex,
-    )
-
-
-@admin_bp.record_once
-def install_assessment_correction_routes(state):
-    endpoint = "admin.admin_assessment_addenda"
-    if endpoint in state.app.view_functions:
-        return
-
-    state.app.add_url_rule(
-        "/admin/assessments/<int:assessment_id>/addenda",
-        endpoint=endpoint,
-        view_func=admin_assessment_addenda,
-        methods=["GET", "POST"],
     )

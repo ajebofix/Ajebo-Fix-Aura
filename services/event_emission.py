@@ -43,8 +43,17 @@ CONSULTATION_EVENT_TYPES = frozenset(
         "consultation.completed",
     }
 )
+ASSESSMENT_EVENT_TYPES = frozenset(
+    {
+        "assessment.created",
+        "assessment.finalized",
+    }
+)
 CANONICAL_EVENT_TYPES = (
-    CONCERN_EVENT_TYPES | EVIDENCE_EVENT_TYPES | CONSULTATION_EVENT_TYPES
+    CONCERN_EVENT_TYPES
+    | EVIDENCE_EVENT_TYPES
+    | CONSULTATION_EVENT_TYPES
+    | ASSESSMENT_EVENT_TYPES
 )
 
 ALLOWED_VISIBILITIES = frozenset({"client", "advisor", "internal"})
@@ -65,6 +74,7 @@ _EVENT_SUBJECT_RULES = {
     **{event_type: "reported_concern" for event_type in CONCERN_EVENT_TYPES},
     **{event_type: "vehicle_evidence" for event_type in EVIDENCE_EVENT_TYPES},
     **{event_type: "consultation" for event_type in CONSULTATION_EVENT_TYPES},
+    **{event_type: "vehicle_assessment" for event_type in ASSESSMENT_EVENT_TYPES},
 }
 
 _EVENT_DIRECTION_RULES = {
@@ -80,6 +90,8 @@ _EVENT_DIRECTION_RULES = {
     "consultation.scheduled": frozenset({"not_applicable"}),
     "consultation.started": frozenset({"not_applicable"}),
     "consultation.completed": frozenset({"not_applicable"}),
+    "assessment.created": frozenset({"not_applicable"}),
+    "assessment.finalized": frozenset({"not_applicable"}),
 }
 
 _TRANSITION_EVENT_TYPES = frozenset(
@@ -89,6 +101,7 @@ _TRANSITION_EVENT_TYPES = frozenset(
         "concern.resolved",
         "concern.reopened",
         "evidence.reviewed",
+        "assessment.finalized",
     }
 )
 
@@ -323,6 +336,20 @@ def _validate_event_contract(
             "consultation.completed requires in_progress -> completed"
         )
 
+    if event_type == "assessment.created" and (
+        previous_state is not None or new_state != "draft"
+    ):
+        raise EventEmissionError(
+            "assessment.created requires previous_state=None and new_state='draft'"
+        )
+
+    if event_type == "assessment.finalized" and (
+        previous_state != "draft" or new_state != "finalized"
+    ):
+        raise EventEmissionError(
+            "assessment.finalized requires draft -> finalized"
+        )
+
     if event_type == "concern.corrected" and correction_of_event_id is None:
         raise EventEmissionError(
             "concern.corrected requires correction_of_event_id"
@@ -510,6 +537,14 @@ def emit_vehicle_event(
     } and actor_authority not in {"advisor", "administrator"}:
         raise EventAuthorityError(
             "professional consultation transitions require advisor authority"
+        )
+
+    if event_type in ASSESSMENT_EVENT_TYPES and actor_authority not in {
+        "advisor",
+        "administrator",
+    }:
+        raise EventAuthorityError(
+            "professional assessment lifecycle events require advisor authority"
         )
 
     if correction_of_event_id is not None:

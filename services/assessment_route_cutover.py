@@ -105,15 +105,27 @@ def _normalise_draft_submission() -> tuple[
             risk_urgencies or [],
             strict=True,
         ):
-            values = [description, cause, consequence, urgency]
-            if not any((value or "").strip() for value in values):
+            clean_description = (description or "").strip()
+            clean_cause = (cause or "").strip()
+            clean_consequence = (consequence or "").strip()
+            clean_urgency = (urgency or "").strip()
+
+            # The UI can submit default urgency values for an otherwise blank
+            # placeholder row. A blank description means the row does not exist;
+            # non-placeholder partial rows are rejected rather than persisted.
+            if not clean_description:
+                if clean_cause or clean_consequence:
+                    raise AssessmentDraftFormError(
+                        "A partially completed risk row was not saved. Existing data was preserved."
+                    )
                 continue
+
             risks.append(
                 {
-                    "description": (description or "").strip(),
-                    "likely_cause": (cause or "").strip(),
-                    "consequence_if_ignored": (consequence or "").strip(),
-                    "urgency": (urgency or "").strip() or "monitoring",
+                    "description": clean_description,
+                    "likely_cause": clean_cause,
+                    "consequence_if_ignored": clean_consequence,
+                    "urgency": clean_urgency or "monitoring",
                 }
             )
 
@@ -126,14 +138,25 @@ def _normalise_draft_submission() -> tuple[
             treatment_codes or [],
             strict=True,
         ):
-            values = [title, description, code]
-            if not any((value or "").strip() for value in values):
+            clean_title = (title or "").strip()
+            clean_description = (description or "").strip()
+            clean_code = (code or "").strip()
+
+            # The template renders A/B/C option-code placeholders even when an
+            # option row has no content. Treat a row with no title/description as
+            # intentionally blank; reject a genuinely partial content row.
+            if not clean_title and not clean_description:
                 continue
+            if not clean_title or not clean_description:
+                raise AssessmentDraftFormError(
+                    "A partially completed treatment option was not saved. Existing data was preserved."
+                )
+
             treatment_options.append(
                 {
-                    "option_code": (code or "").strip(),
-                    "title": (title or "").strip(),
-                    "description": (description or "").strip(),
+                    "option_code": clean_code,
+                    "title": clean_title,
+                    "description": clean_description,
                 }
             )
 

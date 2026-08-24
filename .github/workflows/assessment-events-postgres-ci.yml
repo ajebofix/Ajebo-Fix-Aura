@@ -1,0 +1,199 @@
+name: Aura Assessment Events PostgreSQL CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/versions/f4c8a2d9b731_extend_vehicle_event_contract_for_assessments.py"
+      - "scripts/verify_assessment_events_postgres.py"
+      - "scripts/verify_consultation_events_postgres.py"
+      - "scripts/verify_evidence_events_postgres.py"
+      - "services/assessment_lifecycle.py"
+      - "services/assessment_route_cutover.py"
+      - "services/event_emission.py"
+      - "admin/progression_routes.py"
+      - "tests/test_assessment_lifecycle.py"
+      - "tests/test_assessment_draft_persistence.py"
+      - "models.py"
+      - "security/access.py"
+      - "requirements*.txt"
+      - ".github/workflows/assessment-events-postgres-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-assessment-events-postgres-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile assessment lifecycle slice
+        run: >-
+          python -m compileall -q
+          migrations/versions/f4c8a2d9b731_extend_vehicle_event_contract_for_assessments.py
+          scripts/verify_assessment_events_postgres.py
+          services/assessment_lifecycle.py
+          services/assessment_route_cutover.py
+          services/event_emission.py
+          tests/test_assessment_lifecycle.py
+          tests/test_assessment_draft_persistence.py
+
+      - name: Upgrade fresh PostgreSQL database to current head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify assessment constraint is installed
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          checks = {
+              item["name"]
+              for item in inspect(engine).get_check_constraints("vehicle_events")
+          }
+          required = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_evidence_contract",
+              "ck_vehicle_events_consultation_contract",
+              "ck_vehicle_events_assessment_contract",
+          }
+          missing = required - checks
+          if missing:
+              raise SystemExit(f"Missing VehicleEvent checks: {sorted(missing)}")
+          print("Assessment VehicleEvent PostgreSQL checks installed.")
+          PY
+
+      - name: Rehearse downgrade to Wave 2.2A event head
+        run: |
+          python -m flask db downgrade e8f5c1a7b240
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          checks = {
+              item["name"]
+              for item in inspect(engine).get_check_constraints("vehicle_events")
+          }
+          if "ck_vehicle_events_assessment_contract" in checks:
+              raise SystemExit("Assessment constraint survived downgrade unexpectedly")
+          required = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_evidence_contract",
+              "ck_vehicle_events_consultation_contract",
+          }
+          missing = required - checks
+          if missing:
+              raise SystemExit(
+                  f"Prior VehicleEvent contract regressed during downgrade: {sorted(missing)}"
+              )
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+          if version != "e8f5c1a7b240":
+              raise SystemExit(f"Unexpected downgraded Alembic version: {version}")
+          print("Downgrade restored the exact Wave 2.2A VehicleEvent contract.")
+          PY
+
+      - name: Re-upgrade assessment event contract
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify evidence event regression contract
+        run: python scripts/verify_evidence_events_postgres.py
+
+      - name: Reset database after evidence verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+
+      - name: Verify consultation event regression contract
+        run: python scripts/verify_consultation_events_postgres.py
+
+      - name: Reset database after consultation verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+
+      - name: Verify assessment lifecycle against PostgreSQL constraints
+        run: python scripts/verify_assessment_events_postgres.py
+
+      - name: Run assessment lifecycle and route persistence tests
+        run: >-
+          pytest -q
+          tests/test_assessment_lifecycle.py
+          tests/test_assessment_draft_persistence.py
+
+      - name: Bandit assessment lifecycle slice
+        run: >-
+          bandit -q
+          scripts/verify_assessment_events_postgres.py
+          services/assessment_lifecycle.py
+          services/assessment_route_cutover.py

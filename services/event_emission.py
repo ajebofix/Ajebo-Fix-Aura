@@ -47,6 +47,7 @@ ASSESSMENT_EVENT_TYPES = frozenset(
     {
         "assessment.created",
         "assessment.finalized",
+        "assessment.corrected",
     }
 )
 CANONICAL_EVENT_TYPES = (
@@ -92,6 +93,7 @@ _EVENT_DIRECTION_RULES = {
     "consultation.completed": frozenset({"not_applicable"}),
     "assessment.created": frozenset({"not_applicable"}),
     "assessment.finalized": frozenset({"not_applicable"}),
+    "assessment.corrected": frozenset({"not_applicable"}),
 }
 
 _TRANSITION_EVENT_TYPES = frozenset(
@@ -102,6 +104,7 @@ _TRANSITION_EVENT_TYPES = frozenset(
         "concern.reopened",
         "evidence.reviewed",
         "assessment.finalized",
+        "assessment.corrected",
     }
 )
 
@@ -350,14 +353,24 @@ def _validate_event_contract(
             "assessment.finalized requires draft -> finalized"
         )
 
+    if event_type == "assessment.corrected" and (
+        previous_state != "finalized" or new_state != "finalized"
+    ):
+        raise EventEmissionError(
+            "assessment.corrected requires finalized -> finalized"
+        )
+
     if event_type == "concern.corrected" and correction_of_event_id is None:
         raise EventEmissionError(
             "concern.corrected requires correction_of_event_id"
         )
 
-    if event_type != "concern.corrected" and correction_of_event_id is not None:
+    if (
+        event_type not in {"concern.corrected", "assessment.corrected"}
+        and correction_of_event_id is not None
+    ):
         raise EventEmissionError(
-            "correction_of_event_id is only valid for concern.corrected"
+            "correction_of_event_id is only valid for canonical correction events"
         )
 
 
@@ -411,15 +424,6 @@ def _flush_new_event(
     fingerprint: str,
     semantic_kwargs: dict[str, Any],
 ) -> VehicleEvent:
-    """Flush one event while preserving caller-owned transaction semantics.
-
-    PostgreSQL uses a SAVEPOINT so a concurrent unique-fingerprint collision
-    can be recovered without invalidating the caller's outer transaction.
-    SQLite is only Aura's local/test compatibility dialect; its SAVEPOINT
-    release can escape a deferred outer transaction, so it deliberately uses a
-    plain flush. Production concurrency guarantees are exercised on PostgreSQL.
-    """
-
     dialect_name = db.session.get_bind().dialect.name
 
     if dialect_name == "sqlite":
@@ -497,11 +501,7 @@ def emit_vehicle_event(
     evidence_refs = evidence_refs or []
     data = data or {}
 
-    _assert_safe_json(
-        evidence_refs,
-        label="evidence_refs",
-        max_bytes=_MAX_EVIDENCE_BYTES,
-    )
+    _assert_safe_json(evidence_refs, label="evidence_refs", max_bytes=_MAX_EVIDENCE_BYTES)
     _assert_safe_json(data, label="data", max_bytes=_MAX_DATA_BYTES)
 
     car = db.session.get(Car, car_id)
@@ -526,9 +526,7 @@ def emit_vehicle_event(
         )
 
     if event_type == "consultation.requested" and actor_authority != "owner":
-        raise EventAuthorityError(
-            "consultation requests require current owner authority"
-        )
+        raise EventAuthorityError("consultation requests require current owner authority")
 
     if event_type in {
         "consultation.scheduled",
@@ -559,6 +557,13 @@ def emit_vehicle_event(
         ):
             raise EventEmissionError(
                 "correction target does not match the canonical event subject"
+            )
+        if (
+            event_type == "assessment.corrected"
+            and corrected_event.event_type != "assessment.finalized"
+        ):
+            raise EventEmissionError(
+                "assessment.corrected may only supplement assessment.finalized"
             )
 
     fingerprint = _fingerprint(

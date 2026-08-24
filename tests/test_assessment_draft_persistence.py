@@ -130,11 +130,14 @@ def _login(client, email: str) -> None:
     _csrf(client)
 
 
-def test_runtime_replaces_legacy_assessment_edit_endpoint(app):
-    assert (
-        app.view_functions["admin.admin_edit_assessment"].__module__
-        == "services.assessment_draft_cutover"
-    )
+def test_runtime_replaces_all_assessment_mutation_endpoints(app):
+    expected_module = "services.assessment_route_cutover"
+    for endpoint in (
+        "admin.admin_start_assessment",
+        "admin.admin_edit_assessment",
+        "admin.admin_finalize_assessment",
+    ):
+        assert app.view_functions[endpoint].__module__ == expected_module
 
 
 def test_current_bracketed_template_fields_persist_risks_and_treatments(app):

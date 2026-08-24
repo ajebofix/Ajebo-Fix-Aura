@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Assessment Addenda{% endblock %}
+{% block page_title %}Assessment Corrections & Addenda{% endblock %}
+{% block page_subtitle %}
+Append-only professional corrections for finalized Vehicle Assessment #{{ assessment.id }}.
+{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>Finalized Assessment</h2>
+    <p>
+        <strong>{{ assessment.car.display_name }}</strong><br>
+        VIN {{ assessment.vin }}<br>
+        Finalized {{ assessment.finalized_at.strftime("%Y-%m-%d %H:%M") if assessment.finalized_at else "—" }}
+    </p>
+    <p class="muted">
+        The original assessment is locked. Nothing entered here rewrites the finalized document.
+        Any later correction is another dated, attributed addendum.
+    </p>
+    <a class="btn btn-secondary" href="{{ url_for('admin_assessments.admin_download_assessment_pdf', assessment_id=assessment.id) }}">
+        View Finalized Report
+    </a>
+</section>
+
+<section class="card">
+    <h2>Record New Addendum</h2>
+    <form method="post">
+        <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+
+        <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category" name="category" required>
+                <option value="correction">Correction</option>
+                <option value="clarification">Clarification</option>
+                <option value="additional_information">Additional information</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="reason">Reason</label>
+            <input
+                id="reason"
+                name="reason"
+                type="text"
+                maxlength="240"
+                required
+                placeholder="Why this addendum is necessary"
+            >
+        </div>
+
+        <div class="form-group">
+            <label for="visibility">Visibility</label>
+            <select id="visibility" name="visibility" required>
+                <option value="client">Client-visible</option>
+                <option value="advisor">Advisor-only</option>
+                <option value="internal">Internal</option>
+            </select>
+            <p class="muted">
+                Client-visible addenda appear after the original finalized report. Advisor-only and internal text never appears on the owner report.
+            </p>
+        </div>
+
+        <div class="form-group">
+            <label for="client_text">Client-visible statement</label>
+            <textarea
+                id="client_text"
+                name="client_text"
+                rows="5"
+                placeholder="Clear professional correction or clarification for the owner"
+            ></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="internal_text">Advisor/internal context</label>
+            <textarea
+                id="internal_text"
+                name="internal_text"
+                rows="5"
+                placeholder="Restricted professional context, if needed"
+            ></textarea>
+        </div>
+
+        <button class="btn btn-primary btn-block" type="submit">
+            Record Immutable Addendum
+        </button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Recorded Addenda</h2>
+
+    {% if addenda %}
+        {% for addendum in addenda %}
+            <div class="list-item">
+                <strong>{{ addendum.category.replace('_', ' ').title() }}</strong>
+                <span class="muted"> · {{ addendum.visibility }}</span>
+                <p class="muted">
+                    {{ addendum.created_at.strftime("%Y-%m-%d %H:%M") if addendum.created_at else "—" }}
+                    · {{ addendum.creator.name or addendum.creator.email if addendum.creator else "Advisor" }}
+                </p>
+                <p><strong>Reason:</strong> {{ addendum.reason }}</p>
+                {% if addendum.client_text %}
+                    <p><strong>Client statement:</strong> {{ addendum.client_text }}</p>
+                {% endif %}
+                {% if addendum.internal_text %}
+                    <p><strong>Restricted context:</strong> {{ addendum.internal_text }}</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No corrections or addenda have been recorded.</p>
+    {% endif %}
+</section>
+{% endblock %}

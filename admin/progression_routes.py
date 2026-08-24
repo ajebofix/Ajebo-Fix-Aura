@@ -37,4 +37,4 @@ def concern_progression(concern_id: int):
 # These modules register compatibility cutovers on admin_bp before that blueprint
 # is registered with the Flask application.
 import services.consultation_route_cutover  # noqa: E402,F401
-import services.assessment_draft_cutover  # noqa: E402,F401
+import services.assessment_route_cutover  # noqa: E402,F401

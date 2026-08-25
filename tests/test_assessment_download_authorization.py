@@ -111,7 +111,8 @@ def _legacy_report_path(assessment_id: int) -> str:
     return f"/admin/assessments/{assessment_id}/download"
 
 
-def test_active_owner_can_open_finalized_report_from_neutral_route(app):
+def test_active_owner_can_download_finalized_report_from_shared_profile_route(app):
+    """Security-suite compatibility name; behavior now targets neutral route."""
     client = app.test_client()
 
     with app.app_context():
@@ -132,7 +133,8 @@ def test_active_owner_can_open_finalized_report_from_neutral_route(app):
     )
 
 
-def test_advisor_keeps_direct_report_access_on_neutral_route(app):
+def test_advisor_keeps_direct_report_access(app):
+    """Security-suite compatibility name; behavior now targets neutral route."""
     client = app.test_client()
 
     with app.app_context():

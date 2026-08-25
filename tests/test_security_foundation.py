@@ -136,3 +136,13 @@ def test_outsider_assessment_download_security_regression(app):
 
 def test_former_owner_assessment_download_security_regression(app):
     assessment_download_tests.test_inactive_former_owner_cannot_receive_report(app)
+
+
+def test_legacy_assessment_report_url_redirect_security_regression(app):
+    assessment_download_tests.test_legacy_admin_prefixed_report_url_redirects_to_neutral_route(
+        app
+    )
+
+
+def test_neutral_assessment_report_route_registration_regression(app):
+    assessment_download_tests.test_neutral_route_is_registered_without_admin_prefix(app)

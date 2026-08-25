@@ -103,7 +103,15 @@ def _login(client, email: str) -> None:
     assert response.status_code in {302, 303}
 
 
-def test_active_owner_can_download_finalized_report_from_shared_profile_route(app):
+def _canonical_report_path(assessment_id: int) -> str:
+    return f"/assessments/{assessment_id}/report"
+
+
+def _legacy_report_path(assessment_id: int) -> str:
+    return f"/admin/assessments/{assessment_id}/download"
+
+
+def test_active_owner_can_open_finalized_report_from_neutral_route(app):
     client = app.test_client()
 
     with app.app_context():
@@ -112,7 +120,7 @@ def test_active_owner_can_download_finalized_report_from_shared_profile_route(ap
     _login(client, owner_email)
 
     response = client.get(
-        f"/admin/assessments/{assessment_id}/download",
+        _canonical_report_path(assessment_id),
         follow_redirects=False,
     )
 
@@ -124,7 +132,7 @@ def test_active_owner_can_download_finalized_report_from_shared_profile_route(ap
     )
 
 
-def test_advisor_keeps_direct_report_access(app):
+def test_advisor_keeps_direct_report_access_on_neutral_route(app):
     client = app.test_client()
 
     with app.app_context():
@@ -133,7 +141,7 @@ def test_advisor_keeps_direct_report_access(app):
     _login(client, advisor_email)
 
     response = client.get(
-        f"/admin/assessments/{assessment_id}/download",
+        _canonical_report_path(assessment_id),
         follow_redirects=False,
     )
 
@@ -153,7 +161,7 @@ def test_unrelated_authenticated_user_cannot_receive_owner_report(app):
     _login(client, outsider_email)
 
     response = client.get(
-        f"/admin/assessments/{assessment_id}/download",
+        _canonical_report_path(assessment_id),
         follow_redirects=False,
     )
 
@@ -173,9 +181,61 @@ def test_inactive_former_owner_cannot_receive_report(app):
     _login(client, owner_email)
 
     response = client.get(
-        f"/admin/assessments/{assessment_id}/download",
+        _canonical_report_path(assessment_id),
         follow_redirects=False,
     )
 
     assert response.status_code in {302, 303}
     assert "/dashboard" in response.headers["Location"]
+
+
+def test_legacy_admin_prefixed_report_url_redirects_to_neutral_route(app):
+    client = app.test_client()
+
+    with app.app_context():
+        owner_email, _, assessment_id, _ = _fixture(suffix=5)
+
+    _login(client, owner_email)
+
+    response = client.get(
+        _legacy_report_path(assessment_id),
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {301, 302, 303, 307, 308}
+    assert response.headers["Location"].endswith(
+        _canonical_report_path(assessment_id)
+    )
+    assert "/admin/" not in response.headers["Location"]
+
+
+def test_legacy_report_url_preserves_owner_authorization_after_redirect(app):
+    client = app.test_client()
+
+    with app.app_context():
+        owner_email, _, assessment_id, _ = _fixture(suffix=6)
+
+    _login(client, owner_email)
+
+    response = client.get(
+        _legacy_report_path(assessment_id),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert response.request.path == _canonical_report_path(assessment_id)
+    assert "Advisor-approved assessment recommendation." in response.get_data(
+        as_text=True
+    )
+
+
+def test_neutral_route_is_registered_without_admin_prefix(app):
+    rules = {
+        rule.endpoint: rule.rule
+        for rule in app.url_map.iter_rules()
+        if rule.endpoint == "assessment_reports.assessment_report"
+    }
+
+    assert rules["assessment_reports.assessment_report"] == (
+        "/assessments/<int:assessment_id>/report"
+    )

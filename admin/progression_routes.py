@@ -34,7 +34,8 @@ def concern_progression(concern_id: int):
 
 
 # Import after both cars.routes and admin.routes have been loaded by app.py.
-# These modules register compatibility cutovers on admin_bp before that blueprint
-# is registered with the Flask application.
+# These modules register compatibility cutovers and B3 advisor routes on
+# admin_bp before that blueprint is registered with the Flask application.
 import services.consultation_route_cutover  # noqa: E402,F401
 import services.assessment_route_cutover  # noqa: E402,F401
+import services.assessment_correction_routes  # noqa: E402,F401

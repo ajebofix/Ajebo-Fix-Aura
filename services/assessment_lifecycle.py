@@ -1,10 +1,14 @@
-"""Advisor-governed Vehicle Assessment lifecycle for Aura Wave 2.2B2.
+"""Advisor-governed Vehicle Assessment lifecycle for Aura Wave 2.2B.
 
 VehicleAssessment remains authoritative for current professional-record state.
 Canonical VehicleEvents record only durable lifecycle milestones. This service
 never commits independently: routes/coordinators own the outer transaction so
-assessment mutation, canonical event emission, and the temporary TreatmentPlan
-compatibility side effect succeed or fail together.
+assessment mutation, canonical event emission, and compatibility side effects
+succeed or fail together.
+
+Wave 2.2B3 adds immutable correction/addendum records. A correction never
+reopens or rewrites the finalized VehicleAssessment; it appends a separately
+attributed professional record and emits one minimal canonical event.
 """
 
 from __future__ import annotations
@@ -20,6 +24,12 @@ from models import (
     VehicleAssessment,
     VehicleAssessmentRisk,
     VehicleAssessmentTreatmentOption,
+    VehicleEvent,
+)
+from models_assessment_addendum import (
+    ADDENDUM_CATEGORIES,
+    ADDENDUM_VISIBILITIES,
+    VehicleAssessmentAddendum,
 )
 from security.access import resolve_vehicle_authority
 from services.event_emission import emit_vehicle_event
@@ -49,6 +59,8 @@ _REQUIRED_FINALIZATION_FIELDS = (
 )
 _ALLOWED_RISK_URGENCIES = frozenset({"immediate", "monitoring", "preventive"})
 _ALLOWED_TREATMENT_CODES = frozenset({"A", "B", "C"})
+_ALLOWED_ADDENDUM_CATEGORIES = frozenset(ADDENDUM_CATEGORIES)
+_ALLOWED_ADDENDUM_VISIBILITIES = frozenset(ADDENDUM_VISIBILITIES)
 
 
 class AssessmentLifecycleError(ValueError):
@@ -189,12 +201,6 @@ def _ensure_legacy_treatment_plan(
     *,
     actor_user_id: int,
 ) -> TreatmentPlan:
-    """Preserve current finalization compatibility without owning Wave 2.3.
-
-    The helper never commits. If a compatibility plan already exists for the
-    assessment it is reused so retries cannot create a second plan.
-    """
-
     existing = TreatmentPlan.query.filter_by(assessment_id=assessment.id).first()
     if existing is not None:
         return existing
@@ -206,9 +212,7 @@ def _ensure_legacy_treatment_plan(
         advisor_id=actor_user_id,
         title="Vehicle Treatment Plan",
         internal_instructions=assessment.professional_recommendation,
-        client_summary=(
-            "A professional treatment pathway has been created for this vehicle."
-        ),
+        client_summary="A professional treatment pathway has been created for this vehicle.",
         status="approved",
     )
     db.session.add(plan)
@@ -216,8 +220,20 @@ def _ensure_legacy_treatment_plan(
     return plan
 
 
+def _finalization_event_for(assessment: VehicleAssessment) -> VehicleEvent | None:
+    return (
+        VehicleEvent.query.filter_by(
+            subject_type="vehicle_assessment",
+            subject_id=assessment.id,
+            event_type="assessment.finalized",
+        )
+        .order_by(VehicleEvent.occurred_at.desc(), VehicleEvent.id.desc())
+        .first()
+    )
+
+
 class AssessmentLifecycleService:
-    """Own Assessment creation/resume, safe draft persistence and finalization."""
+    """Own Assessment creation/resume, draft persistence, finalization and addenda."""
 
     @staticmethod
     def start_or_resume(
@@ -231,9 +247,7 @@ class AssessmentLifecycleService:
         _require_advisor(actor_user_id, consultation.car_id)
         _require_active_consultation(consultation)
 
-        existing = VehicleAssessment.query.filter_by(
-            consultation_id=consultation.id
-        ).first()
+        existing = VehicleAssessment.query.filter_by(consultation_id=consultation.id).first()
         if existing is not None:
             _require_scope_consistency(existing, consultation)
             if existing.status == ASSESSMENT_DRAFT and not existing.is_finalized:
@@ -251,10 +265,8 @@ class AssessmentLifecycleService:
             )
 
         event_time = _normalise_datetime(
-            occurred_at or _utcnow_naive(),
-            field_name="occurred_at",
+            occurred_at or _utcnow_naive(), field_name="occurred_at"
         )
-
         assessment = VehicleAssessment(
             consultation_id=consultation.id,
             car_id=consultation.car_id,
@@ -284,9 +296,7 @@ class AssessmentLifecycleService:
             title="Vehicle Assessment created",
             description="A professional Vehicle Assessment working record was created.",
             progression_direction="not_applicable",
-            idempotency_key=(
-                f"assessment:{assessment.id}:created:{_iso_token(event_time)}"
-            ),
+            idempotency_key=f"assessment:{assessment.id}:created:{_iso_token(event_time)}",
             previous_state=None,
             new_state=ASSESSMENT_DRAFT,
             evidence_refs=[
@@ -296,7 +306,6 @@ class AssessmentLifecycleService:
             data={"consultation_id": consultation.id},
             mileage=assessment.mileage_at_assessment,
         )
-
         return assessment
 
     @staticmethod
@@ -329,19 +338,13 @@ class AssessmentLifecycleService:
 
         prepared_risks = (
             _prepare_risks(risks, assessment_id=assessment.id)
-            if risks is not None
-            else None
+            if risks is not None else None
         )
         prepared_treatments = (
-            _prepare_treatment_options(
-                treatment_options,
-                assessment_id=assessment.id,
-            )
-            if treatment_options is not None
-            else None
+            _prepare_treatment_options(treatment_options, assessment_id=assessment.id)
+            if treatment_options is not None else None
         )
 
-        # Validation above happens before destructive replacement.
         if prepared_risks is not None:
             VehicleAssessmentRisk.query.filter_by(
                 assessment_id=assessment.id
@@ -380,8 +383,7 @@ class AssessmentLifecycleService:
             )
 
         missing = [
-            field_name
-            for field_name in _REQUIRED_FINALIZATION_FIELDS
+            field_name for field_name in _REQUIRED_FINALIZATION_FIELDS
             if not _clean_text(getattr(assessment, field_name, None))
         ]
         if missing:
@@ -390,10 +392,8 @@ class AssessmentLifecycleService:
             )
 
         event_time = _normalise_datetime(
-            finalized_at or _utcnow_naive(),
-            field_name="finalized_at",
+            finalized_at or _utcnow_naive(), field_name="finalized_at"
         )
-
         assessment.status = ASSESSMENT_FINALIZED
         assessment.is_finalized = True
         assessment.finalized_at = event_time
@@ -415,9 +415,7 @@ class AssessmentLifecycleService:
                 "to the vehicle care record."
             ),
             progression_direction="not_applicable",
-            idempotency_key=(
-                f"assessment:{assessment.id}:finalized:{_iso_token(event_time)}"
-            ),
+            idempotency_key=f"assessment:{assessment.id}:finalized:{_iso_token(event_time)}",
             previous_state=ASSESSMENT_DRAFT,
             new_state=ASSESSMENT_FINALIZED,
             evidence_refs=[
@@ -427,10 +425,125 @@ class AssessmentLifecycleService:
             data={"consultation_id": consultation.id},
             mileage=assessment.mileage_at_assessment,
         )
-
-        _ensure_legacy_treatment_plan(
-            assessment,
-            actor_user_id=actor_user_id,
-        )
-
+        _ensure_legacy_treatment_plan(assessment, actor_user_id=actor_user_id)
         return assessment
+
+    @staticmethod
+    def add_correction(
+        *,
+        assessment_id: int,
+        actor_user_id: int,
+        category: str,
+        reason: str,
+        visibility: str,
+        client_text: str | None = None,
+        internal_text: str | None = None,
+        idempotency_key: str,
+        occurred_at: datetime | None = None,
+        source: str = "assessment.correction",
+    ) -> VehicleAssessmentAddendum:
+        assessment = _load_assessment(assessment_id)
+        _require_advisor(actor_user_id, assessment.car_id)
+        if assessment.status != ASSESSMENT_FINALIZED or not assessment.is_finalized:
+            raise AssessmentLifecycleError(
+                "Corrections can only be added to a finalized Vehicle Assessment"
+            )
+
+        clean_category = _clean_text(category).lower()
+        clean_reason = _clean_text(reason)
+        clean_visibility = _clean_text(visibility).lower()
+        clean_client_text = _clean_text(client_text) or None
+        clean_internal_text = _clean_text(internal_text) or None
+        clean_key = _clean_text(idempotency_key)
+
+        if clean_category not in _ALLOWED_ADDENDUM_CATEGORIES:
+            raise AssessmentLifecycleError("Invalid assessment correction category")
+        if not clean_reason:
+            raise AssessmentLifecycleError("Assessment correction reason is required")
+        if len(clean_reason) > 240:
+            raise AssessmentLifecycleError(
+                "Assessment correction reason must be 240 characters or fewer"
+            )
+        if clean_visibility not in _ALLOWED_ADDENDUM_VISIBILITIES:
+            raise AssessmentLifecycleError("Invalid assessment correction visibility")
+        if not clean_client_text and not clean_internal_text:
+            raise AssessmentLifecycleError(
+                "Assessment correction requires client-visible or internal text"
+            )
+        if clean_visibility == "client" and not clean_client_text:
+            raise AssessmentLifecycleError(
+                "Client-visible assessment corrections require client-visible text"
+            )
+        if not clean_key or len(clean_key) > 128:
+            raise AssessmentLifecycleError(
+                "Assessment correction idempotency key is required and must be 128 characters or fewer"
+            )
+
+        existing = VehicleAssessmentAddendum.query.filter_by(
+            idempotency_key=clean_key
+        ).first()
+        if existing is not None:
+            if not all((
+                existing.assessment_id == assessment.id,
+                existing.created_by == actor_user_id,
+                existing.category == clean_category,
+                existing.reason == clean_reason,
+                existing.visibility == clean_visibility,
+                existing.client_text == clean_client_text,
+                existing.internal_text == clean_internal_text,
+            )):
+                raise AssessmentLifecycleError(
+                    "Assessment correction idempotency key was reused with different content"
+                )
+            return existing
+
+        event_time = _normalise_datetime(
+            occurred_at or _utcnow_naive(), field_name="occurred_at"
+        )
+        addendum = VehicleAssessmentAddendum(
+            assessment_id=assessment.id,
+            created_by=actor_user_id,
+            category=clean_category,
+            reason=clean_reason,
+            visibility=clean_visibility,
+            client_text=clean_client_text,
+            internal_text=clean_internal_text,
+            idempotency_key=clean_key,
+            created_at=event_time,
+        )
+        db.session.add(addendum)
+        db.session.flush()
+
+        finalized_event = _finalization_event_for(assessment)
+        emit_vehicle_event(
+            car_id=assessment.car_id,
+            event_type="assessment.corrected",
+            subject_type="vehicle_assessment",
+            subject_id=assessment.id,
+            actor_type="user",
+            actor_user_id=actor_user_id,
+            visibility=clean_visibility,
+            source=source[:50],
+            occurred_at=event_time,
+            title="Vehicle Assessment addendum recorded",
+            description=(
+                "An attributed professional addendum was added to the finalized "
+                "Vehicle Assessment. The original assessment remains unchanged."
+            ),
+            progression_direction="not_applicable",
+            idempotency_key=f"assessment:{assessment.id}:corrected:addendum:{addendum.id}",
+            previous_state=ASSESSMENT_FINALIZED,
+            new_state=ASSESSMENT_FINALIZED,
+            correction_of_event_id=finalized_event.id if finalized_event else None,
+            evidence_refs=[
+                {"type": "vehicle_assessment", "id": assessment.id},
+                {"type": "assessment_addendum", "id": addendum.id},
+            ],
+            data={
+                "addendum_id": addendum.id,
+                "category": clean_category,
+                "visibility": clean_visibility,
+            },
+            mileage=assessment.mileage_at_assessment,
+        )
+        return addendum

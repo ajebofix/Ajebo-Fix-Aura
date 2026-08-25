@@ -10,15 +10,23 @@ on:
       - ready_for_review
     paths:
       - "migrations/versions/f4c8a2d9b731_extend_vehicle_event_contract_for_assessments.py"
+      - "migrations/versions/a9d3e6f1c420_add_assessment_addenda_and_correction_events.py"
       - "scripts/verify_assessment_events_postgres.py"
+      - "scripts/verify_assessment_corrections_postgres.py"
       - "scripts/verify_consultation_events_postgres.py"
       - "scripts/verify_evidence_events_postgres.py"
       - "services/assessment_lifecycle.py"
       - "services/assessment_route_cutover.py"
+      - "services/assessment_correction_routes.py"
+      - "services/assessment_report_builder.py"
       - "services/event_emission.py"
       - "admin/progression_routes.py"
+      - "models_assessment_addendum.py"
+      - "templates/admin/assessment_addenda.html"
+      - "templates/reports/assessment_report.html"
       - "tests/test_assessment_lifecycle.py"
       - "tests/test_assessment_draft_persistence.py"
+      - "tests/test_assessment_corrections.py"
       - "models.py"
       - "security/access.py"
       - "requirements*.txt"
@@ -77,12 +85,18 @@ jobs:
         run: >-
           python -m compileall -q
           migrations/versions/f4c8a2d9b731_extend_vehicle_event_contract_for_assessments.py
+          migrations/versions/a9d3e6f1c420_add_assessment_addenda_and_correction_events.py
           scripts/verify_assessment_events_postgres.py
+          scripts/verify_assessment_corrections_postgres.py
+          models_assessment_addendum.py
           services/assessment_lifecycle.py
           services/assessment_route_cutover.py
+          services/assessment_correction_routes.py
+          services/assessment_report_builder.py
           services/event_emission.py
           tests/test_assessment_lifecycle.py
           tests/test_assessment_draft_persistence.py
+          tests/test_assessment_corrections.py
 
       - name: Upgrade fresh PostgreSQL database to current head
         run: |
@@ -96,9 +110,10 @@ jobs:
           from sqlalchemy import create_engine, inspect
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
           checks = {
               item["name"]
-              for item in inspect(engine).get_check_constraints("vehicle_events")
+              for item in inspector.get_check_constraints("vehicle_events")
           }
           required = {
               "ck_vehicle_events_canonical_subject_event",
@@ -109,7 +124,9 @@ jobs:
           missing = required - checks
           if missing:
               raise SystemExit(f"Missing VehicleEvent checks: {sorted(missing)}")
-          print("Assessment VehicleEvent PostgreSQL checks installed.")
+          if "vehicle_assessment_addenda" not in inspector.get_table_names():
+              raise SystemExit("Vehicle Assessment addenda table is missing")
+          print("Assessment VehicleEvent PostgreSQL checks and B3 addenda table installed.")
           PY
 
       - name: Rehearse downgrade to Wave 2.2A event head
@@ -120,12 +137,15 @@ jobs:
           from sqlalchemy import create_engine, inspect, text
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
           checks = {
               item["name"]
-              for item in inspect(engine).get_check_constraints("vehicle_events")
+              for item in inspector.get_check_constraints("vehicle_events")
           }
           if "ck_vehicle_events_assessment_contract" in checks:
               raise SystemExit("Assessment constraint survived downgrade unexpectedly")
+          if "vehicle_assessment_addenda" in inspector.get_table_names():
+              raise SystemExit("Assessment addenda table survived downgrade unexpectedly")
           required = {
               "ck_vehicle_events_canonical_subject_event",
               "ck_vehicle_events_evidence_contract",
@@ -185,15 +205,22 @@ jobs:
       - name: Verify assessment lifecycle against PostgreSQL constraints
         run: python scripts/verify_assessment_events_postgres.py
 
-      - name: Run assessment lifecycle and route persistence tests
+      - name: Verify assessment corrections against PostgreSQL constraints
+        run: python scripts/verify_assessment_corrections_postgres.py
+
+      - name: Run assessment lifecycle, correction, and route persistence tests
         run: >-
           pytest -q
           tests/test_assessment_lifecycle.py
           tests/test_assessment_draft_persistence.py
+          tests/test_assessment_corrections.py
 
       - name: Bandit assessment lifecycle slice
         run: >-
           bandit -q
           scripts/verify_assessment_events_postgres.py
+          scripts/verify_assessment_corrections_postgres.py
+          models_assessment_addendum.py
           services/assessment_lifecycle.py
           services/assessment_route_cutover.py
+          services/assessment_correction_routes.py

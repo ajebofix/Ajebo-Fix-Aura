@@ -2,17 +2,19 @@ from datetime import datetime
 from services.assessment_risk_engine import calculate_assessment_risk
 from models import CarOwnership
 from models import User
+from models_assessment_addendum import VehicleAssessmentAddendum
 
 # =====================================================
 # VEHICLE ASSESSMENT REPORT BUILDER
 # =====================================================
 # IMPORTANT:
-# - Pure function
+# - Read-only builder
 # - NO database writes
 # - NO HTML
 # - NO PDF
 # - NO pricing
 # - NO diagnosis
+# - Finalized assessment content is never rewritten by addenda
 # =====================================================
 
 
@@ -20,21 +22,24 @@ class AssessmentNotFinalizedError(Exception):
     pass
 
 
+def _advisor_display(user):
+    if not user:
+        return None
+    return (
+        getattr(user, "full_name", None)
+        or getattr(user, "name", None)
+        or getattr(user, "email", None)
+    )
+
+
 def build_assessment_report(*, assessment):
-    """
-    Builds a structured professional vehicle report
-    from a FINALIZED VehicleAssessment.
+    """Build the owner-safe report for one finalized VehicleAssessment.
 
-    INPUT:
-        assessment (VehicleAssessment) — must be finalized
-
-    OUTPUT:
-        dict — canonical report structure
+    Client-visible corrections/addenda are appended after the original report.
+    Advisor/internal addenda are deliberately excluded from this shared report
+    surface so owner authorization cannot expose restricted professional notes.
     """
 
-    # -------------------------------------------------
-    # Guard: Assessment must be finalized
-    # -------------------------------------------------
     if not assessment.is_finalized:
         raise AssessmentNotFinalizedError(
             "Assessment must be finalized before generating report."
@@ -50,15 +55,11 @@ def build_assessment_report(*, assessment):
     consultation = assessment.consultation
 
     advisor = None
-
     if assessment.finalized_by:
         advisor = User.query.get(assessment.finalized_by)
 
     risk = calculate_assessment_risk(assessment)
 
-    # -------------------------------------------------
-    # SECTION 0 — TITLE PAGE
-    # -------------------------------------------------
     title_page = {
         "powered_by": "Ajebo Fix",
         "issued_date": assessment.finalized_at,
@@ -67,9 +68,6 @@ def build_assessment_report(*, assessment):
         "current_mileage": car.current_mileage,
     }
 
-    # -------------------------------------------------
-    # SECTION 1 — VEHICLE OVERVIEW
-    # -------------------------------------------------
     vehicle_overview = {
         "brand": car.brand,
         "model": car.model,
@@ -84,10 +82,6 @@ def build_assessment_report(*, assessment):
         ),
     }
 
-    # -------------------------------------------------
-    # SECTION 2 — CURRENT HEALTH STATUS
-    # -------------------------------------------------
-
     current_health_status = {
         "engine_system": assessment.engine_status,
         "transmission_system": assessment.transmission_status,
@@ -96,11 +90,7 @@ def build_assessment_report(*, assessment):
         "cooling_and_lubrication": assessment.cooling_status,
     }
 
-    # -------------------------------------------------
-    # SECTION 3 — IDENTIFIED RISKS
-    # -------------------------------------------------
     identified_risks = []
-
     for item in getattr(assessment, "risks", []) or []:
         identified_risks.append(
             {
@@ -109,23 +99,18 @@ def build_assessment_report(*, assessment):
                 "potential_consequence": item.consequence_if_ignored,
             }
         )
-    # -------------------------------------------------
-    # SECTION 4 — URGENCY CLASSIFICATION
-    # -------------------------------------------------
+
     immediate = []
     monitoring = []
     preventive = []
 
-    for risk in getattr(assessment, "risks", []) or []:
-
-        if risk.urgency == "immediate":
-            immediate.append(risk.description)
-
-        elif risk.urgency == "monitoring":
-            monitoring.append(risk.description)
-
-        elif risk.urgency == "preventive":
-            preventive.append(risk.description)
+    for item in getattr(assessment, "risks", []) or []:
+        if item.urgency == "immediate":
+            immediate.append(item.description)
+        elif item.urgency == "monitoring":
+            monitoring.append(item.description)
+        elif item.urgency == "preventive":
+            preventive.append(item.description)
 
     urgency_classification = {
         "immediate_attention": immediate,
@@ -133,18 +118,11 @@ def build_assessment_report(*, assessment):
         "preventive_recommendations": preventive,
     }
 
-    # -------------------------------------------------
-    # SECTION 5 — COST VS CONSEQUENCE (LOGIC FRAME)
-    # -------------------------------------------------
     cost_vs_consequence = {
         "summary": assessment.cost_consequence_analysis
     }
 
-    # -------------------------------------------------
-    # SECTION 6 — RECOMMENDED TREATMENT PATHS
-    # -------------------------------------------------
     treatment_paths = []
-
     for option in getattr(assessment, "treatment_options", []) or []:
         treatment_paths.append(
             {
@@ -154,24 +132,36 @@ def build_assessment_report(*, assessment):
             }
         )
 
-    # -------------------------------------------------
-    # SECTION 7 — PROFESSIONAL RECOMMENDATION
-    # -------------------------------------------------
     professional_recommendation = {
         "statement": getattr(assessment, "professional_recommendation", None),
         "recommended_option": getattr(assessment, "recommended_option", None),
-        "advisor": (
-            getattr(advisor, "full_name", None)
-            or getattr(advisor, "name", None)
-            or getattr(advisor, "email", None)
-            if advisor
-            else None
-        ),
+        "advisor": _advisor_display(advisor),
     }
 
-    # -------------------------------------------------
-    # FINAL REPORT PACKAGE
-    # -------------------------------------------------
+    addenda = []
+    client_addenda = (
+        VehicleAssessmentAddendum.query.filter_by(
+            assessment_id=assessment.id,
+            visibility="client",
+        )
+        .order_by(
+            VehicleAssessmentAddendum.created_at.asc(),
+            VehicleAssessmentAddendum.id.asc(),
+        )
+        .all()
+    )
+    for addendum in client_addenda:
+        addenda.append(
+            {
+                "id": addendum.id,
+                "category": addendum.category,
+                "reason": addendum.reason,
+                "statement": addendum.client_text,
+                "created_at": addendum.created_at,
+                "advisor": _advisor_display(addendum.creator),
+            }
+        )
+
     return {
         "meta": {
             "assessment_id": assessment.id,
@@ -187,4 +177,5 @@ def build_assessment_report(*, assessment):
         "cost_vs_consequence": cost_vs_consequence,
         "treatment_paths": treatment_paths,
         "professional_recommendation": professional_recommendation,
+        "addenda": addenda,
     }

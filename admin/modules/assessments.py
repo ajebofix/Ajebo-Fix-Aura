@@ -20,23 +20,18 @@ assessments_bp = Blueprint(
 
 
 # =====================================================
-# 🔒 SHARED — DOWNLOAD FINALIZED ASSESSMENT REPORT
+# SHARED — CANONICAL FINALIZED ASSESSMENT REPORT
 # =====================================================
 
 
-@assessments_bp.route("/<int:assessment_id>/download", methods=["GET"])
 @login_required
-def admin_download_assessment_pdf(assessment_id):
+def assessment_report(assessment_id):
     """Serve one finalized report under explicit advisor/owner authority.
 
-    The shared vehicle profile currently renders this endpoint for both advisor
-    and owner views. Advisors retain direct report access. Owners are authorized
-    only when they hold the active ownership for the assessment vehicle.
-
-    This compatibility route intentionally performs owner authorization itself
-    instead of redirecting to the dormant ``car_assessments`` blueprint. That
-    blueprint is not registered in the production application today, and a
-    redirect to its endpoint caused the Wave 2.2A5 production ``BuildError``.
+    The report is a vehicle professional-record resource rather than an admin
+    resource, so its canonical URL is role-neutral. Advisors retain direct
+    access. Owners are authorized only when they hold the active ownership for
+    the assessment vehicle.
     """
 
     assessment = VehicleAssessment.query.get_or_404(assessment_id)
@@ -76,4 +71,35 @@ def admin_download_assessment_pdf(assessment_id):
         headers={
             "Content-Disposition": f"inline; filename=assessment_{assessment.id}.html"
         },
+    )
+
+
+@assessments_bp.record_once
+def register_canonical_assessment_report(state):
+    """Register the role-neutral report URL when the legacy blueprint mounts."""
+
+    state.app.add_url_rule(
+        "/assessments/<int:assessment_id>/report",
+        endpoint="assessment_reports.assessment_report",
+        view_func=assessment_report,
+        methods=["GET"],
+    )
+
+
+# =====================================================
+# LEGACY — ADMIN-PREFIXED REPORT URL
+# =====================================================
+
+
+@assessments_bp.route("/<int:assessment_id>/download", methods=["GET"])
+@login_required
+def admin_download_assessment_pdf(assessment_id):
+    """Redirect old/bookmarked report URLs to the canonical neutral route."""
+
+    return redirect(
+        url_for(
+            "assessment_reports.assessment_report",
+            assessment_id=assessment_id,
+        ),
+        code=302,
     )

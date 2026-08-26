@@ -124,6 +124,12 @@ def test_owner_assessment_download_security_regression(app):
     )
 
 
+def test_owner_assessment_report_data_correctness_regression(app):
+    assessment_download_tests.test_active_owner_can_download_finalized_report_from_shared_profile_route(
+        app
+    )
+
+
 def test_advisor_assessment_download_security_regression(app):
     assessment_download_tests.test_advisor_keeps_direct_report_access(app)
 

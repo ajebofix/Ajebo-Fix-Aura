@@ -97,11 +97,11 @@ RISK SCORE
 <div class="dashboard-grid">
 <div class="metric-card">
 <span class="metric-label">Risk Level</span>
-<span class="metric-value">{{ report.risk.level }}</span>
+<span class="metric-value">{{ report["risk"]["label"] or "—" }}</span>
 </div>
 <div class="metric-card">
 <span class="metric-label">Risk Score</span>
-<span class="metric-value">{{ report.risk.score }}/100</span>
+<span class="metric-value">{{ report["risk"]["score"] }}/100</span>
 </div>
 </div>
 </section>

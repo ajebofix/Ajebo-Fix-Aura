@@ -73,7 +73,7 @@ def build_assessment_report(*, assessment):
         "model": car.model,
         "year": car.year,
         "engine_type": getattr(car, "engine_type", None),
-        "transmission": getattr(car, "transmission", None),
+        "transmission": getattr(car, "transmission_type", None),
         "usage_pattern": assessment.usage_pattern,
         "ownership_duration": (
             (datetime.utcnow() - ownership.start_date).days

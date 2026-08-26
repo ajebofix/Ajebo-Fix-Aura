@@ -33,6 +33,7 @@ def _fixture(*, suffix: int = 1):
         model="GLE 450 4MATIC",
         year=2021,
         vin=f"W1NDOWNLD{suffix:08d}",
+        transmission_type="9G-TRONIC",
         current_mileage=64000,
     )
     db.session.add(car)
@@ -128,9 +129,12 @@ def test_active_owner_can_download_finalized_report_from_shared_profile_route(ap
     assert response.status_code == 200
     assert response.mimetype == "text/html"
     assert "inline" in response.headers["Content-Disposition"]
-    assert "Advisor-approved assessment recommendation." in response.get_data(
-        as_text=True
-    )
+
+    html = response.get_data(as_text=True)
+    assert "Advisor-approved assessment recommendation." in html
+    assert "9G-TRONIC" in html
+    assert "LOW RISK" in html
+    assert "30/100" in html
 
 
 def test_advisor_keeps_direct_report_access(app):

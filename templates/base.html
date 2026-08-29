@@ -102,6 +102,9 @@ rel="stylesheet">
             <a href="/driver/dashboard" class="nav-item">Assigned Vehicles</a>
             {% elif current_user.is_authenticated and current_user.role not in ['admin', 'advisor'] %}
             <a href="/cars" class="nav-item">Vehicles</a>
+            <a href="{{ url_for('cars.owner_treatment_plans') }}" class="nav-item">
+                Treatment Plans
+            </a>
             {% endif %}
 
             <a href="/chat" class="nav-item">A.J. Rina</a>

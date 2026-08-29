@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Treatment Plans · Aura{% endblock %}
+
+{% block page_title %}Treatment Plans{% endblock %}
+
+{% block page_subtitle %}
+Professional care pathways awaiting or following your authorization.
+{% endblock %}
+
+{% block content %}
+<section class="card fade-up">
+    <h2>Your Treatment Plans</h2>
+    <p class="muted">
+        A proposed plan is a professional recommendation. Treatment does not
+        begin until the required authorization and advisor coordination occur.
+    </p>
+</section>
+
+{% if treatment_plans %}
+    {% for plan in treatment_plans %}
+    <section class="card fade-up">
+        <div class="section-head">
+            <div>
+                <h2>{{ plan.title }}</h2>
+                <p class="muted">
+                    {{ plan.car.decoded_display_name if plan.car else "Vehicle" }}
+                </p>
+            </div>
+            <span class="pill">
+                {{ plan.status|replace("_", " ")|title }}
+            </span>
+        </div>
+
+        {% if plan.client_summary %}
+        <p>{{ plan.client_summary }}</p>
+        {% endif %}
+
+        {% if plan.status == "proposed" %}
+        <div class="list-item">
+            <strong>Owner authorization required</strong>
+            <p class="muted">
+                Authorizing allows your Ajebo Fix advisor to coordinate this
+                treatment pathway. It does not mark treatment as started or completed.
+            </p>
+            <form
+                method="POST"
+                action="{{ url_for('cars.authorize_treatment_plan', plan_id=plan.id) }}"
+            >
+                <button class="btn btn-primary" type="submit">
+                    Authorize Treatment Plan
+                </button>
+            </form>
+        </div>
+        {% elif plan.status == "authorized" %}
+        <p class="muted">
+            Authorized. Awaiting advisor scheduling or treatment start.
+        </p>
+        {% elif plan.status == "scheduled" %}
+        <p class="muted">Scheduled for advisor-coordinated treatment.</p>
+        {% elif plan.status == "in_progress" %}
+        <p class="muted">Treatment is currently in progress.</p>
+        {% elif plan.status == "monitoring" %}
+        <p class="muted">
+            Treatment is under professional monitoring before outcome review.
+        </p>
+        {% elif plan.status == "completed" %}
+        <p class="muted">
+            Planned treatment work has been recorded complete. Vehicle health
+            and any reported concerns remain independently monitored.
+        </p>
+        {% elif plan.status == "deferred" %}
+        <p class="muted">This treatment pathway is currently deferred.</p>
+        <form
+            method="POST"
+            action="{{ url_for('cars.authorize_treatment_plan', plan_id=plan.id) }}"
+        >
+            <button class="btn btn-primary" type="submit">
+                Re-authorize Treatment Plan
+            </button>
+        </form>
+        {% elif plan.status == "cancelled" %}
+        <p class="muted">This treatment pathway has been cancelled.</p>
+        {% elif plan.status == "approved" %}
+        <p class="muted">
+            Historical treatment plan. Your advisor can continue this legacy
+            pathway without rewriting its earlier history.
+        </p>
+        {% endif %}
+
+        <p class="muted">
+            Updated {{ plan.updated_at.strftime("%Y-%m-%d %H:%M") }}
+        </p>
+
+        <a
+            href="{{ url_for('cars.car_detail', car_id=plan.car_id) }}"
+            class="btn btn-secondary"
+        >
+            Open Vehicle
+        </a>
+    </section>
+    {% endfor %}
+{% else %}
+<section class="card fade-up">
+    <h2>No treatment plans yet</h2>
+    <p class="muted">
+        When a finalized professional assessment produces a treatment pathway,
+        it will appear here for review.
+    </p>
+</section>
+{% endif %}
+{% endblock %}

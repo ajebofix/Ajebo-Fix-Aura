@@ -1,0 +1,261 @@
+name: Aura Treatment Plan Events PostgreSQL CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/versions/c2f7a8e4d910_extend_vehicle_event_contract_for_treatment.py"
+      - "scripts/verify_treatment_plan_events_postgres.py"
+      - "scripts/verify_assessment_events_postgres.py"
+      - "scripts/verify_assessment_corrections_postgres.py"
+      - "scripts/verify_consultation_events_postgres.py"
+      - "scripts/verify_evidence_events_postgres.py"
+      - "services/treatment_event_emission.py"
+      - "services/treatment_plan_lifecycle.py"
+      - "services/treatment_plan_route_cutover.py"
+      - "services/assessment_lifecycle.py"
+      - "services/assessment_route_cutover.py"
+      - "services/event_emission.py"
+      - "admin/progression_routes.py"
+      - "templates/base.html"
+      - "templates/treatment_plans/owner_index.html"
+      - "tests/test_treatment_plan_lifecycle.py"
+      - "tests/test_treatment_plan_routes.py"
+      - "tests/test_assessment_lifecycle.py"
+      - "tests/test_assessment_draft_persistence.py"
+      - "models.py"
+      - "security/access.py"
+      - "requirements*.txt"
+      - ".github/workflows/treatment-plan-events-postgres-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-treatment-plan-postgres-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile Treatment Plan lifecycle slice
+        run: >-
+          python -m compileall -q
+          migrations/versions/c2f7a8e4d910_extend_vehicle_event_contract_for_treatment.py
+          scripts/verify_treatment_plan_events_postgres.py
+          services/treatment_event_emission.py
+          services/treatment_plan_lifecycle.py
+          services/treatment_plan_route_cutover.py
+          services/assessment_route_cutover.py
+          tests/test_treatment_plan_lifecycle.py
+          tests/test_treatment_plan_routes.py
+
+      - name: Upgrade fresh PostgreSQL database to current head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify Wave 2.3B database contract is installed
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          required = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_evidence_contract",
+              "ck_vehicle_events_consultation_contract",
+              "ck_vehicle_events_assessment_contract",
+              "ck_vehicle_events_treatment_plan_contract",
+          }
+          missing = required - checks
+          if missing:
+              raise SystemExit(f"Missing VehicleEvent checks: {sorted(missing)}")
+
+          indexes = {
+              item["name"]
+              for item in inspector.get_indexes("treatment_plans")
+          }
+          if "uq_treatment_plans_assessment_id" not in indexes:
+              raise SystemExit("Treatment Plan assessment uniqueness index is missing")
+          print("Wave 2.3B Treatment Plan PostgreSQL contract installed.")
+          PY
+
+      - name: Rehearse downgrade to exact Wave 2.2B3 head
+        run: |
+          python -m flask db downgrade a9d3e6f1c420
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          if "ck_vehicle_events_treatment_plan_contract" in checks:
+              raise SystemExit("Treatment Plan constraint survived downgrade unexpectedly")
+
+          required = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_evidence_contract",
+              "ck_vehicle_events_consultation_contract",
+              "ck_vehicle_events_assessment_contract",
+          }
+          missing = required - checks
+          if missing:
+              raise SystemExit(
+                  f"Wave 2.2B3 contract regressed during downgrade: {sorted(missing)}"
+              )
+
+          indexes = {
+              item["name"]
+              for item in inspector.get_indexes("treatment_plans")
+          }
+          if "uq_treatment_plans_assessment_id" in indexes:
+              raise SystemExit("Treatment Plan uniqueness index survived downgrade")
+
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+          if version != "a9d3e6f1c420":
+              raise SystemExit(f"Unexpected downgraded Alembic version: {version}")
+          print("Downgrade restored exact Wave 2.2B3 database contract.")
+          PY
+
+      - name: Re-upgrade Treatment Plan contract
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify evidence event regression contract
+        run: python scripts/verify_evidence_events_postgres.py
+
+      - name: Reset database after evidence verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+
+      - name: Verify consultation event regression contract
+        run: python scripts/verify_consultation_events_postgres.py
+
+      - name: Reset database after consultation verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+
+      - name: Verify assessment event regression contract
+        run: python scripts/verify_assessment_events_postgres.py
+
+      - name: Reset database after assessment verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+
+      - name: Verify assessment correction regression contract
+        run: python scripts/verify_assessment_corrections_postgres.py
+
+      - name: Reset database before Treatment Plan verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+
+      - name: Verify Treatment Plan lifecycle against PostgreSQL constraints
+        run: python scripts/verify_treatment_plan_events_postgres.py
+
+      - name: Run Treatment Plan and assessment integration tests
+        run: >-
+          pytest -q
+          tests/test_treatment_plan_lifecycle.py
+          tests/test_treatment_plan_routes.py
+          tests/test_assessment_lifecycle.py
+          tests/test_assessment_draft_persistence.py
+
+      - name: Bandit Treatment Plan lifecycle slice
+        run: >-
+          bandit -q
+          scripts/verify_treatment_plan_events_postgres.py
+          services/treatment_event_emission.py
+          services/treatment_plan_lifecycle.py
+          services/treatment_plan_route_cutover.py
+          services/assessment_route_cutover.py

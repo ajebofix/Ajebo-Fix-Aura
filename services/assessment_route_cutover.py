@@ -16,12 +16,13 @@ from flask_login import current_user, login_required
 from admin.routes import admin_bp
 from admin.utils import advisor_required
 from extensions import db
-from models import VehicleAssessment
+from models import TreatmentPlan, VehicleAssessment
 from services.assessment_lifecycle import (
     AssessmentLifecycleError,
     AssessmentLifecycleService,
 )
 from services.assessment_risk_engine import calculate_assessment_risk
+from services.treatment_plan_lifecycle import TreatmentPlanLifecycleService
 
 
 class AssessmentDraftFormError(ValueError):
@@ -110,13 +111,11 @@ def _normalise_draft_submission() -> tuple[
             clean_consequence = (consequence or "").strip()
             clean_urgency = (urgency or "").strip()
 
-            # The UI can submit default urgency values for an otherwise blank
-            # placeholder row. A blank description means the row does not exist;
-            # non-placeholder partial rows are rejected rather than persisted.
             if not clean_description:
                 if clean_cause or clean_consequence:
                     raise AssessmentDraftFormError(
-                        "A partially completed risk row was not saved. Existing data was preserved."
+                        "A partially completed risk row was not saved. "
+                        "Existing data was preserved."
                     )
                 continue
 
@@ -142,14 +141,12 @@ def _normalise_draft_submission() -> tuple[
             clean_description = (description or "").strip()
             clean_code = (code or "").strip()
 
-            # The template renders A/B/C option-code placeholders even when an
-            # option row has no content. Treat a row with no title/description as
-            # intentionally blank; reject a genuinely partial content row.
             if not clean_title and not clean_description:
                 continue
             if not clean_title or not clean_description:
                 raise AssessmentDraftFormError(
-                    "A partially completed treatment option was not saved. Existing data was preserved."
+                    "A partially completed treatment option was not saved. "
+                    "Existing data was preserved."
                 )
 
             treatment_options.append(
@@ -251,12 +248,23 @@ def admin_edit_assessment_cutover(assessment_id: int):
 @login_required
 @advisor_required
 def admin_finalize_assessment_cutover(assessment_id: int):
+    existing_plan = TreatmentPlan.query.filter_by(
+        assessment_id=assessment_id
+    ).first()
+
     try:
         assessment = AssessmentLifecycleService.finalize(
             assessment_id=assessment_id,
             actor_user_id=current_user.id,
             source="admin.assessment_finalize",
         )
+        if existing_plan is None:
+            TreatmentPlanLifecycleService.canonicalize_new_assessment_plan(
+                assessment_id=assessment.id,
+                actor_user_id=current_user.id,
+                occurred_at=assessment.finalized_at,
+                source="admin.assessment_finalize",
+            )
         db.session.commit()
     except AssessmentLifecycleError as exc:
         db.session.rollback()

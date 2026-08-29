@@ -96,12 +96,15 @@ def test_owner_treatment_page_is_reachable_and_client_safe(app):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
+    csrf_token = _csrf(client)
     assert "Treatment Plans" in html
     assert "Front suspension care pathway" in html
     assert "Authorize Treatment Plan" in html
     assert "A professional suspension treatment pathway is ready for review." in html
     assert "ADVISOR ONLY: hidden execution detail" not in html
     assert f"/cars/treatment-plans/{plan_id}/authorize" in html
+    assert 'name="csrf_token"' in html
+    assert f'value="{csrf_token}"' in html
 
 
 def test_owner_authorization_route_records_owner_fact_once(app):

@@ -118,11 +118,11 @@ class TreatmentAction(db.Model):
             name="ck_treatment_actions_visibility",
         ),
         db.CheckConstraint(
-            "char_length(trim(creation_key)) > 0",
+            "length(trim(creation_key)) > 0",
             name="ck_treatment_actions_creation_key_nonblank",
         ),
         db.CheckConstraint(
-            "char_length(trim(title)) > 0",
+            "length(trim(title)) > 0",
             name="ck_treatment_actions_title_nonblank",
         ),
         db.Index(
@@ -224,11 +224,11 @@ class TreatmentOutcome(db.Model):
             name="ck_treatment_outcomes_observation_provenance",
         ),
         db.CheckConstraint(
-            "char_length(trim(recording_key)) > 0",
+            "length(trim(recording_key)) > 0",
             name="ck_treatment_outcomes_recording_key_nonblank",
         ),
         db.CheckConstraint(
-            "char_length(trim(summary)) > 0",
+            "length(trim(summary)) > 0",
             name="ck_treatment_outcomes_summary_nonblank",
         ),
         db.Index(

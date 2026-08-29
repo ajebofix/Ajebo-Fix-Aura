@@ -130,6 +130,10 @@ def test_owner_assessment_report_data_correctness_regression(app):
     )
 
 
+def test_owner_real_pdf_download_security_regression(app):
+    assessment_download_tests.test_active_owner_can_download_real_pdf_report(app)
+
+
 def test_advisor_assessment_download_security_regression(app):
     assessment_download_tests.test_advisor_keeps_direct_report_access(app)
 
@@ -151,4 +155,6 @@ def test_legacy_assessment_report_url_redirect_security_regression(app):
 
 
 def test_neutral_assessment_report_route_registration_regression(app):
-    assessment_download_tests.test_neutral_route_is_registered_without_admin_prefix(app)
+    assessment_download_tests.test_neutral_routes_are_registered_without_admin_prefix(
+        app
+    )

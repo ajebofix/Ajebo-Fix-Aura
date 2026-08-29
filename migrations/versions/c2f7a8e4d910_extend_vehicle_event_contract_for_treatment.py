@@ -138,6 +138,22 @@ def _treatment_contract_condition() -> str:
 
 def _preflight_upgrade() -> None:
     bind = op.get_bind()
+
+    duplicate_assessments = bind.execute(
+        sa.text(
+            "SELECT COUNT(*) FROM ("
+            "SELECT assessment_id FROM treatment_plans "
+            "WHERE assessment_id IS NOT NULL "
+            "GROUP BY assessment_id HAVING COUNT(*) > 1"
+            ") AS duplicate_assessment_plans"
+        )
+    ).scalar_one()
+    if duplicate_assessments:
+        raise RuntimeError(
+            "Cannot enforce one Treatment Plan per Assessment: "
+            f"found {duplicate_assessments} duplicated assessment reference(s)"
+        )
+
     invalid_pairs = bind.execute(
         sa.text(
             "SELECT COUNT(*) FROM vehicle_events "
@@ -169,6 +185,12 @@ def upgrade():
         return
 
     _preflight_upgrade()
+    op.create_index(
+        "uq_treatment_plans_assessment_id",
+        "treatment_plans",
+        ["assessment_id"],
+        unique=True,
+    )
     op.drop_constraint(
         "ck_vehicle_events_canonical_subject_event",
         "vehicle_events",
@@ -217,4 +239,8 @@ def downgrade():
         "ck_vehicle_events_canonical_subject_event",
         "vehicle_events",
         _base_pair_condition(include_treatment=False),
+    )
+    op.drop_index(
+        "uq_treatment_plans_assessment_id",
+        table_name="treatment_plans",
     )

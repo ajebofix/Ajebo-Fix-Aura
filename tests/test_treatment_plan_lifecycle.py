@@ -80,7 +80,6 @@ def _context(*, suffix: str):
         CarDriver(
             user_id=driver.id,
             car_id=car.id,
-            assigned_by=owner.id,
             is_active=True,
         )
     )
@@ -99,6 +98,7 @@ def _context(*, suffix: str):
     assessment = VehicleAssessment(
         car_id=car.id,
         consultation_id=consultation.id,
+        advisor_id=advisor.id,
         vin=car.vin,
         mileage_at_assessment=car.current_mileage,
         status="finalized",

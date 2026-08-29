@@ -106,7 +106,7 @@ def _validate_transition(
         )
     elif event_type == "treatment.started":
         valid = (
-            previous_state in {"authorized", "scheduled", "approved"}
+            previous_state in {"authorized", "scheduled", "approved", "monitoring"}
             and new_state == "in_progress"
         )
     elif event_type == "treatment.monitoring_started":

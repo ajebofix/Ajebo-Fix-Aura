@@ -224,13 +224,16 @@ Record / Review Addenda
 {% endif %}
 
 <!-- ======================================
-DOWNLOAD BUTTON
+REAL PDF DOWNLOAD
 ====================================== -->
 {% if print_mode %}
 <section class="card">
-<button onclick="window.print()" class="btn btn-primary btn-block">
-Download Report
-</button>
+<a
+href="{{ url_for('assessment_reports.assessment_report_pdf', assessment_id=report.meta.assessment_id) }}"
+class="btn btn-primary btn-block"
+>
+Download PDF Report
+</a>
 </section>
 {% endif %}
 

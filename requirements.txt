@@ -15,5 +15,6 @@ redis>=5.2,<7
 cryptography==50.0.0
 boto3==1.43.55
 Pillow==12.3.0
+reportlab>=4.4,<5
 gunicorn==23.0.0
 psycopg2-binary==2.9.10

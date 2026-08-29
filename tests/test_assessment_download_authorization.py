@@ -108,6 +108,10 @@ def _canonical_report_path(assessment_id: int) -> str:
     return f"/assessments/{assessment_id}/report"
 
 
+def _pdf_report_path(assessment_id: int) -> str:
+    return f"/assessments/{assessment_id}/report.pdf"
+
+
 def _legacy_report_path(assessment_id: int) -> str:
     return f"/admin/assessments/{assessment_id}/download"
 
@@ -135,6 +139,29 @@ def test_active_owner_can_download_finalized_report_from_shared_profile_route(ap
     assert "9G-TRONIC" in html
     assert "LOW RISK" in html
     assert "30/100" in html
+    assert _pdf_report_path(assessment_id) in html
+    assert "Download PDF Report" in html
+    assert "window.print()" not in html
+
+
+def test_active_owner_can_download_real_pdf_report(app):
+    client = app.test_client()
+
+    with app.app_context():
+        owner_email, _, assessment_id, _ = _fixture(suffix=7)
+
+    _login(client, owner_email)
+    response = client.get(_pdf_report_path(assessment_id), follow_redirects=False)
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.data.startswith(b"%PDF-")
+    assert len(response.data) > 3000
+    assert "attachment" in response.headers["Content-Disposition"]
+    assert "Ajebo_Fix_Vehicle_Health_Risk_Report_" in response.headers[
+        "Content-Disposition"
+    ]
+    assert "no-store" in response.headers["Cache-Control"]
 
 
 def test_advisor_keeps_direct_report_access(app):
@@ -153,6 +180,20 @@ def test_advisor_keeps_direct_report_access(app):
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
+
+
+def test_advisor_can_download_real_pdf_report(app):
+    client = app.test_client()
+
+    with app.app_context():
+        _, advisor_email, assessment_id, _ = _fixture(suffix=8)
+
+    _login(client, advisor_email)
+    response = client.get(_pdf_report_path(assessment_id), follow_redirects=False)
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.data.startswith(b"%PDF-")
 
 
 def test_unrelated_authenticated_user_cannot_receive_owner_report(app):
@@ -174,6 +215,13 @@ def test_unrelated_authenticated_user_cannot_receive_owner_report(app):
     assert response.status_code in {302, 303}
     assert "/dashboard" in response.headers["Location"]
 
+    pdf_response = client.get(
+        _pdf_report_path(assessment_id),
+        follow_redirects=False,
+    )
+    assert pdf_response.status_code in {302, 303}
+    assert "/dashboard" in pdf_response.headers["Location"]
+
 
 def test_inactive_former_owner_cannot_receive_report(app):
     client = app.test_client()
@@ -193,6 +241,13 @@ def test_inactive_former_owner_cannot_receive_report(app):
 
     assert response.status_code in {302, 303}
     assert "/dashboard" in response.headers["Location"]
+
+    pdf_response = client.get(
+        _pdf_report_path(assessment_id),
+        follow_redirects=False,
+    )
+    assert pdf_response.status_code in {302, 303}
+    assert "/dashboard" in pdf_response.headers["Location"]
 
 
 def test_legacy_admin_prefixed_report_url_redirects_to_neutral_route(app):
@@ -235,13 +290,21 @@ def test_legacy_report_url_preserves_owner_authorization_after_redirect(app):
     )
 
 
-def test_neutral_route_is_registered_without_admin_prefix(app):
+def test_neutral_routes_are_registered_without_admin_prefix(app):
     rules = {
         rule.endpoint: rule.rule
         for rule in app.url_map.iter_rules()
-        if rule.endpoint == "assessment_reports.assessment_report"
+        if rule.endpoint
+        in {
+            "assessment_reports.assessment_report",
+            "assessment_reports.assessment_report_pdf",
+        }
     }
 
     assert rules["assessment_reports.assessment_report"] == (
         "/assessments/<int:assessment_id>/report"
     )
+    assert rules["assessment_reports.assessment_report_pdf"] == (
+        "/assessments/<int:assessment_id>/report.pdf"
+    )
+    assert all("/admin/" not in path for path in rules.values())

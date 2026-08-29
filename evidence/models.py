@@ -44,6 +44,8 @@ EVIDENCE_SUBJECT_TYPES = (
     "consultation",
     "assessment",
     "treatment_plan",
+    "treatment_action",
+    "treatment_outcome",
     "vehicle_event",
 )
 EVIDENCE_RELATIONSHIP_TYPES = ("supports", "documents")

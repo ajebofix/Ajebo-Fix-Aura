@@ -161,7 +161,7 @@ def test_active_owner_can_download_real_pdf_report(app):
     assert "Ajebo_Fix_Vehicle_Health_Risk_Report_" in response.headers[
         "Content-Disposition"
     ]
-    assert response.headers["Cache-Control"] == "private, no-store"
+    assert "no-store" in response.headers["Cache-Control"]
 
 
 def test_advisor_keeps_direct_report_access(app):

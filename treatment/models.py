@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy import event
+
 from extensions import db
 
 
@@ -243,4 +245,18 @@ class TreatmentOutcome(db.Model):
             "observed_at",
             "id",
         ),
+    )
+
+
+@event.listens_for(TreatmentOutcome, "before_update")
+def _prevent_treatment_outcome_update(_mapper, _connection, _target) -> None:
+    raise ValueError(
+        "Published Treatment Outcomes are append-only; record a later outcome instead"
+    )
+
+
+@event.listens_for(TreatmentOutcome, "before_delete")
+def _prevent_treatment_outcome_delete(_mapper, _connection, _target) -> None:
+    raise ValueError(
+        "Published Treatment Outcomes cannot be deleted; preserve longitudinal history"
     )

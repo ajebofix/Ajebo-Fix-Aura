@@ -47,6 +47,11 @@ Professional care pathways awaiting or following your authorization.
                 method="POST"
                 action="{{ url_for('cars.authorize_treatment_plan', plan_id=plan.id) }}"
             >
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token() }}"
+                >
                 <button class="btn btn-primary" type="submit">
                     Authorize Treatment Plan
                 </button>
@@ -75,6 +80,11 @@ Professional care pathways awaiting or following your authorization.
             method="POST"
             action="{{ url_for('cars.authorize_treatment_plan', plan_id=plan.id) }}"
         >
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="{{ csrf_token() }}"
+            >
             <button class="btn btn-primary" type="submit">
                 Re-authorize Treatment Plan
             </button>

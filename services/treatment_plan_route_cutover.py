@@ -2,19 +2,19 @@
 
 Existing admin endpoint names remain stable for templates and bookmarks, but
 their mutations are delegated to TreatmentPlanLifecycleService. Owner consent
-is exposed as a separate object-scoped POST route.
+is exposed as a separate object-scoped POST route and client-safe review page.
 """
 
 from __future__ import annotations
 
-from flask import abort, flash, redirect, url_for
+from flask import abort, flash, redirect, render_template, url_for
 from flask_login import current_user, login_required
 
 from admin.routes import admin_bp
 from admin.utils import advisor_required
 from cars.routes import cars_bp
 from extensions import db
-from models import TreatmentPlan
+from models import CarOwnership, TreatmentPlan
 from services.treatment_plan_lifecycle import (
     TreatmentPlanAuthorityError,
     TreatmentPlanLifecycleError,
@@ -33,6 +33,7 @@ def _owner_redirect(plan: TreatmentPlan):
 @login_required
 @advisor_required
 def start_treatment_plan_cutover(plan_id: int):
+    before = TreatmentPlan.query.get_or_404(plan_id).status
     try:
         plan = TreatmentPlanLifecycleService.start(
             plan_id=plan_id,
@@ -50,7 +51,7 @@ def start_treatment_plan_cutover(plan_id: int):
         raise
 
     flash(
-        "Treatment resumed." if plan.status == "in_progress" else "Treatment started.",
+        "Treatment resumed." if before == "monitoring" else "Treatment started.",
         "success",
     )
     return _admin_redirect(plan)
@@ -76,7 +77,8 @@ def complete_treatment_plan_cutover(plan_id: int):
         raise
 
     flash(
-        "Treatment pathway recorded complete. Vehicle health remains independently monitored.",
+        "Treatment pathway recorded complete. "
+        "Vehicle health remains independently monitored.",
         "success",
     )
     return _admin_redirect(plan)
@@ -115,6 +117,31 @@ def defer_treatment_plan_cutover(plan_id: int):
     return _admin_redirect(plan)
 
 
+@cars_bp.get("/treatment-plans")
+@login_required
+def owner_treatment_plans():
+    if getattr(current_user, "is_admin", False) or current_user.role == "driver":
+        abort(403)
+
+    ownerships = CarOwnership.query.filter_by(
+        user_id=current_user.id,
+        is_active=True,
+    ).all()
+    car_ids = [ownership.car_id for ownership in ownerships]
+    plans = []
+    if car_ids:
+        plans = (
+            TreatmentPlan.query.filter(TreatmentPlan.car_id.in_(car_ids))
+            .order_by(TreatmentPlan.created_at.desc())
+            .all()
+        )
+
+    return render_template(
+        "treatment_plans/owner_index.html",
+        treatment_plans=plans,
+    )
+
+
 @cars_bp.post("/treatment-plans/<int:plan_id>/authorize")
 @login_required
 def authorize_treatment_plan(plan_id: int):
@@ -138,7 +165,7 @@ def authorize_treatment_plan(plan_id: int):
         raise
 
     flash("Treatment plan authorized for advisor coordination.", "success")
-    return _owner_redirect(plan)
+    return redirect(url_for("cars.owner_treatment_plans"))
 
 
 @admin_bp.record_once

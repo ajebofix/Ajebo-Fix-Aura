@@ -43,23 +43,39 @@ rel="stylesheet">
     {% endif %}
 {% endif %}
 
-<button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
+<button
+    class="mobile-toggle"
+    type="button"
+    aria-label="Open navigation"
+    aria-expanded="false"
+    onclick="toggleSidebar()"
+>☰</button>
 
 <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
 <script>
     function toggleSidebar() {
-        document
-            .querySelector(".sidebar")
-            .classList.toggle("open");
-        document
-            .querySelector(".sidebar-overlay").classList.toggle("open");
+        const sidebar = document.querySelector(".sidebar");
+        const overlay = document.querySelector(".sidebar-overlay");
+        const mobileToggle = document.querySelector(".mobile-toggle");
+
+        const isOpen = sidebar.classList.toggle("open");
+        overlay.classList.toggle("open", isOpen);
+        mobileToggle.classList.toggle("open", isOpen);
+        mobileToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
     }
 </script>
 
 <div class="app-shell">
 
     <aside class="sidebar">
+
+        <button
+            class="sidebar-close"
+            type="button"
+            aria-label="Close navigation"
+            onclick="toggleSidebar()"
+        >×</button>
 
         <div class="brand-block">
             <div class="brand-logo">

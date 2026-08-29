@@ -460,6 +460,7 @@ def main() -> None:
         legacy_assessment = VehicleAssessment(
             car_id=car_id,
             consultation_id=legacy_consultation.id,
+            advisor_id=advisor_id,
             vin=car.vin,
             mileage_at_assessment=25500,
             status="finalized",

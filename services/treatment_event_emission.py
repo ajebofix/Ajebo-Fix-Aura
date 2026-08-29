@@ -73,8 +73,9 @@ def _register_with_canonical_emitter() -> None:
             for event_type in TREATMENT_PLAN_EVENT_TYPES
         }
     )
+    state_transition_events = TREATMENT_PLAN_EVENT_TYPES - {"treatment.proposed"}
     canonical_events._TRANSITION_EVENT_TYPES = (
-        canonical_events._TRANSITION_EVENT_TYPES | TREATMENT_PLAN_EVENT_TYPES
+        canonical_events._TRANSITION_EVENT_TYPES | state_transition_events
     )
 
 

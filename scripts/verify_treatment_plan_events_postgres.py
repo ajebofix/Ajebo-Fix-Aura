@@ -100,6 +100,24 @@ def _treatment_events(plan_id: int) -> list[VehicleEvent]:
     )
 
 
+def _stable_health_semantics(health: dict) -> dict:
+    """Remove observational metadata before comparing health meaning.
+
+    ``calculate_vehicle_health`` stamps each response with a fresh
+    ``generated_at`` value. The Wave 2.3B boundary is about whether treatment
+    completion changes health interpretation, not whether two reads happened
+    at the same instant.
+    """
+
+    return {
+        "health_score": health.get("health_score"),
+        "health_status": health.get("health_status"),
+        "label": health.get("label"),
+        "risk_reasons": list(health.get("risk_reasons") or []),
+        "next_action": health.get("next_action"),
+    }
+
+
 def main() -> None:
     with app.app_context():
         if db.engine.dialect.name != "postgresql":
@@ -281,7 +299,9 @@ def main() -> None:
         db.session.add(concern)
         db.session.commit()
         concern_id = concern.id
-        health_before = calculate_vehicle_health(car, ownership)
+        health_before = _stable_health_semantics(
+            calculate_vehicle_health(car, ownership)
+        )
 
         # Explicit owner authorization, including a replay/double-submit.
         TreatmentPlanLifecycleService.authorize(
@@ -398,7 +418,9 @@ def main() -> None:
             raise SystemExit("Treatment Plan did not persist completed state")
         if final_concern is None or final_concern.status != "monitoring":
             raise SystemExit("Treatment completion incorrectly resolved Reported Concern")
-        health_after = calculate_vehicle_health(car, ownership)
+        health_after = _stable_health_semantics(
+            calculate_vehicle_health(car, ownership)
+        )
         if health_after != health_before:
             raise SystemExit(
                 "Treatment completion changed calculated Vehicle Health without its own contract"

@@ -10,6 +10,7 @@ on:
       - ready_for_review
     paths:
       - "migrations/versions/d7c4b2a9e615_add_treatment_actions_outcomes.py"
+      - "migrations/versions/e6a1c9f4b720_extend_evidence_links_for_treatment_actions.py"
       - "treatment/**"
       - "services/treatment_action_lifecycle.py"
       - "services/treatment_outcome_recording.py"
@@ -84,6 +85,7 @@ jobs:
         run: >-
           python -m compileall -q
           migrations/versions/d7c4b2a9e615_add_treatment_actions_outcomes.py
+          migrations/versions/e6a1c9f4b720_extend_evidence_links_for_treatment_actions.py
           treatment
           services/treatment_action_lifecycle.py
           services/treatment_outcome_recording.py
@@ -128,7 +130,15 @@ jobs:
               raise SystemExit(
                   f"Missing Wave 2.3C VehicleEvent checks: {sorted(missing_checks)}"
               )
-          print("Wave 2.3C database contract installed.")
+
+          evidence_checks = {
+              item["name"]: item.get("sqltext", "")
+              for item in inspector.get_check_constraints("evidence_links")
+          }
+          subject_contract = evidence_checks.get("ck_evidence_links_subject_type", "")
+          if "treatment_action" not in subject_contract or "treatment_outcome" not in subject_contract:
+              raise SystemExit("Wave 2.3C EvidenceLink subject contract is not installed")
+          print("Wave 2.3C database and EvidenceLink contracts installed.")
           PY
 
       - name: Rehearse downgrade to exact Wave 2.3B head before new history
@@ -158,13 +168,21 @@ jobs:
           if missing:
               raise SystemExit(f"Wave 2.3B checks missing after downgrade: {sorted(missing)}")
 
+          evidence_checks = {
+              item["name"]: item.get("sqltext", "")
+              for item in inspector.get_check_constraints("evidence_links")
+          }
+          subject_contract = evidence_checks.get("ck_evidence_links_subject_type", "")
+          if "treatment_action" in subject_contract or "treatment_outcome" in subject_contract:
+              raise SystemExit("Wave 2.3C EvidenceLink subjects survived downgrade")
+
           with engine.connect() as connection:
               version = connection.execute(
                   text("SELECT version_num FROM alembic_version")
               ).scalar_one()
           if version != "c2f7a8e4d910":
               raise SystemExit(f"Unexpected downgraded Alembic version: {version}")
-          print("Downgrade restored exact Wave 2.3B database head.")
+          print("Downgrade restored exact Wave 2.3B database/evidence-link contract.")
           PY
 
       - name: Re-upgrade Wave 2.3C contract

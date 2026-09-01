@@ -15,9 +15,16 @@ on:
       - "services/treatment_outcome_recording.py"
       - "services/treatment_evidence_linking.py"
       - "services/treatment_event_emission.py"
+      - "services/treatment_action_routes.py"
+      - "scripts/verify_treatment_actions_outcomes_postgres.py"
       - "evidence/models.py"
+      - "admin/progression_routes.py"
+      - "templates/treatment_actions/**"
+      - "templates/treatment_plans/owner_index.html"
+      - "templates/base.html"
       - "tests/test_treatment_action_lifecycle.py"
       - "tests/test_treatment_outcome_recording.py"
+      - "tests/test_treatment_action_routes.py"
       - "tests/test_evidence_models.py"
       - "models.py"
       - "security/access.py"
@@ -73,7 +80,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
-      - name: Compile Wave 2.3C domain slice
+      - name: Compile Wave 2.3C domain and runtime slice
         run: >-
           python -m compileall -q
           migrations/versions/d7c4b2a9e615_add_treatment_actions_outcomes.py
@@ -82,8 +89,11 @@ jobs:
           services/treatment_outcome_recording.py
           services/treatment_evidence_linking.py
           services/treatment_event_emission.py
+          services/treatment_action_routes.py
+          scripts/verify_treatment_actions_outcomes_postgres.py
           tests/test_treatment_action_lifecycle.py
           tests/test_treatment_outcome_recording.py
+          tests/test_treatment_action_routes.py
 
       - name: Upgrade fresh PostgreSQL database to current head
         run: |
@@ -121,7 +131,7 @@ jobs:
           print("Wave 2.3C database contract installed.")
           PY
 
-      - name: Rehearse downgrade to exact Wave 2.3B head
+      - name: Rehearse downgrade to exact Wave 2.3B head before new history
         run: |
           python -m flask db downgrade c2f7a8e4d910
           python - <<'PY'
@@ -162,17 +172,46 @@ jobs:
           python -m flask db upgrade
           python scripts/verify_alembic_head.py
 
-      - name: Run Wave 2.3C domain tests
+      - name: Verify Wave 2.3C PostgreSQL negative contract
+        run: python scripts/verify_treatment_actions_outcomes_postgres.py
+
+      - name: Verify downgrade refuses published Wave 2.3C history
+        run: |
+          if python -m flask db downgrade c2f7a8e4d910; then
+            echo "Wave 2.3C downgrade unexpectedly succeeded after action/outcome history existed."
+            exit 1
+          fi
+          echo "Wave 2.3C downgrade correctly refused published action/outcome history."
+          python scripts/verify_alembic_head.py
+
+      - name: Reset PostgreSQL after negative verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Run Wave 2.3C domain and runtime tests
         run: >-
           pytest -q
           tests/test_treatment_action_lifecycle.py
           tests/test_treatment_outcome_recording.py
+          tests/test_treatment_action_routes.py
           tests/test_evidence_models.py
 
-      - name: Bandit Wave 2.3C service slice
+      - name: Bandit Wave 2.3C service and verifier slice
         run: >-
           bandit -q
           services/treatment_action_lifecycle.py
           services/treatment_outcome_recording.py
           services/treatment_evidence_linking.py
           services/treatment_event_emission.py
+          services/treatment_action_routes.py
+          scripts/verify_treatment_actions_outcomes_postgres.py

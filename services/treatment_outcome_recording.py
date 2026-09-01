@@ -19,7 +19,7 @@ from extensions import db
 from models import TreatmentPlan
 from security.access import resolve_vehicle_authority
 from services.treatment_evidence_linking import (
-    TreatmentEvidenceLinkConflict,
+    TreatmentEvidenceLinkError,
     link_accepted_evidence_to_treatment_subject,
 )
 from services.treatment_event_emission import (
@@ -339,7 +339,7 @@ class TreatmentOutcomeRecordingService:
                         subject_id=outcome.id,
                         relationship_type="supports",
                     )
-                except TreatmentEvidenceLinkConflict as exc:
+                except TreatmentEvidenceLinkError as exc:
                     raise TreatmentOutcomeProvenanceError(str(exc)) from exc
 
         evidence_refs = [

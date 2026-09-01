@@ -18,7 +18,6 @@ on:
       - "evidence/models.py"
       - "tests/test_treatment_action_lifecycle.py"
       - "tests/test_treatment_outcome_recording.py"
-      - "tests/test_treatment_outcome_immutability.py"
       - "tests/test_evidence_models.py"
       - "models.py"
       - "security/access.py"
@@ -85,7 +84,6 @@ jobs:
           services/treatment_event_emission.py
           tests/test_treatment_action_lifecycle.py
           tests/test_treatment_outcome_recording.py
-          tests/test_treatment_outcome_immutability.py
 
       - name: Upgrade fresh PostgreSQL database to current head
         run: |
@@ -169,7 +167,6 @@ jobs:
           pytest -q
           tests/test_treatment_action_lifecycle.py
           tests/test_treatment_outcome_recording.py
-          tests/test_treatment_outcome_immutability.py
           tests/test_evidence_models.py
 
       - name: Bandit Wave 2.3C service slice

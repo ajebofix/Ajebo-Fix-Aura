@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block title %}Treatment Record · Aura{% endblock %}
+{% block page_title %}Treatment Record{% endblock %}
+{% block page_subtitle %}Advisor-governed intervention and outcome history.{% endblock %}
+
+{% block content %}
+<section class="card fade-up">
+    <div class="section-head">
+        <div>
+            <h2>{{ plan.title }}</h2>
+            <p class="muted">{{ plan.car.decoded_display_name if plan.car else "Vehicle" }}</p>
+        </div>
+        <span class="pill">{{ plan.status|replace("_", " ")|title }}</span>
+    </div>
+    {% if plan.client_summary %}<p>{{ plan.client_summary }}</p>{% endif %}
+    {% if plan.internal_instructions %}
+    <div class="list-item">
+        <strong>Advisor-only plan context</strong>
+        <p>{{ plan.internal_instructions }}</p>
+    </div>
+    {% endif %}
+
+    {% if plan.status in ["authorized", "approved"] %}
+    <form method="POST" action="{{ url_for('admin.schedule_treatment_plan_for_actions', plan_id=plan.id) }}">
+        <input type="hidden" name="operation_key" value="plan-schedule-{{ plan.id }}">
+        <button class="btn btn-primary" type="submit">Schedule Treatment Plan</button>
+    </form>
+    {% elif plan.status == "deferred" %}
+    <form method="POST" action="{{ url_for('admin.schedule_treatment_plan_for_actions', plan_id=plan.id) }}">
+        <input type="hidden" name="operation_key" value="plan-reschedule-{{ plan.id }}">
+        <input type="hidden" name="preserved_owner_consent" value="1">
+        <button class="btn btn-primary" type="submit">Resume Authorized Scheduling</button>
+    </form>
+    {% elif plan.status in ["scheduled", "monitoring"] %}
+    <form method="POST" action="{{ url_for('admin.start_treatment_plan', plan_id=plan.id) }}">
+        <button class="btn btn-primary" type="submit">
+            {{ "Resume Treatment" if plan.status == "monitoring" else "Start Treatment Plan" }}
+        </button>
+    </form>
+    {% endif %}
+</section>
+
+{% if plan.status in ["authorized", "scheduled", "in_progress", "monitoring", "deferred", "approved"] %}
+<section class="card fade-up">
+    <h2>Add Treatment Action</h2>
+    <p class="muted">Record one concrete professional intervention. This does not record an outcome.</p>
+    <form method="POST" action="{{ url_for('admin.create_treatment_action', plan_id=plan.id) }}">
+        <input type="hidden" name="creation_key" value="{{ action_creation_key }}">
+        <div class="form-group">
+            <label class="label">Action title</label>
+            <input class="input" name="title" maxlength="255" required>
+        </div>
+        <div class="form-group">
+            <label class="label">Client summary</label>
+            <textarea class="input" name="client_summary" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+            <label class="label">Advisor-only execution notes</label>
+            <textarea class="input" name="internal_instructions" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+            <label class="label">Visibility</label>
+            <select class="input" name="visibility">
+                <option value="client">Client-visible</option>
+                <option value="advisor">Advisor-only</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Record Planned Action</button>
+    </form>
+</section>
+{% endif %}
+
+<section class="card fade-up">
+    <h2>Treatment Actions</h2>
+    {% if actions %}
+        {% for action in actions %}
+        <div class="list-item">
+            <div class="section-head">
+                <div>
+                    <strong>{{ action.title }}</strong>
+                    <p class="muted">{{ action.visibility|title }} visibility</p>
+                </div>
+                <span class="pill">{{ action.status|replace("_", " ")|title }}</span>
+            </div>
+
+            {% if action.client_summary %}<p>{{ action.client_summary }}</p>{% endif %}
+            {% if action.internal_instructions %}
+            <p><strong>Advisor-only:</strong> {{ action.internal_instructions }}</p>
+            {% endif %}
+
+            {% if action.scheduled_for %}
+            <p class="muted">Scheduled: {{ action.scheduled_for.strftime("%Y-%m-%d %H:%M") }}</p>
+            {% endif %}
+
+            {% if action.status in ["planned", "deferred"] %}
+            <form method="POST" action="{{ url_for('admin.schedule_treatment_action', action_id=action.id) }}">
+                <div class="form-group">
+                    <label class="label">Schedule date/time</label>
+                    <input class="input" type="datetime-local" name="scheduled_for" required>
+                </div>
+                <input type="hidden" name="operation_key" value="action-schedule-{{ action.id }}">
+                <button class="btn btn-secondary" type="submit">Schedule Action</button>
+            </form>
+            {% endif %}
+
+            {% if action.status == "scheduled" and plan.status == "in_progress" %}
+            <form method="POST" action="{{ url_for('admin.transition_treatment_action', action_id=action.id, operation='start') }}">
+                <input type="hidden" name="operation_key" value="action-start-{{ action.id }}">
+                <button class="btn btn-primary" type="submit">Start Action</button>
+            </form>
+            {% endif %}
+
+            {% if action.status == "in_progress" %}
+            <form method="POST" action="{{ url_for('admin.transition_treatment_action', action_id=action.id, operation='complete') }}">
+                <input type="hidden" name="operation_key" value="action-complete-{{ action.id }}">
+                <button class="btn btn-primary" type="submit">Record Action Complete</button>
+            </form>
+            {% endif %}
+
+            {% if action.status in ["planned", "scheduled"] %}
+            <form method="POST" action="{{ url_for('admin.transition_treatment_action', action_id=action.id, operation='defer') }}">
+                <input type="hidden" name="operation_key" value="action-defer-{{ action.id }}">
+                <button class="btn btn-secondary" type="submit">Defer Action</button>
+            </form>
+            {% endif %}
+
+            {% if action.status in ["planned", "scheduled", "deferred"] %}
+            <form method="POST" action="{{ url_for('admin.transition_treatment_action', action_id=action.id, operation='cancel') }}">
+                <input type="hidden" name="operation_key" value="action-cancel-{{ action.id }}">
+                <button class="btn btn-secondary" type="submit">Cancel Action</button>
+            </form>
+            {% endif %}
+
+            {% if accepted_evidence %}
+            <form method="POST" action="{{ url_for('admin.link_treatment_action_evidence', action_id=action.id) }}">
+                <h3>Link accepted evidence</h3>
+                {% for evidence in accepted_evidence %}
+                <label class="list-item">
+                    <input type="checkbox" name="evidence_ids" value="{{ evidence.id }}">
+                    {{ evidence.safe_display_name }} · {{ evidence.visibility|title }}
+                </label>
+                {% endfor %}
+                <select class="input" name="relationship_type">
+                    <option value="documents">Documents action</option>
+                    <option value="supports">Supports action</option>
+                </select>
+                <button class="btn btn-secondary" type="submit">Link Evidence</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No Treatment Actions recorded yet.</p>
+    {% endif %}
+</section>
+
+{% if plan.status in ["in_progress", "monitoring", "completed"] %}
+<section class="card fade-up">
+    <h2>Record Treatment Outcome</h2>
+    <p class="muted">
+        Outcome is a separate advisor-reviewed observation. Completing an action or plan never creates one automatically.
+    </p>
+    <form method="POST" action="{{ url_for('admin.record_treatment_outcome', plan_id=plan.id) }}">
+        <input type="hidden" name="recording_key" value="{{ outcome_recording_key }}">
+        <div class="form-group">
+            <label class="label">Related Treatment Action (optional)</label>
+            <select class="input" name="treatment_action_id">
+                <option value="">Whole Treatment Plan</option>
+                {% for action in actions %}
+                <option value="{{ action.id }}">{{ action.title }} · {{ action.status|replace("_", " ")|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="label">Observed direction</label>
+            <select class="input" name="progression_direction" required>
+                <option value="improving">Improving</option>
+                <option value="stable">Stable</option>
+                <option value="deteriorating">Deteriorating</option>
+                <option value="resolved">Resolved</option>
+                <option value="insufficient_evidence">Insufficient evidence</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="label">Provenance</label>
+            <select class="input" name="provenance_kind" required>
+                <option value="reviewed_evidence">Reviewed evidence</option>
+                <option value="professional_observation">Professional observation</option>
+                <option value="insufficient_evidence">Insufficient evidence</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="label">Observation source (for professional observation)</label>
+            <select class="input" name="observation_source">
+                <option value="advisor_inspection">Advisor inspection</option>
+                <option value="road_test">Road test</option>
+                <option value="measurement">Measurement</option>
+                <option value="client_follow_up">Client follow-up</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="label">Observation reference (optional)</label>
+            <input class="input" name="observation_reference" maxlength="160">
+        </div>
+        <div class="form-group">
+            <label class="label">Observed at</label>
+            <input class="input" type="datetime-local" name="observed_at">
+        </div>
+        <div class="form-group">
+            <label class="label">Client-safe summary</label>
+            <textarea class="input" name="summary" rows="4" required></textarea>
+        </div>
+        <div class="form-group">
+            <label class="label">Advisor-only note</label>
+            <textarea class="input" name="advisor_note" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+            <label class="label">Visibility</label>
+            <select class="input" name="visibility">
+                <option value="client">Client-visible</option>
+                <option value="advisor">Advisor-only</option>
+            </select>
+        </div>
+
+        {% if accepted_evidence %}
+        <h3>Accepted supporting evidence</h3>
+        {% for evidence in accepted_evidence %}
+        <label class="list-item">
+            <input type="checkbox" name="evidence_ids" value="{{ evidence.id }}">
+            {{ evidence.safe_display_name }} · {{ evidence.visibility|title }}
+        </label>
+        {% endfor %}
+        {% else %}
+        <p class="muted">No accepted available evidence is currently eligible for treatment linkage.</p>
+        {% endif %}
+
+        <button class="btn btn-primary" type="submit">Record Outcome</button>
+    </form>
+</section>
+{% endif %}
+
+<section class="card fade-up">
+    <h2>Outcome History</h2>
+    {% if outcomes %}
+        {% for outcome in outcomes %}
+        <div class="list-item">
+            <div class="section-head">
+                <strong>{{ outcome.progression_direction|replace("_", " ")|title }}</strong>
+                <span class="pill">{{ outcome.visibility|title }}</span>
+            </div>
+            <p>{{ outcome.summary }}</p>
+            <p class="muted">
+                {{ outcome.provenance_kind|replace("_", " ")|title }} ·
+                observed {{ outcome.observed_at.strftime("%Y-%m-%d %H:%M") }}
+            </p>
+            {% if outcome.advisor_note %}<p><strong>Advisor-only:</strong> {{ outcome.advisor_note }}</p>{% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No Treatment Outcomes recorded yet.</p>
+    {% endif %}
+</section>
+
+<a class="btn btn-secondary" href="{{ url_for('admin.treatment_action_console') }}">Back to Treatment Actions</a>
+{% endblock %}

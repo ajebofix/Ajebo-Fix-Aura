@@ -117,21 +117,39 @@ def _post(client, path: str, data: dict | None = None):
     return client.post(path, data=payload, follow_redirects=False)
 
 
-def test_only_advisor_can_open_treatment_action_console_and_plan_detail(app):
+def test_advisor_can_open_treatment_action_console_and_plan_detail(app):
+    client = app.test_client()
     with app.app_context():
-        owner, unrelated, driver, advisor, _car, plan = _fixture(suffix=1)
+        _owner, _unrelated, _driver, advisor, _car, plan = _fixture(suffix=1)
+        advisor_email = advisor.email
+        plan_id = plan.id
+
+    _login(client, advisor_email)
+    console = client.get("/admin/treatment-actions", follow_redirects=False)
+    detail = client.get(
+        f"/admin/treatment-plans/{plan_id}/actions",
+        follow_redirects=False,
+    )
+
+    assert console.status_code == 200
+    assert detail.status_code == 200
+    assert "Treatment Action Console" in console.get_data(as_text=True)
+    assert "PLAN PRIVATE — OWNER MUST NOT SEE THIS" in detail.get_data(as_text=True)
+
+
+def test_non_advisors_cannot_open_treatment_action_console_or_plan_detail(app):
+    with app.app_context():
+        owner, unrelated, driver, _advisor, _car, plan = _fixture(suffix=7)
         emails = {
             "owner": owner.email,
             "unrelated": unrelated.email,
             "driver": driver.email,
-            "advisor": advisor.email,
         }
         plan_id = plan.id
 
     for role in ("owner", "unrelated", "driver"):
         client = app.test_client()
         _login(client, emails[role])
-
         console = client.get("/admin/treatment-actions", follow_redirects=False)
         detail = client.get(
             f"/admin/treatment-plans/{plan_id}/actions",
@@ -142,20 +160,6 @@ def test_only_advisor_can_open_treatment_action_console_and_plan_detail(app):
         assert detail.status_code in {302, 403}
         assert "Treatment Action Console" not in console.get_data(as_text=True)
         assert "PLAN PRIVATE — OWNER MUST NOT SEE THIS" not in detail.get_data(as_text=True)
-
-    advisor_client = app.test_client()
-    _login(advisor_client, emails["advisor"])
-    console = advisor_client.get("/admin/treatment-actions", follow_redirects=True)
-    detail = advisor_client.get(
-        f"/admin/treatment-plans/{plan_id}/actions",
-        follow_redirects=True,
-    )
-    console_history = [response.headers.get("Location") for response in console.history]
-    detail_history = [response.headers.get("Location") for response in detail.history]
-    assert console.status_code == 200
-    assert detail.status_code == 200
-    assert "Treatment Action Console" in console.get_data(as_text=True), console_history
-    assert "PLAN PRIVATE — OWNER MUST NOT SEE THIS" in detail.get_data(as_text=True), detail_history
 
 
 def test_advisor_create_action_route_emits_canonical_event(app):

@@ -145,12 +145,17 @@ def test_only_advisor_can_open_treatment_action_console_and_plan_detail(app):
 
     advisor_client = app.test_client()
     _login(advisor_client, emails["advisor"])
-    console = advisor_client.get("/admin/treatment-actions")
-    detail = advisor_client.get(f"/admin/treatment-plans/{plan_id}/actions")
+    console = advisor_client.get("/admin/treatment-actions", follow_redirects=True)
+    detail = advisor_client.get(
+        f"/admin/treatment-plans/{plan_id}/actions",
+        follow_redirects=True,
+    )
+    console_history = [response.headers.get("Location") for response in console.history]
+    detail_history = [response.headers.get("Location") for response in detail.history]
     assert console.status_code == 200
     assert detail.status_code == 200
-    assert "Treatment Action Console" in console.get_data(as_text=True)
-    assert "PLAN PRIVATE — OWNER MUST NOT SEE THIS" in detail.get_data(as_text=True)
+    assert "Treatment Action Console" in console.get_data(as_text=True), console_history
+    assert "PLAN PRIVATE — OWNER MUST NOT SEE THIS" in detail.get_data(as_text=True), detail_history
 
 
 def test_advisor_create_action_route_emits_canonical_event(app):

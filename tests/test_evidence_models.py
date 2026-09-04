@@ -112,12 +112,18 @@ def test_initial_vocabularies_match_wave_1_4_architecture():
         "superseded",
         "deleted",
     }
-    assert set(EVIDENCE_SUBJECT_TYPES) == {
+
+    wave_1_4_subjects = {
         "reported_concern",
         "consultation",
         "assessment",
         "treatment_plan",
         "vehicle_event",
+    }
+    assert wave_1_4_subjects <= set(EVIDENCE_SUBJECT_TYPES)
+    assert set(EVIDENCE_SUBJECT_TYPES) - wave_1_4_subjects == {
+        "treatment_action",
+        "treatment_outcome",
     }
 
     assert "driver_observation" in EVIDENCE_PURPOSES

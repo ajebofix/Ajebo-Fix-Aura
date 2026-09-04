@@ -36,7 +36,11 @@ def concern_progression(concern_id: int):
 # Import after both cars.routes and admin.routes have been loaded by app.py.
 # These modules register compatibility cutovers and professional routes on
 # admin_bp/cars_bp before those blueprints are registered with Flask.
+# Importing treatment.models also registers Wave 2.3C tables with SQLAlchemy
+# metadata before Flask-Migrate evaluates the application model graph.
+import treatment.models  # noqa: E402,F401
 import services.consultation_route_cutover  # noqa: E402,F401
 import services.assessment_route_cutover  # noqa: E402,F401
 import services.assessment_correction_routes  # noqa: E402,F401
 import services.treatment_plan_route_cutover  # noqa: E402,F401
+import services.treatment_action_routes  # noqa: E402,F401

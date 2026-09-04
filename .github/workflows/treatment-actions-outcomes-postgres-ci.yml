@@ -1,0 +1,235 @@
+name: Aura Treatment Actions Outcomes PostgreSQL CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/versions/d7c4b2a9e615_add_treatment_actions_outcomes.py"
+      - "migrations/versions/e6a1c9f4b720_extend_evidence_links_for_treatment_actions.py"
+      - "treatment/**"
+      - "services/treatment_action_lifecycle.py"
+      - "services/treatment_outcome_recording.py"
+      - "services/treatment_evidence_linking.py"
+      - "services/treatment_event_emission.py"
+      - "services/treatment_action_routes.py"
+      - "scripts/verify_treatment_actions_outcomes_postgres.py"
+      - "evidence/models.py"
+      - "admin/progression_routes.py"
+      - "templates/treatment_actions/**"
+      - "templates/treatment_plans/owner_index.html"
+      - "templates/base.html"
+      - "tests/test_treatment_action_lifecycle.py"
+      - "tests/test_treatment_outcome_recording.py"
+      - "tests/test_treatment_action_routes.py"
+      - "tests/test_evidence_models.py"
+      - "models.py"
+      - "security/access.py"
+      - "requirements*.txt"
+      - ".github/workflows/treatment-actions-outcomes-postgres-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-treatment-actions-outcomes-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile Wave 2.3C domain and runtime slice
+        run: >-
+          python -m compileall -q
+          migrations/versions/d7c4b2a9e615_add_treatment_actions_outcomes.py
+          migrations/versions/e6a1c9f4b720_extend_evidence_links_for_treatment_actions.py
+          treatment
+          services/treatment_action_lifecycle.py
+          services/treatment_outcome_recording.py
+          services/treatment_evidence_linking.py
+          services/treatment_event_emission.py
+          services/treatment_action_routes.py
+          scripts/verify_treatment_actions_outcomes_postgres.py
+          tests/test_treatment_action_lifecycle.py
+          tests/test_treatment_outcome_recording.py
+          tests/test_treatment_action_routes.py
+
+      - name: Upgrade fresh PostgreSQL database to current head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify Wave 2.3C tables and canonical checks are installed
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          tables = set(inspector.get_table_names())
+          required_tables = {"treatment_actions", "treatment_outcomes"}
+          missing_tables = required_tables - tables
+          if missing_tables:
+              raise SystemExit(f"Missing Wave 2.3C tables: {sorted(missing_tables)}")
+
+          checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          required_checks = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_treatment_plan_contract",
+              "ck_vehicle_events_treatment_action_contract",
+          }
+          missing_checks = required_checks - checks
+          if missing_checks:
+              raise SystemExit(
+                  f"Missing Wave 2.3C VehicleEvent checks: {sorted(missing_checks)}"
+              )
+
+          evidence_checks = {
+              item["name"]: item.get("sqltext", "")
+              for item in inspector.get_check_constraints("evidence_links")
+          }
+          subject_contract = evidence_checks.get("ck_evidence_links_subject_type", "")
+          if "treatment_action" not in subject_contract or "treatment_outcome" not in subject_contract:
+              raise SystemExit("Wave 2.3C EvidenceLink subject contract is not installed")
+          print("Wave 2.3C database and EvidenceLink contracts installed.")
+          PY
+
+      - name: Rehearse downgrade to exact Wave 2.3B head before new history
+        run: |
+          python -m flask db downgrade c2f7a8e4d910
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          tables = set(inspector.get_table_names())
+          if "treatment_actions" in tables or "treatment_outcomes" in tables:
+              raise SystemExit("Wave 2.3C tables survived downgrade unexpectedly")
+
+          checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          if "ck_vehicle_events_treatment_action_contract" in checks:
+              raise SystemExit("Treatment Action event CHECK survived downgrade")
+          required = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_treatment_plan_contract",
+          }
+          missing = required - checks
+          if missing:
+              raise SystemExit(f"Wave 2.3B checks missing after downgrade: {sorted(missing)}")
+
+          evidence_checks = {
+              item["name"]: item.get("sqltext", "")
+              for item in inspector.get_check_constraints("evidence_links")
+          }
+          subject_contract = evidence_checks.get("ck_evidence_links_subject_type", "")
+          if "treatment_action" in subject_contract or "treatment_outcome" in subject_contract:
+              raise SystemExit("Wave 2.3C EvidenceLink subjects survived downgrade")
+
+          with engine.connect() as connection:
+              version = connection.execute(
+                  text("SELECT version_num FROM alembic_version")
+              ).scalar_one()
+          if version != "c2f7a8e4d910":
+              raise SystemExit(f"Unexpected downgraded Alembic version: {version}")
+          print("Downgrade restored exact Wave 2.3B database/evidence-link contract.")
+          PY
+
+      - name: Re-upgrade Wave 2.3C contract
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify Wave 2.3C PostgreSQL negative contract
+        run: python scripts/verify_treatment_actions_outcomes_postgres.py
+
+      - name: Verify downgrade refuses published Wave 2.3C history
+        run: |
+          if python -m flask db downgrade c2f7a8e4d910; then
+            echo "Wave 2.3C downgrade unexpectedly succeeded after action/outcome history existed."
+            exit 1
+          fi
+          echo "Wave 2.3C downgrade correctly refused published action/outcome history."
+          python scripts/verify_alembic_head.py
+
+      - name: Reset PostgreSQL after negative verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Run Wave 2.3C domain and runtime tests
+        run: >-
+          pytest -q
+          tests/test_treatment_action_lifecycle.py
+          tests/test_treatment_outcome_recording.py
+          tests/test_treatment_action_routes.py
+          tests/test_evidence_models.py
+
+      - name: Bandit Wave 2.3C service and verifier slice
+        run: >-
+          bandit -q
+          services/treatment_action_lifecycle.py
+          services/treatment_outcome_recording.py
+          services/treatment_evidence_linking.py
+          services/treatment_event_emission.py
+          services/treatment_action_routes.py
+          scripts/verify_treatment_actions_outcomes_postgres.py

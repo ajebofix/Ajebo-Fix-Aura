@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Treatment Actions · Aura{% endblock %}
+{% block page_title %}Treatment Actions{% endblock %}
+{% block page_subtitle %}Professional intervention and outcome records.{% endblock %}
+
+{% block content %}
+<section class="card fade-up">
+    <h2>Treatment Action Console</h2>
+    <p class="muted">
+        Treatment Plans define the authorized care pathway. Treatment Actions record
+        what is actually coordinated and performed. Outcomes remain separate professional facts.
+    </p>
+</section>
+
+{% if treatment_plans %}
+    {% for plan in treatment_plans %}
+    <section class="card fade-up">
+        <div class="section-head">
+            <div>
+                <h2>{{ plan.title }}</h2>
+                <p class="muted">{{ plan.car.decoded_display_name if plan.car else "Vehicle" }}</p>
+            </div>
+            <span class="pill">{{ plan.status|replace("_", " ")|title }}</span>
+        </div>
+
+        {% if plan.client_summary %}<p>{{ plan.client_summary }}</p>{% endif %}
+
+        <div class="info-list">
+            <div class="info-row">
+                <span class="label">Treatment Actions</span>
+                <span class="value">{{ plan.actions|length }}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Recorded Outcomes</span>
+                <span class="value">{{ plan.outcomes|length }}</span>
+            </div>
+        </div>
+
+        <a class="btn btn-primary" href="{{ url_for('admin.treatment_plan_actions', plan_id=plan.id) }}">
+            Manage Treatment Record
+        </a>
+    </section>
+    {% endfor %}
+{% else %}
+<section class="card fade-up">
+    <h2>No Treatment Plans</h2>
+    <p class="muted">Treatment Actions become available after a professional Treatment Plan exists.</p>
+</section>
+{% endif %}
+{% endblock %}

@@ -19,6 +19,8 @@ Professional care pathways awaiting or following your authorization.
 
 {% if treatment_plans %}
     {% for plan in treatment_plans %}
+    {% set client_actions = plan.actions|selectattr("visibility", "equalto", "client")|list %}
+    {% set client_outcomes = plan.outcomes|selectattr("visibility", "equalto", "client")|list %}
     <section class="card fade-up">
         <div class="section-head">
             <div>
@@ -96,6 +98,53 @@ Professional care pathways awaiting or following your authorization.
             Historical treatment plan. Your advisor can continue this legacy
             pathway without rewriting its earlier history.
         </p>
+        {% endif %}
+
+        {% if client_actions %}
+        <div style="margin-top:24px;">
+            <h3>Treatment Actions</h3>
+            <p class="muted">
+                Professional intervention records. Completion does not by itself
+                mean a vehicle concern is resolved.
+            </p>
+            {% for action in client_actions %}
+            <div class="list-item">
+                <div class="section-head">
+                    <strong>{{ action.title }}</strong>
+                    <span class="pill">{{ action.status|replace("_", " ")|title }}</span>
+                </div>
+                {% if action.client_summary %}<p>{{ action.client_summary }}</p>{% endif %}
+                {% if action.scheduled_for %}
+                <p class="muted">Scheduled {{ action.scheduled_for.strftime("%Y-%m-%d %H:%M") }}</p>
+                {% endif %}
+                {% if action.completed_at %}
+                <p class="muted">Recorded complete {{ action.completed_at.strftime("%Y-%m-%d %H:%M") }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if client_outcomes %}
+        <div style="margin-top:24px;">
+            <h3>Treatment Outcomes</h3>
+            <p class="muted">
+                Advisor-reviewed observations recorded separately from treatment completion.
+            </p>
+            {% for outcome in client_outcomes %}
+            <div class="list-item">
+                <div class="section-head">
+                    <strong>{{ outcome.progression_direction|replace("_", " ")|title }}</strong>
+                    <span class="pill">Outcome</span>
+                </div>
+                <p>{{ outcome.summary }}</p>
+                <p class="muted">
+                    {{ outcome.provenance_kind|replace("_", " ")|title }} ·
+                    observed {{ outcome.observed_at.strftime("%Y-%m-%d %H:%M") }}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
         {% endif %}
 
         <p class="muted">

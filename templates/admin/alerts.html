@@ -67,6 +67,15 @@ Operational monitoring and escalation visibility.
 
             <br>
 
+            <strong>Record:</strong>
+            {% if alert.actionable %}
+                Durable care signal
+            {% else %}
+                Operational projection · read-only
+            {% endif %}
+
+            <br>
+
             <strong>Detected:</strong>
             {{ alert.created_at.strftime('%d %b %Y %I:%M %p') }}
 
@@ -88,40 +97,36 @@ Operational monitoring and escalation visibility.
                 Timeline
             </a>
 
-                <!-- alert actions -->
-<div class="alert-actions">
+            <!-- Only durable VehicleHealthAlert care signals own lifecycle actions. -->
+            {% if alert.actionable and alert.id %}
+            <div class="alert-actions">
 
-{% if alert.type == "vehicle_alert" %}
+                {% if alert.status == "new" %}
+                <form method="POST"
+                      action="{{ url_for('admin.acknowledge_alert', alert_id=alert.id) }}">
+                    <button class="btn btn-secondary">
+                        Acknowledge
+                    </button>
+                </form>
+                {% endif %}
 
-    {% if alert.status == "new" %}
-    <form method="POST"
-          action="{{ url_for('admin.acknowledge_alert', alert_id=alert.id) }}">
-        <button class="btn btn-secondary">
-            Acknowledge
-        </button>
-    </form>
-    {% endif %}
+                {% if alert.status != "resolved" %}
+                <form method="POST"
+                      action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}">
+                    <button class="btn btn-success">
+                        Resolve
+                    </button>
+                </form>
+                {% endif %}
 
-    {% if alert.status != "resolved" %}
-    <form method="POST"
-          action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}">
-        <button class="btn btn-success">
-            Resolve
-        </button>
-    </form>
-    {% endif %}
-
-    </div>
-
-{% endif %}
-
-    {% endfor %}
-
+            </div>
+            {% endif %}
 
         </div>
 
     </div>
 
+    {% endfor %}
 
 </section>
 

@@ -38,6 +38,8 @@ Document completed maintenance or repairs for your vehicle care history.
 
 <p class="subtext">
 Use this form to document service work already performed.
+Enter the vehicle's main-odometer reading from the time of that service.
+Historical records may have a lower mileage than the vehicle shows today.
 All records are reviewed within your active Ajebo Fix consultation.
 </p>
 
@@ -63,7 +65,7 @@ All records are reviewed within your active Ajebo Fix consultation.
     </div>
 
     <div class="metric-card">
-        <span class="metric-label">Recorded Mileage</span>
+        <span class="metric-label">Current Odometer</span>
         <span class="metric-value">
             {{ car.current_mileage or "—" }}
         </span>
@@ -100,19 +102,21 @@ All records are reviewed within your active Ajebo Fix consultation.
 
 
 <!-- MILEAGE -->
-<label for="mileage">Mileage at Time of Service</label>
+<label for="mileage">Main Odometer at Time of Service</label>
 
 <input
     type="number"
     id="mileage"
     name="mileage"
-    min="{{ car.current_mileage or 0 }}"
-    value="{{ request.form.mileage or car.current_mileage }}"
+    min="0"
+    value="{{ request.form.mileage or '' }}"
+    placeholder="Enter odometer reading when service was performed"
     required
 >
 
 <div class="hint">
-Mileage cannot be lower than the current recorded mileage.
+Use the vehicle's main odometer, not the resettable trip meter.
+Historical mileage may be lower than the current odometer and will not reduce it.
 </div>
 
 

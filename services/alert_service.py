@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 
 from models import (
+    Car,
     CarFault,
     Consultation,
     TreatmentPlan,
@@ -24,6 +25,7 @@ class AlertService:
         active_alerts = VehicleHealthAlert.query.filter_by(is_active=True).all()
 
         for alert in active_alerts:
+            vehicle = Car.query.filter_by(id=alert.car_id).one()
 
             alerts.append(
                 {
@@ -34,7 +36,7 @@ class AlertService:
                     "severity": alert.severity,
                     "status": alert.status,
                     "title": alert.message,
-                    "vehicle": alert.car,
+                    "vehicle": vehicle,
                     "created_at": alert.created_at,
                 }
             )

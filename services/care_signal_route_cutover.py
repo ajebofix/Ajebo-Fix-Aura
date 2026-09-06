@@ -6,9 +6,10 @@ large legacy admin module into ``CareSignalLifecycleService``.
 
 from __future__ import annotations
 
-from flask import flash, redirect, url_for
+from flask import abort, flash, redirect, url_for
 from flask_login import current_user
 
+from admin.routes import admin_bp
 from admin.utils import advisor_required
 from extensions import db
 from models import VehicleHealthAlert
@@ -27,8 +28,6 @@ def _redirect_alert_center():
 @advisor_required
 def acknowledge_alert_cutover(alert_id: int):
     if db.session.get(VehicleHealthAlert, alert_id) is None:
-        from flask import abort
-
         abort(404)
 
     try:
@@ -55,8 +54,6 @@ def acknowledge_alert_cutover(alert_id: int):
 @advisor_required
 def resolve_alert_cutover(alert_id: int):
     if db.session.get(VehicleHealthAlert, alert_id) is None:
-        from flask import abort
-
         abort(404)
 
     try:
@@ -82,18 +79,21 @@ def resolve_alert_cutover(alert_id: int):
     return _redirect_alert_center()
 
 
-def init_care_signal_route_cutover(app) -> None:
-    """Replace only the two legacy mutation view functions after registration."""
-
-    required = {
+@admin_bp.record_once
+def install_care_signal_lifecycle_cutover(state) -> None:
+    replacements = {
         "admin.acknowledge_alert": acknowledge_alert_cutover,
         "admin.resolve_alert": resolve_alert_cutover,
     }
-    missing = [endpoint for endpoint in required if endpoint not in app.view_functions]
+    missing = [
+        endpoint
+        for endpoint in replacements
+        if endpoint not in state.app.view_functions
+    ]
     if missing:
         raise RuntimeError(
-            "Care-signal route cutover could not find legacy endpoints: "
+            "Care-signal lifecycle cutover could not find endpoint(s): "
             + ", ".join(sorted(missing))
         )
 
-    app.view_functions.update(required)
+    state.app.view_functions.update(replacements)

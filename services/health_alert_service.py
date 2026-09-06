@@ -6,200 +6,137 @@
 
 from datetime import datetime
 
-from models import (
-    db,
-    Car,
-    CarOwnership,
-    VehicleHealthAlert,
-)
-
+from models import db, Car, CarOwnership
+from services.care_signal_lifecycle import CareSignalLifecycleService
 from services.vehicle_intelligence import calculate_vehicle_health
 from services.health_trend_service import (
     VehicleCareTrajectoryService as HealthTrendService,
 )
 
 
+_ALLOWED_TRIGGERS = frozenset(
+    {
+        "system",
+        "event_created",
+        "event_updated",
+        "event_deleted",
+        "ownership_transferred",
+        "manual",
+    }
+)
+
+
 class CareSignalService:
     """
-    Aura Care Signal Engine
+    Aura Care Signal Engine.
 
-    Observes vehicle health patterns and raises or resolves
-    advisory care signals.
-
-    This system provides monitoring guidance only.
-    It does not diagnose or prescribe repairs.
+    Deterministic rule evaluation may request care-signal lifecycle mutations,
+    but the durable state/event contract is owned by CareSignalLifecycleService.
+    This engine remains monitoring guidance only: it does not diagnose or
+    prescribe repairs.
     """
-
-    # =================================================
-    # PUBLIC ENTRY POINT
-    # =================================================
 
     @staticmethod
     def evaluate(car_id: int, trigger: str = "system"):
-        """
-        Evaluate vehicle state and update care signals.
-
-        Typical triggers:
-        - event_created
-        - event_updated
-        - event_deleted
-        - ownership_transferred
-        - manual
-        """
-
-        car = Car.query.get(car_id)
-        if not car:
+        car = db.session.get(Car, car_id)
+        if car is None:
             return
 
         ownership = CarOwnership.query.filter_by(
             car_id=car.id,
             is_active=True,
         ).first()
-
-        if not ownership:
+        if ownership is None:
             return
-
-        # ---------------------------------
-        # CURRENT VEHICLE HEALTH SNAPSHOT
-        # ---------------------------------
 
         health = calculate_vehicle_health(car, ownership)
-
         health_score = health["health_score"]
         risk_reasons = health.get("risk_reasons", [])
-
-        # ---------------------------------
-        # HEALTH TRAJECTORY ANALYSIS
-        # ---------------------------------
-
         trajectory = HealthTrendService.analyze_car_trajectory(car.id)
 
-        # =================================================
-        # CARE SIGNAL RULES (CALM & ADVISORY)
-        # =================================================
+        trigger_key = trigger if trigger in _ALLOWED_TRIGGERS else "other"
+        source_classification = f"deterministic_rule:{trigger_key}"
+        occurred_at = datetime.utcnow()
 
-        # 1️⃣ LOW HEALTH STATUS — ADVISOR REVIEW
-        if health_score <= 40:
-            CareSignalService._raise_signal(
-                car,
-                ownership,
-                signal_type="low_health_status",
-                severity="high",
-                message=(
-                    "Vehicle health status indicates elevated risk. "
-                    "An advisor review is recommended."
-                ),
-            )
-        else:
-            CareSignalService._resolve_signal(car, ownership, "low_health_status")
+        try:
+            if health_score <= 40:
+                CareSignalLifecycleService.raise_signal(
+                    car_id=car.id,
+                    alert_type="low_health_status",
+                    severity="high",
+                    message=(
+                        "Vehicle health status indicates elevated risk. "
+                        "An advisor review is recommended."
+                    ),
+                    source_classification=source_classification,
+                    actor_type="system",
+                    actor_user_id=None,
+                    occurred_at=occurred_at,
+                )
+            else:
+                CareSignalLifecycleService.resolve_active_system_signal(
+                    car_id=car.id,
+                    alert_type="low_health_status",
+                    source_classification=source_classification,
+                    occurred_at=occurred_at,
+                )
 
-        # 2️⃣ DECLINING TRAJECTORY
-        if trajectory.get("rapid_decline"):
-            CareSignalService._raise_signal(
-                car,
-                ownership,
-                signal_type="declining_health_trajectory",
-                severity="moderate",
-                message=(
-                    "A downward trend in vehicle health has been observed. "
-                    "Continued monitoring or assessment is advised."
-                ),
-            )
-        else:
-            CareSignalService._resolve_signal(
-                car, ownership, "declining_health_trajectory"
-            )
+            if trajectory.get("rapid_decline"):
+                CareSignalLifecycleService.raise_signal(
+                    car_id=car.id,
+                    alert_type="declining_health_trajectory",
+                    severity="moderate",
+                    message=(
+                        "A downward trend in vehicle health has been observed. "
+                        "Continued monitoring or assessment is advised."
+                    ),
+                    source_classification=source_classification,
+                    actor_type="system",
+                    actor_user_id=None,
+                    occurred_at=occurred_at,
+                )
+            else:
+                CareSignalLifecycleService.resolve_active_system_signal(
+                    car_id=car.id,
+                    alert_type="declining_health_trajectory",
+                    source_classification=source_classification,
+                    occurred_at=occurred_at,
+                )
 
-        # 3️⃣ ELEVATED RISK INDICATORS
-        elevated_risks = [r for r in risk_reasons if "predicted" in r.lower()]
+            # Wave 2.4C intentionally does not canonicalize the legacy
+            # elevated_risk_indicator rule that searched risk-reason prose for
+            # the word "predicted". Existing rows remain historical data and
+            # require advisor handling; no new automatic mutation is performed.
 
-        if elevated_risks:
-            CareSignalService._raise_signal(
-                car,
-                ownership,
-                signal_type="elevated_risk_indicator",
-                severity="moderate",
-                message=(
-                    "One or more monitored components show elevated risk indicators. "
-                    "An assessment may be appropriate."
-                ),
-            )
-        else:
-            CareSignalService._resolve_signal(car, ownership, "elevated_risk_indicator")
+            monitoring_items = [
+                reason for reason in risk_reasons if "overdue" in reason.lower()
+            ]
+            if monitoring_items:
+                CareSignalLifecycleService.raise_signal(
+                    car_id=car.id,
+                    alert_type="maintenance_monitoring",
+                    severity="low",
+                    message=(
+                        "Routine maintenance monitoring is recommended "
+                        "based on current vehicle data."
+                    ),
+                    source_classification=source_classification,
+                    actor_type="system",
+                    actor_user_id=None,
+                    occurred_at=occurred_at,
+                )
+            else:
+                CareSignalLifecycleService.resolve_active_system_signal(
+                    car_id=car.id,
+                    alert_type="maintenance_monitoring",
+                    source_classification=source_classification,
+                    occurred_at=occurred_at,
+                )
 
-        # 4️⃣ MAINTENANCE MONITORING
-        monitoring_items = [r for r in risk_reasons if "overdue" in r.lower()]
-
-        if monitoring_items:
-            CareSignalService._raise_signal(
-                car,
-                ownership,
-                signal_type="maintenance_monitoring",
-                severity="low",
-                message=(
-                    "Routine maintenance monitoring is recommended "
-                    "based on current vehicle data."
-                ),
-            )
-        else:
-            CareSignalService._resolve_signal(car, ownership, "maintenance_monitoring")
-
-
-
-
-        db.session.commit()
-
-    # =================================================
-    # INTERNAL HELPERS
-    # =================================================
-
-    @staticmethod
-    def _raise_signal(car, ownership, signal_type, severity, message):
-        """
-        Create a care signal if one is not already active.
-        """
-
-        existing = VehicleHealthAlert.query.filter_by(
-            car_id=car.id,
-            ownership_id=ownership.id,
-            alert_type=signal_type,
-            is_active=True,
-        ).first()
-
-        if existing:
-            return
-
-        signal = VehicleHealthAlert(
-            car_id=car.id,
-            ownership_id=ownership.id,
-            alert_type=signal_type,
-            severity=severity,
-            status="new",
-            message=message,
-            is_active=True,
-            created_at=datetime.utcnow(),
-        )
-
-        db.session.add(signal)
-
-    @staticmethod
-    def _resolve_signal(car, ownership, signal_type):
-        """
-        Resolve an active care signal when conditions normalize.
-        """
-
-        signal = VehicleHealthAlert.query.filter_by(
-            car_id=car.id,
-            ownership_id=ownership.id,
-            alert_type=signal_type,
-            is_active=True,
-        ).first()
-
-        if not signal:
-            return
-
-        signal.is_active = False
-        signal.resolved_at = datetime.utcnow()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
 
 
 # =====================================================

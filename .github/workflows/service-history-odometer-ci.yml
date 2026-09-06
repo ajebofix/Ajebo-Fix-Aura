@@ -1,0 +1,66 @@
+name: Aura Service History Odometer CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "cars/routes.py"
+      - "admin/progression_routes.py"
+      - "services/service_history_route_cutover.py"
+      - "services/vehicle_intelligence.py"
+      - "templates/admin/add_service.html"
+      - "templates/cars/add_service.html"
+      - "tests/test_service_history_mileage.py"
+      - ".github/workflows/service-history-odometer-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-service-history-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  service-history-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile service-history slice
+        run: >-
+          python -m compileall -q
+          cars/routes.py
+          admin/progression_routes.py
+          services/service_history_route_cutover.py
+          services/vehicle_intelligence.py
+          tests/test_service_history_mileage.py
+
+      - name: Run service-history odometer regression tests
+        run: pytest -q --tb=short tests/test_service_history_mileage.py
+
+      - name: Ruff new service-history code
+        run: >-
+          ruff check --output-format=concise
+          services/service_history_route_cutover.py
+          tests/test_service_history_mileage.py

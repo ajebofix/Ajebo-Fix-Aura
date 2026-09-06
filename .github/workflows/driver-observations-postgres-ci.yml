@@ -137,9 +137,6 @@ jobs:
           python -m flask db upgrade
           python scripts/verify_alembic_head.py
 
-      - name: Run driver observation lifecycle tests
-        run: pytest -q tests/test_driver_observation.py
-
       - name: Run PostgreSQL driver observation verifier
         run: python scripts/verify_driver_observations_postgres.py
 
@@ -156,6 +153,23 @@ jobs:
           fi
           echo "$output" | grep -q "published driver-observation canonical history"
           python scripts/verify_alembic_head.py
+
+      - name: Reset PostgreSQL after negative verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Run driver observation lifecycle tests
+        run: pytest -q tests/test_driver_observation.py
 
       - name: Ruff Wave 2.4B slice
         run: >-

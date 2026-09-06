@@ -44,3 +44,4 @@ import services.assessment_route_cutover  # noqa: E402,F401
 import services.assessment_correction_routes  # noqa: E402,F401
 import services.treatment_plan_route_cutover  # noqa: E402,F401
 import services.treatment_action_routes  # noqa: E402,F401
+import services.care_signal_route_cutover  # noqa: E402,F401

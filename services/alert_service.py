@@ -29,6 +29,8 @@ class AlertService:
                 {
                     "id": alert.id,
                     "type": "vehicle_alert",
+                    "record_kind": "care_signal",
+                    "actionable": True,
                     "severity": alert.severity,
                     "status": alert.status,
                     "title": alert.message,
@@ -77,6 +79,8 @@ class AlertService:
                         "id": None,
                         "status": "new",
                         "type": "recurring_concern",
+                        "record_kind": "projection",
+                        "actionable": False,
                         "severity": "high",
                         "title": (
                             f"{category.title()} concern repeated "
@@ -109,6 +113,8 @@ class AlertService:
                     "id": None,
                     "status": "new",
                     "type": "consultation_delay",
+                    "record_kind": "projection",
+                    "actionable": False,
                     "severity": "moderate",
                     "title": "Consultation remains unresolved",
                     "vehicle": consultation.car,
@@ -132,6 +138,8 @@ class AlertService:
                     "id": None,
                     "status": "new",
                     "type": "monitoring_stall",
+                    "record_kind": "projection",
+                    "actionable": False,
                     "severity": "moderate",
                     "title": "Monitoring state has not been reviewed recently",
                     "vehicle": treatment.car,

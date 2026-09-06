@@ -332,7 +332,7 @@ def test_emit_vehicle_event_correction_is_additive_and_vehicle_scoped(app):
         assert original.is_deleted is False
 
 
-def test_emit_vehicle_event_rejects_reserved_system_actor_until_schema_followup(app):
+def test_emit_vehicle_event_rejects_system_actor_outside_explicit_allowlist(app):
     with app.app_context():
         owner = _create_user(
             name="System Vehicle Owner",
@@ -344,5 +344,8 @@ def test_emit_vehicle_event_rejects_reserved_system_actor_until_schema_followup(
         kwargs["actor_type"] = "system"
         kwargs["actor_user_id"] = None
 
-        with pytest.raises(EventEmissionError, match="remain reserved"):
+        with pytest.raises(
+            EventEmissionError,
+            match="not approved for this canonical event family",
+        ):
             emit_vehicle_event(**kwargs)

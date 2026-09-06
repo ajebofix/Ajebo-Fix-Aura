@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 
 from extensions import db
-from models import Car, CarOwnership, User, VehicleEvent, VehicleHealthAlert
+from models import Car, CarOwnership, VehicleEvent, VehicleHealthAlert
 from security.access import resolve_vehicle_authority
 from services.care_signal_event_emission import emit_care_signal_event
 

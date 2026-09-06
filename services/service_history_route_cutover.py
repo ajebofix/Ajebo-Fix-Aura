@@ -22,7 +22,7 @@ from flask_login import current_user, login_required
 
 from admin.routes import CLINICAL_DISCLAIMER, admin_bp
 from admin.utils import advisor_required
-from cars.routes import cars_bp, create_service_event
+from cars.routes import create_service_event
 from extensions import db
 from models import Car, CarOwnership
 from services.consultation_guard import require_active_consultation

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from extensions import db
-from models import Car, CarOwnership, User, VehicleEvent
+from models import Car, CarOwnership, User, VehicleEvent, VehicleHealthAlert
 from cars.routes import create_service_event
+from services.service_history_route_cutover import _record_service_with_monitoring
 from services.vehicle_intelligence import (
     calculate_vehicle_health,
     resolve_current_mileage,
@@ -68,9 +69,13 @@ def _record_service(
     )
 
 
-def test_admin_service_route_uses_historical_odometer_cutover(app):
+def test_service_routes_use_historical_odometer_cutover(app):
     assert (
         app.view_functions["admin.admin_add_service"].__module__
+        == "services.service_history_route_cutover"
+    )
+    assert (
+        app.view_functions["cars.add_service_record"].__module__
         == "services.service_history_route_cutover"
     )
 
@@ -158,3 +163,51 @@ def test_latest_service_is_the_interval_baseline(app):
 
         assert not any("maintenance interval" in reason for reason in health["risk_reasons"])
         assert car.current_mileage == 64000
+
+
+def test_service_creation_refreshes_maintenance_monitoring_signal(app):
+    with app.app_context():
+        owner, car, ownership = _create_owned_car(suffix="5")
+
+        refreshed = _record_service_with_monitoring(
+            car=car,
+            ownership=ownership,
+            service_type="Routine service",
+            mileage=10000,
+            description="Synthetic maintenance-monitoring smoke record.",
+            service_date="2025-01-15",
+            performed_by=owner.id,
+            source="client",
+        )
+
+        assert refreshed is True
+        db.session.refresh(car)
+        assert car.current_mileage == 64000
+
+        signal = VehicleHealthAlert.query.filter_by(
+            car_id=car.id,
+            ownership_id=ownership.id,
+            alert_type="maintenance_monitoring",
+            is_active=True,
+        ).one()
+
+        assert signal.status == "new"
+        assert signal.severity == "low"
+        assert signal.message == (
+            "Routine maintenance monitoring is recommended "
+            "based on current vehicle data."
+        )
+
+        event = VehicleEvent.query.filter_by(
+            subject_type="vehicle_health_alert",
+            subject_id=signal.id,
+            event_type="care_signal.raised",
+        ).one()
+
+        assert event.actor_type == "system"
+        assert event.actor_user_id is None
+        assert event.new_state == "new"
+        assert event.data["alert_type"] == "maintenance_monitoring"
+        assert event.data["source_classification"] == (
+            "deterministic_rule:event_created"
+        )

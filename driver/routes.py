@@ -9,6 +9,11 @@ from flask_login import current_user, login_required
 
 from models import CarDriver, CarFault, CarOwnership, DriverCheckIn, db
 from security.access import require_vehicle_access
+from services.driver_observation import (
+    DriverObservationConflict,
+    DriverObservationService,
+    DriverObservationValidationError,
+)
 
 
 driver_bp = Blueprint("driver", __name__, url_prefix="/driver")
@@ -167,49 +172,39 @@ def driver_daily_checkin(car_id):
         db.func.date(DriverCheckIn.created_at) == today,
     ).first()
 
-    if request.method == "POST" and existing:
-        flash("Today's check-in has already been submitted for this vehicle.", "info")
-        return redirect(url_for("driver.driver_dashboard"))
-
     if request.method == "POST":
-        notes = request.form.get("notes", "").strip()
-        if len(notes) > 2000:
-            flash("Check-in notes are too long.", "error")
-            return render_template("driver/checkin.html", car=car)
-
-        checkin = DriverCheckIn(
-            car_id=car.id,
-            driver_id=current_user.id,
-            tyre_warning=bool(request.form.get("tyre_warning")),
-            fuel_low=bool(request.form.get("fuel_low")),
-            dashboard_light=bool(request.form.get("dashboard_light")),
-            vibration=bool(request.form.get("vibration")),
-            unusual_sound=bool(request.form.get("unusual_sound")),
-            notes=notes,
-        )
-
-        if current_user.driver_score is None:
-            current_user.driver_score = 100
-
-        current_user.driver_score += 2
-
-        if checkin.dashboard_light:
-            current_user.driver_score -= 3
-        if checkin.vibration:
-            current_user.driver_score -= 3
-        if checkin.unusual_sound:
-            current_user.driver_score -= 3
-
-        current_user.driver_score = max(0, min(100, current_user.driver_score))
-
         try:
-            db.session.add(checkin)
+            result = DriverObservationService.record_checkin(
+                car_id=car.id,
+                actor_user_id=current_user.id,
+                tyre_warning=bool(request.form.get("tyre_warning")),
+                fuel_low=bool(request.form.get("fuel_low")),
+                dashboard_light=bool(request.form.get("dashboard_light")),
+                vibration=bool(request.form.get("vibration")),
+                unusual_sound=bool(request.form.get("unusual_sound")),
+                notes=request.form.get("notes", ""),
+            )
             db.session.commit()
+        except DriverObservationConflict as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return redirect(url_for("driver.driver_dashboard"))
+        except DriverObservationValidationError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return render_template(
+                "driver/checkin.html",
+                car=car,
+                existing_checkin=existing,
+            )
         except Exception:
             db.session.rollback()
             raise
 
-        flash("Daily vehicle check-in submitted.", "success")
+        if result.created:
+            flash("Daily vehicle check-in submitted.", "success")
+        else:
+            flash("Today's check-in has already been submitted for this vehicle.", "info")
         return redirect(url_for("driver.driver_dashboard"))
 
     return render_template(

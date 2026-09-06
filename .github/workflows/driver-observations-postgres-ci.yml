@@ -1,0 +1,189 @@
+name: Aura Driver Observations PostgreSQL CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/versions/b4e2d1c8a730_add_driver_observation_event_contract.py"
+      - "services/driver_observation.py"
+      - "services/driver_observation_event_emission.py"
+      - "driver/routes.py"
+      - "scripts/verify_driver_observations_postgres.py"
+      - "tests/test_driver_observation.py"
+      - ".github/workflows/driver-observations-postgres-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-driver-observations-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile Wave 2.4B slice
+        run: >-
+          python -m compileall -q
+          migrations/versions/b4e2d1c8a730_add_driver_observation_event_contract.py
+          services/driver_observation.py
+          services/driver_observation_event_emission.py
+          driver/routes.py
+          scripts/verify_driver_observations_postgres.py
+          tests/test_driver_observation.py
+
+      - name: Upgrade fresh PostgreSQL database to current head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify Wave 2.4B database contract is installed
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          required_checks = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_driver_observation_contract",
+          }
+          missing = required_checks - checks
+          if missing:
+              raise SystemExit(f"Missing Wave 2.4B checks: {sorted(missing)}")
+
+          indexes = {
+              item["name"]: item
+              for item in inspector.get_indexes("driver_checkins")
+          }
+          day_index = indexes.get("uq_driver_checkins_driver_car_operational_day")
+          if not day_index or not day_index.get("unique"):
+              raise SystemExit("Missing Wave 2.4B operational-day unique index")
+          print("Wave 2.4B database contract installed.")
+          PY
+
+      - name: Rehearse safe downgrade before Wave 2.4B history exists
+        run: |
+          python -m flask db downgrade e6a1c9f4b720
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+          checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          if "ck_vehicle_events_driver_observation_contract" in checks:
+              raise SystemExit("Driver-observation CHECK survived downgrade")
+          indexes = {
+              item["name"]
+              for item in inspector.get_indexes("driver_checkins")
+          }
+          if "uq_driver_checkins_driver_car_operational_day" in indexes:
+              raise SystemExit("Operational-day unique index survived downgrade")
+          print("Wave 2.4B safe downgrade restored pre-driver contract.")
+          PY
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Run PostgreSQL driver observation verifier
+        run: python scripts/verify_driver_observations_postgres.py
+
+      - name: Prove destructive downgrade refuses published driver history
+        run: |
+          set +e
+          output=$(python -m flask db downgrade e6a1c9f4b720 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Wave 2.4B downgrade unexpectedly succeeded after driver history existed"
+            exit 1
+          fi
+          echo "$output" | grep -q "published driver-observation canonical history"
+          python scripts/verify_alembic_head.py
+
+      - name: Reset PostgreSQL after negative verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Run driver observation lifecycle tests
+        run: pytest -q tests/test_driver_observation.py
+
+      - name: Ruff Wave 2.4B slice
+        run: >-
+          ruff check
+          services/driver_observation.py
+          services/driver_observation_event_emission.py
+          driver/routes.py
+          scripts/verify_driver_observations_postgres.py
+          tests/test_driver_observation.py
+          migrations/versions/b4e2d1c8a730_add_driver_observation_event_contract.py
+
+      - name: Bandit Wave 2.4B services
+        run: >-
+          bandit -q
+          services/driver_observation.py
+          services/driver_observation_event_emission.py
+          scripts/verify_driver_observations_postgres.py

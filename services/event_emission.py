@@ -69,7 +69,10 @@ ALLOWED_PROGRESSION_DIRECTIONS = frozenset(
         "not_applicable",
     }
 )
-RESERVED_ACTOR_TYPES = frozenset({"system", "provider"})
+# System authority is opt-in per registered canonical event family. Provider
+# actors remain prohibited until a separate contract explicitly approves them.
+SYSTEM_ACTOR_EVENT_TYPES = frozenset()
+RESERVED_ACTOR_TYPES = frozenset({"provider"})
 
 _EVENT_SUBJECT_RULES = {
     **{event_type: "reported_concern" for event_type in CONCERN_EVENT_TYPES},
@@ -250,13 +253,25 @@ def _validate_event_contract(
 
     if actor_type in RESERVED_ACTOR_TYPES:
         raise EventEmissionError(
-            "system/provider actors remain reserved until legacy created_by nullability is relaxed"
+            "provider actors remain reserved until a dedicated contract approves them"
         )
 
-    if actor_type != "user" or not isinstance(actor_user_id, int):
-        raise EventEmissionError(
-            "canonical human events require actor_type='user' and actor_user_id"
-        )
+    if actor_type == "system":
+        if event_type not in SYSTEM_ACTOR_EVENT_TYPES:
+            raise EventEmissionError(
+                "system actor is not approved for this canonical event family"
+            )
+        if actor_user_id is not None:
+            raise EventEmissionError(
+                "canonical system events must not impersonate a human actor"
+            )
+    elif actor_type == "user":
+        if not isinstance(actor_user_id, int):
+            raise EventEmissionError(
+                "canonical human events require actor_type='user' and actor_user_id"
+            )
+    else:
+        raise EventEmissionError(f"unsupported canonical actor type: {actor_type}")
 
     if visibility not in ALLOWED_VISIBILITIES:
         raise EventEmissionError(f"invalid canonical event visibility: {visibility}")
@@ -379,7 +394,7 @@ def _same_semantics(
     *,
     ownership_id: int,
     occurred_at: datetime,
-    actor_user_id: int,
+    actor_user_id: int | None,
     actor_authority: str,
     visibility: str,
     source: str,
@@ -510,12 +525,15 @@ def emit_vehicle_event(
 
     ownership = _active_ownership_for(car_id)
 
-    if actor_user_id is None:
-        raise EventEmissionError("canonical human event is missing actor_user_id")
+    if actor_type == "system":
+        actor_authority = "system"
+    else:
+        if actor_user_id is None:
+            raise EventEmissionError("canonical human event is missing actor_user_id")
 
-    actor_authority = resolve_vehicle_authority(actor_user_id, car_id)
-    if actor_authority is None:
-        raise EventAuthorityError("actor has no proven authority for this vehicle")
+        actor_authority = resolve_vehicle_authority(actor_user_id, car_id)
+        if actor_authority is None:
+            raise EventAuthorityError("actor has no proven authority for this vehicle")
 
     if event_type in EVIDENCE_EVENT_TYPES and actor_authority not in {
         "advisor",

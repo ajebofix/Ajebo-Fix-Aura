@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 
 from models import (
+    Car,
     CarFault,
     Consultation,
     TreatmentPlan,
@@ -24,15 +25,18 @@ class AlertService:
         active_alerts = VehicleHealthAlert.query.filter_by(is_active=True).all()
 
         for alert in active_alerts:
+            vehicle = Car.query.filter_by(id=alert.car_id).one()
 
             alerts.append(
                 {
                     "id": alert.id,
                     "type": "vehicle_alert",
+                    "record_kind": "care_signal",
+                    "actionable": True,
                     "severity": alert.severity,
                     "status": alert.status,
                     "title": alert.message,
-                    "vehicle": alert.car,
+                    "vehicle": vehicle,
                     "created_at": alert.created_at,
                 }
             )
@@ -77,6 +81,8 @@ class AlertService:
                         "id": None,
                         "status": "new",
                         "type": "recurring_concern",
+                        "record_kind": "projection",
+                        "actionable": False,
                         "severity": "high",
                         "title": (
                             f"{category.title()} concern repeated "
@@ -109,6 +115,8 @@ class AlertService:
                     "id": None,
                     "status": "new",
                     "type": "consultation_delay",
+                    "record_kind": "projection",
+                    "actionable": False,
                     "severity": "moderate",
                     "title": "Consultation remains unresolved",
                     "vehicle": consultation.car,
@@ -132,6 +140,8 @@ class AlertService:
                     "id": None,
                     "status": "new",
                     "type": "monitoring_stall",
+                    "record_kind": "projection",
+                    "actionable": False,
                     "severity": "moderate",
                     "title": "Monitoring state has not been reviewed recently",
                     "vehicle": treatment.car,

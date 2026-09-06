@@ -127,11 +127,23 @@ def calculate_vehicle_health(car: Car, ownership: CarOwnership) -> Dict:
         observations.append("No maintenance history on record")
         next_step = next_step or "Initial maintenance review recommended."
 
-    overdue_intervals = sum(
-        1
+    # The service event stores the main-odometer reading at the time the
+    # service occurred. Historical service events do not replace the current
+    # odometer. Until service-type-specific schedules are introduced, the
+    # latest recorded service is the generic maintenance baseline.
+    service_mileages = [
+        s.mileage
         for s in services
-        if s.mileage and current_mileage - s.mileage > SERVICE_INTERVAL_KM
-    )
+        if s.mileage is not None and s.mileage <= current_mileage
+    ]
+
+    overdue_intervals = 0
+    if service_mileages and current_mileage:
+        latest_service_mileage = max(service_mileages)
+        distance_since_service = current_mileage - latest_service_mileage
+
+        if distance_since_service > SERVICE_INTERVAL_KM:
+            overdue_intervals = distance_since_service // SERVICE_INTERVAL_KM
 
     if overdue_intervals:
         penalty = min(overdue_intervals * 10, MAX_PENALTIES["maintenance"])
@@ -254,20 +266,38 @@ def get_next_action(health: Dict) -> Dict:
 
 
 def resolve_current_mileage(car: Car, ownership: CarOwnership) -> int:
+    """
+    Resolve the vehicle's present main-odometer reading.
+
+    Car.current_mileage is authoritative when present. Historical event mileage
+    is an odometer snapshot at the time of that event and must never pull the
+    current odometer backwards. Legacy fallbacks are used only when the car has
+    no current mileage recorded.
+    """
+
+    if car.current_mileage is not None:
+        return car.current_mileage
+
+    candidates = []
+
+    if ownership and ownership.mileage_at_transfer is not None:
+        candidates.append(ownership.mileage_at_transfer)
+
     latest_event = (
-        VehicleEvent.query.filter_by(
-            car_id=car.id,
-            ownership_id=ownership.id,
-            is_deleted=False,
+        VehicleEvent.query.filter(
+            VehicleEvent.car_id == car.id,
+            VehicleEvent.ownership_id == ownership.id,
+            VehicleEvent.is_deleted.is_(False),
+            VehicleEvent.mileage.isnot(None),
         )
         .order_by(VehicleEvent.mileage.desc())
         .first()
     )
 
-    if latest_event and latest_event.mileage:
-        return latest_event.mileage
+    if latest_event and latest_event.mileage is not None:
+        candidates.append(latest_event.mileage)
 
-    return car.current_mileage or 0
+    return max(candidates, default=0)
 
 
 # =====================================================

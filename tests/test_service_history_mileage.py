@@ -68,6 +68,13 @@ def _record_service(
     )
 
 
+def test_admin_service_route_uses_historical_odometer_cutover(app):
+    assert (
+        app.view_functions["admin.admin_add_service"].__module__
+        == "services.service_history_route_cutover"
+    )
+
+
 def test_historical_service_preserves_authoritative_current_odometer(app):
     with app.app_context():
         owner, car, ownership = _create_owned_car(suffix="1")

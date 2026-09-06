@@ -1,0 +1,258 @@
+name: Aura Care Signals PostgreSQL CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "migrations/versions/c5f3e2d9a841_add_care_signal_lifecycle_contract.py"
+      - "services/care_signal_event_emission.py"
+      - "services/care_signal_lifecycle.py"
+      - "services/care_signal_model_contract.py"
+      - "services/care_signal_route_cutover.py"
+      - "services/event_emission.py"
+      - "services/health_alert_service.py"
+      - "admin/progression_routes.py"
+      - "scripts/verify_care_signals_postgres.py"
+      - "tests/test_care_signal_lifecycle.py"
+      - "tests/test_care_signal_routes.py"
+      - ".github/workflows/care-signals-postgres-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-care-signals-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura -d aura_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://aura:aura@127.0.0.1:5432/aura_test"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile Wave 2.4C slice
+        run: >-
+          python -m compileall -q
+          migrations/versions/c5f3e2d9a841_add_care_signal_lifecycle_contract.py
+          services/care_signal_event_emission.py
+          services/care_signal_lifecycle.py
+          services/care_signal_model_contract.py
+          services/care_signal_route_cutover.py
+          services/event_emission.py
+          services/health_alert_service.py
+          scripts/verify_care_signals_postgres.py
+          tests/test_care_signal_lifecycle.py
+          tests/test_care_signal_routes.py
+
+      - name: Upgrade fresh PostgreSQL database to current head
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Verify Wave 2.4C database contract is installed
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+
+          event_checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          required_event_checks = {
+              "ck_vehicle_events_canonical_subject_event",
+              "ck_vehicle_events_care_signal_contract",
+              "ck_vehicle_events_system_actor_scope",
+          }
+          missing = required_event_checks - event_checks
+          if missing:
+              raise SystemExit(f"Missing Wave 2.4C event checks: {sorted(missing)}")
+
+          alert_checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_health_alerts")
+          }
+          if "ck_vehicle_health_alert_state_contract" not in alert_checks:
+              raise SystemExit("Missing Wave 2.4C alert-state CHECK")
+
+          indexes = {
+              item["name"]: item
+              for item in inspector.get_indexes("vehicle_health_alerts")
+          }
+          active = indexes.get("uq_vehicle_health_alert_active_occurrence")
+          if not active or not active.get("unique"):
+              raise SystemExit("Missing recurrence-safe active-occurrence unique index")
+
+          created_by = next(
+              item
+              for item in inspector.get_columns("vehicle_events")
+              if item["name"] == "created_by"
+          )
+          if not created_by["nullable"]:
+              raise SystemExit("vehicle_events.created_by is not nullable for system events")
+
+          print("Wave 2.4C database contract installed.")
+          PY
+
+      - name: Rehearse safe downgrade before Wave 2.4C history exists
+        run: |
+          python -m flask db downgrade b4e2d1c8a730
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          inspector = inspect(engine)
+
+          event_checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_events")
+          }
+          for name in (
+              "ck_vehicle_events_care_signal_contract",
+              "ck_vehicle_events_system_actor_scope",
+          ):
+              if name in event_checks:
+                  raise SystemExit(f"{name} survived Wave 2.4C downgrade")
+
+          alert_checks = {
+              item["name"]
+              for item in inspector.get_check_constraints("vehicle_health_alerts")
+          }
+          if "ck_vehicle_health_alert_state_contract" in alert_checks:
+              raise SystemExit("Care-signal state CHECK survived downgrade")
+
+          indexes = {
+              item["name"]
+              for item in inspector.get_indexes("vehicle_health_alerts")
+          }
+          if "uq_vehicle_health_alert_active_occurrence" in indexes:
+              raise SystemExit("Recurrence-safe active index survived downgrade")
+
+          unique_constraints = {
+              item["name"]
+              for item in inspector.get_unique_constraints("vehicle_health_alerts")
+          }
+          if "uq_active_health_alert" not in unique_constraints:
+              raise SystemExit("Legacy alert uniqueness was not restored")
+
+          created_by = next(
+              item
+              for item in inspector.get_columns("vehicle_events")
+              if item["name"] == "created_by"
+          )
+          if created_by["nullable"]:
+              raise SystemExit("Legacy created_by NOT NULL contract was not restored")
+
+          print("Wave 2.4C safe downgrade restored the 2.4B contract.")
+          PY
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Run PostgreSQL care-signal verifier
+        run: python scripts/verify_care_signals_postgres.py
+
+      - name: Prove destructive downgrade refuses published care-signal history
+        run: |
+          set +e
+          output=$(python -m flask db downgrade b4e2d1c8a730 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Wave 2.4C downgrade unexpectedly succeeded after care-signal history existed"
+            exit 1
+          fi
+          echo "$output" | grep -q "published care-signal canonical history"
+          python scripts/verify_alembic_head.py
+
+      - name: Reset PostgreSQL after negative verifier
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
+          with engine.begin() as connection:
+              connection.execute(text("DROP SCHEMA public CASCADE"))
+              connection.execute(text("CREATE SCHEMA public"))
+          PY
+          python -m flask db upgrade
+          python scripts/verify_alembic_head.py
+
+      - name: Run Wave 2.4C lifecycle and route tests
+        run: pytest -q tests/test_care_signal_lifecycle.py tests/test_care_signal_routes.py
+
+      - name: Run operational-domain regression tests
+        run: >-
+          pytest -q
+          tests/test_driver_observation.py
+          tests/test_treatment_plan_lifecycle.py
+          tests/test_treatment_action_lifecycle.py
+          tests/test_concern_progression.py
+
+      - name: Ruff Wave 2.4C slice
+        run: >-
+          ruff check
+          services/care_signal_event_emission.py
+          services/care_signal_lifecycle.py
+          services/care_signal_model_contract.py
+          services/care_signal_route_cutover.py
+          services/event_emission.py
+          services/health_alert_service.py
+          scripts/verify_care_signals_postgres.py
+          tests/test_care_signal_lifecycle.py
+          tests/test_care_signal_routes.py
+          migrations/versions/c5f3e2d9a841_add_care_signal_lifecycle_contract.py
+
+      - name: Bandit Wave 2.4C services
+        run: >-
+          bandit -q
+          services/care_signal_event_emission.py
+          services/care_signal_lifecycle.py
+          services/care_signal_route_cutover.py
+          scripts/verify_care_signals_postgres.py

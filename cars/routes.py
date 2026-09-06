@@ -605,8 +605,8 @@ def create_service_event(
     source,
 ):
 
-    if mileage < (car.current_mileage or 0):
-        raise ValueError("Mileage cannot be lower than current vehicle mileage.")
+    if mileage < 0:
+        raise ValueError("Service mileage must be zero or greater.")
 
     fingerprint = hashlib.sha256(
         f"{car.id}|{ownership.id}|{service_type}|{mileage}|{service_date}".encode()
@@ -615,7 +615,10 @@ def create_service_event(
     if VehicleEvent.query.filter_by(fingerprint=fingerprint).first():
         raise ValueError("Duplicate service record detected.")
 
-    car.current_mileage = mileage
+    # Service mileage is the main-odometer snapshot when the work occurred.
+    # Historical records must never move the vehicle's present odometer back.
+    if car.current_mileage is None or mileage > car.current_mileage:
+        car.current_mileage = mileage
 
     event = VehicleEvent(
         car_id=car.id,
@@ -697,7 +700,6 @@ def assessment_report(car_id):
         print_mode=request.args.get("print") == "1",
         is_admin_view=False,
     )
-
 
 # ========================================
 # PRIORITY SCHEDULING REQUEST

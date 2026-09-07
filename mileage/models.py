@@ -84,7 +84,7 @@ class MileageObservation(db.Model):
         db.Boolean,
         default=False,
         nullable=False,
-        server_default="0",
+        server_default="false",
     )
 
     source_reference = db.Column(

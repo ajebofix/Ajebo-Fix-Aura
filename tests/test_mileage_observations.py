@@ -7,11 +7,12 @@ from flask_login import login_user
 
 from extensions import db
 from mileage.models import MileageObservation
-from models import Car, CarOwnership, User
+from models import Car, CarOwnership, User, VehicleEvent
 from services.mileage_observations import (
     MileageObservationError,
     MileageObservationService,
 )
+from services.service_history_route_cutover import _record_service_with_monitoring
 
 
 def _user(*, suffix: str, role: str = "user") -> User:
@@ -189,6 +190,32 @@ def test_old_observation_is_marked_stale(app):
         assert snapshot.freshness_status == "stale"
         assert snapshot.freshness_label == "Stale — update required"
         assert snapshot.needs_update is True
+
+
+def test_current_service_rejects_lower_odometer_before_event_is_saved(app):
+    with app.app_context():
+        owner, car, ownership = _owned_car(suffix="8")
+
+        with pytest.raises(ValueError, match="Current service odometer"):
+            _record_service_with_monitoring(
+                car=car,
+                ownership=ownership,
+                service_type="Routine service",
+                mileage=62000,
+                description="Invalid current service reading.",
+                service_date="2026-09-07",
+                performed_by=owner.id,
+                source="client",
+                event_metadata={
+                    "record_mode": "current",
+                    "entered_by_role": "client",
+                },
+            )
+
+        assert VehicleEvent.query.filter_by(car_id=car.id, event_type="service").count() == 0
+        assert MileageObservation.query.filter_by(car_id=car.id).count() == 0
+        db.session.refresh(car)
+        assert car.current_mileage == 64000
 
 
 def test_advisor_odometer_route_is_registered_and_saves_observation(app, monkeypatch):

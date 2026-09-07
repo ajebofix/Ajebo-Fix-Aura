@@ -15,10 +15,15 @@ from services.mileage_observations import (
 
 
 def _user(*, suffix: str, role: str = "user") -> User:
+    role_digit = {
+        "user": "1",
+        "admin": "9",
+        "advisor": "8",
+    }.get(role, "7")
     user = User(
         name=f"Mileage {role.title()} {suffix}",
         email=f"mileage-{role}-{suffix}@example.com",
-        phone_number=f"0811555{suffix.zfill(4)}",
+        phone_number=f"08115{role_digit}{suffix.zfill(5)}",
         role=role,
         is_active=True,
     )

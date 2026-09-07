@@ -1,0 +1,80 @@
+name: Aura Mileage Observation CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "mileage/**"
+      - "services/mileage_observations.py"
+      - "services/mileage_routes.py"
+      - "services/service_history_route_cutover.py"
+      - "admin/progression_routes.py"
+      - "templates/admin/update_odometer.html"
+      - "templates/reports/timeline.html"
+      - "migrations/versions/f0a3b6c2d901_add_mileage_observations.py"
+      - "tests/test_mileage_observations.py"
+      - "tests/test_service_history_mileage.py"
+      - ".github/workflows/mileage-observation-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-mileage-observation-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  mileage-observation-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      PREFERRED_URL_SCHEME: "http"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile mileage slice
+        run: >-
+          python -m compileall -q
+          mileage
+          services/mileage_observations.py
+          services/mileage_routes.py
+          services/service_history_route_cutover.py
+          admin/progression_routes.py
+          migrations/versions/f0a3b6c2d901_add_mileage_observations.py
+          tests/test_mileage_observations.py
+          tests/test_service_history_mileage.py
+
+      - name: Run mileage and service-history regression tests
+        run: >-
+          pytest -q --tb=short
+          tests/test_mileage_observations.py
+          tests/test_service_history_mileage.py
+
+      - name: Ruff mileage slice
+        run: >-
+          ruff check --output-format=concise
+          mileage
+          services/mileage_observations.py
+          services/mileage_routes.py
+          services/service_history_route_cutover.py
+          admin/progression_routes.py
+          migrations/versions/f0a3b6c2d901_add_mileage_observations.py
+          tests/test_mileage_observations.py

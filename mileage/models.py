@@ -50,7 +50,7 @@ class MileageObservation(db.Model):
 
     ownership_id = db.Column(
         db.Integer,
-        db.ForeignKey("car_ownerships.id", ondelete="SET NULL"),
+        db.ForeignKey("car_ownership.id", ondelete="SET NULL"),
         nullable=True,
     )
 

@@ -99,6 +99,20 @@ class MileageObservationService:
     """Authoritative mileage observation rules and history queries."""
 
     @staticmethod
+    def latest_current_observation(car_id: int) -> MileageObservation | None:
+        return (
+            MileageObservation.query.filter_by(
+                car_id=car_id,
+                is_historical=False,
+            )
+            .order_by(
+                MileageObservation.observed_at.desc(),
+                MileageObservation.id.desc(),
+            )
+            .first()
+        )
+
+    @staticmethod
     def record(
         *,
         car: Car,
@@ -115,12 +129,16 @@ class MileageObservationService:
         commit: bool = True,
     ) -> MileageObservation:
         if car.id is None:
-            raise MileageObservationError("Vehicle must be persisted before mileage is recorded.")
+            raise MileageObservationError(
+                "Vehicle must be persisted before mileage is recorded."
+            )
 
         try:
             reading = int(odometer_km)
         except (TypeError, ValueError) as exc:
-            raise MileageObservationError("Odometer reading must be a whole number.") from exc
+            raise MileageObservationError(
+                "Odometer reading must be a whole number."
+            ) from exc
 
         if reading < 0 or reading > MAX_ODOMETER_KM:
             raise MileageObservationError(
@@ -132,15 +150,23 @@ class MileageObservationService:
             raise MileageObservationError("Odometer observation cannot be in the future.")
 
         current = car.current_mileage
+        latest = MileageObservationService.latest_current_observation(car.id)
+
         if is_historical:
             if current is not None and reading > current:
                 raise MileageObservationError(
                     "Historical odometer evidence cannot exceed the latest recorded odometer."
                 )
-        elif current is not None and reading < current:
-            raise MileageObservationError(
-                "A current odometer observation cannot move the vehicle mileage backwards."
-            )
+        else:
+            if current is not None and reading < current:
+                raise MileageObservationError(
+                    "A current odometer observation cannot move the vehicle mileage backwards."
+                )
+            if latest is not None and observed < latest.observed_at:
+                raise MileageObservationError(
+                    "A current odometer observation cannot predate the latest current observation. "
+                    "Record older evidence as historical instead."
+                )
 
         if source_reference:
             existing = MileageObservation.query.filter_by(
@@ -250,31 +276,14 @@ class MileageObservationService:
         )
 
     @staticmethod
-    def latest_current_observation(car_id: int) -> MileageObservation | None:
-        return (
-            MileageObservation.query.filter_by(
-                car_id=car_id,
-                is_historical=False,
-            )
-            .order_by(
-                MileageObservation.observed_at.desc(),
-                MileageObservation.id.desc(),
-            )
-            .first()
-        )
-
-    @staticmethod
     def snapshot(car: Car) -> MileageSnapshot:
         latest = MileageObservationService.latest_current_observation(car.id)
 
         # A legacy path may have advanced Car.current_mileage without writing an
         # observation. Never attribute that newer number to an older observation.
-        if (
-            latest is None
-            or (
-                car.current_mileage is not None
-                and latest.odometer_km != car.current_mileage
-            )
+        if latest is None or (
+            car.current_mileage is not None
+            and latest.odometer_km != car.current_mileage
         ):
             freshness_status, freshness_label, age_days = _freshness(None)
             return MileageSnapshot(
@@ -295,7 +304,10 @@ class MileageObservationService:
             odometer_km=latest.odometer_km,
             observed_at=latest.observed_at,
             source=latest.source,
-            source_label=SOURCE_LABELS.get(latest.source, latest.source.replace("_", " ").title()),
+            source_label=SOURCE_LABELS.get(
+                latest.source,
+                latest.source.replace("_", " ").title(),
+            ),
             verification_status=latest.verification_status,
             verification_label=VERIFICATION_LABELS.get(
                 latest.verification_status,

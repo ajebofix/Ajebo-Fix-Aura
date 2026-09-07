@@ -1,0 +1,1 @@
+"""Aura mileage observation domain."""

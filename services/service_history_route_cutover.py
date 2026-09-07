@@ -30,6 +30,7 @@ from extensions import db
 from models import Car, CarOwnership, VehicleEvent
 from services.consultation_guard import require_active_consultation
 from services.health_alert_service import CareSignalService
+from services.mileage_observations import MileageObservationService
 
 
 _ALLOWED_RECORD_MODES = {"historical", "current"}
@@ -95,7 +96,19 @@ def _record_service_with_monitoring(
     source: str,
     event_metadata: dict | None = None,
 ) -> bool:
-    """Persist a service record, attach audit metadata, then refresh care signals."""
+    """Persist a service record, mileage snapshot, audit metadata and care signals."""
+
+    # New current-service routes explicitly identify themselves. Validate the
+    # odometer before the legacy helper commits the VehicleEvent so an invalid
+    # current reading cannot leave a partially saved service record behind.
+    if (
+        (event_metadata or {}).get("record_mode") == "current"
+        and car.current_mileage is not None
+        and mileage < car.current_mileage
+    ):
+        raise ValueError(
+            "Current service odometer cannot be lower than the latest recorded odometer."
+        )
 
     create_service_event(
         car=car,
@@ -115,6 +128,23 @@ def _record_service_with_monitoring(
         mileage=mileage,
         service_date=service_date,
         metadata=event_metadata,
+    )
+
+    MileageObservationService.record_service_snapshot(
+        car=car,
+        ownership=ownership,
+        odometer_km=mileage,
+        service_date=service_date,
+        performed_by=performed_by,
+        event_metadata=event_metadata,
+        source_reference=_service_fingerprint(
+            car_id=car.id,
+            ownership_id=ownership.id,
+            service_type=service_type,
+            mileage=mileage,
+            service_date=service_date,
+        ),
+        entry_source=source,
     )
 
     try:

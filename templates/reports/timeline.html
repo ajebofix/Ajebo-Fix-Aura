@@ -81,6 +81,64 @@ Observational and non-diagnostic.
 </div>
 </section>
 
+{% set mileage_snapshot = mileage_snapshot_for(car) %}
+<section class="card">
+<h2>Latest Recorded Odometer</h2>
+<div class="dashboard-grid">
+<div class="metric-card">
+<span class="metric-label">Odometer</span>
+<span class="metric-value">
+{{ mileage_snapshot.odometer_km if mileage_snapshot.odometer_km is not none else "—" }} km
+</span>
+</div>
+<div class="metric-card">
+<span class="metric-label">Mileage Freshness</span>
+<span class="metric-value">{{ mileage_snapshot.freshness_label }}</span>
+</div>
+</div>
+
+{% if mileage_snapshot.provenance_available %}
+<p class="muted">
+Observed: {{ mileage_snapshot.observed_at.strftime("%Y-%m-%d %H:%M") if mileage_snapshot.observed_at else "—" }}
+· Source: {{ mileage_snapshot.source_label }}
+· Verification: {{ mileage_snapshot.verification_label }}
+</p>
+{% else %}
+<p class="muted">
+Aura has a current mileage value, but its observation source and observation date have not yet been recorded.
+An advisor odometer observation is recommended before mileage-sensitive decisions are treated as current.
+</p>
+{% endif %}
+</section>
+
+{% set mileage_history = mileage_history_for(car.id, limit=12) %}
+<section class="card">
+<h2>Mileage History</h2>
+<p class="muted">
+Main-odometer observations and historical service snapshots. Historical records never move the current odometer backwards.
+</p>
+
+{% if mileage_history %}
+<div class="list-stack">
+{% for item in mileage_history %}
+<div class="list-item">
+<div class="section-head">
+<strong>{{ item.odometer_km }} km</strong>
+<span class="pill">{{ "Historical" if item.is_historical else "Current observation" }}</span>
+</div>
+<p class="muted">
+{{ item.observed_at.strftime("%Y-%m-%d %H:%M") }}
+· {{ mileage_source_label(item.source) }}
+· {{ mileage_verification_label(item.verification_status) }}
+</p>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="muted">No mileage observations have been recorded yet.</p>
+{% endif %}
+</section>
+
 <section class="card">
 <h2>Care Timeline</h2>
 
@@ -143,6 +201,13 @@ Source: {{ s.data.get('information_source_label', '—') }}
 
 {% if not is_pdf_export %}
 <a
+href="{{ url_for('admin.update_odometer', car_id=car.id) }}"
+class="btn btn-primary btn-block"
+>
+Update Latest Odometer
+</a>
+
+<a
 href="{{ url_for('admin.admin_add_service', car_id=car.id, mode='historical') }}"
 class="btn btn-primary btn-block"
 >
@@ -157,6 +222,7 @@ Record Current Service
 </a>
 
 <p class="muted" style="margin-top:12px;">
+Odometer observations update the latest known cumulative mileage only when real evidence is recorded.
 Historical backfill documents prior evidence and does not require an active consultation.
 Current service remains consultation-first.
 </p>

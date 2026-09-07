@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from flask_login import login_user
 
+from cars.routes import create_service_event
 from extensions import db
 from models import Car, CarOwnership, User, VehicleEvent, VehicleHealthAlert
-from cars.routes import create_service_event
 from services.service_history_route_cutover import _record_service_with_monitoring
 from services.vehicle_intelligence import (
     calculate_vehicle_health,
@@ -24,6 +24,20 @@ def _create_user(*, suffix: str) -> User:
     db.session.add(user)
     db.session.flush()
     return user
+
+
+def _create_advisor(*, suffix: str) -> User:
+    advisor = User(
+        name=f"Service History Advisor {suffix}",
+        email=f"service-history-advisor-{suffix}@example.com",
+        phone_number=f"0800999{suffix.zfill(4)}",
+        role="admin",
+        is_active=True,
+    )
+    advisor.set_password("Password123")
+    db.session.add(advisor)
+    db.session.flush()
+    return advisor
 
 
 def _create_owned_car(*, suffix: str, current_mileage: int = 64000):
@@ -82,18 +96,10 @@ def test_service_routes_use_historical_odometer_cutover(app):
     )
 
 
-def test_admin_service_guard_redirects_to_vehicle_without_500(app, monkeypatch):
-    with app.test_request_context("/admin/cars/1/service/add", method="GET"):
+def test_current_admin_service_still_requires_active_consultation(app, monkeypatch):
+    with app.test_request_context("/admin/cars/1/service/add?mode=current", method="GET"):
         _owner, car, _ownership = _create_owned_car(suffix="0")
-        advisor = User(
-            name="Service History Advisor",
-            email="service-history-advisor@example.com",
-            phone_number="08009990000",
-            role="admin",
-            is_active=True,
-        )
-        advisor.set_password("Password123")
-        db.session.add(advisor)
+        advisor = _create_advisor(suffix="0")
         db.session.commit()
         login_user(advisor)
 
@@ -109,6 +115,100 @@ def test_admin_service_guard_redirects_to_vehicle_without_500(app, monkeypatch):
 
         assert response.status_code == 302
         assert response.location.endswith(f"/admin/cars/{car.id}")
+
+
+def test_historical_admin_service_skips_consultation_and_records_provenance(
+    app, monkeypatch
+):
+    with app.test_request_context(
+        "/admin/cars/1/service/add?mode=historical",
+        method="POST",
+        data={
+            "record_mode": "historical",
+            "service_type": "Routine service",
+            "mileage": "34000",
+            "service_date": "2025-10-15",
+            "information_source": "client_provided",
+            "verification_status": "unverified",
+            "description": "Synthetic historical backfill record.",
+        },
+    ):
+        _owner, car, ownership = _create_owned_car(suffix="6")
+        advisor = _create_advisor(suffix="6")
+        db.session.commit()
+        login_user(advisor)
+
+        def consultation_must_not_be_called(_car_id):
+            raise AssertionError("Historical backfill must not require consultation")
+
+        monkeypatch.setattr(
+            "services.service_history_route_cutover.require_active_consultation",
+            consultation_must_not_be_called,
+        )
+
+        response = app.view_functions["admin.admin_add_service"](car.id)
+
+        assert response.status_code == 302
+        assert response.location.endswith(f"/admin/cars/{car.id}/records")
+
+        db.session.refresh(car)
+        event = VehicleEvent.query.filter_by(
+            car_id=car.id,
+            ownership_id=ownership.id,
+            event_type="service",
+        ).one()
+
+        assert car.current_mileage == 64000
+        assert event.mileage == 34000
+        assert event.source == "admin_historical"
+        assert event.data["record_mode"] == "historical"
+        assert event.data["information_source"] == "client_provided"
+        assert event.data["information_source_label"] == "Client-provided history"
+        assert event.data["verification_status"] == "unverified"
+        assert event.data["verification_status_label"] == "Unverified"
+        assert event.data["entered_by_role"] == "advisor"
+        assert event.data["entered_at"].endswith("Z")
+
+        signal = VehicleHealthAlert.query.filter_by(
+            car_id=car.id,
+            ownership_id=ownership.id,
+            alert_type="maintenance_monitoring",
+            is_active=True,
+        ).one()
+        assert signal.status == "new"
+
+
+def test_historical_admin_service_cannot_exceed_current_odometer(app, monkeypatch):
+    with app.test_request_context(
+        "/admin/cars/1/service/add?mode=historical",
+        method="POST",
+        data={
+            "record_mode": "historical",
+            "service_type": "Routine service",
+            "mileage": "65000",
+            "service_date": "2025-10-15",
+            "information_source": "workshop_record",
+            "verification_status": "document_reviewed",
+        },
+    ):
+        _owner, car, _ownership = _create_owned_car(suffix="7")
+        advisor = _create_advisor(suffix="7")
+        db.session.commit()
+        login_user(advisor)
+
+        monkeypatch.setattr(
+            "services.service_history_route_cutover.require_active_consultation",
+            lambda _car_id: (_ for _ in ()).throw(
+                AssertionError("Historical backfill must not require consultation")
+            ),
+        )
+
+        response = app.view_functions["admin.admin_add_service"](car.id)
+
+        assert response.status_code == 302
+        assert VehicleEvent.query.filter_by(car_id=car.id, event_type="service").count() == 0
+        db.session.refresh(car)
+        assert car.current_mileage == 64000
 
 
 def test_historical_service_preserves_authoritative_current_odometer(app):

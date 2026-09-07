@@ -12,162 +12,83 @@ Chronological service and concern records for long-term vehicle management.
 
 {% block content %}
 
-
-
 <link rel="stylesheet"
 href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
 
-
-
-<!-- ===================================== -->
-<!-- INTERNAL BANNER -->
-<!-- ===================================== -->
-
 {% if is_admin_view %}
-
 <section class="card">
-
 <div class="pdf-banner">
-
 <strong>CONFIDENTIAL — INTERNAL MEDICAL FILE</strong><br>
 Ajebo Fix Advisory Division
-
 {% if exported_by %}
 <br>Exported by: {{ exported_by }}
 {% endif %}
-
 {% if exported_at %}
 <br>Exported on:
 {{ exported_at.strftime("%Y-%m-%d %H:%M UTC") }}
 {% endif %}
-
 <p class="muted">
 For internal professional use only.
 Observational and non-diagnostic.
 </p>
-
 </div>
-
 </section>
-
 {% endif %}
 
-
-
-<!-- ===================================== -->
-<!-- VEHICLE HEADER -->
-<!-- ===================================== -->
-
 <section class="card">
-
 <h1>Vehicle Care History</h1>
-
 <p class="muted">
 {{ car.brand }} {{ car.model }} {{ car.year }}
 </p>
-
 </section>
 
-
-<!-- ===================================== -->
-<!-- TIMELINE -->
-<!-- ===================================== -->
- 
 <section class="card fade-up">
-
     <h2>Unified Vehicle Timeline</h2>
-
-    <p class="muted">
-        Longitudinal vehicle care history.
-    </p>
+    <p class="muted">Longitudinal vehicle care history.</p>
 
     {% for item in timeline %}
-
     <div class="list-item">
-
         <div class="section-head">
-
-            <strong>
-                {{ item.title }}
-            </strong>
-
-            <span class="pill">
-                {{ item.type }}
-            </span>
-
+            <strong>{{ item.title }}</strong>
+            <span class="pill">{{ item.type }}</span>
         </div>
 
         <p class="muted">
-
             {% if item.date %}
                 {{ item.date.strftime("%Y-%m-%d %H:%M") }}
             {% endif %}
-
-            •
-
-            {{ item.status }}
-
+            • {{ item.status }}
         </p>
 
         {% if item.description %}
-        <p>
-            {{ item.description }}
-        </p>
+        <p>{{ item.description }}</p>
         {% endif %}
-
     </div>
-
     {% endfor %}
-
 </section>
 
-
-<!-- ===================================== -->
-<!-- HEALTH SNAPSHOT -->
-<!-- ===================================== -->
-
 <section class="card">
-
 <h2>Health Snapshot</h2>
-
 <div class="dashboard-grid">
-
 <div class="metric-card">
 <span class="metric-label">Status</span>
-<span class="metric-value">
-{{ health.label }}
-</span>
+<span class="metric-value">{{ health.label }}</span>
 </div>
-
 <div class="metric-card">
 <span class="metric-label">Recommended Action</span>
-<span class="metric-value">
-{{ health.next_action }}
-</span>
+<span class="metric-value">{{ health.next_action }}</span>
 </div>
-
 </div>
-
 </section>
 
-
-
-<!-- ===================================== -->
-<!-- TIMELINE -->
-<!-- ===================================== -->
-
 <section class="card">
-
 <h2>Care Timeline</h2>
 
 {% if services or concerns %}
-
 <div class="list-stack">
 
 {% for s in services %}
-
 <div class="list-item">
-
 <p>
 <strong>Service:</strong>
 {{ s.title }}
@@ -176,63 +97,70 @@ Observational and non-diagnostic.
 <p class="muted">
 {{ s.created_at.strftime("%Y-%m-%d") }}
 · Mileage: {{ s.mileage or "—" }}
+{% if s.data and s.data.get('record_mode') %}
+· {{ s.data.get('record_mode') | replace('_',' ') | title }}
+{% endif %}
 </p>
 
-</div>
+{% if s.data and s.data.get('record_mode') == 'historical' %}
+<p class="muted">
+Source: {{ s.data.get('information_source_label', '—') }}
+· Verification: {{ s.data.get('verification_status_label', '—') }}
+{% if s.data.get('entered_at') %}
+· Entered into Aura: {{ s.data.get('entered_at') }}
+{% endif %}
+</p>
+{% endif %}
 
+{% if s.description %}
+<p>{{ s.description }}</p>
+{% endif %}
+</div>
 {% endfor %}
 
-
-
 {% for c in concerns %}
-
 <div class="list-item">
-
 <p>
 <strong>Reported Concern:</strong>
 {{ c.category | replace('_',' ') | title }}
 </p>
-
 <p class="muted">
 {{ c.created_at.strftime("%Y-%m-%d") }}
-· Status:
-{{ c.status | replace('_',' ') | title }}
+· Status: {{ c.status | replace('_',' ') | title }}
 </p>
-
 </div>
-
 {% endfor %}
 
 </div>
-
 {% else %}
-
-<p class="muted">
-No records have been logged yet.
-</p>
-
+<p class="muted">No records have been logged yet.</p>
 {% endif %}
-
 </section>
 
-
-
-<!-- ===================================== -->
-<!-- DOWNLOAD ACTIONS -->
-<!-- ===================================== -->
-
 <section class="card">
-
 {% if is_admin_view %}
-
 <h2>Advisor Actions</h2>
 
+{% if not is_pdf_export %}
 <a
-href="{{ url_for('admin.admin_add_service', car_id=car.id) }}"
+href="{{ url_for('admin.admin_add_service', car_id=car.id, mode='historical') }}"
 class="btn btn-primary btn-block"
 >
-Record Service
+Add Historical Service Record
 </a>
+
+<a
+href="{{ url_for('admin.admin_add_service', car_id=car.id, mode='current') }}"
+class="btn btn-secondary btn-block"
+>
+Record Current Service
+</a>
+
+<p class="muted" style="margin-top:12px;">
+Historical backfill documents prior evidence and does not require an active consultation.
+Current service remains consultation-first.
+</p>
+{% endif %}
 
 <a
 href="{{ url_for('admin.admin_vehicle_records_pdf', car_id=car.id) }}"
@@ -242,71 +170,43 @@ Download Confidential Medical File (PDF)
 </a>
 
 {% else %}
-
 <h2>Client Actions</h2>
-
 <a
 href="{{ url_for('cars.vehicle_records_pdf', car_id=car.id) }}"
 class="btn btn-primary btn-block"
 >
 Download Confidential Medical File (PDF)
 </a>
-
 {% endif %}
-
 </section>
 
-
-
-<!-- ===================================== -->
-<!-- PRINT -->
-<!-- ===================================== -->
-
 {% if print_mode %}
-
 <section class="card">
-
 <button
 onclick="window.print()"
 class="btn btn-secondary btn-block"
 >
 Download as PDF
 </button>
-
 </section>
-
 {% endif %}
 
-
-
-<!-- ===================================== -->
-<!-- BACK -->
-<!-- ===================================== -->
-
 <section class="card">
-
 {% if is_admin_view %}
-
 <a
 href="{{ url_for('admin.view_vehicle', car_id=car.id) }}"
 class="btn btn-secondary btn-block"
 >
 ← Back to Vehicle (Admin)
 </a>
-
 {% else %}
-
 <a
 href="{{ url_for('cars.car_detail', car_id=car.id) }}"
 class="btn btn-secondary btn-block"
 >
 ← Back to Vehicle Profile
 </a>
-
 {% endif %}
-
 </section>
-
-
 
 {% endblock %}

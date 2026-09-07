@@ -2,37 +2,42 @@
 
 {% extends "base.html" %}
 
-{% block title %}Record Service — Advisor{% endblock %}
+{% set is_historical = record_mode == "historical" %}
 
-{% block page_title %}Record Service{% endblock %}
+{% block title %}
+{% if is_historical %}Add Historical Service Record{% else %}Record Current Service{% endif %} — Advisor
+{% endblock %}
+
+{% block page_title %}
+{% if is_historical %}Add Historical Service Record{% else %}Record Current Service{% endif %}
+{% endblock %}
 
 {% block page_subtitle %}
-Advisor entry recorded on behalf of client and added to the official care history.
+{% if is_historical %}
+Document prior service evidence without creating a new consultation encounter.
+{% else %}
+Record service being performed or managed within the active consultation.
+{% endif %}
 {% endblock %}
 
 {% block content %}
 
-
-
-<!-- ======================= -->
-<!-- INTRO -->
-<!-- ======================= -->
-
 <section class="card">
 
+{% if is_historical %}
 <p class="muted">
-Document completed maintenance, inspections, replacements,
-or preventive work with the main-odometer reading recorded when the work occurred.
-Historical service records may pre-date the vehicle's current odometer reading.
+This workflow backfills something that already happened to the vehicle.
+It does not imply Ajebo Fix performed, witnessed, or verified the original work
+unless the evidence below supports that conclusion.
 </p>
+{% else %}
+<p class="muted">
+Use this workflow for current Ajebo Fix-managed care. An active consultation is
+required because this is part of an active professional care encounter.
+</p>
+{% endif %}
 
 </section>
-
-
-
-<!-- ======================= -->
-<!-- VEHICLE INFO -->
-<!-- ======================= -->
 
 <section class="card">
 
@@ -62,9 +67,9 @@ Historical service records may pre-date the vehicle's current odometer reading.
     </div>
 
     <div class="metric-card">
-        <span class="metric-label">Under Care Since</span>
+        <span class="metric-label">Record Type</span>
         <span class="metric-value">
-            {{ ownership.start_date.strftime("%Y-%m-%d") }}
+            {% if is_historical %}Historical evidence{% else %}Current managed service{% endif %}
         </span>
     </div>
 
@@ -72,17 +77,13 @@ Historical service records may pre-date the vehicle's current odometer reading.
 
 </section>
 
-
-
-<!-- ======================= -->
-<!-- FORM -->
-<!-- ======================= -->
-
 <section class="card">
 
 <h2>Service Details</h2>
 
 <form method="post">
+
+<input type="hidden" name="record_mode" value="{{ record_mode }}">
 
 <label for="service_type">Service Type *</label>
 
@@ -104,13 +105,20 @@ Historical service records may pre-date the vehicle's current odometer reading.
             id="mileage"
             name="mileage"
             min="0"
+            {% if is_historical and car.current_mileage is not none %}
+            max="{{ car.current_mileage }}"
+            {% endif %}
             placeholder="Enter odometer reading when service was performed"
             required
         >
 
         <div class="hint">
             Use the vehicle's main odometer, not the resettable trip meter.
+            {% if is_historical %}
             Historical mileage may be lower than the current odometer and will not reduce it.
+            {% else %}
+            A newer verified reading may advance the vehicle's current odometer.
+            {% endif %}
         </div>
     </div>
 
@@ -127,18 +135,51 @@ Historical service records may pre-date the vehicle's current odometer reading.
 
 </div>
 
+{% if is_historical %}
+
+<div class="form-grid">
+
+    <div>
+        <label for="information_source">Source of Information *</label>
+        <select id="information_source" name="information_source" class="input" required>
+            <option value="" selected disabled>Select evidence source</option>
+            {% for value, label in information_sources.items() %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div>
+        <label for="verification_status">Verification Status *</label>
+        <select id="verification_status" name="verification_status" class="input" required>
+            <option value="" selected disabled>Select verification status</option>
+            {% for value, label in verification_statuses.items() %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+</div>
+
+<div class="hint">
+Historical evidence remains clearly attributed. “Unverified” is valid when the
+record comes from a client statement without supporting documentation.
+</div>
+
+{% endif %}
+
 <label for="description">Advisor Notes (Optional)</label>
 
 <textarea
     id="description"
     name="description"
-    placeholder="Observations, parts replaced, recommendations, or follow-up notes"
+    placeholder="Observations, parts replaced, evidence reviewed, recommendations, or follow-up notes"
 ></textarea>
 
 <div class="button-grid">
 
     <button type="submit" class="btn btn-primary">
-        Save Service Record
+        {% if is_historical %}Save Historical Record{% else %}Save Current Service{% endif %}
     </button>
 
     <a
@@ -154,12 +195,6 @@ Historical service records may pre-date the vehicle's current odometer reading.
 
 </section>
 
-
-
-<!-- ======================= -->
-<!-- CONFIDENTIAL -->
-<!-- ======================= -->
-
 <section class="card">
 
 <div class="alert alert-warning">
@@ -170,7 +205,5 @@ Historical service records may pre-date the vehicle's current odometer reading.
 </div>
 
 </section>
-
-
 
 {% endblock %}

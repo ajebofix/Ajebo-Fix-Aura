@@ -85,7 +85,7 @@ def admin_add_service_cutover(car_id: int):
         require_active_consultation(car_id)
     except PermissionError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("admin.admin_view_vehicle", car_id=car.id))
+        return redirect(url_for("admin.view_vehicle", car_id=car.id))
 
     if request.method == "POST":
         service_type = request.form.get("service_type", "").strip()

@@ -228,8 +228,15 @@ No records have been logged yet.
 <h2>Advisor Actions</h2>
 
 <a
-href="{{ url_for('admin.admin_vehicle_records_pdf', car_id=car.id) }}"
+href="{{ url_for('admin.admin_add_service', car_id=car.id) }}"
 class="btn btn-primary btn-block"
+>
+Record Service
+</a>
+
+<a
+href="{{ url_for('admin.admin_vehicle_records_pdf', car_id=car.id) }}"
+class="btn btn-secondary btn-block"
 >
 Download Confidential Medical File (PDF)
 </a>

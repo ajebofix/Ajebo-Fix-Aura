@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from flask_login import login_user
+
 from extensions import db
 from models import Car, CarOwnership, User, VehicleEvent, VehicleHealthAlert
 from cars.routes import create_service_event
@@ -78,6 +80,35 @@ def test_service_routes_use_historical_odometer_cutover(app):
         app.view_functions["cars.add_service_record"].__module__
         == "services.service_history_route_cutover"
     )
+
+
+def test_admin_service_guard_redirects_to_vehicle_without_500(app, monkeypatch):
+    with app.test_request_context("/admin/cars/1/service/add", method="GET"):
+        _owner, car, _ownership = _create_owned_car(suffix="0")
+        advisor = User(
+            name="Service History Advisor",
+            email="service-history-advisor@example.com",
+            phone_number="08009990000",
+            role="admin",
+            is_active=True,
+        )
+        advisor.set_password("Password123")
+        db.session.add(advisor)
+        db.session.commit()
+        login_user(advisor)
+
+        def deny_consultation(_car_id):
+            raise PermissionError("All vehicle care begins with a private consultation.")
+
+        monkeypatch.setattr(
+            "services.service_history_route_cutover.require_active_consultation",
+            deny_consultation,
+        )
+
+        response = app.view_functions["admin.admin_add_service"](car.id)
+
+        assert response.status_code == 302
+        assert response.location.endswith(f"/admin/cars/{car.id}")
 
 
 def test_historical_service_preserves_authoritative_current_odometer(app):

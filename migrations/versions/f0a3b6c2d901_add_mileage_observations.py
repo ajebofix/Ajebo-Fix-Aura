@@ -52,7 +52,7 @@ def upgrade():
         ),
         sa.ForeignKeyConstraint(
             ["ownership_id"],
-            ["car_ownerships.id"],
+            ["car_ownership.id"],
             ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(

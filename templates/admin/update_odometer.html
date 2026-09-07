@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Update Odometer{% endblock %}
+
+{% block page_title %}Update Odometer{% endblock %}
+
+{% block page_subtitle %}
+Record the latest observed main-odometer reading. Aura does not estimate mileage between observations.
+{% endblock %}
+
+{% block content %}
+
+<section class="card">
+    <h2>{{ car.decoded_display_name }} {{ car.year }}</h2>
+    <p class="muted">
+        VIN {{ car.vin }}
+    </p>
+</section>
+
+<section class="card">
+    <h2>Latest Recorded Odometer</h2>
+
+    <div class="dashboard-grid">
+        <div class="metric-card">
+            <span class="metric-label">Odometer</span>
+            <span class="metric-value">
+                {{ mileage_snapshot.odometer_km if mileage_snapshot.odometer_km is not none else "—" }} km
+            </span>
+        </div>
+
+        <div class="metric-card">
+            <span class="metric-label">Freshness</span>
+            <span class="metric-value">{{ mileage_snapshot.freshness_label }}</span>
+        </div>
+    </div>
+
+    {% if mileage_snapshot.provenance_available %}
+    <p class="muted">
+        Observed:
+        {{ mileage_snapshot.observed_at.strftime("%Y-%m-%d %H:%M") if mileage_snapshot.observed_at else "—" }}
+        · Source: {{ mileage_snapshot.source_label }}
+        · Verification: {{ mileage_snapshot.verification_label }}
+    </p>
+    {% else %}
+    <p class="muted">
+        Aura has a current mileage value, but the observation source and observation date have not yet been recorded.
+        A new advisor observation will establish mileage provenance and freshness.
+    </p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Record Current Odometer</h2>
+
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label for="odometer_km">Current main odometer (km)</label>
+            <input
+                id="odometer_km"
+                name="odometer_km"
+                type="number"
+                min="0"
+                max="5000000"
+                step="1"
+                class="input"
+                value="{{ car.current_mileage or '' }}"
+                required
+            >
+            <p class="muted">
+                Use the cumulative main odometer shown by the vehicle. Do not enter Trip A / Trip B.
+            </p>
+        </div>
+
+        <div class="form-group">
+            <label for="observed_at">Observed at</label>
+            <input
+                id="observed_at"
+                name="observed_at"
+                type="datetime-local"
+                class="input"
+            >
+            <p class="muted">
+                Leave blank to use the current time.
+            </p>
+        </div>
+
+        <div class="form-group">
+            <label for="evidence_reference">Evidence reference (optional)</label>
+            <input
+                id="evidence_reference"
+                name="evidence_reference"
+                type="text"
+                maxlength="255"
+                class="input"
+                placeholder="Dashboard photo, assessment reference, or document note"
+            >
+        </div>
+
+        <div class="form-group">
+            <label for="note">Advisor note (optional)</label>
+            <textarea
+                id="note"
+                name="note"
+                rows="4"
+                class="input"
+                placeholder="Context for this odometer observation"
+            ></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">
+            Save Odometer Observation
+        </button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Mileage History</h2>
+    <p class="muted">
+        Historical service snapshots are preserved here but never move the vehicle's current odometer backwards.
+    </p>
+
+    {% if mileage_history %}
+    <div class="list-stack">
+        {% for item in mileage_history %}
+        <div class="list-item">
+            <div class="section-head">
+                <strong>{{ item.odometer_km }} km</strong>
+                <span class="pill">
+                    {{ "Historical" if item.is_historical else "Current observation" }}
+                </span>
+            </div>
+            <p class="muted">
+                {{ item.observed_at.strftime("%Y-%m-%d %H:%M") }}
+                · {{ mileage_source_label(item.source) }}
+                · {{ mileage_verification_label(item.verification_status) }}
+            </p>
+            {% if item.note %}
+            <p>{{ item.note }}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No mileage observations have been recorded yet.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <a href="{{ url_for('admin.view_vehicle', car_id=car.id) }}" class="btn btn-secondary btn-block">
+        ← Back to Vehicle
+    </a>
+</section>
+
+{% endblock %}

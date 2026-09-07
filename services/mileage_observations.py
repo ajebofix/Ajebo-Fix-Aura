@@ -249,8 +249,18 @@ class MileageObservationService:
         entry_source: str,
     ) -> MileageObservation:
         metadata = event_metadata or {}
-        record_mode = metadata.get("record_mode", "current")
-        is_historical = record_mode == "historical"
+        record_mode = metadata.get("record_mode")
+
+        # New routes always state the mode explicitly. The inference exists only
+        # for legacy/internal callers so an older service snapshot continues to
+        # be treated as historical rather than corrupting the current odometer.
+        if record_mode is None:
+            is_historical = (
+                car.current_mileage is not None
+                and odometer_km < car.current_mileage
+            )
+        else:
+            is_historical = record_mode == "historical"
 
         if is_historical:
             verification = _SERVICE_VERIFICATION_MAP.get(

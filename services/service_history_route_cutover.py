@@ -98,6 +98,18 @@ def _record_service_with_monitoring(
 ) -> bool:
     """Persist a service record, mileage snapshot, audit metadata and care signals."""
 
+    # New current-service routes explicitly identify themselves. Validate the
+    # odometer before the legacy helper commits the VehicleEvent so an invalid
+    # current reading cannot leave a partially saved service record behind.
+    if (
+        (event_metadata or {}).get("record_mode") == "current"
+        and car.current_mileage is not None
+        and mileage < car.current_mileage
+    ):
+        raise ValueError(
+            "Current service odometer cannot be lower than the latest recorded odometer."
+        )
+
     create_service_event(
         car=car,
         ownership=ownership,

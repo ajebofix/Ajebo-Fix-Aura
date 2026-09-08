@@ -10,6 +10,7 @@ observations are left untouched.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 
 import sqlalchemy as sa
@@ -40,6 +41,10 @@ def _event_metadata(value) -> dict:
             return {}
         return parsed if isinstance(parsed, dict) else {}
     return {}
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def backfill_legacy_service_mileage_observations(bind) -> LegacyServiceMileageBackfillResult:
@@ -177,6 +182,7 @@ def backfill_legacy_service_mileage_observations(bind) -> LegacyServiceMileageBa
                 ownership_id=row.get("ownership_id"),
                 odometer_km=reading,
                 observed_at=row["service_date"],
+                recorded_at=_utcnow_naive(),
                 source="service_record",
                 verification_status=verification_status,
                 recorded_by_user_id=row.get("created_by"),

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Submit Odometer Reading{% endblock %}
+
+{% block page_title %}Submit Odometer Reading{% endblock %}
+
+{% block page_subtitle %}
+Share the vehicle's current main-odometer reading for advisor review.
+{% endblock %}
+
+{% block content %}
+
+<section class="card">
+    <h2>{{ car.display_name }}</h2>
+    <p class="muted">
+        Aura does not estimate distance travelled. Report the number currently shown on the vehicle's main odometer.
+    </p>
+</section>
+
+<section class="card">
+    <h2>Latest Recorded Odometer</h2>
+    <div class="dashboard-grid">
+        <div class="metric-card">
+            <span class="metric-label">Odometer</span>
+            <span class="metric-value">
+                {{ mileage_snapshot.odometer_km if mileage_snapshot.odometer_km is not none else "—" }} km
+            </span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Freshness</span>
+            <span class="metric-value">{{ mileage_snapshot.freshness_label }}</span>
+        </div>
+    </div>
+
+    {% if mileage_snapshot.provenance_available %}
+    <p class="muted">
+        Observed: {{ mileage_snapshot.observed_at.strftime("%Y-%m-%d %H:%M") if mileage_snapshot.observed_at else "—" }}
+        · {{ mileage_snapshot.source_label }}
+        · {{ mileage_snapshot.verification_label }}
+    </p>
+    {% endif %}
+</section>
+
+{% if pending_report %}
+<section class="card">
+    <div class="section-head">
+        <h2>Awaiting Advisor Review</h2>
+        <span class="pill">Pending</span>
+    </div>
+    <p>
+        <strong>{{ pending_report.odometer_km }} km</strong>
+    </p>
+    <p class="muted">
+        Submitted {{ pending_report.observed_at.strftime("%Y-%m-%d %H:%M") }}.
+        This reading has not changed the vehicle's latest recorded odometer.
+    </p>
+    <p class="muted">
+        An advisor must accept or reject this report before another reading can be submitted for this vehicle.
+    </p>
+</section>
+{% else %}
+<section class="card">
+    <h2>Current Reading</h2>
+
+    <form method="POST">
+        <label for="odometer_km">Main odometer reading (km)</label>
+        <input
+            id="odometer_km"
+            name="odometer_km"
+            type="number"
+            min="0"
+            max="5000000"
+            step="1"
+            inputmode="numeric"
+            required
+        >
+
+        <label for="note">Observation note <span class="muted">(optional)</span></label>
+        <textarea
+            id="note"
+            name="note"
+            rows="4"
+            maxlength="1000"
+            placeholder="Example: Reading taken from the dashboard before today's trip."
+        ></textarea>
+
+        <button class="btn btn-primary btn-block" type="submit">
+            Submit for Advisor Review
+        </button>
+    </form>
+
+    <p class="muted" style="margin-top:12px;">
+        Submitted mileage is recorded as reported evidence first. It will not update the authoritative vehicle odometer until an advisor accepts it.
+    </p>
+</section>
+{% endif %}
+
+<section class="card">
+    <a href="{{ return_url }}" class="btn btn-secondary btn-block">
+        Back to Vehicle
+    </a>
+</section>
+
+{% endblock %}

@@ -51,8 +51,8 @@ Operational access for assigned vehicle.
 </div>
 
 <div class="metric-card">
-<span class="metric-label">Mileage</span>
-<span class="metric-value">{{ car.current_mileage or "—" }}</span>
+<span class="metric-label">Latest Recorded Odometer</span>
+<span class="metric-value">{{ car.current_mileage or "—" }} km</span>
 </div>
 
 <div class="metric-card">
@@ -120,6 +120,24 @@ Daily Check-In
 
 </div>
 
+
+<!-- ODOMETER REPORT -->
+<div class="card">
+
+<h2>Report Odometer Reading</h2>
+
+<p class="muted">
+Share the number currently shown on the vehicle's main odometer. An advisor reviews the reading before Aura updates the vehicle record.
+</p>
+
+<a
+href="{{ url_for('mileage.report_odometer', car_id=car.id) }}"
+class="btn btn-primary btn-block"
+>
+Submit Odometer Reading
+</a>
+
+</div>
 
 
 <!-- REPORT CONCERN -->

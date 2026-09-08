@@ -269,6 +269,7 @@ def create_app():
     from cars.fault_routes import concerns_bp
     from admin.modules.assessments import assessments_bp
     from driver.routes import driver_bp
+    from mileage.routes import mileage_bp
     from evidence.routes import evidence_bp
     from evidence.review_routes import evidence_review_bp
     from evidence.interaction_routes import evidence_interaction_bp
@@ -286,6 +287,7 @@ def create_app():
     app.register_blueprint(cars_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(driver_bp)
+    app.register_blueprint(mileage_bp)
     app.register_blueprint(profiles_bp)
     app.register_blueprint(evidence_bp)
     app.register_blueprint(evidence_review_bp)

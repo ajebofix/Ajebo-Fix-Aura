@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "app.py"
       - "mileage/**"
       - "services/mileage_observations.py"
       - "services/mileage_routes.py"
@@ -11,11 +12,15 @@ on:
       - "admin/progression_routes.py"
       - "templates/admin/update_odometer.html"
       - "templates/reports/timeline.html"
+      - "templates/mileage/**"
+      - "templates/driver/car_detail.html"
       - "migrations/versions/f0a3b6c2d901_add_mileage_observations.py"
       - "migrations/versions/a1c9e4d7b620_backfill_legacy_service_mileage.py"
+      - "migrations/versions/b2d0f5e8c731_add_mileage_report_review.py"
       - "tests/test_mileage_observations.py"
       - "tests/test_service_history_mileage.py"
       - "tests/test_legacy_service_mileage_backfill.py"
+      - "tests/test_mileage_submission_review.py"
       - ".github/workflows/mileage-observation-ci.yml"
 
 permissions:
@@ -55,6 +60,7 @@ jobs:
       - name: Compile mileage slice
         run: >-
           python -m compileall -q
+          app.py
           mileage
           services/mileage_observations.py
           services/mileage_routes.py
@@ -62,9 +68,11 @@ jobs:
           admin/progression_routes.py
           migrations/versions/f0a3b6c2d901_add_mileage_observations.py
           migrations/versions/a1c9e4d7b620_backfill_legacy_service_mileage.py
+          migrations/versions/b2d0f5e8c731_add_mileage_report_review.py
           tests/test_mileage_observations.py
           tests/test_service_history_mileage.py
           tests/test_legacy_service_mileage_backfill.py
+          tests/test_mileage_submission_review.py
 
       - name: Run mileage and service-history regression tests
         run: >-
@@ -72,6 +80,7 @@ jobs:
           tests/test_mileage_observations.py
           tests/test_service_history_mileage.py
           tests/test_legacy_service_mileage_backfill.py
+          tests/test_mileage_submission_review.py
 
       - name: Ruff mileage slice
         run: >-
@@ -83,5 +92,7 @@ jobs:
           admin/progression_routes.py
           migrations/versions/f0a3b6c2d901_add_mileage_observations.py
           migrations/versions/a1c9e4d7b620_backfill_legacy_service_mileage.py
+          migrations/versions/b2d0f5e8c731_add_mileage_report_review.py
           tests/test_mileage_observations.py
           tests/test_legacy_service_mileage_backfill.py
+          tests/test_mileage_submission_review.py

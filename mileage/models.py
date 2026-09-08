@@ -14,6 +14,10 @@ class MileageObservation(db.Model):
     latest known cumulative odometer. This table preserves the evidence trail
     behind that projection and may also contain legitimate historical snapshots
     such as old service records.
+
+    Client/driver mileage reports can exist as pending evidence without
+    immediately changing the authoritative current odometer. Advisor review is
+    recorded separately from the original submission provenance.
     """
 
     __tablename__ = "mileage_observations"
@@ -23,6 +27,10 @@ class MileageObservation(db.Model):
             "odometer_km >= 0 AND odometer_km <= 5000000",
             name="ck_mileage_observation_range",
         ),
+        db.CheckConstraint(
+            "review_status IN ('not_required', 'pending', 'accepted', 'rejected')",
+            name="ck_mileage_observation_review_status",
+        ),
         db.Index(
             "idx_mileage_observation_car_observed",
             "car_id",
@@ -31,6 +39,10 @@ class MileageObservation(db.Model):
         db.Index(
             "idx_mileage_observation_source",
             "source",
+        ),
+        db.Index(
+            "idx_mileage_observation_review_status",
+            "review_status",
         ),
         db.UniqueConstraint(
             "car_id",
@@ -99,9 +111,26 @@ class MileageObservation(db.Model):
 
     note = db.Column(db.Text, nullable=True)
 
+    review_status = db.Column(
+        db.String(20),
+        default="not_required",
+        nullable=False,
+        server_default="not_required",
+    )
+
+    reviewed_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    review_note = db.Column(db.Text, nullable=True)
+
     car = db.relationship("Car")
     ownership = db.relationship("CarOwnership")
     recorded_by = db.relationship("User", foreign_keys=[recorded_by_user_id])
+    reviewed_by = db.relationship("User", foreign_keys=[reviewed_by_user_id])
 
     def __repr__(self):
         return (

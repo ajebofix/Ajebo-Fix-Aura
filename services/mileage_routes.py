@@ -1,4 +1,4 @@
-"""Advisor mileage observation routes and template helpers."""
+"""Advisor mileage observation routes, report review, and template helpers."""
 
 from __future__ import annotations
 
@@ -10,11 +10,13 @@ from flask_login import current_user, login_required
 from admin.routes import CLINICAL_DISCLAIMER, admin_bp
 from admin.utils import advisor_required
 from extensions import db
+from mileage.models import MileageObservation
 from models import Car, CarOwnership
 from services.health_alert_service import CareSignalService
 from services.mileage_observations import (
     MileageObservationError,
     MileageObservationService,
+    mileage_review_label,
     mileage_source_label,
     mileage_verification_label,
 )
@@ -29,6 +31,7 @@ def inject_mileage_template_helpers():
         "mileage_history_for": MileageObservationService.history,
         "mileage_source_label": mileage_source_label,
         "mileage_verification_label": mileage_verification_label,
+        "mileage_review_label": mileage_review_label,
     }
 
 
@@ -104,3 +107,73 @@ def update_odometer(car_id: int):
         mileage_history=MileageObservationService.history(car.id, limit=12),
         disclaimer=CLINICAL_DISCLAIMER,
     )
+
+
+@admin_bp.post(
+    "/cars/<int:car_id>/odometer-reports/<int:observation_id>/accept",
+    endpoint="accept_odometer_report",
+)
+@login_required
+@advisor_required
+def accept_odometer_report(car_id: int, observation_id: int):
+    """Accept a pending client/driver mileage report as current evidence."""
+
+    observation = MileageObservation.query.filter_by(
+        id=observation_id,
+        car_id=car_id,
+    ).first_or_404()
+    review_note = (request.form.get("review_note") or "").strip()
+
+    try:
+        MileageObservationService.accept_report(
+            observation=observation,
+            advisor_user_id=current_user.id,
+            review_note=review_note,
+        )
+    except MileageObservationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(request.referrer or url_for("admin.view_vehicle", car_id=car_id))
+
+    try:
+        CareSignalService.evaluate(car_id, trigger="mileage_observed")
+    except Exception:
+        db.session.rollback()
+        flash(
+            "Mileage report was accepted, but monitoring signals could not be refreshed.",
+            "warning",
+        )
+    else:
+        flash("Mileage report accepted and latest recorded odometer updated.", "success")
+
+    return redirect(request.referrer or url_for("admin.view_vehicle", car_id=car_id))
+
+
+@admin_bp.post(
+    "/cars/<int:car_id>/odometer-reports/<int:observation_id>/reject",
+    endpoint="reject_odometer_report",
+)
+@login_required
+@advisor_required
+def reject_odometer_report(car_id: int, observation_id: int):
+    """Reject a pending client/driver mileage report without changing mileage."""
+
+    observation = MileageObservation.query.filter_by(
+        id=observation_id,
+        car_id=car_id,
+    ).first_or_404()
+    review_note = (request.form.get("review_note") or "").strip()
+
+    try:
+        MileageObservationService.reject_report(
+            observation=observation,
+            advisor_user_id=current_user.id,
+            review_note=review_note,
+        )
+    except MileageObservationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    else:
+        flash("Mileage report marked as not accepted.", "success")
+
+    return redirect(request.referrer or url_for("admin.view_vehicle", car_id=car_id))

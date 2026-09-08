@@ -21,6 +21,7 @@ on:
       - "tests/test_service_history_mileage.py"
       - "tests/test_legacy_service_mileage_backfill.py"
       - "tests/test_mileage_submission_review.py"
+      - "tests/test_ux_semantic_cleanup.py"
       - ".github/workflows/mileage-observation-ci.yml"
 
 permissions:
@@ -73,6 +74,7 @@ jobs:
           tests/test_service_history_mileage.py
           tests/test_legacy_service_mileage_backfill.py
           tests/test_mileage_submission_review.py
+          tests/test_ux_semantic_cleanup.py
 
       - name: Run mileage and service-history regression tests
         run: >-
@@ -81,6 +83,7 @@ jobs:
           tests/test_service_history_mileage.py
           tests/test_legacy_service_mileage_backfill.py
           tests/test_mileage_submission_review.py
+          tests/test_ux_semantic_cleanup.py
 
       - name: Ruff mileage slice
         run: >-
@@ -96,3 +99,4 @@ jobs:
           tests/test_mileage_observations.py
           tests/test_legacy_service_mileage_backfill.py
           tests/test_mileage_submission_review.py
+          tests/test_ux_semantic_cleanup.py

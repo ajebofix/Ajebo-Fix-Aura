@@ -47,17 +47,20 @@ Observational and non-diagnostic.
     <p class="muted">Longitudinal vehicle care history.</p>
 
     {% for item in timeline %}
+    {% set is_care_signal = item.title in ["Care signal raised", "Care signal acknowledged", "Care signal resolved"] %}
     <div class="list-item">
         <div class="section-head">
             <strong>{{ item.title }}</strong>
-            <span class="pill">{{ item.type }}</span>
+            <span class="pill">{{ "Care signal" if is_care_signal else item.type }}</span>
         </div>
 
         <p class="muted">
             {% if item.date %}
                 {{ item.date.strftime("%Y-%m-%d %H:%M") }}
             {% endif %}
-            • {{ item.status }}
+            {% if not is_care_signal %}
+                • {{ item.status }}
+            {% endif %}
         </p>
 
         {% if item.description %}
@@ -132,8 +135,10 @@ Main-odometer observations and historical service snapshots. Reported readings r
 <span class="pill">Not accepted</span>
 {% elif item.review_status == "accepted" and item.source in ["client_report", "driver_report"] %}
 <span class="pill">Accepted observation</span>
+{% elif item.source == "advisor_observation" %}
+<span class="pill">Advisor observation</span>
 {% else %}
-<span class="pill">Current observation</span>
+<span class="pill">Recorded observation</span>
 {% endif %}
 </div>
 <p class="muted">

@@ -11,7 +11,7 @@ Record the latest observed main-odometer reading. Aura does not estimate mileage
 {% block content %}
 
 <section class="card">
-    <h2>{{ car.decoded_display_name }} {{ car.year }}</h2>
+    <h2>{{ car.display_name }}</h2>
     <p class="muted">
         VIN {{ car.vin }}
     </p>
@@ -127,14 +127,27 @@ Record the latest observed main-odometer reading. Aura does not estimate mileage
         <div class="list-item">
             <div class="section-head">
                 <strong>{{ item.odometer_km }} km</strong>
-                <span class="pill">
-                    {{ "Historical" if item.is_historical else "Current observation" }}
-                </span>
+                {% if item.is_historical %}
+                <span class="pill">Historical</span>
+                {% elif item.review_status == "pending" %}
+                <span class="pill">Submitted for review</span>
+                {% elif item.review_status == "rejected" %}
+                <span class="pill">Not accepted</span>
+                {% elif item.review_status == "accepted" and item.source in ["client_report", "driver_report"] %}
+                <span class="pill">Accepted observation</span>
+                {% elif item.source == "advisor_observation" %}
+                <span class="pill">Advisor observation</span>
+                {% else %}
+                <span class="pill">Recorded observation</span>
+                {% endif %}
             </div>
             <p class="muted">
                 {{ item.observed_at.strftime("%Y-%m-%d %H:%M") }}
                 · {{ mileage_source_label(item.source) }}
                 · {{ mileage_verification_label(item.verification_status) }}
+                {% if item.source in ["client_report", "driver_report"] %}
+                · {{ mileage_review_label(item.review_status) }}
+                {% endif %}
             </p>
             {% if item.note %}
             <p>{{ item.note }}</p>

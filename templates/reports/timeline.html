@@ -115,7 +115,7 @@ An advisor odometer observation is recommended before mileage-sensitive decision
 <section class="card">
 <h2>Mileage History</h2>
 <p class="muted">
-Main-odometer observations and historical service snapshots. Historical records never move the current odometer backwards.
+Main-odometer observations and historical service snapshots. Reported readings remain evidence until advisor review; historical records never move the current odometer backwards.
 </p>
 
 {% if mileage_history %}
@@ -124,13 +124,55 @@ Main-odometer observations and historical service snapshots. Historical records 
 <div class="list-item">
 <div class="section-head">
 <strong>{{ item.odometer_km }} km</strong>
-<span class="pill">{{ "Historical" if item.is_historical else "Current observation" }}</span>
+{% if item.is_historical %}
+<span class="pill">Historical</span>
+{% elif item.review_status == "pending" %}
+<span class="pill">Submitted for review</span>
+{% elif item.review_status == "rejected" %}
+<span class="pill">Not accepted</span>
+{% elif item.review_status == "accepted" and item.source in ["client_report", "driver_report"] %}
+<span class="pill">Accepted observation</span>
+{% else %}
+<span class="pill">Current observation</span>
+{% endif %}
 </div>
 <p class="muted">
 {{ item.observed_at.strftime("%Y-%m-%d %H:%M") }}
 · {{ mileage_source_label(item.source) }}
 · {{ mileage_verification_label(item.verification_status) }}
+{% if item.source in ["client_report", "driver_report"] %}
+· {{ mileage_review_label(item.review_status) }}
+{% endif %}
 </p>
+
+{% if item.note %}
+<p>{{ item.note }}</p>
+{% endif %}
+
+{% if is_admin_view and not is_pdf_export and item.review_status == "pending" %}
+<div class="dashboard-grid" style="margin-top:12px;">
+<form
+method="POST"
+action="{{ url_for('admin.accept_odometer_report', car_id=car.id, observation_id=item.id) }}"
+>
+<button class="btn btn-primary btn-block" type="submit">
+Accept Reading
+</button>
+</form>
+
+<form
+method="POST"
+action="{{ url_for('admin.reject_odometer_report', car_id=car.id, observation_id=item.id) }}"
+>
+<button class="btn btn-secondary btn-block" type="submit">
+Do Not Accept
+</button>
+</form>
+</div>
+<p class="muted">
+Accepting the report can advance the latest recorded odometer. Rejecting it preserves the submission in history without changing current mileage.
+</p>
+{% endif %}
 </div>
 {% endfor %}
 </div>
@@ -223,6 +265,7 @@ Record Current Service
 
 <p class="muted" style="margin-top:12px;">
 Odometer observations update the latest known cumulative mileage only when real evidence is recorded.
+Client and driver reports require advisor review before they can update current mileage.
 Historical backfill documents prior evidence and does not require an active consultation.
 Current service remains consultation-first.
 </p>
@@ -238,8 +281,15 @@ Download Confidential Medical File (PDF)
 {% else %}
 <h2>Client Actions</h2>
 <a
-href="{{ url_for('cars.vehicle_records_pdf', car_id=car.id) }}"
+href="{{ url_for('mileage.report_odometer', car_id=car.id) }}"
 class="btn btn-primary btn-block"
+>
+Submit Odometer Reading
+</a>
+
+<a
+href="{{ url_for('cars.vehicle_records_pdf', car_id=car.id) }}"
+class="btn btn-secondary btn-block"
 >
 Download Confidential Medical File (PDF)
 </a>

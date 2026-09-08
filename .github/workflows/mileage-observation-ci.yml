@@ -12,8 +12,10 @@ on:
       - "templates/admin/update_odometer.html"
       - "templates/reports/timeline.html"
       - "migrations/versions/f0a3b6c2d901_add_mileage_observations.py"
+      - "migrations/versions/a1c9e4d7b620_backfill_legacy_service_mileage.py"
       - "tests/test_mileage_observations.py"
       - "tests/test_service_history_mileage.py"
+      - "tests/test_legacy_service_mileage_backfill.py"
       - ".github/workflows/mileage-observation-ci.yml"
 
 permissions:
@@ -32,10 +34,10 @@ jobs:
       SECRET_KEY: "ci-secret-key-not-for-production"
       SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
       APP_ENV: "testing"
-      PREFERRED_URL_SCHEME: "http"
-      RATE_LIMIT_STORAGE_URI: "memory://"
+      PREFERRED_URL_SCHEME: http
+      RATE_LIMIT_STORAGE_URI: memory://
       PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
-      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      PROFILE_ENCRYPTION_KEY_VERSION: ci-v1
 
     steps:
       - name: Check out repository
@@ -59,14 +61,17 @@ jobs:
           services/service_history_route_cutover.py
           admin/progression_routes.py
           migrations/versions/f0a3b6c2d901_add_mileage_observations.py
+          migrations/versions/a1c9e4d7b620_backfill_legacy_service_mileage.py
           tests/test_mileage_observations.py
           tests/test_service_history_mileage.py
+          tests/test_legacy_service_mileage_backfill.py
 
       - name: Run mileage and service-history regression tests
         run: >-
           pytest -q --tb=short
           tests/test_mileage_observations.py
           tests/test_service_history_mileage.py
+          tests/test_legacy_service_mileage_backfill.py
 
       - name: Ruff mileage slice
         run: >-
@@ -77,4 +82,6 @@ jobs:
           services/service_history_route_cutover.py
           admin/progression_routes.py
           migrations/versions/f0a3b6c2d901_add_mileage_observations.py
+          migrations/versions/a1c9e4d7b620_backfill_legacy_service_mileage.py
           tests/test_mileage_observations.py
+          tests/test_legacy_service_mileage_backfill.py

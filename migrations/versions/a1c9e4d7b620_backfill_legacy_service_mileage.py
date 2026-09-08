@@ -8,8 +8,6 @@ Create Date: 2026-09-08
 from alembic import op
 import sqlalchemy as sa
 
-from mileage.backfill import backfill_legacy_service_mileage_observations
-
 
 revision = "a1c9e4d7b620"
 down_revision = "f0a3b6c2d901"
@@ -24,6 +22,10 @@ _BACKFILL_NOTE = (
 
 
 def upgrade():
+    # Import lazily so Alembic revision-discovery tooling can inspect this file
+    # without requiring the application root to already be on sys.path.
+    from mileage.backfill import backfill_legacy_service_mileage_observations
+
     bind = op.get_bind()
     result = backfill_legacy_service_mileage_observations(bind)
     print(

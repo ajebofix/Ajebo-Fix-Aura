@@ -4,6 +4,10 @@ Aura never invents distance travelled. ``Car.current_mileage`` is the latest
 known cumulative main-odometer projection, while ``MileageObservation`` keeps
 where a reading came from, when it was observed and how strongly it was
 verified.
+
+Client and driver reports are evidence, not automatic authority. They remain
+pending until an advisor accepts them, so a typo or stale self-report cannot
+silently corrupt the vehicle's cumulative odometer projection.
 """
 
 from __future__ import annotations
@@ -41,6 +45,16 @@ VERIFICATION_LABELS = {
     "unverified": "Unverified",
     "legacy_unknown": "Provenance not yet recorded",
 }
+
+REVIEW_STATUS_LABELS = {
+    "not_required": "No review required",
+    "pending": "Awaiting advisor review",
+    "accepted": "Accepted by advisor",
+    "rejected": "Not accepted",
+}
+
+REPORT_SOURCES = {"client_report", "driver_report"}
+REVIEW_STATUSES = set(REVIEW_STATUS_LABELS)
 
 _SERVICE_VERIFICATION_MAP = {
     "unverified": "unverified",
@@ -96,19 +110,57 @@ class MileageSnapshot:
 
 
 class MileageObservationService:
-    """Authoritative mileage observation rules and history queries."""
+    """Authoritative mileage observation rules, submissions and history queries."""
 
     @staticmethod
     def latest_current_observation(car_id: int) -> MileageObservation | None:
+        """Return the latest observation allowed to represent current mileage.
+
+        Pending/rejected client or driver reports remain visible in history but
+        cannot become the authoritative current odometer until advisor review.
+        """
+
         return (
-            MileageObservation.query.filter_by(
-                car_id=car_id,
-                is_historical=False,
+            MileageObservation.query.filter(
+                MileageObservation.car_id == car_id,
+                MileageObservation.is_historical.is_(False),
+                MileageObservation.review_status.in_(("not_required", "accepted")),
             )
             .order_by(
                 MileageObservation.observed_at.desc(),
                 MileageObservation.id.desc(),
             )
+            .first()
+        )
+
+    @staticmethod
+    def pending_reports(car_id: int) -> list[MileageObservation]:
+        return (
+            MileageObservation.query.filter(
+                MileageObservation.car_id == car_id,
+                MileageObservation.source.in_(tuple(REPORT_SOURCES)),
+                MileageObservation.review_status == "pending",
+            )
+            .order_by(
+                MileageObservation.observed_at.asc(),
+                MileageObservation.id.asc(),
+            )
+            .all()
+        )
+
+    @staticmethod
+    def pending_report_for_actor(
+        car_id: int,
+        actor_user_id: int,
+    ) -> MileageObservation | None:
+        return (
+            MileageObservation.query.filter(
+                MileageObservation.car_id == car_id,
+                MileageObservation.recorded_by_user_id == actor_user_id,
+                MileageObservation.source.in_(tuple(REPORT_SOURCES)),
+                MileageObservation.review_status == "pending",
+            )
+            .order_by(MileageObservation.id.desc())
             .first()
         )
 
@@ -126,6 +178,8 @@ class MileageObservationService:
         source_reference: str | None = None,
         evidence_reference: str | None = None,
         note: str | None = None,
+        review_status: str = "not_required",
+        advance_current: bool = True,
         commit: bool = True,
     ) -> MileageObservation:
         if car.id is None:
@@ -143,6 +197,14 @@ class MileageObservationService:
         if reading < 0 or reading > MAX_ODOMETER_KM:
             raise MileageObservationError(
                 "Odometer reading must be between 0 and 5,000,000 km."
+            )
+
+        if review_status not in REVIEW_STATUSES:
+            raise MileageObservationError("Mileage review status is invalid.")
+
+        if review_status in {"pending", "rejected"} and advance_current:
+            raise MileageObservationError(
+                "Pending or rejected mileage evidence cannot update the current odometer."
             )
 
         observed = _normalise_datetime(observed_at)
@@ -197,12 +259,17 @@ class MileageObservationService:
             source_reference=source_reference,
             evidence_reference=(evidence_reference or "").strip() or None,
             note=(note or "").strip() or None,
+            review_status=review_status,
         )
         db.session.add(observation)
 
         # Car.current_mileage remains the compatibility projection consumed by
-        # health, Rina and reporting. Only a current observation may advance it.
-        if not is_historical and (current is None or reading > current):
+        # health, Rina and reporting. Pending evidence never changes it.
+        if (
+            advance_current
+            and not is_historical
+            and (current is None or reading > current)
+        ):
             car.current_mileage = reading
 
         if commit:
@@ -235,6 +302,106 @@ class MileageObservationService:
             evidence_reference=evidence_reference,
             note=note,
         )
+
+    @staticmethod
+    def record_reported_observation(
+        *,
+        car: Car,
+        odometer_km: int,
+        actor_user_id: int,
+        actor_type: str,
+        ownership: CarOwnership | None = None,
+        note: str | None = None,
+    ) -> MileageObservation:
+        """Store a client/driver odometer report without changing current mileage."""
+
+        if actor_type not in {"client", "driver"}:
+            raise MileageObservationError("Mileage report actor type is invalid.")
+
+        existing = MileageObservationService.pending_report_for_actor(
+            car.id,
+            actor_user_id,
+        )
+        if existing is not None:
+            raise MileageObservationError(
+                "A mileage report is already awaiting advisor review for this vehicle."
+            )
+
+        source = "client_report" if actor_type == "client" else "driver_report"
+        verification = "client_reported" if actor_type == "client" else "driver_reported"
+
+        return MileageObservationService.record(
+            car=car,
+            odometer_km=odometer_km,
+            source=source,
+            verification_status=verification,
+            recorded_by_user_id=actor_user_id,
+            ownership_id=ownership.id if ownership else None,
+            is_historical=False,
+            note=note,
+            review_status="pending",
+            advance_current=False,
+        )
+
+    @staticmethod
+    def accept_report(
+        *,
+        observation: MileageObservation,
+        advisor_user_id: int,
+        review_note: str | None = None,
+    ) -> MileageObservation:
+        """Accept pending reported evidence and project it into current mileage."""
+
+        if observation.source not in REPORT_SOURCES or observation.review_status != "pending":
+            raise MileageObservationError("This mileage report is not awaiting review.")
+
+        car = observation.car
+        current = car.current_mileage
+        if current is not None and observation.odometer_km < current:
+            raise MileageObservationError(
+                "This report is now below the latest recorded odometer and cannot be accepted as current."
+            )
+
+        latest = MileageObservationService.latest_current_observation(car.id)
+        if (
+            latest is not None
+            and observation.observed_at < latest.observed_at
+            and observation.odometer_km > (current or 0)
+        ):
+            raise MileageObservationError(
+                "This report predates a newer authoritative odometer observation. Record a fresh reading instead."
+            )
+
+        observation.review_status = "accepted"
+        observation.reviewed_by_user_id = advisor_user_id
+        observation.reviewed_at = _utcnow_naive()
+        observation.review_note = (review_note or "").strip() or None
+        observation.verification_status = "advisor_verified"
+
+        if current is None or observation.odometer_km > current:
+            car.current_mileage = observation.odometer_km
+
+        db.session.commit()
+        return observation
+
+    @staticmethod
+    def reject_report(
+        *,
+        observation: MileageObservation,
+        advisor_user_id: int,
+        review_note: str | None = None,
+    ) -> MileageObservation:
+        """Reject pending reported evidence without changing current mileage."""
+
+        if observation.source not in REPORT_SOURCES or observation.review_status != "pending":
+            raise MileageObservationError("This mileage report is not awaiting review.")
+
+        observation.review_status = "rejected"
+        observation.reviewed_by_user_id = advisor_user_id
+        observation.reviewed_at = _utcnow_naive()
+        observation.review_note = (review_note or "").strip() or None
+        db.session.commit()
+        return observation
 
     @staticmethod
     def record_service_snapshot(
@@ -348,3 +515,7 @@ def mileage_source_label(source: str) -> str:
 
 def mileage_verification_label(status: str) -> str:
     return VERIFICATION_LABELS.get(status, status.replace("_", " ").title())
+
+
+def mileage_review_label(status: str) -> str:
+    return REVIEW_STATUS_LABELS.get(status, status.replace("_", " ").title())

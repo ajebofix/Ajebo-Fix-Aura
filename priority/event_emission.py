@@ -104,6 +104,11 @@ def _validate_actor(
             raise PriorityEventAuthorityError(
                 "priority requests require owner or advisor authority"
             )
+    elif event_type == "priority.cancelled":
+        if authority not in {"owner", "advisor", "administrator"}:
+            raise PriorityEventAuthorityError(
+                "priority cancellation requires owner or advisor authority"
+            )
     elif authority not in _ADVISOR_AUTHORITIES:
         raise PriorityEventAuthorityError(
             "professional priority transitions require advisor authority"
@@ -134,7 +139,7 @@ def emit_priority_event(
         previous_state=previous_state,
         new_state=new_state,
     )
-    authority = _validate_actor(
+    _validate_actor(
         car_id=car_id,
         event_type=event_type,
         actor_user_id=actor_user_id,

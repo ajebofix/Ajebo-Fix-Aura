@@ -6,7 +6,6 @@ from flask import current_app, flash, redirect, request, url_for
 from flask_login import current_user, login_required
 
 from admin.routes import admin_bp
-from cars.routes import cars_bp
 from extensions import db
 from priority.lifecycle import PriorityRequestError, PriorityRequestLifecycleService
 

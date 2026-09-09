@@ -46,13 +46,13 @@ def _submit_owner_request(car_id: int, request_kind: str):
             "Priority request recorded. An advisor will review and coordinate the next step.",
             "success",
         )
-    return redirect(url_for("priority.client_priority_status", car_id=car_id))
+    return redirect(url_for("cars.client_priority_status", car_id=car_id))
 
 
 @login_required
 def request_priority_scheduling_cutover(car_id: int):
     if request.method == "GET":
-        return redirect(url_for("priority.client_priority_status", car_id=car_id))
+        return redirect(url_for("cars.client_priority_status", car_id=car_id))
     return _submit_owner_request(car_id, "priority")
 
 

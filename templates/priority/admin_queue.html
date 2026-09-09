@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Priority Requests | Aura{% endblock %}
+{% block page_title %}Priority Requests{% endblock %}
+{% block page_subtitle %}Advisor queue for durable priority and emergency-review requests.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>Active Queue</h2>
+    <p class="muted">
+        These are durable operational requests. Derived priority scores, Rina guidance, and Alert Center projections do not create or accept a request by themselves.
+    </p>
+
+    {% if active_requests %}
+    <div class="list-stack">
+        {% for item in active_requests %}
+        <div class="list-item">
+            <div class="section-head">
+                <strong>{{ item.car.display_name }}</strong>
+                <span class="pill">{{ item.status | replace('_', ' ') | title }}</span>
+            </div>
+
+            <p>
+                <strong>{{ "Emergency review" if item.request_kind == "emergency_review" else "Priority scheduling" }}</strong>
+            </p>
+            <p>{{ item.reason_summary }}</p>
+            <p class="muted">
+                Requested: {{ item.requested_at.strftime("%Y-%m-%d %H:%M") }}
+                · Source: {{ item.request_source | replace('_', ' ') | title }}
+                · Entitled at request: {{ "Yes" if item.eligibility_at_request else "No" }}
+                · Care plan: {{ (item.care_plan_snapshot or "—") | replace('_', ' ') | title }}
+                · Health snapshot: {{ item.health_status_snapshot or "—" }}
+            </p>
+
+            {% if item.advisor_review_note %}
+            <p class="muted"><strong>Advisor note:</strong> {{ item.advisor_review_note }}</p>
+            {% endif %}
+
+            {% if item.consultation %}
+            <p class="muted">
+                Linked consultation #{{ item.consultation.id }}
+                {% if item.consultation.scheduled_for %}
+                · {{ item.consultation.scheduled_for.strftime("%Y-%m-%d %H:%M") }}
+                {% endif %}
+            </p>
+            {% endif %}
+
+            {% if item.status in ["requested", "deferred"] %}
+            <form method="POST" action="{{ url_for('admin.admin_review_priority_request', request_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <textarea name="advisor_review_note" rows="2" class="input" placeholder="Advisor review note (internal, optional)"></textarea>
+                <button class="btn btn-primary" type="submit">Start Review</button>
+            </form>
+            {% endif %}
+
+            {% if item.status == "under_review" %}
+            <div class="button-stack">
+                <form method="POST" action="{{ url_for('admin.admin_accept_priority_request', request_id=item.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-primary" type="submit">Accept Request</button>
+                </form>
+                <form method="POST" action="{{ url_for('admin.admin_defer_priority_request', request_id=item.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <textarea name="advisor_review_note" rows="2" class="input" placeholder="Reason for deferral (internal, optional)"></textarea>
+                    <button class="btn btn-secondary" type="submit">Defer</button>
+                </form>
+            </div>
+            {% endif %}
+
+            {% if item.status == "accepted" %}
+            <div class="button-stack">
+                {% if not item.consultation_id %}
+                <a href="{{ url_for('admin.admin_link_priority_consultation', request_id=item.id) }}" class="btn btn-primary">Schedule Linked Consultation</a>
+                {% endif %}
+                <form method="POST" action="{{ url_for('admin.admin_resolve_priority_request', request_id=item.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-secondary" type="submit">Resolve Priority Request</button>
+                </form>
+            </div>
+            {% endif %}
+
+            {% if item.status in ["requested", "under_review", "deferred"] %}
+            <form method="POST" action="{{ url_for('admin.admin_cancel_priority_request', request_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-secondary" type="submit">Cancel Request</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No active priority requests.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Recently Concluded</h2>
+    {% if recent_requests %}
+    <div class="list-stack">
+        {% for item in recent_requests %}
+        <div class="list-item">
+            <div class="section-head">
+                <strong>{{ item.car.display_name }}</strong>
+                <span class="pill">{{ item.status | replace('_', ' ') | title }}</span>
+            </div>
+            <p class="muted">
+                {{ "Emergency review" if item.request_kind == "emergency_review" else "Priority scheduling" }}
+                · Requested {{ item.requested_at.strftime("%Y-%m-%d %H:%M") }}
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No concluded priority requests yet.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-secondary btn-block">← Back to Admin Dashboard</a>
+</section>
+{% endblock %}

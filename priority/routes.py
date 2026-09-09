@@ -1,21 +1,25 @@
-"""Client-safe and advisor priority-request surfaces for Aura Wave 2.4D."""
+"""Client-safe and advisor priority-request surfaces for Aura Wave 2.4D.
+
+Routes are attached to Aura's existing cars/admin blueprints so the workflow is
+available through normal application navigation without adding another top-level
+blueprint registration dependency.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from admin.routes import admin_bp
+from cars.routes import cars_bp
 from extensions import db
 from models import Car, CarOwnership
 from priority.lifecycle import PriorityRequestError, PriorityRequestLifecycleService
 from priority.models import PriorityRequest
 from security.access import require_advisor, resolve_vehicle_authority
 from services.consultation_lifecycle import ConsultationLifecycleError, ConsultationLifecycleService
-
-
-priority_bp = Blueprint("priority", __name__, url_prefix="/priority")
 
 
 def _owner_ownership(car_id: int) -> CarOwnership:
@@ -62,7 +66,7 @@ def _transition(request_id: int, operation: str):
     except PriorityRequestError as exc:
         db.session.rollback()
         flash(str(exc), "error")
-        return redirect(url_for("priority.admin_priority_queue"))
+        return redirect(url_for("admin.admin_priority_queue"))
     except Exception:
         db.session.rollback()
         current_app.logger.exception(
@@ -72,13 +76,13 @@ def _transition(request_id: int, operation: str):
             current_user.id,
         )
         flash("Unable to update the priority request right now.", "error")
-        return redirect(url_for("priority.admin_priority_queue"))
+        return redirect(url_for("admin.admin_priority_queue"))
 
     flash(f"Priority request updated: {row.status.replace('_', ' ')}.", "success")
-    return redirect(url_for("priority.admin_priority_queue"))
+    return redirect(url_for("admin.admin_priority_queue"))
 
 
-@priority_bp.get("/cars/<int:car_id>")
+@cars_bp.get("/<int:car_id>/priority-status")
 @login_required
 def client_priority_status(car_id: int):
     car = Car.query.get_or_404(car_id)
@@ -100,7 +104,7 @@ def client_priority_status(car_id: int):
     )
 
 
-@priority_bp.post("/cars/<int:car_id>/requests/<int:request_id>/cancel")
+@cars_bp.post("/<int:car_id>/priority-requests/<int:request_id>/cancel")
 @login_required
 def client_cancel_priority_request(car_id: int, request_id: int):
     _owner_ownership(car_id)
@@ -126,10 +130,10 @@ def client_cancel_priority_request(car_id: int, request_id: int):
         flash("Unable to cancel the priority request right now.", "error")
     else:
         flash("Priority request cancelled.", "success")
-    return redirect(url_for("priority.client_priority_status", car_id=car_id))
+    return redirect(url_for("cars.client_priority_status", car_id=car_id))
 
 
-@priority_bp.get("/admin/requests")
+@admin_bp.get("/priority-requests")
 @login_required
 def admin_priority_queue():
     require_advisor()
@@ -157,7 +161,7 @@ def admin_priority_queue():
     )
 
 
-@priority_bp.post("/admin/cars/<int:car_id>/request")
+@admin_bp.post("/cars/<int:car_id>/priority-request")
 @login_required
 def admin_create_priority_request(car_id: int):
     require_advisor()
@@ -185,41 +189,41 @@ def admin_create_priority_request(car_id: int):
         flash("Unable to create the priority request right now.", "error")
     else:
         flash("Priority request created.", "success")
-    return redirect(url_for("priority.admin_priority_queue"))
+    return redirect(url_for("admin.admin_priority_queue"))
 
 
-@priority_bp.post("/admin/requests/<int:request_id>/review")
+@admin_bp.post("/priority-requests/<int:request_id>/review")
 @login_required
 def admin_review_priority_request(request_id: int):
     return _transition(request_id, "review")
 
 
-@priority_bp.post("/admin/requests/<int:request_id>/accept")
+@admin_bp.post("/priority-requests/<int:request_id>/accept")
 @login_required
 def admin_accept_priority_request(request_id: int):
     return _transition(request_id, "accept")
 
 
-@priority_bp.post("/admin/requests/<int:request_id>/defer")
+@admin_bp.post("/priority-requests/<int:request_id>/defer")
 @login_required
 def admin_defer_priority_request(request_id: int):
     return _transition(request_id, "defer")
 
 
-@priority_bp.post("/admin/requests/<int:request_id>/resolve")
+@admin_bp.post("/priority-requests/<int:request_id>/resolve")
 @login_required
 def admin_resolve_priority_request(request_id: int):
     return _transition(request_id, "resolve")
 
 
-@priority_bp.post("/admin/requests/<int:request_id>/cancel")
+@admin_bp.post("/priority-requests/<int:request_id>/cancel")
 @login_required
 def admin_cancel_priority_request(request_id: int):
     return _transition(request_id, "cancel")
 
 
-@priority_bp.route(
-    "/admin/requests/<int:request_id>/consultation",
+@admin_bp.route(
+    "/priority-requests/<int:request_id>/consultation",
     methods=["GET", "POST"],
 )
 @login_required
@@ -228,11 +232,11 @@ def admin_link_priority_consultation(request_id: int):
     row = PriorityRequest.query.get_or_404(request_id)
     if row.status != "accepted":
         flash("Accept the priority request before scheduling its consultation.", "error")
-        return redirect(url_for("priority.admin_priority_queue"))
+        return redirect(url_for("admin.admin_priority_queue"))
 
     if row.consultation_id is not None:
         flash("This priority request is already linked to a consultation.", "info")
-        return redirect(url_for("priority.admin_priority_queue"))
+        return redirect(url_for("admin.admin_priority_queue"))
 
     if request.method == "GET":
         return render_template("priority/link_consultation.html", priority_request=row)
@@ -243,7 +247,7 @@ def admin_link_priority_consultation(request_id: int):
     except ValueError:
         flash("Please provide a valid consultation date and time.", "error")
         return redirect(
-            url_for("priority.admin_link_priority_consultation", request_id=row.id)
+            url_for("admin.admin_link_priority_consultation", request_id=row.id)
         )
 
     try:
@@ -263,7 +267,7 @@ def admin_link_priority_consultation(request_id: int):
     except (PriorityRequestError, ConsultationLifecycleError) as exc:
         db.session.rollback()
         flash(str(exc), "error")
-        return redirect(url_for("priority.admin_priority_queue"))
+        return redirect(url_for("admin.admin_priority_queue"))
     except Exception:
         db.session.rollback()
         current_app.logger.exception(
@@ -272,10 +276,10 @@ def admin_link_priority_consultation(request_id: int):
             current_user.id,
         )
         flash("Unable to schedule the linked consultation right now.", "error")
-        return redirect(url_for("priority.admin_priority_queue"))
+        return redirect(url_for("admin.admin_priority_queue"))
 
     flash("Priority request linked to a scheduled consultation.", "success")
-    return redirect(url_for("priority.admin_priority_queue"))
+    return redirect(url_for("admin.admin_priority_queue"))
 
 
 def user_can_view_priority_request(row: PriorityRequest, user_id: int) -> bool:

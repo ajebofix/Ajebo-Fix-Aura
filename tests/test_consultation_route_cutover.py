@@ -12,6 +12,7 @@ from models import (
     VehicleAssessment,
     VehicleEvent,
 )
+from priority.models import PriorityRequest
 
 
 PASSWORD = "Password123"
@@ -101,7 +102,6 @@ def test_cutover_replaces_legacy_consultation_view_functions(app):
     expected_module = "services.consultation_route_cutover"
     endpoints = (
         "cars.book_consultation",
-        "cars.request_priority_scheduling",
         "admin.admin_schedule_consultation",
         "admin.admin_start_consultation",
         "admin.admin_complete_consultation",
@@ -111,6 +111,14 @@ def test_cutover_replaces_legacy_consultation_view_functions(app):
     for endpoint in endpoints:
         assert app.view_functions[endpoint].__module__ == expected_module
 
+    # Wave 2.4D deliberately supersedes the old consultation-based priority
+    # adapter with a durable PriorityRequest workflow while preserving the URL.
+    assert app.view_functions["cars.request_priority_scheduling"].__module__ == (
+        "services.priority_route_cutover"
+    )
+    assert app.view_functions["cars.request_emergency_review"].__module__ == (
+        "services.priority_route_cutover"
+    )
     assert "admin.admin_schedule_requested_consultation" in app.view_functions
 
 
@@ -386,19 +394,16 @@ def test_direct_advisor_schedule_uses_canonical_lifecycle(app):
         ).count() == 1
 
 
-def test_priority_scheduling_records_request_not_confirmed_schedule(app, monkeypatch):
+def test_priority_scheduling_records_durable_priority_request_not_consultation(app):
     owner_client = app.test_client()
 
     with app.app_context():
         owner = _user(suffix=7)
-        car, _ownership = _owned_car(owner, suffix=5)
+        car, ownership = _owned_car(owner, suffix=5)
+        ownership.care_plan = "priority_access"
+        db.session.commit()
         owner_email = owner.email
         car_id = car.id
-
-    monkeypatch.setattr(
-        "services.consultation_route_cutover.has_feature",
-        lambda _ownership, _feature: True,
-    )
 
     _login(owner_client, owner_email)
     response = owner_client.post(
@@ -409,12 +414,14 @@ def test_priority_scheduling_records_request_not_confirmed_schedule(app, monkeyp
     assert response.status_code in {302, 303}
 
     with app.app_context():
-        consultation = Consultation.query.filter_by(car_id=car_id).one()
-        assert consultation.status == "requested"
-        assert consultation.advisor_id is None
-        assert consultation.notes == "Priority scheduling request by client."
+        assert Consultation.query.filter_by(car_id=car_id).count() == 0
+        priority_request = PriorityRequest.query.filter_by(car_id=car_id).one()
+        assert priority_request.status == "requested"
+        assert priority_request.request_kind == "priority"
+        assert priority_request.request_source == "owner"
+        assert priority_request.eligibility_at_request is True
         assert VehicleEvent.query.filter_by(
-            event_type="consultation.requested",
-            subject_type="consultation",
-            subject_id=consultation.id,
+            event_type="priority.requested",
+            subject_type="priority_request",
+            subject_id=priority_request.id,
         ).count() == 1

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Priority Access | Aura{% endblock %}
+{% block page_title %}Priority Access{% endblock %}
+{% block page_subtitle %}Advisor-governed priority coordination for this vehicle.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>{{ car.display_name }}</h2>
+    <p class="muted">
+        A priority request records your request for faster professional review or coordination. It does not itself confirm an appointment, diagnosis, or repair decision.
+    </p>
+</section>
+
+<section class="card">
+    <h2>Request History</h2>
+    {% if priority_requests %}
+    <div class="list-stack">
+        {% for item in priority_requests %}
+        <div class="list-item">
+            <div class="section-head">
+                <strong>
+                    {{ "Emergency review" if item.request_kind == "emergency_review" else "Priority scheduling" }}
+                </strong>
+                <span class="pill">{{ item.status | replace('_', ' ') | title }}</span>
+            </div>
+            <p class="muted">Requested {{ item.requested_at.strftime("%Y-%m-%d %H:%M") }}</p>
+            <p>{{ item.reason_summary }}</p>
+
+            {% if item.consultation %}
+            <p class="muted">
+                Linked consultation:
+                {{ item.consultation.scheduled_for.strftime("%Y-%m-%d %H:%M") if item.consultation.scheduled_for else "scheduled" }}
+            </p>
+            {% endif %}
+
+            {% if item.status in ["requested", "under_review", "deferred"] and item.requested_by_user_id == current_user.id %}
+            <form method="POST" action="{{ url_for('cars.client_cancel_priority_request', car_id=car.id, request_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-secondary" type="submit">Cancel Request</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No priority requests have been recorded for this ownership period.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <a href="{{ url_for('cars.car_detail', car_id=car.id) }}" class="btn btn-secondary btn-block">← Back to Vehicle</a>
+</section>
+{% endblock %}

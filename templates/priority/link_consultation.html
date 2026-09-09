@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule Priority Consultation | Aura{% endblock %}
+{% block page_title %}Schedule Priority Consultation{% endblock %}
+{% block page_subtitle %}Link an accepted priority request to a real consultation.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>{{ priority_request.car.display_name }}</h2>
+    <p>
+        <strong>{{ "Emergency review" if priority_request.request_kind == "emergency_review" else "Priority scheduling" }}</strong>
+    </p>
+    <p>{{ priority_request.reason_summary }}</p>
+    <p class="muted">
+        Priority acceptance and Consultation are separate lifecycles. Scheduling here creates a real consultation and links it to this request in one transaction.
+    </p>
+</section>
+
+<section class="card">
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="scheduled_for">Consultation date and time</label>
+            <input id="scheduled_for" name="scheduled_for" type="datetime-local" class="input" required>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Schedule & Link Consultation</button>
+    </form>
+</section>
+
+<section class="card">
+    <a href="{{ url_for('admin.admin_priority_queue') }}" class="btn btn-secondary btn-block">← Back to Priority Queue</a>
+</section>
+{% endblock %}

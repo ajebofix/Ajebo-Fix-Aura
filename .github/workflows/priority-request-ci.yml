@@ -15,6 +15,21 @@ on:
       - "tests/test_priority_request_lifecycle.py"
       - "tests/test_wave_2_4e_closeout.py"
       - ".github/workflows/priority-request-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "priority/**"
+      - "services/priority_route_cutover.py"
+      - "services/priority_scoring.py"
+      - "health/alert_routes.py"
+      - "admin/progression_routes.py"
+      - "templates/priority/**"
+      - "templates/admin/dashboard.html"
+      - "migrations/versions/c3e1f6a9d842_add_priority_request_contract.py"
+      - "tests/test_priority_request_lifecycle.py"
+      - "tests/test_wave_2_4e_closeout.py"
+      - ".github/workflows/priority-request-ci.yml"
 
 permissions:
   contents: read

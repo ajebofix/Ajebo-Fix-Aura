@@ -1,41 +1,25 @@
-# health/alert_routes.py
+"""Compatibility health-notice routes.
 
-from flask import Blueprint, jsonify
-from flask_login import login_required, current_user
+Wave 2.4E keeps the client-safe per-vehicle notice projection, but consolidates
+the duplicate advisor-wide read surface into the canonical Alert Center.  The
+underlying durable record remains VehicleHealthAlert / care-signal lifecycle.
+"""
 
-from models import VehicleHealthAlert, CarOwnership
+from flask import Blueprint, jsonify, redirect, url_for
+from flask_login import current_user, login_required
 
-# =====================================================
-# CLINICAL NOTICES
-# Aura — Private Automotive Health Portal
-# =====================================================
+from models import CarOwnership, VehicleHealthAlert
+from security.access import require_advisor
+
 
 notices_bp = Blueprint("clinical_notices", __name__)
-
-
-# =====================================================
-# SAFE ADVISOR CHECK
-# =====================================================
-
-
-def is_advisor(user):
-    return hasattr(user, "is_admin") and user.is_admin()
-
-
-# =====================================================
-# CLIENT — VIEW ACTIVE CLINICAL NOTICES
-# =====================================================
 
 
 @notices_bp.route("/cars/<int:car_id>/health/notices", methods=["GET"])
 @login_required
 def client_vehicle_notices(car_id):
-    """
-    Returns active clinical notices for a vehicle.
-    Informational only — not diagnostic.
-    """
+    """Return active client-safe care notices for an actively owned vehicle."""
 
-    # Ensure client has active stewardship
     CarOwnership.query.filter_by(
         car_id=car_id,
         user_id=current_user.id,
@@ -55,52 +39,24 @@ def client_vehicle_notices(car_id):
         jsonify(
             [
                 {
-                    "notice_type": n.alert_type,
-                    "priority_level": n.severity,
-                    "advisory_note": n.message,
-                    "issued_at": n.created_at.isoformat(),
+                    "notice_type": notice.alert_type,
+                    "priority_level": notice.severity,
+                    "status": notice.status,
+                    "advisory_note": notice.message,
+                    "issued_at": notice.created_at.isoformat(),
+                    "record_kind": "care_signal",
                 }
-                for n in notices
+                for notice in notices
             ]
         ),
         200,
     )
-
-
-# =====================================================
-# ADVISOR — VIEW ALL ACTIVE CLINICAL NOTICES
-# =====================================================
 
 
 @notices_bp.route("/advisor/health/notices", methods=["GET"])
 @login_required
 def advisor_all_notices():
-    """
-    Advisor-wide view of active clinical notices.
-    """
+    """Retire the duplicate advisor notice list in favour of Alert Center."""
 
-    if not is_advisor(current_user):
-        return jsonify({"error": "Advisor access required"}), 403
-
-    notices = (
-        VehicleHealthAlert.query.filter_by(is_active=True)
-        .order_by(VehicleHealthAlert.created_at.desc())
-        .all()
-    )
-
-    return (
-        jsonify(
-            [
-                {
-                    "vehicle_id": n.car_id,
-                    "ownership_id": n.ownership_id,
-                    "notice_type": n.alert_type,
-                    "priority_level": n.severity,
-                    "advisory_note": n.message,
-                    "issued_at": n.created_at.isoformat(),
-                }
-                for n in notices
-            ]
-        ),
-        200,
-    )
+    require_advisor()
+    return redirect(url_for("admin.admin_alert_center"), code=302)

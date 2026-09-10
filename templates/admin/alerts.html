@@ -14,6 +14,22 @@ Operational monitoring and escalation visibility.
 
 {% block content %}
 
+<section class="card">
+    <h2>How this queue works</h2>
+    <p class="muted">
+        Care signals are durable monitoring records with their own lifecycle.
+        Operational projections are recalculated from current records and are
+        read-only; they do not create longitudinal events by appearing here.
+    </p>
+    <p class="muted">
+        Priority Access requests are a separate durable workflow and are handled
+        in the Priority Requests queue.
+    </p>
+    <a href="{{ url_for('admin.admin_priority_queue') }}" class="btn btn-secondary">
+        Open Priority Requests
+    </a>
+</section>
+
 {% if alerts %}
 
 <section class="stack-list">
@@ -68,10 +84,10 @@ Operational monitoring and escalation visibility.
             <br>
 
             <strong>Record:</strong>
-            {% if alert.actionable %}
-                Durable care signal
+            {% if alert.record_kind == "care_signal" %}
+                Durable care signal · lifecycle record
             {% else %}
-                Operational projection · read-only
+                Computed operational projection · read-only
             {% endif %}
 
             <br>
@@ -98,7 +114,7 @@ Operational monitoring and escalation visibility.
             </a>
 
             <!-- Only durable VehicleHealthAlert care signals own lifecycle actions. -->
-            {% if alert.actionable and alert.id %}
+            {% if alert.record_kind == "care_signal" and alert.actionable and alert.id %}
             <div class="alert-actions">
 
                 {% if alert.status == "new" %}
@@ -135,7 +151,7 @@ Operational monitoring and escalation visibility.
 <section class="card">
 
     <p class="muted">
-        No active operational alerts detected.
+        No active care signals or operational projections detected.
     </p>
 
 </section>

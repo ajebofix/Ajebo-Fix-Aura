@@ -1,164 +1,91 @@
 {% extends "base.html" %}
 
-{% block title %}
-Aura | Client Registry
-{% endblock %}
+{% block title %}Aura | Client Registry{% endblock %}
 
-{% block page_title %}
-Unified Client Registry
-{% endblock %}
+{% block page_title %}Unified Client Registry{% endblock %}
 
 {% block content %}
 
-<section class="card">
-
-    <div class="section-head">
-
-        <h2>
-            Clients
-        </h2>
-
-        <span class="badge">
-            {{ clients|length }}
-        </span>
-
-    </div>
-
-</section>
+{% set ns = namespace(vehicle_count=0) %}
+{% for item in clients %}
+    {% set ns.vehicle_count = ns.vehicle_count + (item.vehicles|length) %}
+{% endfor %}
 
 <section class="card">
-
     <div class="section-head">
-
-        <h2>
-            Critical
-        </h2>
-
-        <span class="badge">
-            {{ critical|length }}
-        </span>
-
+        <h2>Clients</h2>
+        <span class="badge">{{ clients|length }}</span>
     </div>
-
+    <p class="muted">
+        Review bands below are computed advisor-support projections. They are
+        not durable Priority Requests and do not create workflow state.
+    </p>
 </section>
 
-<section class="card">
-
-    <div class="section-head">
-
-        <h2>
-            High
-        </h2>
-
-        <span class="badge">
-            {{ high|length }}
-        </span>
-
+<section class="dashboard-grid">
+    <div class="card stat-card">
+        <div class="stat-label">Critical review band</div>
+        <div class="stat-value">{{ critical_clients }}</div>
     </div>
 
-</section>
-
-<section class="card">
-
-    <div class="section-head">
-
-        <h2>
-            Vehicles
-        </h2>
-
-        <span class="badge">
-            {{ car|length }}
-        </span>
-
+    <div class="card stat-card">
+        <div class="stat-label">High or above</div>
+        <div class="stat-value">{{ high_clients }}</div>
     </div>
 
+    <div class="card stat-card">
+        <div class="stat-label">Vehicles</div>
+        <div class="stat-value">{{ ns.vehicle_count }}</div>
+    </div>
 </section>
-
-
-
 
 {% for item in clients %}
-
 <section class="card">
-
     <div class="section-head">
-
-        <h3>
-            {{ item.client.name }}
-        </h3>
+        <h3>{{ item.client.name }}</h3>
 
         {% if item.priority >= 80 %}
-            <span class="badge danger">
-                Critical
-            </span>
-
+            <span class="badge danger">Review: Critical</span>
         {% elif item.priority >= 60 %}
-            <span class="badge warning">
-                High
-            </span>
-
+            <span class="badge warning">Review: High</span>
+        {% elif item.priority >= 30 %}
+            <span class="badge amber">Review: Moderate</span>
         {% else %}
-            <span class="badge success">
-                Normal
-            </span>
+            <span class="badge success">Review: Low</span>
         {% endif %}
-
     </div>
 
     <div class="meta">
-
-        Vehicles:
-        {{ item.vehicles|length }}
-
+        Vehicles: {{ item.vehicles|length }}
         <br>
-
-        Active Concerns:
-        {{ item.active_concerns }}
-
+        Active Concerns: {{ item.active_concerns }}
         <br>
-
-        Priority Score:
-        {{ item.priority }}/100
-
+        Advisor review score: {{ item.priority }}/100
     </div>
 
     <hr>
 
     {% for vehicle in item.vehicles %}
-
         <div class="list-item">
-
             {{ vehicle.display_name }}
-
             <a
-                href="{{ url_for('admin.view_vehicle',
-                car_id=vehicle.id) }}"
+                href="{{ url_for('admin.view_vehicle', car_id=vehicle.id) }}"
                 class="btn btn-sm btn-primary"
             >
                 Open Vehicle
             </a>
-
         </div>
+    {% endfor %}
 
-
-        <div>
-
+    <div>
         <a
-            href="{{ url_for(
-            'admin.admin_client_profile',
-            user_id=item.client.id
-            )}}"
+            href="{{ url_for('admin.admin_client_profile', user_id=item.client.id) }}"
             class="btn btn-primary"
         >
             Client Profile
         </a>
-        </div>
-
-    {% endfor %}
-
+    </div>
 </section>
-
-
 {% endfor %}
 
 {% endblock %}

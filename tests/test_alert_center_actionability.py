@@ -26,7 +26,7 @@ def _user(*, suffix: int, role: str = "user") -> User:
     return user
 
 
-def _fixture(*, suffix: int):
+def _fixture(*, suffix: int, consultation_status: str = "requested"):
     owner = _user(suffix=suffix)
     advisor = _user(suffix=suffix + 1000, role="admin")
     car = Car(
@@ -64,7 +64,7 @@ def _fixture(*, suffix: int):
         ownership_id=ownership.id,
         advisor_id=advisor.id,
         client_id=owner.id,
-        status="requested",
+        status=consultation_status,
         scheduled_for=datetime.utcnow() + timedelta(days=1),
         created_at=datetime.utcnow() - timedelta(days=6),
     )
@@ -105,12 +105,31 @@ def test_alert_service_marks_only_durable_care_signals_actionable(app):
         )
 
         assert care_signal["record_kind"] == "care_signal"
+        assert care_signal["projection_source"] is None
         assert care_signal["actionable"] is True
         assert care_signal["vehicle"].id == signal.car_id
 
         assert consultation_delay["id"] is None
         assert consultation_delay["record_kind"] == "projection"
+        assert consultation_delay["projection_source"] == "consultation"
         assert consultation_delay["actionable"] is False
+
+
+def test_current_consultation_states_drive_delay_projection(app):
+    with app.app_context():
+        _fixture(suffix=20, consultation_status="scheduled")
+        _fixture(suffix=21, consultation_status="deferred")
+        alerts = AlertService.build_alert_center()
+        projected_car_ids = {
+            item["vehicle"].id
+            for item in alerts
+            if item["type"] == "consultation_delay"
+        }
+
+        scheduled = Car.query.filter_by(vin=f"W1N24AC{20:010d}").one()
+        deferred = Car.query.filter_by(vin=f"W1N24AC{21:010d}").one()
+        assert scheduled.id in projected_car_ids
+        assert deferred.id in projected_car_ids
 
 
 def test_alert_center_renders_actions_only_for_durable_care_signals(app):
@@ -127,14 +146,13 @@ def test_alert_center_renders_actions_only_for_durable_care_signals(app):
 
     assert "Durable care signal" in body
     assert "Consultation remains unresolved" in body
-    assert "Operational projection · read-only" in body
+    assert "Computed operational projection · read-only" in body
+    assert "Priority Requests" in body
 
     acknowledge_path = f"/admin/alerts/{signal_id}/acknowledge"
     resolve_path = f"/admin/alerts/{signal_id}/resolve"
     assert acknowledge_path in body
     assert resolve_path in body
 
-    # The read-only consultation projection has no durable lifecycle identifier,
-    # so no lifecycle form may be rendered for it.
     assert "/admin/alerts/None/acknowledge" not in body
     assert "/admin/alerts/None/resolve" not in body

@@ -1,0 +1,85 @@
+name: Aura Wave 2.4E Closeout CI
+
+on:
+  pull_request:
+    paths:
+      - "services/alert_service.py"
+      - "services/priority_scoring.py"
+      - "health/alert_routes.py"
+      - "templates/admin/alerts.html"
+      - "templates/admin/dashboard.html"
+      - "templates/admin/client_registry.html"
+      - "tests/test_alert_center_actionability.py"
+      - "tests/test_wave_2_4e_closeout.py"
+      - "docs/AURA_WAVE_2_4_CLOSEOUT.md"
+      - ".github/workflows/wave-2-4e-closeout-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "services/alert_service.py"
+      - "services/priority_scoring.py"
+      - "health/alert_routes.py"
+      - "templates/admin/alerts.html"
+      - "templates/admin/dashboard.html"
+      - "templates/admin/client_registry.html"
+      - "tests/test_alert_center_actionability.py"
+      - "tests/test_wave_2_4e_closeout.py"
+      - "docs/AURA_WAVE_2_4_CLOSEOUT.md"
+      - ".github/workflows/wave-2-4e-closeout-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wave-2-4e-closeout:
+    runs-on: ubuntu-24.04
+    env:
+      SECRET_KEY: ci-secret-key-not-for-production
+      SQLALCHEMY_DATABASE_URI: sqlite:///:memory:
+      APP_ENV: testing
+      PREFERRED_URL_SCHEME: http
+      RATE_LIMIT_STORAGE_URI: memory://
+      PROFILE_ENCRYPTION_KEY: Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0=
+      PROFILE_ENCRYPTION_KEY_VERSION: ci-v1
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+
+      - name: Compile closeout slice
+        run: >-
+          python -m compileall -q
+          services/alert_service.py
+          services/priority_scoring.py
+          health/alert_routes.py
+          tests/test_wave_2_4e_closeout.py
+          tests/test_alert_center_actionability.py
+
+      - name: Run Wave 2.4 longitudinal and projection tests
+        run: >-
+          pytest -q --tb=short
+          tests/test_wave_2_4e_closeout.py
+          tests/test_alert_center_actionability.py
+          tests/test_driver_observation.py
+          tests/test_care_signal_lifecycle.py
+          tests/test_priority_request_lifecycle.py
+
+      - name: Ruff closeout slice
+        run: >-
+          ruff check --output-format=concise
+          services/alert_service.py
+          services/priority_scoring.py
+          health/alert_routes.py
+          tests/test_wave_2_4e_closeout.py
+          tests/test_alert_center_actionability.py

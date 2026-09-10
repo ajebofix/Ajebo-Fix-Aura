@@ -1,4 +1,4 @@
-name: Aura Wave 1.5 Recurrence Readiness CI
+name: Aura Longitudinal Readiness CI
 
 on:
   workflow_dispatch:
@@ -11,21 +11,24 @@ on:
     paths:
       - "scripts/audit_predictive_readiness.py"
       - "scripts/audit_recurrence_target_readiness.py"
+      - "scripts/audit_wave_2_5_readiness.py"
       - "tests/test_predictive_readiness_audit.py"
       - "tests/test_recurrence_target_readiness_audit.py"
+      - "tests/test_wave_2_5_readiness_audit.py"
       - "docs/AURA_WAVE_1_5_RECURRENCE_PREDICTION_TARGET_CONTRACT.md"
       - "docs/AURA_WAVE_1_5_RECURRENCE_DATA_COLLECTION_PLAN.md"
+      - "docs/AURA_WAVE_2_5_LONGITUDINAL_READINESS_GATE.md"
       - ".github/workflows/recurrence-readiness-ci.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: "aura-recurrence-readiness-${{ github.workflow }}-${{ github.ref }}"
+  group: "aura-longitudinal-readiness-${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
-  recurrence-readiness-contract:
+  longitudinal-readiness-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -51,30 +54,36 @@ jobs:
           python -m pip install -q --upgrade pip
           pip install -q -r requirements-dev.txt
 
-      - name: Compile recurrence readiness sources
+      - name: Compile readiness sources
         run: |
           python -m py_compile \
             scripts/audit_predictive_readiness.py \
             scripts/audit_recurrence_target_readiness.py \
+            scripts/audit_wave_2_5_readiness.py \
             tests/test_predictive_readiness_audit.py \
-            tests/test_recurrence_target_readiness_audit.py
+            tests/test_recurrence_target_readiness_audit.py \
+            tests/test_wave_2_5_readiness_audit.py
 
-      - name: Test broad and target-specific read-only contracts
+      - name: Test broad, target-specific and Wave 2.5 read-only contracts
         run: |
           pytest -q --tb=short \
             tests/test_predictive_readiness_audit.py \
-            tests/test_recurrence_target_readiness_audit.py
+            tests/test_recurrence_target_readiness_audit.py \
+            tests/test_wave_2_5_readiness_audit.py
 
-      - name: Ruff recurrence readiness
+      - name: Ruff longitudinal readiness
         run: |
           ruff check \
             scripts/audit_predictive_readiness.py \
             scripts/audit_recurrence_target_readiness.py \
+            scripts/audit_wave_2_5_readiness.py \
             tests/test_predictive_readiness_audit.py \
-            tests/test_recurrence_target_readiness_audit.py
+            tests/test_recurrence_target_readiness_audit.py \
+            tests/test_wave_2_5_readiness_audit.py
 
-      - name: Bandit recurrence readiness
+      - name: Bandit longitudinal readiness
         run: |
           bandit -q \
             scripts/audit_predictive_readiness.py \
-            scripts/audit_recurrence_target_readiness.py
+            scripts/audit_recurrence_target_readiness.py \
+            scripts/audit_wave_2_5_readiness.py

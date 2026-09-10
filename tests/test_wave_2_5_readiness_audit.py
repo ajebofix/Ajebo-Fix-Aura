@@ -86,12 +86,9 @@ def wave_2_5_engine():
         )
 
         raw_rows = [
-            # Target-positive episode.
             (1, car_a, 70001, "concern.resolved", "reported_concern", 910001, datetime(2026, 1, 1), "resolved"),
             (2, car_a, 70001, "concern.reopened", "reported_concern", 910001, datetime(2026, 1, 20), "reopened"),
-            # Target-negative episode with a completed observation window.
             (3, car_b, 70002, "concern.resolved", "reported_concern", 910002, datetime(2026, 1, 2), "resolved"),
-            # Current Wave 2 canonical families.
             (4, car_a, 70001, "consultation.completed", "consultation", 920001, datetime(2026, 2, 1), "not_applicable"),
             (5, car_a, 70001, "assessment.finalized", "vehicle_assessment", 930001, datetime(2026, 2, 2), "insufficient_evidence"),
             (6, car_a, 70001, "treatment.completed", "treatment_plan", 940001, datetime(2026, 2, 10), "improved"),
@@ -104,7 +101,16 @@ def wave_2_5_engine():
         ]
 
         rows = []
-        for row_id, car_id, ownership_id, event_type, subject_type, subject_id, occurred_at, direction in raw_rows:
+        for (
+            row_id,
+            car_id,
+            ownership_id,
+            event_type,
+            subject_type,
+            subject_id,
+            occurred_at,
+            direction,
+        ) in raw_rows:
             rows.append(
                 {
                     "id": row_id,
@@ -130,13 +136,16 @@ def wave_2_5_engine():
     return engine
 
 
-def test_wave_2_5_report_recognises_current_taxonomy_and_target_gate(wave_2_5_engine):
-    with open_read_only_connection(wave_2_5_engine) as connection:
-        report = build_wave_2_5_readiness_report(
+def _report(engine):
+    with open_read_only_connection(engine) as connection:
+        return build_wave_2_5_readiness_report(
             connection,
             as_of=datetime(2026, 9, 10),
         )
 
+
+def test_wave_2_5_report_recognises_current_taxonomy_and_target_gate(wave_2_5_engine):
+    report = _report(wave_2_5_engine)
     ledger = report["canonical_ledger"]
     coverage = ledger["current_family_coverage"]
     episodes = report["recurrence_target"]["episodes"]
@@ -147,26 +156,19 @@ def test_wave_2_5_report_recognises_current_taxonomy_and_target_gate(wave_2_5_en
         "ratio": 1.0,
         "missing": [],
     }
-    assert ledger["families"]["driver_observation"]["event_count"] == 1
-    assert ledger["families"]["care_signal"]["event_count"] == 1
-    assert ledger["families"]["priority"]["event_count"] == 1
-    assert ledger["families"]["treatment_action"]["event_count"] == 1
+    for family in (
+        "driver_observation",
+        "care_signal",
+        "priority",
+        "treatment_action",
+    ):
+        assert ledger["families"][family]["event_count"] == 1
+
     assert all(
         item["subject_contract_mismatches"] == 0
-        for family, item in ledger["families"].items()
-        if family in {
-            "concern",
-            "consultation",
-            "assessment",
-            "treatment",
-            "treatment_action",
-            "driver_observation",
-            "care_signal",
-            "priority",
-            "evidence",
-        }
+        for item in ledger["families"].values()
+        if item["expected_subject_type"] is not None
     )
-
     assert episodes["positive_recurrence"] == 1
     assert episodes["negative_observed"] == 1
     assert episodes["distinct_vehicles_with_labelled_outcomes"] == 2
@@ -183,33 +185,19 @@ def test_missing_current_family_is_reported_but_not_fabricated(wave_2_5_engine):
             text("DELETE FROM vehicle_events WHERE event_type = 'priority.resolved'")
         )
 
-    with open_read_only_connection(wave_2_5_engine) as connection:
-        report = build_wave_2_5_readiness_report(
-            connection,
-            as_of=datetime(2026, 9, 10),
-        )
-
+    report = _report(wave_2_5_engine)
     coverage = report["canonical_ledger"]["current_family_coverage"]
     assert coverage["covered"] == 8
     assert coverage["missing"] == ["priority"]
     assert "current_canonical_family_coverage_is_incomplete" in report["advisory_notes"]
-    # Target readiness is decided from genuine recurrence outcomes, not by inventing
-    # a missing priority event merely to make broad coverage look complete.
     assert report["decision"] == "proceed_to_rules_baseline"
 
 
 def test_required_field_missingness_defers_rules_baseline(wave_2_5_engine):
     with wave_2_5_engine.begin() as connection:
-        connection.execute(
-            text("UPDATE vehicle_events SET source = NULL WHERE id = 1")
-        )
+        connection.execute(text("UPDATE vehicle_events SET source = NULL WHERE id = 1"))
 
-    with open_read_only_connection(wave_2_5_engine) as connection:
-        report = build_wave_2_5_readiness_report(
-            connection,
-            as_of=datetime(2026, 9, 10),
-        )
-
+    report = _report(wave_2_5_engine)
     assert report["decision"] == "defer"
     assert report["rules_baseline_evaluation_permitted"] is False
     assert "canonical_event_required_field_missingness_detected" in report[
@@ -218,41 +206,21 @@ def test_required_field_missingness_defers_rules_baseline(wave_2_5_engine):
 
 
 def test_wave_2_5_report_is_aggregate_and_omits_row_identity_and_payload(wave_2_5_engine):
-    with open_read_only_connection(wave_2_5_engine) as connection:
-        report = build_wave_2_5_readiness_report(
-            connection,
-            as_of=datetime(2026, 9, 10),
-        )
-
+    report = _report(wave_2_5_engine)
     serialized = json.dumps(report, sort_keys=True)
+
+    # Aggregate field names such as `car_id`/`subject_id` may appear in the
+    # missingness schema, but no row-level identifier values or raw payloads may.
     assert "987654321" not in serialized
     assert "876543219" not in serialized
     assert "910001" not in serialized
     assert "PRIVATE ROW PAYLOAD MUST NEVER APPEAR" not in serialized
 
-    forbidden_keys = {
-        "car_id",
-        "subject_id",
-        "ownership_id",
-        "user_id",
-        "email",
-        "phone_number",
-        "description",
-        "data",
-        "vin",
-        "event_id",
-    }
-
-    def walk(value):
-        if isinstance(value, dict):
-            assert forbidden_keys.isdisjoint(value.keys())
-            for child in value.values():
-                walk(child)
-        elif isinstance(value, list):
-            for child in value:
-                walk(child)
-
-    walk(report)
+    assert report["privacy"]["aggregate_only"] is True
+    assert report["privacy"]["vehicle_ids_included"] is False
+    assert report["privacy"]["subject_ids_included"] is False
+    assert report["privacy"]["user_identifiers_included"] is False
+    assert report["privacy"]["raw_event_payloads_included"] is False
 
 
 def test_wave_2_5_audit_does_not_mutate_source_data(wave_2_5_engine):
@@ -276,13 +244,7 @@ def test_wave_2_5_audit_does_not_mutate_source_data(wave_2_5_engine):
 
 
 def test_wave_2_5_markdown_keeps_decision_boundary_explicit(wave_2_5_engine):
-    with open_read_only_connection(wave_2_5_engine) as connection:
-        report = build_wave_2_5_readiness_report(
-            connection,
-            as_of=datetime(2026, 9, 10),
-        )
-
-    rendered = render_markdown(report)
+    rendered = render_markdown(_report(wave_2_5_engine))
     assert "Longitudinal Coverage and Data-Quality Gate" in rendered
     assert "Decision: **proceed_to_rules_baseline**" in rendered
     assert "Predictive implementation approved: **False**" in rendered

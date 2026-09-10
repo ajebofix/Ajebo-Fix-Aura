@@ -13,6 +13,20 @@ on:
       - "tests/test_wave_2_4e_closeout.py"
       - "docs/AURA_WAVE_2_4_CLOSEOUT.md"
       - ".github/workflows/wave-2-4e-closeout-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "services/alert_service.py"
+      - "services/priority_scoring.py"
+      - "health/alert_routes.py"
+      - "templates/admin/alerts.html"
+      - "templates/admin/dashboard.html"
+      - "templates/admin/client_registry.html"
+      - "tests/test_alert_center_actionability.py"
+      - "tests/test_wave_2_4e_closeout.py"
+      - "docs/AURA_WAVE_2_4_CLOSEOUT.md"
+      - ".github/workflows/wave-2-4e-closeout-ci.yml"
   workflow_dispatch:
 
 permissions:

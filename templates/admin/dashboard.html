@@ -12,20 +12,10 @@ Operational command center for client vehicles, health intelligence, and advisor
 
 {% block content %}
 
-
 <section class="card">
-
-    <form
-        method="GET"
-        action="{{ url_for('admin.admin_global_search') }}"
-    >
-
-        <label for="q">
-            Search Vehicles, Clients, VIN, Plate, Phone
-        </label>
-
+    <form method="GET" action="{{ url_for('admin.admin_global_search') }}">
+        <label for="q">Search Vehicles, Clients, VIN, Plate, Phone</label>
         <div class="button-grid">
-
             <input
                 type="text"
                 id="q"
@@ -33,266 +23,128 @@ Operational command center for client vehicles, health intelligence, and advisor
                 placeholder="Search VIN, plate, owner, phone..."
                 required
             >
-
-            <button
-                type="submit"
-                class="btn btn-primary"
-            >
-                Search
-            </button>
-
+            <button type="submit" class="btn btn-primary">Search</button>
         </div>
-
     </form>
-
 </section>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 {% for category, message in messages %}
-<div class="flash {{ category }}">
-    {{ message }}
-</div>
+<div class="flash {{ category }}">{{ message }}</div>
 {% endfor %}
 {% endif %}
 {% endwith %}
 
-
-
 {% if stats %}
-
 <section class="dashboard-grid">
-
     <div class="card stat-card">
-
-        <div class="stat-label">
-            Clients
-        </div>
-
-        <div class="stat-value">
-            {{ stats.clients }}
-        </div>
-
-        <p class="muted">
-            Active client accounts enrolled in Aura.
-        </p>
-
+        <div class="stat-label">Clients</div>
+        <div class="stat-value">{{ stats.clients }}</div>
+        <p class="muted">Active client accounts enrolled in Aura.</p>
     </div>
 
-
     <div class="card stat-card">
-
-        <div class="stat-label">
-            Vehicles
-        </div>
-
-        <div class="stat-value">
-            {{ stats.vehicles }}
-        </div>
-
-        <p class="muted">
-            Registered vehicles under monitoring.
-        </p>
-
+        <div class="stat-label">Vehicles</div>
+        <div class="stat-value">{{ stats.vehicles }}</div>
+        <p class="muted">Registered vehicles under monitoring.</p>
     </div>
 
-
     <div class="card stat-card">
-
-        <div class="stat-label">
-            Care Assignments
-        </div>
-
-        <div class="stat-value">
-            {{ stats.active_assignments }}
-        </div>
-
-        <p class="muted">
-            Vehicles currently under active management.
-        </p>
-
+        <div class="stat-label">Care Assignments</div>
+        <div class="stat-value">{{ stats.active_assignments }}</div>
+        <p class="muted">Vehicles currently under active management.</p>
     </div>
-
 </section>
 
-
-
 <section class="dashboard-grid">
-
     <div class="card">
-
-        <h2>
-            Records Intelligence
-        </h2>
-
-        <div class="list-item">
-            <strong>Total Records:</strong>
-            {{ stats.events.total }}
-        </div>
-
-        <div class="list-item">
-            <strong>Active Records:</strong>
-            {{ stats.events.active }}
-        </div>
-
-        <div class="list-item">
-            <strong>Archived Records:</strong>
-            {{ stats.events.archived }}
-        </div>
-
+        <h2>Records Intelligence</h2>
+        <div class="list-item"><strong>Total Records:</strong> {{ stats.events.total }}</div>
+        <div class="list-item"><strong>Active Records:</strong> {{ stats.events.active }}</div>
+        <div class="list-item"><strong>Archived Records:</strong> {{ stats.events.archived }}</div>
     </div>
 
-
     <div class="card">
-
-        <h2>
-            Executive Summary
-        </h2>
-
+        <h2>Executive Summary</h2>
         <p class="muted">
             Aura centralizes client relationships, fleet visibility,
             and preventive vehicle health operations.
         </p>
-
-        <div class="badge success">
-            Advisor Authority Enabled
-        </div>
-
+        <div class="badge success">Advisor Authority Enabled</div>
     </div>
-
 </section>
-
 {% endif %}
 
-
-
 {% if high_priority %}
-
 <section class="card">
-
     <div class="section-head">
-
-        <h2>
-            Priority Queue
-        </h2>
-
-        <span class="badge danger">
-            {{ high_priority|length }}
-        </span>
-
+        <h2>Advisor Review Projection</h2>
+        <span class="badge warning">{{ high_priority|length }}</span>
     </div>
 
+    <p class="muted">
+        Computed from current durable records to help order advisor attention.
+        This score is read-only and is not a Priority Request or a professional decision.
+    </p>
+
     {% for item in high_priority %}
-
     <div class="list-item">
-
-        <strong>
-            {{ item.car.display_name }}
-        </strong>
-
+        <strong>{{ item.car.display_name }}</strong>
         <br>
-
-        Priority Score:
-        {{ item.priority.score }}/100
-
+        Review score: {{ item.priority.score }}/100
         <br>
-
-        Band:
-        {{ item.priority.band|title }}
-
+        Review band: {{ item.priority.band|title }}
         <a
             href="{{ url_for('admin.view_vehicle', car_id=item.car.id) }}"
             class="btn btn-sm btn-primary"
         >
-            Open
+            Open Vehicle
         </a>
-
     </div>
-
     {% endfor %}
-
 </section>
-
 {% endif %}
 
-
 <section class="card">
-
-    <h2>
-        Quick Actions
-    </h2>
-
+    <h2>Quick Actions</h2>
     <div class="button-grid">
-
-        <a
-            href="{{ url_for('admin.advisor_control_panel') }}"
-            class="btn btn-primary"
-        >
+        <a href="{{ url_for('admin.advisor_control_panel') }}" class="btn btn-primary">
             Advisor Panel
         </a>
 
-        <a
-            href="{{ url_for('admin.admin_priority_queue') }}"
-            class="btn btn-primary"
-        >
+        <a href="{{ url_for('admin.admin_priority_queue') }}" class="btn btn-primary">
             Priority Requests
         </a>
 
-        <a
-            href="{{ url_for('admin.admin_fleet_health') }}"
-            class="btn btn-secondary"
-        >
+        <a href="{{ url_for('admin.admin_alert_center') }}" class="btn btn-secondary">
+            Alert Center
+        </a>
+
+        <a href="{{ url_for('admin.admin_fleet_health') }}" class="btn btn-secondary">
             Fleet Health
         </a>
 
-        <a
-            href="{{ url_for('admin.admin_reported_concerns') }}"
-            class="btn btn-warning"
-        >
+        <a href="{{ url_for('admin.admin_reported_concerns') }}" class="btn btn-warning">
             Concerns
         </a>
 
-        <a
-            href="{{ url_for('admin.admin_clients') }}"
-            class="btn btn-primary"
-        >
+        <a href="{{ url_for('admin.admin_clients') }}" class="btn btn-primary">
             Client Registry
         </a>
 
-        <a
-            href="{{ url_for('dashboard.aura_home') }}"
-            class="btn btn-neutral"
-        >
+        <a href="{{ url_for('dashboard.aura_home') }}" class="btn btn-neutral">
             Client View
         </a>
-
     </div>
-
 </section>
 
-
-
 <section class="card">
-
-    <h2>
-        Secure Exit
-    </h2>
-
-    <p class="muted">
-        End the current advisor session safely.
-    </p>
-
+    <h2>Secure Exit</h2>
+    <p class="muted">End the current advisor session safely.</p>
     <form action="{{ url_for('auth.logout') }}" method="POST">
-
-        <button
-            type="submit"
-            class="btn btn-dark btn-block"
-        >
-            Sign Out
-        </button>
-
+        <button type="submit" class="btn btn-dark btn-block">Sign Out</button>
     </form>
-
 </section>
 
 {% endblock %}

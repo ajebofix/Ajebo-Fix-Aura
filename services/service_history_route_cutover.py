@@ -65,8 +65,13 @@ def _attach_service_metadata(
     service_date: str,
     metadata: dict | None,
 ) -> None:
-    if not metadata:
-        return
+    """Finalize the saved legacy service row into Aura's canonical envelope.
+
+    ``cars.routes.create_service_event`` remains the compatibility writer for
+    service-history rows. Wave 2.5 requires those rows to carry the same durable
+    envelope fields used by the rest of the canonical ledger. Only facts that
+    are deterministically available from the saved row are populated here.
+    """
 
     event = VehicleEvent.query.filter_by(
         fingerprint=_service_fingerprint(
@@ -80,7 +85,22 @@ def _attach_service_metadata(
     if event is None:
         raise RuntimeError("Saved service event could not be reloaded for audit metadata.")
 
-    event.data = {**(event.data or {}), **metadata}
+    occurred_at = datetime.fromisoformat(service_date)
+
+    event.schema_version = event.schema_version or 1
+    event.occurred_at = event.occurred_at or occurred_at
+    event.recorded_at = event.recorded_at or event.created_at
+    event.subject_type = event.subject_type or "service_record"
+    event.subject_id = event.subject_id or event.id
+    event.actor_user_id = event.actor_user_id or event.created_by
+    if event.actor_type is None and event.actor_user_id is not None:
+        event.actor_type = "user"
+    event.visibility = event.visibility or "internal"
+    event.progression_direction = event.progression_direction or "not_applicable"
+
+    if metadata:
+        event.data = {**(event.data or {}), **metadata}
+
     db.session.commit()
 
 

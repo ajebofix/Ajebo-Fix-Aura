@@ -102,3 +102,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# Maintains an auditable branch-only smoke runner; not merged into production app code.

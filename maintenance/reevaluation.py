@@ -1,8 +1,9 @@
 """Read-only reevaluation hooks for Maintenance Intelligence.
 
 Reevaluation deliberately creates no durable maintenance-state snapshot. It
-recomputes the M3 projection from the currently accepted facts so M5 can later
-consume the same deterministic result without creating a second source of truth.
+recomputes the deterministic projection from currently accepted facts. M6 adds
+an operational kill switch so accepted source facts can continue to persist
+while maintenance projections are temporarily disabled.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from flask import current_app, has_app_context
 
 from extensions import db
 from maintenance.models import MaintenanceKnowledgeRule
+from maintenance.runtime import maintenance_intelligence_enabled
 from maintenance.state_engine import MaintenanceStateEngine, _applicability
 from models import Car
 
@@ -35,6 +37,14 @@ class MaintenanceReevaluationService:
 
     @staticmethod
     def evaluate_car(*, car_id: int, trigger: str):
+        if not maintenance_intelligence_enabled():
+            _log_info(
+                "Maintenance reevaluation skipped car_id=%s trigger=%s runtime=disabled",
+                car_id,
+                trigger,
+            )
+            return None
+
         car = db.session.get(Car, car_id)
         if car is None:
             return None
@@ -68,6 +78,14 @@ class MaintenanceReevaluationService:
     @staticmethod
     def safe_evaluate_rule_change(*, rule_id: int, trigger: str):
         """Reevaluate vehicles whose identity could be affected by a rule change."""
+
+        if not maintenance_intelligence_enabled():
+            _log_info(
+                "Maintenance rule reevaluation skipped rule_id=%s trigger=%s runtime=disabled",
+                rule_id,
+                trigger,
+            )
+            return ()
 
         rule = db.session.get(MaintenanceKnowledgeRule, rule_id)
         if rule is None:

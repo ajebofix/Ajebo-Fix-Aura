@@ -1,7 +1,8 @@
-"""Bounded presentation projections for Aura Maintenance Intelligence M5."""
+"""Bounded presentation projections for Aura Maintenance Intelligence M5/M6."""
 
 from __future__ import annotations
 
+from maintenance.runtime import maintenance_intelligence_enabled
 from maintenance.state_engine import MaintenanceStateEngine, MaintenanceStateResult
 
 
@@ -23,6 +24,18 @@ _CLIENT_COPY = {
         "Aura does not yet have enough verified evidence to determine this maintenance item safely.",
     ),
 }
+
+_EMPTY_COUNTS = {
+    "upcoming": 0,
+    "due": 0,
+    "overdue": 0,
+    "unknown": 0,
+}
+
+_OWNER_DISCLAIMER = (
+    "Maintenance monitoring is informational and non-diagnostic. "
+    "It does not identify a fault or prescribe a repair."
+)
 
 
 def _client_item(result: MaintenanceStateResult) -> dict:
@@ -64,10 +77,25 @@ class MaintenancePresentationService:
 
     @staticmethod
     def owner_view(car) -> dict:
+        if not maintenance_intelligence_enabled():
+            return {
+                "car_id": car.id,
+                "runtime_enabled": False,
+                "items": [],
+                "state_counts": dict(_EMPTY_COUNTS),
+                "has_verified_knowledge": False,
+                "summary": (
+                    "Maintenance monitoring is temporarily unavailable. "
+                    "Your recorded vehicle history remains unchanged and can still be reviewed by an advisor."
+                ),
+                "disclaimer": _OWNER_DISCLAIMER,
+            }
+
         evaluation = MaintenanceStateEngine.evaluate_vehicle(car=car)
         items = [_client_item(result) for result in evaluation.results]
         return {
             "car_id": car.id,
+            "runtime_enabled": True,
             "items": items,
             "state_counts": evaluation.to_dict()["state_counts"],
             "has_verified_knowledge": bool(evaluation.results),
@@ -76,16 +104,27 @@ class MaintenancePresentationService:
                 if evaluation.results
                 else "Aura does not yet have enough verified maintenance knowledge for this vehicle."
             ),
-            "disclaimer": (
-                "Maintenance monitoring is informational and non-diagnostic. It does not identify a fault or prescribe a repair."
-            ),
+            "disclaimer": _OWNER_DISCLAIMER,
         }
 
     @staticmethod
     def advisor_view(car) -> dict:
+        if not maintenance_intelligence_enabled():
+            return {
+                "car_id": car.id,
+                "runtime_enabled": False,
+                "items": [],
+                "state_counts": dict(_EMPTY_COUNTS),
+                "evaluation_unknown_reasons": [
+                    "maintenance_intelligence_runtime_disabled"
+                ],
+                "evaluated_at": None,
+            }
+
         evaluation = MaintenanceStateEngine.evaluate_vehicle(car=car)
         return {
             "car_id": car.id,
+            "runtime_enabled": True,
             "items": [_advisor_item(result) for result in evaluation.results],
             "state_counts": evaluation.to_dict()["state_counts"],
             "evaluation_unknown_reasons": list(evaluation.unknown_reasons),
@@ -95,4 +134,6 @@ class MaintenancePresentationService:
     @staticmethod
     def overdue_evidence(car) -> tuple[dict, ...]:
         view = MaintenancePresentationService.advisor_view(car)
+        if not view["runtime_enabled"]:
+            return ()
         return tuple(item for item in view["items"] if item["state"] == "overdue")

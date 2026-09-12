@@ -10,6 +10,7 @@ from flask_login import current_user, login_required
 from admin.routes import CLINICAL_DISCLAIMER, admin_bp
 from admin.utils import advisor_required
 from extensions import db
+from maintenance.reevaluation import MaintenanceReevaluationService
 from mileage.models import MileageObservation
 from models import Car, CarOwnership
 from services.health_alert_service import CareSignalService
@@ -97,6 +98,10 @@ def update_odometer(car_id: int):
         else:
             flash("Latest recorded odometer updated.", "success")
 
+        MaintenanceReevaluationService.safe_evaluate_car(
+            car_id=car.id,
+            trigger="odometer_observed",
+        )
         return redirect(url_for("admin.view_vehicle", car_id=car.id))
 
     return render_template(
@@ -146,6 +151,10 @@ def accept_odometer_report(car_id: int, observation_id: int):
     else:
         flash("Mileage report accepted and latest recorded odometer updated.", "success")
 
+    MaintenanceReevaluationService.safe_evaluate_car(
+        car_id=car_id,
+        trigger="odometer_report_accepted",
+    )
     return redirect(request.referrer or url_for("admin.view_vehicle", car_id=car_id))
 
 

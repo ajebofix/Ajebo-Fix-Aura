@@ -297,8 +297,3 @@ def dataset_json():
         "scenarios": scenarios,
     }
     return Response(json.dumps(payload, indent=2), mimetype="application/json")
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "8080"))
-    viewer_app.run(host="0.0.0.0", port=port)

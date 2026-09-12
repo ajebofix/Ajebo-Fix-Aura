@@ -4,7 +4,7 @@ AURA — VEHICLE INTELLIGENCE ENGINE
 Single source of truth for:
 - Vehicle health interpretation
 - Observed risk signals
-- Maintenance adherence
+- Maintenance record coverage
 - Reported concerns (non-diagnostic)
 - Calm professional guidance
 
@@ -13,6 +13,7 @@ PRINCIPLES:
 - No repair instruction
 - No panic language
 - Conservative influence from user input
+- No guessed maintenance interval semantics
 
 PURE LOGIC ONLY:
 - No Flask
@@ -30,8 +31,6 @@ from models import VehicleEvent, Car, CarOwnership, CarFault
 # INTERNAL CONFIGURATION (NON-USER FACING)
 # =====================================================
 
-SERVICE_INTERVAL_KM = 12_000
-
 FAULT_SEVERITY_WEIGHTS = {
     "critical": 20,
     "high": 12,
@@ -40,7 +39,6 @@ FAULT_SEVERITY_WEIGHTS = {
 }
 
 MAX_PENALTIES = {
-    "maintenance": 40,
     "reported_concerns": 30,
     "driving_behavior": 15,
     "predictive_signals": 15,
@@ -93,6 +91,10 @@ def calculate_vehicle_health(car: Car, ownership: CarOwnership) -> Dict:
     """
     Produces interpreted vehicle health.
     Output is calm, conservative, and non-diagnostic.
+
+    Maintenance timing is intentionally not calculated here. M6 removed the
+    former generic 12,000 km shortcut; verified Maintenance Intelligence is the
+    only production authority for due/overdue maintenance state.
     """
 
     score = 100
@@ -112,7 +114,7 @@ def calculate_vehicle_health(car: Car, ownership: CarOwnership) -> Dict:
         next_step = "Update vehicle mileage to improve monitoring accuracy."
 
     # ---------------------------------
-    # Maintenance adherence
+    # Maintenance record coverage
     # ---------------------------------
 
     services = VehicleEvent.query.filter_by(
@@ -127,29 +129,10 @@ def calculate_vehicle_health(car: Car, ownership: CarOwnership) -> Dict:
         observations.append("No maintenance history on record")
         next_step = next_step or "Initial maintenance review recommended."
 
-    # The service event stores the main-odometer reading at the time the
-    # service occurred. Historical service events do not replace the current
-    # odometer. Until service-type-specific schedules are introduced, the
-    # latest recorded service is the generic maintenance baseline.
-    service_mileages = [
-        s.mileage
-        for s in services
-        if s.mileage is not None and s.mileage <= current_mileage
-    ]
-
-    overdue_intervals = 0
-    if service_mileages and current_mileage:
-        latest_service_mileage = max(service_mileages)
-        distance_since_service = current_mileage - latest_service_mileage
-
-        if distance_since_service > SERVICE_INTERVAL_KM:
-            overdue_intervals = distance_since_service // SERVICE_INTERVAL_KM
-
-    if overdue_intervals:
-        penalty = min(overdue_intervals * 10, MAX_PENALTIES["maintenance"])
-        score -= penalty
-        observations.append(f"{overdue_intervals} maintenance interval(s) overdue")
-        next_step = next_step or "Vehicle maintenance review recommended."
+    # M6 closeout: service-event mileage is historical evidence only. It is not
+    # compared with a universal interval in this health engine. Due/overdue
+    # timing comes exclusively from provenance-aware verified maintenance rules
+    # evaluated by MaintenanceStateEngine.
 
     # ---------------------------------
     # System-detected signals

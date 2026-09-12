@@ -10,6 +10,9 @@ on:
       - ready_for_review
     paths:
       - "migrations/versions/c5f3e2d9a841_add_care_signal_lifecycle_contract.py"
+      - "maintenance/care_signal.py"
+      - "maintenance/runtime.py"
+      - "maintenance/state_engine.py"
       - "services/alert_service.py"
       - "services/care_signal_event_emission.py"
       - "services/care_signal_lifecycle.py"
@@ -23,6 +26,8 @@ on:
       - "tests/test_alert_center_actionability.py"
       - "tests/test_care_signal_lifecycle.py"
       - "tests/test_care_signal_routes.py"
+      - "tests/test_maintenance_care_surfaces.py"
+      - "tests/test_maintenance_closeout.py"
       - ".github/workflows/care-signals-postgres-ci.yml"
 
 permissions:
@@ -74,10 +79,13 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
-      - name: Compile Wave 2.4C slice
+      - name: Compile Wave 2.4C and maintenance signal slice
         run: >-
           python -m compileall -q
           migrations/versions/c5f3e2d9a841_add_care_signal_lifecycle_contract.py
+          maintenance/care_signal.py
+          maintenance/runtime.py
+          maintenance/state_engine.py
           services/alert_service.py
           services/care_signal_event_emission.py
           services/care_signal_lifecycle.py
@@ -89,6 +97,8 @@ jobs:
           tests/test_alert_center_actionability.py
           tests/test_care_signal_lifecycle.py
           tests/test_care_signal_routes.py
+          tests/test_maintenance_care_surfaces.py
+          tests/test_maintenance_closeout.py
 
       - name: Upgrade fresh PostgreSQL database to current head
         run: |
@@ -229,12 +239,14 @@ jobs:
           python -m flask db upgrade
           python scripts/verify_alembic_head.py
 
-      - name: Run Wave 2.4C lifecycle and route tests
+      - name: Run care-signal lifecycle, routes and maintenance cutover tests
         run: >-
           pytest -q
           tests/test_alert_center_actionability.py
           tests/test_care_signal_lifecycle.py
           tests/test_care_signal_routes.py
+          tests/test_maintenance_care_surfaces.py
+          tests/test_maintenance_closeout.py
 
       - name: Run operational-domain regression tests
         run: >-
@@ -244,9 +256,12 @@ jobs:
           tests/test_treatment_action_lifecycle.py
           tests/test_concern_progression.py
 
-      - name: Ruff Wave 2.4C slice
+      - name: Ruff care-signal and maintenance slice
         run: >-
           ruff check
+          maintenance/care_signal.py
+          maintenance/runtime.py
+          maintenance/state_engine.py
           services/alert_service.py
           services/care_signal_event_emission.py
           services/care_signal_lifecycle.py
@@ -258,11 +273,15 @@ jobs:
           tests/test_alert_center_actionability.py
           tests/test_care_signal_lifecycle.py
           tests/test_care_signal_routes.py
+          tests/test_maintenance_care_surfaces.py
+          tests/test_maintenance_closeout.py
           migrations/versions/c5f3e2d9a841_add_care_signal_lifecycle_contract.py
 
-      - name: Bandit Wave 2.4C services
+      - name: Bandit care-signal services
         run: >-
           bandit -q
+          maintenance/care_signal.py
+          maintenance/runtime.py
           services/alert_service.py
           services/care_signal_event_emission.py
           services/care_signal_lifecycle.py

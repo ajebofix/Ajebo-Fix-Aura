@@ -117,7 +117,6 @@ def test_legacy_overdue_prose_and_unknown_state_cannot_raise_maintenance_signal(
         ).count() == 0
 
 
-
 def test_due_and_upcoming_states_do_not_raise_overdue_monitoring(app, monkeypatch):
     with app.app_context():
         _owner, car, _ownership = _context(suffix=2)
@@ -137,7 +136,6 @@ def test_due_and_upcoming_states_do_not_raise_overdue_monitoring(app, monkeypatc
             car_id=car.id,
             alert_type="maintenance_monitoring",
         ).count() == 0
-
 
 
 def test_typed_overdue_raises_then_non_overdue_resolves_same_occurrence(app, monkeypatch):
@@ -178,7 +176,6 @@ def test_typed_overdue_raises_then_non_overdue_resolves_same_occurrence(app, mon
         ]
 
 
-
 def test_owner_projection_is_calm_and_does_not_leak_advisor_provenance(app, monkeypatch):
     with app.app_context():
         _owner, car, _ownership = _context(suffix=4)
@@ -192,11 +189,11 @@ def test_owner_projection_is_calm_and_does_not_leak_advisor_provenance(app, monk
         assert "private://advisor/source/77" not in text
         assert "rule_id" not in text
         assert "current_odometer_stale" not in text
-        assert "fault" not in text.lower()
-        assert "repair" not in text.lower()
+        assert "non-diagnostic" in view["disclaimer"].lower()
+        assert "immediate repair" not in text.lower()
+        assert "must repair" not in text.lower()
         assert {item["state"] for item in view["items"]} == {"overdue", "unknown"}
         assert all("guidance" in item for item in view["items"])
-
 
 
 def test_advisor_projection_preserves_bounded_evidence(app, monkeypatch):

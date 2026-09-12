@@ -27,6 +27,11 @@ from admin.routes import CLINICAL_DISCLAIMER, admin_bp
 from admin.utils import advisor_required
 from cars.routes import create_service_event
 from extensions import db
+from maintenance.reevaluation import MaintenanceReevaluationService
+from maintenance.service_history import (
+    MaintenanceServiceClassificationError,
+    ServiceHistoryNormalizationService,
+)
 from models import Car, CarOwnership, VehicleEvent
 from services.consultation_guard import require_active_consultation
 from services.health_alert_service import CareSignalService
@@ -64,7 +69,7 @@ def _attach_service_metadata(
     mileage: int,
     service_date: str,
     metadata: dict | None,
-) -> None:
+) -> VehicleEvent:
     """Finalize the saved legacy service row into Aura's canonical envelope.
 
     ``cars.routes.create_service_event`` remains the compatibility writer for
@@ -102,6 +107,7 @@ def _attach_service_metadata(
         event.data = {**(event.data or {}), **metadata}
 
     db.session.commit()
+    return event
 
 
 def _record_service_with_monitoring(
@@ -115,8 +121,9 @@ def _record_service_with_monitoring(
     performed_by: int,
     source: str,
     event_metadata: dict | None = None,
+    maintenance_item_key: str | None = None,
 ) -> bool:
-    """Persist a service record, mileage snapshot, audit metadata and care signals."""
+    """Persist a service record, odometer snapshot, classification and monitoring refresh."""
 
     # New current-service routes explicitly identify themselves. Validate the
     # odometer before the legacy helper commits the VehicleEvent so an invalid
@@ -130,6 +137,18 @@ def _record_service_with_monitoring(
             "Current service odometer cannot be lower than the latest recorded odometer."
         )
 
+    if maintenance_item_key:
+        if (event_metadata or {}).get("entered_by_role") != "advisor":
+            raise MaintenanceServiceClassificationError(
+                "only an advisor can classify a service for Maintenance Intelligence"
+            )
+        # Validate before the legacy writer commits so an arbitrary key cannot
+        # leave a partially classified record behind.
+        ServiceHistoryNormalizationService.resolve_option(
+            car=car,
+            maintenance_item_key=maintenance_item_key,
+        )
+
     create_service_event(
         car=car,
         ownership=ownership,
@@ -141,7 +160,7 @@ def _record_service_with_monitoring(
         source=source,
     )
 
-    _attach_service_metadata(
+    event = _attach_service_metadata(
         car_id=car.id,
         ownership_id=ownership.id,
         service_type=service_type,
@@ -149,6 +168,15 @@ def _record_service_with_monitoring(
         service_date=service_date,
         metadata=event_metadata,
     )
+
+    if maintenance_item_key:
+        ServiceHistoryNormalizationService.classify(
+            service_event_id=event.id,
+            actor_user_id=performed_by,
+            maintenance_item_key=maintenance_item_key,
+            classification_source="advisor_service_entry",
+        )
+        db.session.commit()
 
     MileageObservationService.record_service_snapshot(
         car=car,
@@ -167,6 +195,7 @@ def _record_service_with_monitoring(
         entry_source=source,
     )
 
+    monitoring_refreshed = True
     try:
         CareSignalService.evaluate(car.id, trigger="event_created")
     except Exception:
@@ -175,9 +204,13 @@ def _record_service_with_monitoring(
             "Service record %s saved but care-signal refresh failed",
             car.id,
         )
-        return False
+        monitoring_refreshed = False
 
-    return True
+    MaintenanceReevaluationService.safe_evaluate_car(
+        car_id=car.id,
+        trigger="service_recorded",
+    )
+    return monitoring_refreshed
 
 
 def _resolve_record_mode() -> str:
@@ -226,15 +259,30 @@ def admin_add_service_cutover(car_id: int):
             flash(str(exc), "error")
             return redirect(url_for("admin.view_vehicle", car_id=car.id))
 
+    classification_options = ServiceHistoryNormalizationService.classification_options(car)
+
     if request.method == "POST":
         service_type = request.form.get("service_type", "").strip()
         mileage = request.form.get("mileage", type=int)
         description = request.form.get("description", "").strip()
         service_date = request.form.get("service_date", "").strip()
+        maintenance_item_key = (
+            request.form.get("maintenance_item_key", "").strip().lower() or None
+        )
 
         if not service_type or mileage is None or not service_date:
             flash("All required fields must be completed.", "error")
             return redirect(request.referrer or request.url)
+
+        if maintenance_item_key:
+            try:
+                ServiceHistoryNormalizationService.resolve_option(
+                    car=car,
+                    maintenance_item_key=maintenance_item_key,
+                )
+            except MaintenanceServiceClassificationError as exc:
+                flash(str(exc), "error")
+                return redirect(request.referrer or request.url)
 
         information_source = None
         verification_status = None
@@ -292,8 +340,9 @@ def admin_add_service_cutover(car_id: int):
                     "admin_historical" if record_mode == "historical" else "admin_current"
                 ),
                 event_metadata=event_metadata,
+                maintenance_item_key=maintenance_item_key,
             )
-        except ValueError as exc:
+        except (ValueError, MaintenanceServiceClassificationError) as exc:
             db.session.rollback()
             flash(str(exc), "error")
             return redirect(request.referrer or request.url)
@@ -305,6 +354,12 @@ def admin_add_service_cutover(car_id: int):
             flash("Historical service record added.", "success")
         else:
             flash("Current service record added.", "success")
+
+        if maintenance_item_key:
+            flash(
+                "Maintenance item identity verified for deterministic schedule matching.",
+                "success",
+            )
 
         if not monitoring_refreshed:
             flash(
@@ -321,6 +376,7 @@ def admin_add_service_cutover(car_id: int):
         record_mode=record_mode,
         information_sources=_ALLOWED_INFORMATION_SOURCES,
         verification_statuses=_ALLOWED_VERIFICATION_STATUSES,
+        classification_options=classification_options,
         disclaimer=CLINICAL_DISCLAIMER,
     )
 

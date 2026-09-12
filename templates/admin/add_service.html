@@ -168,6 +168,21 @@ record comes from a client statement without supporting documentation.
 
 {% endif %}
 
+<label for="maintenance_item_key">Maintenance Intelligence Item (Optional)</label>
+<select id="maintenance_item_key" name="maintenance_item_key" class="input">
+    <option value="">Leave unclassified</option>
+    {% for option in classification_options %}
+    <option value="{{ option.maintenance_item_key }}">
+        {{ option.display_name }} — {{ option.maintenance_item_key }}
+    </option>
+    {% endfor %}
+</select>
+<div class="hint">
+Only advisor-verified maintenance knowledge applicable to this vehicle appears here.
+Aura will never infer this identity from the free-text service name. If no verified
+item is available, leave the record unclassified.
+</div>
+
 <label for="description">Advisor Notes (Optional)</label>
 
 <textarea

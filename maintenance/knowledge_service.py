@@ -103,6 +103,17 @@ def _fingerprint(payload: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _request_rule_reevaluation(*, rule_id: int, trigger: str) -> None:
+    # Lazy import avoids coupling the M3 reader back into the knowledge module at
+    # import time. Reevaluation is read-only and deliberately best-effort.
+    from maintenance.reevaluation import MaintenanceReevaluationService
+
+    MaintenanceReevaluationService.safe_evaluate_rule_change(
+        rule_id=rule_id,
+        trigger=trigger,
+    )
+
+
 class MaintenanceKnowledgeService:
     """Single service boundary for maintenance knowledge lifecycle decisions."""
 
@@ -260,6 +271,10 @@ class MaintenanceKnowledgeService:
         rule.verified_by = actor_user_id
         rule.verified_at = occurred_at or _utcnow_naive()
         db.session.flush()
+        _request_rule_reevaluation(
+            rule_id=rule.id,
+            trigger="maintenance_knowledge_verified",
+        )
         return rule
 
     @staticmethod
@@ -282,6 +297,10 @@ class MaintenanceKnowledgeService:
         rule.verified_by = actor_user_id
         rule.verified_at = occurred_at or _utcnow_naive()
         db.session.flush()
+        _request_rule_reevaluation(
+            rule_id=rule.id,
+            trigger="maintenance_knowledge_rejected",
+        )
         return rule
 
     @staticmethod
@@ -323,6 +342,14 @@ class MaintenanceKnowledgeService:
         rule.verified_by = actor_user_id
         rule.verified_at = occurred_at or _utcnow_naive()
         db.session.flush()
+        _request_rule_reevaluation(
+            rule_id=rule.id,
+            trigger="maintenance_knowledge_superseded",
+        )
+        _request_rule_reevaluation(
+            rule_id=replacement.id,
+            trigger="maintenance_knowledge_replacement_active",
+        )
         return rule
 
     @staticmethod

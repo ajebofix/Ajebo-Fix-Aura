@@ -54,3 +54,4 @@ import services.care_signal_route_cutover  # noqa: E402,F401
 import services.service_history_route_cutover  # noqa: E402,F401
 import services.mileage_routes  # noqa: E402,F401
 import services.maintenance_service_routes  # noqa: E402,F401
+import services.maintenance_surface_routes  # noqa: E402,F401

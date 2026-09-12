@@ -169,9 +169,6 @@ def test_historical_admin_service_skips_consultation_and_records_provenance(
         assert event.data["entered_by_role"] == "advisor"
         assert event.data["entered_at"].endswith("Z")
 
-        # M5: unverified/unclassified historical evidence cannot create a
-        # maintenance-monitoring signal merely because legacy health prose says
-        # that a generic interval is overdue.
         assert VehicleHealthAlert.query.filter_by(
             car_id=car.id,
             ownership_id=ownership.id,
@@ -253,7 +250,7 @@ def test_newer_service_advances_authoritative_current_odometer(app):
         assert resolve_current_mileage(car, ownership) == 65500
 
 
-def test_health_engine_uses_current_odometer_against_historical_service(app):
+def test_health_engine_does_not_infer_generic_overdue_from_service_distance(app):
     with app.app_context():
         owner, car, ownership = _create_owned_car(suffix="3")
 
@@ -268,10 +265,12 @@ def test_health_engine_uses_current_odometer_against_historical_service(app):
         health = calculate_vehicle_health(car, ownership)
 
         assert "No maintenance history on record" not in health["risk_reasons"]
-        assert "4 maintenance interval(s) overdue" in health["risk_reasons"]
+        assert not any("maintenance interval" in reason for reason in health["risk_reasons"])
+        assert not any("overdue" in reason.lower() for reason in health["risk_reasons"])
+        assert health["health_score"] == 100
 
 
-def test_latest_service_is_the_interval_baseline(app):
+def test_multiple_service_records_do_not_become_generic_interval_baseline(app):
     with app.app_context():
         owner, car, ownership = _create_owned_car(suffix="4")
 
@@ -295,6 +294,8 @@ def test_latest_service_is_the_interval_baseline(app):
         health = calculate_vehicle_health(car, ownership)
 
         assert not any("maintenance interval" in reason for reason in health["risk_reasons"])
+        assert not any("overdue" in reason.lower() for reason in health["risk_reasons"])
+        assert health["health_score"] == 100
         assert car.current_mileage == 64000
 
 
@@ -317,9 +318,6 @@ def test_unclassified_service_refresh_does_not_raise_typed_maintenance_signal(ap
         db.session.refresh(car)
         assert car.current_mileage == 64000
 
-        # M5: free-text/unclassified service history is not authority for typed
-        # maintenance state. The dedicated M5 regression proves that verified
-        # typed overdue state raises the canonical care signal.
         assert VehicleHealthAlert.query.filter_by(
             car_id=car.id,
             ownership_id=ownership.id,

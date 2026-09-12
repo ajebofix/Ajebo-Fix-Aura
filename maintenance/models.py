@@ -1,12 +1,17 @@
-"""Persistence for provenance-aware Aura maintenance knowledge.
+"""Persistence for provenance-aware Aura maintenance knowledge and service normalization.
 
 Maintenance knowledge is reusable schedule/rule information. It is deliberately
 separate from vehicle service-history facts and from derived due-state results.
+Service classifications are separate advisor-governed facts that map one saved
+service event to a stable maintenance item identity without rewriting the
+original service record.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+
+from sqlalchemy import text
 
 from extensions import db
 
@@ -25,6 +30,17 @@ MAINTENANCE_SOURCE_TYPES = (
     "provider",
     "manual_reference",
     "test",
+)
+
+MAINTENANCE_SERVICE_CLASSIFICATION_STATUSES = (
+    "active",
+    "superseded",
+    "removed",
+)
+
+MAINTENANCE_SERVICE_CLASSIFICATION_SOURCES = (
+    "advisor_service_entry",
+    "advisor_review",
 )
 
 
@@ -171,4 +187,104 @@ class MaintenanceKnowledgeRule(db.Model):
             "<MaintenanceKnowledgeRule "
             f"item={self.maintenance_item_key!r} "
             f"status={self.verification_status!r}>"
+        )
+
+
+class MaintenanceServiceClassification(db.Model):
+    """Advisor-governed maintenance identity for one canonical service event.
+
+    The service event remains the durable fact that work was recorded. This row
+    records only the professional classification needed to match that fact to a
+    verified maintenance item. Classification corrections are append-preserving:
+    the prior active row is superseded or removed rather than deleted.
+    """
+
+    __tablename__ = "maintenance_service_classifications"
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('active', 'superseded', 'removed')",
+            name="ck_maintenance_service_classification_status",
+        ),
+        db.CheckConstraint(
+            "classification_source IN ('advisor_service_entry', 'advisor_review')",
+            name="ck_maintenance_service_classification_source",
+        ),
+        db.Index(
+            "ix_maintenance_service_classification_event_status",
+            "service_event_id",
+            "status",
+        ),
+        db.Index(
+            "ix_maintenance_service_classification_car_item",
+            "car_id",
+            "maintenance_item_key",
+            "status",
+        ),
+        db.Index(
+            "uq_maintenance_service_classification_active_event",
+            "service_event_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_event_id = db.Column(
+        db.Integer,
+        db.ForeignKey("vehicle_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    maintenance_item_key = db.Column(db.String(100), nullable=False)
+    knowledge_rule_id = db.Column(
+        db.Integer,
+        db.ForeignKey("maintenance_knowledge_rules.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="active",
+        server_default="active",
+    )
+    classification_source = db.Column(db.String(40), nullable=False)
+    classified_by = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    classified_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    superseded_by_id = db.Column(
+        db.Integer,
+        db.ForeignKey("maintenance_service_classifications.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    service_event = db.relationship("VehicleEvent", foreign_keys=[service_event_id])
+    car = db.relationship("Car", foreign_keys=[car_id])
+    knowledge_rule = db.relationship("MaintenanceKnowledgeRule", foreign_keys=[knowledge_rule_id])
+    classifier = db.relationship("User", foreign_keys=[classified_by])
+    superseded_by = db.relationship(
+        "MaintenanceServiceClassification",
+        remote_side=[id],
+        foreign_keys=[superseded_by_id],
+        uselist=False,
+    )
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == "active"
+
+    def __repr__(self) -> str:
+        return (
+            "<MaintenanceServiceClassification "
+            f"event={self.service_event_id} item={self.maintenance_item_key!r} "
+            f"status={self.status!r}>"
         )

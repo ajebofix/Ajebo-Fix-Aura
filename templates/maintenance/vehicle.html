@@ -15,7 +15,7 @@
     </div>
 </section>
 
-{% if not maintenance.runtime_enabled %}
+{% if not maintenance["runtime_enabled"] %}
 <section class="card">
     <h2>Maintenance Monitoring Temporarily Unavailable</h2>
     {% if is_admin_view %}
@@ -26,8 +26,8 @@
         existing care-signal history remain unchanged for professional review.
     </p>
     {% else %}
-    <p class="muted">{{ maintenance.summary }}</p>
-    <p class="muted">{{ maintenance.disclaimer }}</p>
+    <p class="muted">{{ maintenance["summary"] }}</p>
+    <p class="muted">{{ maintenance["disclaimer"] }}</p>
     {% endif %}
 </section>
 
@@ -42,18 +42,18 @@
         {% for state in ["overdue", "due", "upcoming", "unknown"] %}
         <div class="metric-card">
             <span class="metric-label">{{ state|title }}</span>
-            <span class="metric-value">{{ maintenance.state_counts.get(state, 0) }}</span>
+            <span class="metric-value">{{ maintenance["state_counts"].get(state, 0) }}</span>
         </div>
         {% endfor %}
     </div>
-    {% if maintenance.evaluation_unknown_reasons %}
-    <p class="muted">Evaluation notes: {{ maintenance.evaluation_unknown_reasons|join(", ") }}</p>
+    {% if maintenance["evaluation_unknown_reasons"] %}
+    <p class="muted">Evaluation notes: {{ maintenance["evaluation_unknown_reasons"]|join(", ") }}</p>
     {% endif %}
 </section>
 
-{% if maintenance.items %}
+{% if maintenance["items"] %}
 <section class="stack-list">
-    {% for item in maintenance.items %}
+    {% for item in maintenance["items"] %}
     <div class="card">
         <div class="section-head">
             <strong>{{ item.display_name }}</strong>
@@ -83,12 +83,12 @@
 {% else %}
 <section class="card">
     <h2>Maintenance Monitoring</h2>
-    <p class="muted">{{ maintenance.summary }}</p>
+    <p class="muted">{{ maintenance["summary"] }}</p>
 </section>
 
-{% if maintenance.items %}
+{% if maintenance["items"] %}
 <section class="stack-list">
-    {% for item in maintenance.items %}
+    {% for item in maintenance["items"] %}
     <div class="card">
         <div class="section-head">
             <strong>{{ item.display_name }}</strong>
@@ -113,7 +113,7 @@
 {% endif %}
 
 <section class="card">
-    <p class="muted">{{ maintenance.disclaimer }}</p>
+    <p class="muted">{{ maintenance["disclaimer"] }}</p>
 </section>
 {% endif %}
 

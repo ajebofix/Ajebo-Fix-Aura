@@ -15,7 +15,23 @@
     </div>
 </section>
 
-{% if is_admin_view %}
+{% if not maintenance.runtime_enabled %}
+<section class="card">
+    <h2>Maintenance Monitoring Temporarily Unavailable</h2>
+    {% if is_admin_view %}
+    <p class="muted">
+        The Maintenance Intelligence runtime is disabled. Aura is not evaluating
+        maintenance timing or mutating automated maintenance-monitoring signals.
+        Durable maintenance knowledge, service history, odometer evidence and
+        existing care-signal history remain unchanged for professional review.
+    </p>
+    {% else %}
+    <p class="muted">{{ maintenance.summary }}</p>
+    <p class="muted">{{ maintenance.disclaimer }}</p>
+    {% endif %}
+</section>
+
+{% elif is_admin_view %}
 <section class="card">
     <h2>Evidence Summary</h2>
     <p class="muted">

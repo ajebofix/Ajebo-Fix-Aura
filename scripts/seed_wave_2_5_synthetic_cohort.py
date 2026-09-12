@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import secrets
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +29,7 @@ from services.reported_concern_session_events import _INTEGRATION_GUARD  # noqa:
 
 SYNTHETIC_SOURCE = "synthetic_wave_2_5"
 SYNTHETIC_DATASET = "wave_2_5_validation"
-SYNTHETIC_PASSWORD = "Synthetic-Wave25-Validation-Only!"
+SYNTHETIC_PASSWORD = secrets.token_urlsafe(32)
 
 
 @dataclass(frozen=True)

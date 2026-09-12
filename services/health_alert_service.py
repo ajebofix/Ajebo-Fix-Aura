@@ -6,6 +6,7 @@
 
 from datetime import datetime
 
+from maintenance.care_signal import MaintenanceCareSignalService
 from models import db, Car, CarOwnership
 from services.care_signal_lifecycle import CareSignalLifecycleService
 from services.vehicle_intelligence import calculate_vehicle_health
@@ -21,6 +22,11 @@ _ALLOWED_TRIGGERS = frozenset(
         "event_updated",
         "event_deleted",
         "ownership_transferred",
+        "mileage_observed",
+        "maintenance_knowledge_verified",
+        "maintenance_knowledge_rejected",
+        "maintenance_knowledge_superseded",
+        "service_classification_changed",
         "manual",
     }
 )
@@ -51,7 +57,6 @@ class CareSignalService:
 
         health = calculate_vehicle_health(car, ownership)
         health_score = health["health_score"]
-        risk_reasons = health.get("risk_reasons", [])
         trajectory = HealthTrendService.analyze_car_trajectory(car.id)
 
         trigger_key = trigger if trigger in _ALLOWED_TRIGGERS else "other"
@@ -108,30 +113,15 @@ class CareSignalService:
             # the word "predicted". Existing rows remain historical data and
             # require advisor handling; no new automatic mutation is performed.
 
-            monitoring_items = [
-                reason for reason in risk_reasons if "overdue" in reason.lower()
-            ]
-            if monitoring_items:
-                CareSignalLifecycleService.raise_signal(
-                    car_id=car.id,
-                    alert_type="maintenance_monitoring",
-                    severity="low",
-                    message=(
-                        "Routine maintenance monitoring is recommended "
-                        "based on current vehicle data."
-                    ),
-                    source_classification=source_classification,
-                    actor_type="system",
-                    actor_user_id=None,
-                    occurred_at=occurred_at,
-                )
-            else:
-                CareSignalLifecycleService.resolve_active_system_signal(
-                    car_id=car.id,
-                    alert_type="maintenance_monitoring",
-                    source_classification=source_classification,
-                    occurred_at=occurred_at,
-                )
+            # M5 cutover: maintenance monitoring is driven only by the typed M3
+            # Maintenance Intelligence result.  Free-text risk-reason prose is
+            # no longer an authority source.  Due/upcoming/unknown cannot raise
+            # an overdue maintenance signal.
+            MaintenanceCareSignalService.sync(
+                car_id=car.id,
+                trigger=trigger_key,
+                occurred_at=occurred_at,
+            )
 
             db.session.commit()
         except Exception:

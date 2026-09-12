@@ -169,13 +169,15 @@ def test_historical_admin_service_skips_consultation_and_records_provenance(
         assert event.data["entered_by_role"] == "advisor"
         assert event.data["entered_at"].endswith("Z")
 
-        signal = VehicleHealthAlert.query.filter_by(
+        # M5: unverified/unclassified historical evidence cannot create a
+        # maintenance-monitoring signal merely because legacy health prose says
+        # that a generic interval is overdue.
+        assert VehicleHealthAlert.query.filter_by(
             car_id=car.id,
             ownership_id=ownership.id,
             alert_type="maintenance_monitoring",
             is_active=True,
-        ).one()
-        assert signal.status == "new"
+        ).count() == 0
 
 
 def test_historical_admin_service_cannot_exceed_current_odometer(app, monkeypatch):
@@ -296,7 +298,7 @@ def test_latest_service_is_the_interval_baseline(app):
         assert car.current_mileage == 64000
 
 
-def test_service_creation_refreshes_maintenance_monitoring_signal(app):
+def test_unclassified_service_refresh_does_not_raise_typed_maintenance_signal(app):
     with app.app_context():
         owner, car, ownership = _create_owned_car(suffix="5")
 
@@ -315,30 +317,12 @@ def test_service_creation_refreshes_maintenance_monitoring_signal(app):
         db.session.refresh(car)
         assert car.current_mileage == 64000
 
-        signal = VehicleHealthAlert.query.filter_by(
+        # M5: free-text/unclassified service history is not authority for typed
+        # maintenance state. The dedicated M5 regression proves that verified
+        # typed overdue state raises the canonical care signal.
+        assert VehicleHealthAlert.query.filter_by(
             car_id=car.id,
             ownership_id=ownership.id,
             alert_type="maintenance_monitoring",
             is_active=True,
-        ).one()
-
-        assert signal.status == "new"
-        assert signal.severity == "low"
-        assert signal.message == (
-            "Routine maintenance monitoring is recommended "
-            "based on current vehicle data."
-        )
-
-        event = VehicleEvent.query.filter_by(
-            subject_type="vehicle_health_alert",
-            subject_id=signal.id,
-            event_type="care_signal.raised",
-        ).one()
-
-        assert event.actor_type == "system"
-        assert event.actor_user_id is None
-        assert event.new_state == "new"
-        assert event.data["alert_type"] == "maintenance_monitoring"
-        assert event.data["source_classification"] == (
-            "deterministic_rule:event_created"
-        )
+        ).count() == 0

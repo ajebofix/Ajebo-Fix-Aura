@@ -8,6 +8,7 @@ Durable PriorityRequest workflow is intentionally kept in its own queue.
 
 from datetime import datetime, timedelta
 
+from maintenance.presentation import MaintenancePresentationService
 from models import Car, CarFault, Consultation, TreatmentPlan, VehicleHealthAlert
 
 
@@ -20,10 +21,25 @@ class AlertService:
         active_alerts = VehicleHealthAlert.query.filter_by(is_active=True).all()
         for alert in active_alerts:
             vehicle = Car.query.filter_by(id=alert.car_id).one()
+            maintenance_evidence = None
+            if alert.alert_type == "maintenance_monitoring":
+                advisor_view = MaintenancePresentationService.advisor_view(vehicle)
+                maintenance_evidence = {
+                    "state_counts": advisor_view["state_counts"],
+                    "overdue_items": [
+                        item for item in advisor_view["items"] if item["state"] == "overdue"
+                    ],
+                    "evaluated_at": advisor_view["evaluated_at"],
+                    "evaluation_unknown_reasons": advisor_view[
+                        "evaluation_unknown_reasons"
+                    ],
+                }
+
             alerts.append(
                 {
                     "id": alert.id,
                     "type": "vehicle_alert",
+                    "signal_type": alert.alert_type,
                     "record_kind": "care_signal",
                     "projection_source": None,
                     "actionable": True,
@@ -32,6 +48,7 @@ class AlertService:
                     "title": alert.message,
                     "vehicle": vehicle,
                     "created_at": alert.created_at,
+                    "maintenance_evidence": maintenance_evidence,
                 }
             )
 
@@ -64,6 +81,7 @@ class AlertService:
                         "id": None,
                         "status": "new",
                         "type": "recurring_concern",
+                        "signal_type": None,
                         "record_kind": "projection",
                         "projection_source": "reported_concern",
                         "actionable": False,
@@ -74,6 +92,7 @@ class AlertService:
                         ),
                         "vehicle": latest_fault.car,
                         "created_at": latest_fault.created_at,
+                        "maintenance_evidence": None,
                     }
                 )
 
@@ -93,6 +112,7 @@ class AlertService:
                     "id": None,
                     "status": "new",
                     "type": "consultation_delay",
+                    "signal_type": None,
                     "record_kind": "projection",
                     "projection_source": "consultation",
                     "actionable": False,
@@ -100,6 +120,7 @@ class AlertService:
                     "title": "Consultation remains unresolved",
                     "vehicle": consultation.car,
                     "created_at": consultation.created_at,
+                    "maintenance_evidence": None,
                 }
             )
 
@@ -115,6 +136,7 @@ class AlertService:
                     "id": None,
                     "status": "new",
                     "type": "monitoring_stall",
+                    "signal_type": None,
                     "record_kind": "projection",
                     "projection_source": "treatment_plan",
                     "actionable": False,
@@ -122,6 +144,7 @@ class AlertService:
                     "title": "Monitoring state has not been reviewed recently",
                     "vehicle": treatment.car,
                     "created_at": treatment.updated_at,
+                    "maintenance_evidence": None,
                 }
             )
 

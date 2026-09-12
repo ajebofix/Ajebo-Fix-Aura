@@ -289,6 +289,13 @@ items from this vehicle's controlled maintenance vocabulary can be selected.
 
 {% if not is_pdf_export %}
 <a
+href="{{ url_for('admin.maintenance_intelligence', car_id=car.id) }}"
+class="btn btn-primary btn-block"
+>
+View Maintenance Intelligence
+</a>
+
+<a
 href="{{ url_for('admin.update_odometer', car_id=car.id) }}"
 class="btn btn-primary btn-block"
 >
@@ -326,6 +333,13 @@ Download Confidential Medical File (PDF)
 
 {% else %}
 <h2>Client Actions</h2>
+<a
+href="{{ url_for('cars.maintenance_intelligence', car_id=car.id) }}"
+class="btn btn-primary btn-block"
+>
+View Maintenance Monitoring
+</a>
+
 <a
 href="{{ url_for('mileage.report_odometer', car_id=car.id) }}"
 class="btn btn-primary btn-block"

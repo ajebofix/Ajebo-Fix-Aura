@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import flash, redirect, request, url_for
+from flask import current_app, flash, redirect, request, url_for
 from flask_login import current_user, login_required
 
 from admin.routes import admin_bp
@@ -14,6 +14,7 @@ from maintenance.service_history import (
     ServiceHistoryNormalizationService,
 )
 from models import Car, VehicleEvent
+from services.health_alert_service import CareSignalService
 
 
 @admin_bp.app_context_processor
@@ -78,6 +79,23 @@ def classify_service_maintenance_item(car_id: int, event_id: int):
         car_id=car.id,
         trigger="service_classification_changed",
     )
+
+    try:
+        CareSignalService.evaluate(
+            car.id,
+            trigger="service_classification_changed",
+        )
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "Service classification saved but maintenance care-signal refresh failed car_id=%s",
+            car.id,
+        )
+        flash(
+            "The classification was saved, but maintenance monitoring could not be refreshed.",
+            "warning",
+        )
+
     flash(message, "success")
     return redirect(
         request.referrer or url_for("admin.admin_vehicle_records", car_id=car.id)

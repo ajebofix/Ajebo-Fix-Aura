@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Maintenance Intelligence{% endblock %}
+{% block page_title %}Maintenance Intelligence{% endblock %}
+{% block page_subtitle %}Verified maintenance timing and evidence-backed monitoring.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>{{ car.brand }} {{ car.model }} {{ car.year }}</h2>
+            <p class="muted">VIN {{ car.vin or "—" }}</p>
+        </div>
+        {% if is_admin_view %}<span class="pill">ADVISOR</span>{% endif %}
+    </div>
+</section>
+
+{% if is_admin_view %}
+<section class="card">
+    <h2>Evidence Summary</h2>
+    <p class="muted">
+        This view is derived from advisor-verified maintenance knowledge, verified odometer evidence,
+        and advisor-normalized service history. It does not create a second maintenance-state record.
+    </p>
+    <div class="dashboard-grid">
+        {% for state in ["overdue", "due", "upcoming", "unknown"] %}
+        <div class="metric-card">
+            <span class="metric-label">{{ state|title }}</span>
+            <span class="metric-value">{{ maintenance.state_counts.get(state, 0) }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% if maintenance.evaluation_unknown_reasons %}
+    <p class="muted">Evaluation notes: {{ maintenance.evaluation_unknown_reasons|join(", ") }}</p>
+    {% endif %}
+</section>
+
+{% if maintenance.items %}
+<section class="stack-list">
+    {% for item in maintenance.items %}
+    <div class="card">
+        <div class="section-head">
+            <strong>{{ item.display_name }}</strong>
+            <span class="pill">{{ item.state|title }}</span>
+        </div>
+        <p class="muted">Key: {{ item.maintenance_item_key }}</p>
+        <div class="info-list">
+            <div class="info-row"><span class="label">Rule</span><span class="value">{{ item.rule_id or "—" }} · {{ item.rule_version or "—" }}</span></div>
+            <div class="info-row"><span class="label">Source</span><span class="value">{{ item.rule_source.get('source_name') or "—" }}</span></div>
+            <div class="info-row"><span class="label">Source reference</span><span class="value">{{ item.rule_source.get('source_reference') or "—" }}</span></div>
+            <div class="info-row"><span class="label">Verification</span><span class="value">{{ item.verification_status or "—" }}</span></div>
+            <div class="info-row"><span class="label">Current odometer</span><span class="value">{{ item.current_odometer_km if item.current_odometer_km is not none else "—" }} km</span></div>
+            <div class="info-row"><span class="label">Odometer source</span><span class="value">{{ item.odometer_provenance.get('source_label') or "—" }} · {{ item.odometer_provenance.get('verification_label') or "—" }} · {{ item.odometer_provenance.get('freshness_label') or "—" }}</span></div>
+            <div class="info-row"><span class="label">Service baseline</span><span class="value">Event {{ item.latest_matching_service_event_id or "—" }} · {{ item.latest_matching_service_mileage if item.latest_matching_service_mileage is not none else "—" }} km · {{ item.latest_matching_service_date or "—" }}</span></div>
+            <div class="info-row"><span class="label">Next due</span><span class="value">{{ item.next_due_mileage if item.next_due_mileage is not none else "—" }} km · {{ item.next_due_date or "—" }}</span></div>
+        </div>
+        {% if item.unknown_reasons %}
+        <p class="muted">Abstention reasons: {{ item.unknown_reasons|join(", ") }}</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</section>
+{% else %}
+<section class="card"><p class="muted">No applicable advisor-verified maintenance knowledge is available for this vehicle yet.</p></section>
+{% endif %}
+
+{% else %}
+<section class="card">
+    <h2>Maintenance Monitoring</h2>
+    <p class="muted">{{ maintenance.summary }}</p>
+</section>
+
+{% if maintenance.items %}
+<section class="stack-list">
+    {% for item in maintenance.items %}
+    <div class="card">
+        <div class="section-head">
+            <strong>{{ item.display_name }}</strong>
+            <span class="pill">{{ item.state_label }}</span>
+        </div>
+        <p>{{ item.guidance }}</p>
+        {% if item.next_due_mileage is not none or item.next_due_date %}
+        <p class="muted">
+            Verified timing reference:
+            {% if item.next_due_mileage is not none %}{{ item.next_due_mileage }} km{% endif %}
+            {% if item.next_due_mileage is not none and item.next_due_date %} · {% endif %}
+            {% if item.next_due_date %}{{ item.next_due_date }}{% endif %}
+        </p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</section>
+{% else %}
+<section class="card">
+    <p class="muted">Aura does not yet have enough verified maintenance information to establish a schedule for this vehicle.</p>
+</section>
+{% endif %}
+
+<section class="card">
+    <p class="muted">{{ maintenance.disclaimer }}</p>
+</section>
+{% endif %}
+
+<section class="card">
+    {% if is_admin_view %}
+    <a class="btn btn-secondary btn-block" href="{{ url_for('admin.view_vehicle', car_id=car.id) }}">← Back to Vehicle</a>
+    {% else %}
+    <a class="btn btn-secondary btn-block" href="{{ url_for('cars.car_detail', car_id=car.id) }}">← Back to Vehicle</a>
+    {% endif %}
+</section>
+{% endblock %}

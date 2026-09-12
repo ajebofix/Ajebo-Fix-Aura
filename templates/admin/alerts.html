@@ -71,7 +71,11 @@ Operational monitoring and escalation visibility.
         <div class="meta">
 
             <strong>Type:</strong>
-            {{ alert.type.replace("_", " ")|title }}
+            {% if alert.record_kind == "care_signal" and alert.signal_type %}
+                {{ alert.signal_type.replace("_", " ")|title }}
+            {% else %}
+                {{ alert.type.replace("_", " ")|title }}
+            {% endif %}
 
             <br>
 
@@ -97,6 +101,30 @@ Operational monitoring and escalation visibility.
 
         </div>
 
+        {% if alert.signal_type == "maintenance_monitoring" and alert.maintenance_evidence %}
+        <div class="card" style="margin-top:14px;">
+            <h3>Maintenance Intelligence Evidence</h3>
+            {% if alert.maintenance_evidence.overdue_items %}
+                {% for item in alert.maintenance_evidence.overdue_items %}
+                <div class="list-item">
+                    <strong>{{ item.display_name }}</strong>
+                    <span class="pill">Overdue</span>
+                    <p class="muted">
+                        Verified rule {{ item.rule_id or "—" }} · {{ item.verification_status or "—" }}<br>
+                        Current odometer: {{ item.current_odometer_km if item.current_odometer_km is not none else "—" }} km<br>
+                        Service baseline: {{ item.latest_matching_service_mileage if item.latest_matching_service_mileage is not none else "—" }} km · {{ item.latest_matching_service_date or "—" }}<br>
+                        Next due: {{ item.next_due_mileage if item.next_due_mileage is not none else "—" }} km · {{ item.next_due_date or "—" }}
+                    </p>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="muted">
+                    No typed overdue maintenance item is currently present. Reevaluate this signal before taking action.
+                </p>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <div class="button-grid">
 
             <a
@@ -112,6 +140,15 @@ Operational monitoring and escalation visibility.
             >
                 Timeline
             </a>
+
+            {% if alert.signal_type == "maintenance_monitoring" %}
+            <a
+                href="{{ url_for('admin.maintenance_intelligence', car_id=alert.vehicle.id) }}"
+                class="btn btn-secondary"
+            >
+                Maintenance Evidence
+            </a>
+            {% endif %}
 
             <!-- Only durable VehicleHealthAlert care signals own lifecycle actions. -->
             {% if alert.record_kind == "care_signal" and alert.actionable and alert.id %}

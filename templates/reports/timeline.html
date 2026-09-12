@@ -235,13 +235,14 @@ Unclassified — not used as a maintenance schedule baseline
 {% endif %}
 </p>
 
+{% if maintenance_options %}
 <form
 method="POST"
 action="{{ url_for('admin.classify_service_maintenance_item', car_id=car.id, event_id=s.id) }}"
 >
-<label for="maintenance_item_key_{{ s.id }}">Stable maintenance item</label>
+<label for="maintenance_item_key_{{ s.id }}">Verified maintenance item</label>
 <select id="maintenance_item_key_{{ s.id }}" name="maintenance_item_key" class="input">
-<option value="" {% if not active_classification %}selected{% endif %}>Leave unclassified</option>
+<option value="" {% if not active_classification %}selected{% endif %}>Do not use as a maintenance baseline</option>
 {% for option in maintenance_options %}
 <option
 value="{{ option.maintenance_item_key }}"
@@ -252,13 +253,32 @@ value="{{ option.maintenance_item_key }}"
 {% endfor %}
 </select>
 <button type="submit" class="btn btn-secondary" style="margin-top:8px;">
-Save Classification
+Save Maintenance Link
 </button>
 </form>
 <p class="muted">
-Free-text service names are never used to guess completion. Only advisor-verified
-items from this vehicle's controlled maintenance vocabulary can be selected.
+Link this saved service only when you can verify which maintenance item it completed.
+Aura never guesses from the free-text service name.
 </p>
+{% elif active_classification %}
+<p class="muted">
+No applicable verified maintenance items are currently available for this vehicle.
+The existing maintenance link is preserved unless you explicitly remove it.
+</p>
+<form
+method="POST"
+action="{{ url_for('admin.classify_service_maintenance_item', car_id=car.id, event_id=s.id) }}"
+>
+<input type="hidden" name="maintenance_item_key" value="">
+<button type="submit" class="btn btn-secondary" style="margin-top:8px;">
+Remove Maintenance Link
+</button>
+</form>
+{% else %}
+<p class="muted">
+No verified maintenance items are available for this vehicle yet. This service remains part of the vehicle history, but Aura will not use it to calculate maintenance timing until a verified maintenance item is available and an advisor links the record to it.
+</p>
+{% endif %}
 </div>
 {% endif %}
 </div>

@@ -186,6 +186,7 @@ Accepting the report can advance the latest recorded odometer. Rejecting it pres
 {% endif %}
 </section>
 
+{% set maintenance_options = maintenance_classification_options_for(car) if is_admin_view and not is_pdf_export else [] %}
 <section class="card">
 <h2>Care Timeline</h2>
 
@@ -219,6 +220,46 @@ Source: {{ s.data.get('information_source_label', '—') }}
 
 {% if s.description %}
 <p>{{ s.description }}</p>
+{% endif %}
+
+{% if is_admin_view and not is_pdf_export and s.event_type == 'service' %}
+{% set active_classification = maintenance_active_classification_for(s.id) %}
+<div style="margin-top:12px;">
+<p class="muted">
+<strong>Maintenance Intelligence:</strong>
+{% if active_classification %}
+{{ active_classification.maintenance_item_key | replace('_',' ') | title }}
+· Advisor verified
+{% else %}
+Unclassified — not used as a maintenance schedule baseline
+{% endif %}
+</p>
+
+<form
+method="POST"
+action="{{ url_for('admin.classify_service_maintenance_item', car_id=car.id, event_id=s.id) }}"
+>
+<label for="maintenance_item_key_{{ s.id }}">Stable maintenance item</label>
+<select id="maintenance_item_key_{{ s.id }}" name="maintenance_item_key" class="input">
+<option value="" {% if not active_classification %}selected{% endif %}>Leave unclassified</option>
+{% for option in maintenance_options %}
+<option
+value="{{ option.maintenance_item_key }}"
+{% if active_classification and active_classification.maintenance_item_key == option.maintenance_item_key %}selected{% endif %}
+>
+{{ option.display_name }} — {{ option.maintenance_item_key }}
+</option>
+{% endfor %}
+</select>
+<button type="submit" class="btn btn-secondary" style="margin-top:8px;">
+Save Classification
+</button>
+</form>
+<p class="muted">
+Free-text service names are never used to guess completion. Only advisor-verified
+items from this vehicle's controlled maintenance vocabulary can be selected.
+</p>
+</div>
 {% endif %}
 </div>
 {% endfor %}

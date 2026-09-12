@@ -1,8 +1,13 @@
-"""Typed maintenance care-signal synchronization for Aura M5.
+"""Typed maintenance care-signal synchronization for Aura M5/M6.
 
 This module translates the read-only Maintenance Intelligence projection into the
-existing governed ``VehicleHealthAlert`` lifecycle.  It deliberately owns no new
-alert table and never commits; callers keep their existing transaction boundary.
+existing governed ``VehicleHealthAlert`` lifecycle. It owns no new alert table
+and never commits; callers keep their existing transaction boundary.
+
+M6 adds a fail-safe runtime disable. When disabled, this service performs no
+maintenance lifecycle mutation and deliberately does not fall back to legacy
+generic-interval semantics. Existing durable signal history is preserved for
+advisor review.
 """
 
 from __future__ import annotations
@@ -10,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from extensions import db
+from maintenance.runtime import maintenance_intelligence_enabled
 from maintenance.state_engine import MaintenanceStateEngine, MaintenanceVehicleEvaluation
 from models import Car
 from services.care_signal_lifecycle import CareSignalLifecycleService
@@ -45,6 +51,14 @@ class MaintenanceCareSignalService:
         if car is None:
             return None
 
+        if not maintenance_intelligence_enabled():
+            return {
+                "runtime_enabled": False,
+                "evaluation": None,
+                "overdue_results": (),
+                "signal": None,
+            }
+
         evaluation = evaluation or MaintenanceStateEngine.evaluate_vehicle(car=car)
         overdue = tuple(result for result in evaluation.results if result.state == "overdue")
         occurred_at = occurred_at or _utcnow_naive()
@@ -70,6 +84,7 @@ class MaintenanceCareSignalService:
             )
 
         return {
+            "runtime_enabled": True,
             "evaluation": evaluation,
             "overdue_results": overdue,
             "signal": signal,

@@ -48,13 +48,13 @@ jobs:
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
       - name: Compile maintenance sources
-        run: python -m compileall -q maintenance tests/test_maintenance_knowledge.py
+        run: python -m compileall -q maintenance tests/test_maintenance_*.py
 
-      - name: Test maintenance knowledge contract
-        run: pytest -q --tb=short tests/test_maintenance_knowledge.py
+      - name: Test maintenance intelligence contracts
+        run: pytest -q --tb=short tests/test_maintenance_*.py
 
       - name: Ruff maintenance sources
-        run: ruff check --output-format=concise maintenance tests/test_maintenance_knowledge.py
+        run: ruff check --output-format=concise maintenance tests/test_maintenance_*.py
 
       - name: Bandit maintenance sources
         run: bandit -q -r maintenance

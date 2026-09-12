@@ -5,5 +5,19 @@ history and from deterministic maintenance-state projections.
 """
 
 from maintenance.models import MaintenanceKnowledgeRule
+from maintenance.state_engine import (
+    DUE_WINDOW_DAYS,
+    DUE_WINDOW_KM,
+    MaintenanceStateEngine,
+    MaintenanceStateResult,
+    MaintenanceVehicleEvaluation,
+)
 
-__all__ = ["MaintenanceKnowledgeRule"]
+__all__ = [
+    "DUE_WINDOW_DAYS",
+    "DUE_WINDOW_KM",
+    "MaintenanceKnowledgeRule",
+    "MaintenanceStateEngine",
+    "MaintenanceStateResult",
+    "MaintenanceVehicleEvaluation",
+]

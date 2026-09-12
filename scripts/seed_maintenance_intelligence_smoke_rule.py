@@ -1,14 +1,10 @@
-"""Seed one real, provenance-aware maintenance rule for Aura's synthetic GLE smoke test.
+"""Seed and inspect one provenance-aware maintenance rule for Aura's demo GLE.
 
-This script is intentionally narrow:
-- it only permits the known synthetic/demo 2021 GLE 450 (car id 1 / known VIN);
-- it creates one car-specific rule from an official Mercedes-Benz USA maintenance source;
-- it does not classify service history, change mileage, record service work, or create alerts;
-- it is idempotent through MaintenanceKnowledgeService fingerprinting.
-
-The rule represents the aggregate routine scheduled-maintenance cadence documented by
-Mercedes-Benz USA as every 10,000 miles or 1 year. Aura stores distance in km, so
-10,000 miles is rounded to 16,093 km for the deterministic test rule.
+Branch-only smoke utility. It is deliberately narrow:
+- only the known demo 2021 GLE 450 (car id 1 / known VIN);
+- one car-specific rule from an official Mercedes-Benz USA source;
+- no service classification, mileage change, service record, or alert mutation;
+- idempotent through MaintenanceKnowledgeService fingerprinting.
 """
 
 from __future__ import annotations
@@ -26,6 +22,8 @@ if str(ROOT) not in sys.path:
 from app import app
 from extensions import db
 from maintenance.knowledge_service import MaintenanceKnowledgeService
+from maintenance.service_history import ServiceHistoryNormalizationService
+from maintenance.state_engine import MaintenanceStateEngine
 from models import Car, User
 
 
@@ -55,10 +53,10 @@ def main() -> None:
     with app.app_context():
         car = db.session.get(Car, EXPECTED_CAR_ID)
         if car is None:
-            raise RuntimeError("Expected synthetic GLE car id 1 does not exist")
+            raise RuntimeError("Expected demo GLE car id 1 does not exist")
         if (car.vin or "").strip().upper() != EXPECTED_VIN:
             raise RuntimeError(
-                "Refusing to seed: car id 1 is not the expected synthetic GLE VIN"
+                "Refusing to seed: car id 1 is not the expected demo GLE VIN"
             )
         if car.year != 2021 or "GLE" not in (car.model or "").upper():
             raise RuntimeError(
@@ -85,22 +83,36 @@ def main() -> None:
         )
         db.session.commit()
 
+        options = ServiceHistoryNormalizationService.classification_options(car)
+        evaluation = MaintenanceStateEngine.evaluate_vehicle(car=car)
+
         print(
             json.dumps(
                 {
                     "status": "ok",
                     "car_id": car.id,
                     "vin": car.vin,
-                    "rule_id": rule.id,
-                    "maintenance_item_key": rule.maintenance_item_key,
-                    "display_name": rule.display_name,
-                    "interval_km": rule.interval_km,
-                    "interval_months": rule.interval_months,
-                    "source_type": rule.source_type,
-                    "source_name": rule.source_name,
-                    "source_reference": rule.source_reference,
-                    "verification_status": rule.verification_status,
-                    "verified_by": rule.verified_by,
+                    "rule": {
+                        "rule_id": rule.id,
+                        "maintenance_item_key": rule.maintenance_item_key,
+                        "display_name": rule.display_name,
+                        "interval_km": rule.interval_km,
+                        "interval_months": rule.interval_months,
+                        "source_type": rule.source_type,
+                        "source_name": rule.source_name,
+                        "source_reference": rule.source_reference,
+                        "verification_status": rule.verification_status,
+                        "verified_by": rule.verified_by,
+                    },
+                    "classification_options": [
+                        {
+                            "maintenance_item_key": option.maintenance_item_key,
+                            "display_name": option.display_name,
+                            "knowledge_rule_id": option.knowledge_rule_id,
+                        }
+                        for option in options
+                    ],
+                    "evaluation_before_service_link": evaluation.to_dict(),
                 },
                 sort_keys=True,
             )
@@ -110,4 +122,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-# Maintains an auditable branch-only smoke runner; not merged into production app code.
+# Auditable branch-only smoke runner; intentionally not merged into production app code.

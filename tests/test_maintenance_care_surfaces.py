@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from extensions import db
 from maintenance.presentation import MaintenancePresentationService
 from maintenance.state_engine import MaintenanceStateResult, MaintenanceVehicleEvaluation

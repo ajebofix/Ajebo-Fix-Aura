@@ -41,6 +41,7 @@ def concern_progression(concern_id: int):
 import treatment.models  # noqa: E402,F401
 import mileage.models  # noqa: E402,F401
 import priority.models  # noqa: E402,F401
+import maintenance.models  # noqa: E402,F401
 import priority.routes  # noqa: E402,F401
 import services.consultation_route_cutover  # noqa: E402,F401
 import services.priority_route_cutover  # noqa: E402,F401
@@ -52,3 +53,4 @@ import services.care_signal_model_contract  # noqa: E402,F401
 import services.care_signal_route_cutover  # noqa: E402,F401
 import services.service_history_route_cutover  # noqa: E402,F401
 import services.mileage_routes  # noqa: E402,F401
+import services.maintenance_service_routes  # noqa: E402,F401

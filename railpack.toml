@@ -1,0 +1,13 @@
+# Aura-Synthetic-Gate is an isolated synthetic validation service.
+# It must NOT run as an HTTP server — it runs a one-off command
+# sequence (DB migration -> seed Wave 2.5 cohort -> validate -> sleep)
+# defined by the service's configured startCommand.
+#
+# Railpack auto-detects this repo as a Flask app and injects its own
+# default start command (gunicorn --bind 0.0.0.0:${PORT:-8000} main:app),
+# which overrides the configured startCommand. Disabling the Flask
+# provider here prevents that default command injection so the
+# configured startCommand is used as-is.
+
+[providers]
+flask = false

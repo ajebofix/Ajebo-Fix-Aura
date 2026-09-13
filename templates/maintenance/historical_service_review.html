@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Review Historical Service Evidence{% endblock %}
+{% block page_title %}Review Historical Service Evidence{% endblock %}
+{% block page_subtitle %}Verify provenance on existing historical service records without duplicating vehicle history.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>{{ car.brand }} {{ car.model }} {{ car.year }}</h2>
+            <p class="muted">VIN {{ car.vin or "—" }}</p>
+        </div>
+        <span class="pill">ADVISOR</span>
+    </div>
+</section>
+
+<section class="card">
+    <h2>How this review works</h2>
+    <p class="muted">
+        Verification and maintenance classification are separate professional facts.
+        Verification records how strongly Aura can trust that a historical service occurred.
+        Classification records which verified maintenance item that service completed.
+        Reviewing evidence never changes the original service date, mileage, title or description.
+    </p>
+</section>
+
+{% if services %}
+<section class="stack-list">
+{% for service in services %}
+{% set data = service.data or {} %}
+{% set classification = classifications.get(service.id) %}
+<div class="card">
+    <div class="section-head">
+        <strong>{{ service.title }}</strong>
+        <span class="pill">Historical</span>
+    </div>
+
+    <p class="muted">
+        {{ service.created_at.strftime("%Y-%m-%d") if service.created_at else "—" }}
+        · Mileage: {{ service.mileage if service.mileage is not none else "—" }} km
+    </p>
+
+    {% if service.description %}<p>{{ service.description }}</p>{% endif %}
+
+    <div class="info-list">
+        <div class="info-row">
+            <span class="label">Current source</span>
+            <span class="value">{{ data.get('information_source_label', 'Not recorded') }}</span>
+        </div>
+        <div class="info-row">
+            <span class="label">Current verification</span>
+            <span class="value">{{ data.get('verification_status_label', 'Not reviewed') }}</span>
+        </div>
+        <div class="info-row">
+            <span class="label">Maintenance identity</span>
+            <span class="value">
+                {% if classification %}
+                {{ classification.maintenance_item_key | replace('_', ' ') | title }}
+                {% else %}
+                Unclassified
+                {% endif %}
+            </span>
+        </div>
+        {% if data.get('verification_reviewed_at') %}
+        <div class="info-row">
+            <span class="label">Last reviewed</span>
+            <span class="value">{{ data.get('verification_reviewed_at') }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <form
+        method="POST"
+        action="{{ url_for('admin.review_historical_service_verification', car_id=car.id, event_id=service.id) }}"
+        style="margin-top:16px;"
+    >
+        <label for="information_source_{{ service.id }}">Information source</label>
+        <select id="information_source_{{ service.id }}" name="information_source" class="input" required>
+            {% for value, label in information_sources.items() %}
+            <option value="{{ value }}" {% if data.get('information_source') == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="verification_status_{{ service.id }}" style="margin-top:12px;">Verification status</label>
+        <select id="verification_status_{{ service.id }}" name="verification_status" class="input" required>
+            {% for value, label in verification_statuses.items() %}
+            <option value="{{ value }}" {% if data.get('verification_status') == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:12px;">
+            Save Evidence Review
+        </button>
+    </form>
+
+    {% if data.get('verification_history') %}
+    <details style="margin-top:16px;">
+        <summary>Verification audit trail ({{ data.get('verification_history')|length }})</summary>
+        <div class="list-stack" style="margin-top:8px;">
+            {% for review in data.get('verification_history')|reverse %}
+            <div class="list-item">
+                <p class="muted">
+                    {{ review.get('reviewed_at', '—') }} · Advisor user {{ review.get('reviewed_by_user_id', '—') }}
+                </p>
+                <p>
+                    {{ review.get('verification_status_label', review.get('verification_status', '—')) }}
+                    · {{ review.get('information_source_label', review.get('information_source', '—')) }}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+    {% endif %}
+</div>
+{% endfor %}
+</section>
+{% else %}
+<section class="card">
+    <p class="muted">No historical service records are available for review.</p>
+</section>
+{% endif %}
+
+<section class="card">
+    <a class="btn btn-secondary btn-block" href="{{ url_for('admin.maintenance_intelligence', car_id=car.id) }}">← Back to Maintenance Intelligence</a>
+    <a class="btn btn-secondary btn-block" href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}">View Vehicle Care History</a>
+</section>
+{% endblock %}

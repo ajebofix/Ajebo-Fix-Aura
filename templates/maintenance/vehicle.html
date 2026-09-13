@@ -117,6 +117,16 @@
 </section>
 {% endif %}
 
+{% if is_admin_view %}
+<section class="card">
+    <h2>Advisor Evidence Actions</h2>
+    <a class="btn btn-primary btn-block" href="{{ url_for('admin.historical_service_verification', car_id=car.id) }}">Review Historical Service Evidence</a>
+    <p class="muted" style="margin-top:12px;">
+        Use this when an existing historical service needs its information source or verification status reviewed. This does not change the original service date, mileage or maintenance classification.
+    </p>
+</section>
+{% endif %}
+
 <section class="card">
     {% if is_admin_view %}
     <a class="btn btn-secondary btn-block" href="{{ url_for('admin.view_vehicle', car_id=car.id) }}">← Back to Vehicle</a>

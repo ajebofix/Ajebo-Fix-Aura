@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Alert History · Aura{% endblock %}
+{% block page_title %}Alert History{% endblock %}
+{% block page_subtitle %}The recorded lifecycle of this monitoring alert.{% endblock %}
+
+{% block content %}
+<a class="btn btn-secondary" href="{{ url_for('admin.admin_alert_center', view='resolved' if signal.status == 'resolved' else 'active') }}">Back to {{ 'Resolved' if signal.status == 'resolved' else 'Active' }} alerts</a>
+
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>{{ signal.alert_type.replace('_', ' ')|title }}</h2>
+            <p>{{ vehicle.display_name }}</p>
+        </div>
+        <span class="pill">{{ signal.status|title }}</span>
+    </div>
+    <p>{{ signal.message }}</p>
+    <dl class="alert-facts">
+        <dt>Detected</dt><dd>{{ signal.created_at|alert_time }}</dd>
+        {% if signal.acknowledged_at %}
+        <dt>Acknowledged</dt><dd>{{ signal.acknowledged_at|alert_time }}</dd>
+        {% endif %}
+        {% if signal.status == 'resolved' %}
+        <dt>Resolved</dt><dd>{{ signal.resolved_at|alert_time }}</dd>
+        <dt>Resolved by</dt><dd>{{ resolution.actor if resolution else 'Not recorded in lifecycle history' }}</dd>
+        <dt>Recorded explanation</dt><dd>{{ resolution.reason if resolution else 'No resolution audit event is available for this record.' }}</dd>
+        {% endif %}
+    </dl>
+    <p class="muted">Times are shown in Lagos time (WAT). This page reads saved history and does not change the alert.</p>
+    <div class="button-grid">
+        <a class="btn btn-secondary" href="{{ url_for('admin.view_vehicle', car_id=vehicle.id) }}">Open Vehicle</a>
+        {% if signal.alert_type == 'maintenance_monitoring' %}
+        <a class="btn btn-secondary" href="{{ url_for('admin.maintenance_intelligence', car_id=vehicle.id) }}">Current Maintenance Evidence</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card">
+    <h2>Activity history</h2>
+    {% if entries %}
+    <ol class="alert-history-list">
+        {% for entry in entries %}
+        <li>
+            <h3>{{ entry.label }}</h3>
+            <p class="muted">{{ entry.occurred_at|alert_time }} · {{ entry.actor }}</p>
+            <p>{{ entry.reason }}</p>
+            <p><strong>State:</strong> {{ (entry.previous_state or 'Not yet raised')|replace('_', ' ')|title }} → {{ entry.new_state|replace('_', ' ')|title }}</p>
+            <details>
+                <summary>Audit details</summary>
+                <dl class="alert-facts">
+                    <dt>Event</dt><dd>#{{ entry.id }} · {{ entry.event_type }}</dd>
+                    <dt>Recorded</dt><dd>{{ entry.recorded_at|alert_time }}</dd>
+                    <dt>Trigger</dt><dd>{{ entry.source_classification or 'Not recorded' }}</dd>
+                </dl>
+            </details>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p class="muted">No lifecycle events were recorded for this alert. Its saved status and timestamps are shown above.</p>
+    {% endif %}
+    {% if signal.status == 'resolved' and not resolution and entries %}
+    <p class="muted">The saved alert is resolved, but its resolution audit event is unavailable. The history shown here may be incomplete.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -14,6 +14,11 @@ on:
       - "maintenance/runtime.py"
       - "maintenance/state_engine.py"
       - "services/alert_service.py"
+      - "services/alert_history.py"
+      - "admin/routes.py"
+      - "templates/admin/alert_history.html"
+      - "templates/base.html"
+      - "static/css/alert-history.css"
       - "services/care_signal_event_emission.py"
       - "services/care_signal_lifecycle.py"
       - "services/care_signal_model_contract.py"
@@ -87,6 +92,7 @@ jobs:
           maintenance/runtime.py
           maintenance/state_engine.py
           services/alert_service.py
+          services/alert_history.py
           services/care_signal_event_emission.py
           services/care_signal_lifecycle.py
           services/care_signal_model_contract.py
@@ -263,6 +269,7 @@ jobs:
           maintenance/runtime.py
           maintenance/state_engine.py
           services/alert_service.py
+          services/alert_history.py
           services/care_signal_event_emission.py
           services/care_signal_lifecycle.py
           services/care_signal_model_contract.py
@@ -283,6 +290,7 @@ jobs:
           maintenance/care_signal.py
           maintenance/runtime.py
           services/alert_service.py
+          services/alert_history.py
           services/care_signal_event_emission.py
           services/care_signal_lifecycle.py
           services/care_signal_route_cutover.py

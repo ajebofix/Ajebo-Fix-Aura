@@ -69,6 +69,8 @@ from sqlalchemy import (
 )
 
 from services.alert_service import AlertService
+from services.alert_history import AlertHistoryService, alert_time
+from security.access import require_vehicle_access
 import uuid
 
 
@@ -77,6 +79,7 @@ import uuid
 # =====================================================
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+admin_bp.app_template_filter("alert_time")(alert_time)
 
 # admin_assessments_bp = Blueprint(
 #     "admin_assessments",
@@ -1699,12 +1702,37 @@ def admin_global_search():
 @login_required
 @advisor_required
 def admin_alert_center():
-
-    alerts = AlertService.build_alert_center()
+    queue = request.args.get("view", "active")
+    if queue not in {"active", "resolved"}:
+        abort(400)
+    pagination = None
+    if queue == "resolved":
+        page = request.args.get("page", 1, type=int)
+        alerts, pagination = AlertHistoryService.resolved_page(page=max(1, page))
+    else:
+        alerts = AlertService.build_alert_center()
 
     return render_template(
         "admin/alerts.html",
         alerts=alerts,
+        queue=queue,
+        pagination=pagination,
+        alert_history_styles=True,
+    )
+
+
+@admin_bp.get("/alerts/<int:alert_id>/history")
+@login_required
+@advisor_required
+def alert_history(alert_id):
+    signal = db.session.get(VehicleHealthAlert, alert_id)
+    if signal is None:
+        abort(404)
+    require_vehicle_access(signal.car_id, allow_owner=False, allow_advisor=True)
+    return render_template(
+        "admin/alert_history.html",
+        **AlertHistoryService.detail(signal),
+        alert_history_styles=True,
     )
 
 

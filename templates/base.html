@@ -15,6 +15,9 @@
 href="{{ url_for('static', filename='images/aura-icon-health.png')}}">
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% if alert_history_styles is defined and alert_history_styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/alert-history.css') }}">
+{% endif %}
 {% if evidence_record_surface is defined and evidence_record_surface %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/evidence-record.css') }}">
 {% endif %}

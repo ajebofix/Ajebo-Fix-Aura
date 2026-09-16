@@ -14,12 +14,27 @@ Operational monitoring and escalation visibility.
 
 {% block content %}
 
+<nav class="alert-tabs" aria-label="Alert views">
+    <a href="{{ url_for('admin.admin_alert_center') }}"
+       {% if queue != 'resolved' %}aria-current="page"{% endif %}>Active</a>
+    <a href="{{ url_for('admin.admin_alert_center', view='resolved') }}"
+       {% if queue == 'resolved' %}aria-current="page"{% endif %}>Resolved</a>
+</nav>
+
 <section class="card">
+    {% if queue == 'resolved' %}
+    <h2>Resolved alerts</h2>
+    <p class="muted">
+        These monitoring alerts are no longer active. Open an alert's history
+        to see its saved lifecycle, including who resolved it and when.
+        Times are shown in Lagos time (WAT).
+    </p>
+    {% else %}
     <h2>How this queue works</h2>
     <p class="muted">
-        Care signals are durable monitoring records with their own lifecycle.
-        Operational projections are recalculated from current records and are
-        read-only; they do not create longitudinal events by appearing here.
+        Active alerts need attention or monitoring. When an alert is resolved,
+        it moves to the Resolved view and keeps its recorded history.
+        Computed queue reminders appear only while their condition is present.
     </p>
     <p class="muted">
         Priority Access requests are a separate durable workflow and are handled
@@ -28,6 +43,7 @@ Operational monitoring and escalation visibility.
     <a href="{{ url_for('admin.admin_priority_queue') }}" class="btn btn-secondary">
         Open Priority Requests
     </a>
+    {% endif %}
 </section>
 
 {% if alerts %}
@@ -97,7 +113,12 @@ Operational monitoring and escalation visibility.
             <br>
 
             <strong>Detected:</strong>
-            {{ alert.created_at.strftime('%d %b %Y %I:%M %p') }}
+            {{ alert.created_at|alert_time }}
+
+            {% if queue == 'resolved' %}
+            <br>
+            <strong>Resolved:</strong> {{ alert.resolved_at|alert_time }}
+            {% endif %}
 
         </div>
 
@@ -127,6 +148,11 @@ Operational monitoring and escalation visibility.
 
         <div class="button-grid">
 
+            {% if alert.record_kind == "care_signal" and alert.id %}
+            <a href="{{ url_for('admin.alert_history', alert_id=alert.id) }}"
+               class="btn btn-secondary">View history</a>
+            {% endif %}
+
             <a
                 href="{{ url_for('admin.view_vehicle', car_id=alert.vehicle.id) }}"
                 class="btn btn-primary"
@@ -146,7 +172,7 @@ Operational monitoring and escalation visibility.
                 href="{{ url_for('admin.maintenance_intelligence', car_id=alert.vehicle.id) }}"
                 class="btn btn-secondary"
             >
-                Maintenance Evidence
+                Current Maintenance Evidence
             </a>
             {% endif %}
 
@@ -188,11 +214,28 @@ Operational monitoring and escalation visibility.
 <section class="card">
 
     <p class="muted">
+        {% if queue == 'resolved' %}
+        No resolved alerts on this page.
+        {% else %}
         No active care signals or operational projections detected.
+        Resolved alerts remain available in the Resolved view.
+        {% endif %}
     </p>
 
 </section>
 
+{% endif %}
+
+{% if pagination and pagination.pages > 1 %}
+<nav class="alert-pagination" aria-label="Resolved alert pages">
+    {% if pagination.has_prev %}
+    <a class="btn btn-secondary" href="{{ url_for('admin.admin_alert_center', view='resolved', page=pagination.prev_num) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    {% if pagination.has_next %}
+    <a class="btn btn-secondary" href="{{ url_for('admin.admin_alert_center', view='resolved', page=pagination.next_num) }}">Next</a>
+    {% endif %}
+</nav>
 {% endif %}
 
 {% endblock %}

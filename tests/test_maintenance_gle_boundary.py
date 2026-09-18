@@ -139,7 +139,7 @@ def _odometer(*, car, ownership, advisor, km: int):
         odometer_km=km,
         source="advisor_observation",
         verification_status="advisor_verified",
-        observed_at=datetime(2026, 9, 20, 8, 0, 0),
+        observed_at=datetime(2026, 9, 18, 8, 0, 0),
         recorded_by_user_id=advisor.id,
         ownership_id=ownership.id,
         review_status="not_required",
@@ -177,7 +177,7 @@ def test_gle_64100_boundary_states_are_exact(app, current_km, expected):
         result = MaintenanceStateEngine.evaluate_rule(
             car=car,
             rule=rule,
-            evaluated_at=datetime(2026, 9, 20, 12, 0, 0),
+            evaluated_at=datetime(2026, 9, 18, 12, 0, 0),
         )
 
         assert result.state == expected
@@ -210,12 +210,12 @@ def _synthetic_evaluation(*, car_id: int, state: str):
         latest_matching_service_date="2026-09-14",
         next_due_mileage=NEXT_DUE_KM,
         next_due_date="2027-09-14",
-        evaluated_at="2026-09-20T12:00:00",
+        evaluated_at="2026-09-18T12:00:00",
         unknown_reasons=(),
     )
     return MaintenanceVehicleEvaluation(
         car_id=car_id,
-        evaluated_at="2026-09-20T12:00:00",
+        evaluated_at="2026-09-18T12:00:00",
         results=(result,),
     )
 

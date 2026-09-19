@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | My Vehicles{% endblock %}
+{% block page_title %}My vehicles{% endblock %}
+{% block page_subtitle %}The vehicles currently connected to your Aura account.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>Your vehicles</h2>
+            <p class="muted">Open a vehicle to see its current care, history and next steps.</p>
+        </div>
+        <a href="{{ url_for('cars.add_car') }}" class="btn btn-primary">Add vehicle</a>
+    </div>
+</section>
+
+{% if ownerships %}
+<section class="stack-list">
+    {% for ownership in ownerships %}
+    <div class="card">
+        <div class="section-head">
+            <div>
+                <h3>{{ ownership.car.decoded_display_name }} {{ ownership.car.year }}</h3>
+                <p class="muted">
+                    {% if ownership.plate_number %}{{ ownership.plate_number }} · {% endif %}
+                    VIN {{ ownership.car.vin }}
+                </p>
+            </div>
+        </div>
+
+        <div class="info-list">
+            <div class="info-row">
+                <span class="label">Latest verified odometer</span>
+                <span class="value">
+                    {% if ownership.car.current_mileage is not none %}
+                        {{ ownership.car.current_mileage }} km
+                    {% else %}
+                        Not verified yet
+                    {% endif %}
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="label">Under care since</span>
+                <span class="value">
+                    {{ ownership.start_date.strftime('%d %b %Y') if ownership.start_date else "—" }}
+                </span>
+            </div>
+        </div>
+
+        <div style="margin-top:16px;">
+            <a href="{{ url_for('cars.car_detail', car_id=ownership.car.id) }}"
+               class="btn btn-primary">
+                Open vehicle
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+{% else %}
+<section class="card">
+    <h2>No vehicle connected yet</h2>
+    <p class="muted">
+        Add your first vehicle yourself, or ask your Ajebo Fix advisor to prepare it for you.
+    </p>
+    <a href="{{ url_for('cars.add_car') }}" class="btn btn-primary">Add my first vehicle</a>
+</section>
+{% endif %}
+{% endblock %}

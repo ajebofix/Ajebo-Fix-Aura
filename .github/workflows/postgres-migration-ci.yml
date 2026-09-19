@@ -91,11 +91,32 @@ jobs:
               "chat_messages", "conversation_records", "rina_ai_audit_events",
               "vehicle_evidence", "evidence_links", "evidence_extractions",
               "user_sessions", "client_profiles", "profile_audit_events",
-              "alembic_version",
+              "client_invitations", "alembic_version",
           }
           missing = required - tables
           if missing:
               raise SystemExit(f"Fresh PostgreSQL upgrade missing tables: {sorted(missing)}")
+
+          user_columns = {
+              column["name"]: column for column in inspector.get_columns("users")
+          }
+          if "email" not in user_columns or not user_columns["email"]["nullable"]:
+              raise SystemExit(
+                  "Assisted onboarding requires users.email to be nullable at repository head"
+              )
+
+          invitation_columns = {
+              column["name"] for column in inspector.get_columns("client_invitations")
+          }
+          required_invitation = {
+              "user_id", "created_by_user_id", "token_hash", "expires_at",
+              "accepted_at", "revoked_at", "created_at",
+          }
+          if required_invitation - invitation_columns:
+              raise SystemExit(
+                  "Client invitation schema missing: "
+                  f"{sorted(required_invitation - invitation_columns)}"
+              )
 
           event_columns = {c["name"] for c in inspector.get_columns("vehicle_events")}
           required_event = {

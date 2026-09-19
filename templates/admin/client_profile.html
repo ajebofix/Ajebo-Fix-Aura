@@ -31,7 +31,7 @@
         <a href="{{ url_for('owner_onboarding.add_client_vehicle', user_id=client.id) }}"
            class="btn btn-primary">Add vehicle</a>
 
-        {% if account_status != 'ready' %}
+        {% if can_reissue_invitation %}
         <form method="POST"
               action="{{ url_for('owner_onboarding.regenerate_activation_link', user_id=client.id) }}"
               style="display:inline;">

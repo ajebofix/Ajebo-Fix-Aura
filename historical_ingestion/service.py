@@ -21,7 +21,7 @@ from pypdf import PdfReader
 from sqlalchemy.exc import SQLAlchemyError
 
 from evidence.models import EvidenceExtraction, VehicleEvidence
-from evidence.review import EvidenceReviewConflict, review_evidence
+from evidence.review import EvidenceReviewError, review_evidence
 from evidence.storage import (
     EvidenceStorageConfigurationError,
     EvidenceStorageError,
@@ -642,7 +642,7 @@ def save_advisor_review(
             reason_code="sufficient_for_record",
             commit=False,
         )
-    except EvidenceReviewConflict as exc:
+    except EvidenceReviewError as exc:
         raise HistoricalIngestionError(str(exc)) from exc
 
     cipher, version, digest = _payload_cipher(reviewed_payload)

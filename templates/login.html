@@ -60,16 +60,17 @@ Your vehicles, history and care — in one place.
                 value="{{ csrf_token() }}"
             >
 
-            <!-- EMAIL -->
-            <label for="email">
-                Email Address
+            <!-- ACCOUNT IDENTIFIER -->
+            <label for="identifier">
+                Email or phone number
             </label>
 
             <input
-                type="email"
-                id="email"
-                name="email"
-                placeholder="you@example.com"
+                type="text"
+                id="identifier"
+                name="identifier"
+                placeholder="Email or registered phone"
+                autocomplete="username"
                 required
             >
 

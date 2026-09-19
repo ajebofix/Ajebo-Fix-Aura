@@ -91,7 +91,8 @@ jobs:
               "chat_messages", "conversation_records", "rina_ai_audit_events",
               "vehicle_evidence", "evidence_links", "evidence_extractions",
               "user_sessions", "client_profiles", "profile_audit_events",
-              "client_invitations", "alembic_version",
+              "client_invitations", "treatment_action_completion_details",
+              "alembic_version",
           }
           missing = required - tables
           if missing:
@@ -103,6 +104,34 @@ jobs:
           if "email" not in user_columns or not user_columns["email"]["nullable"]:
               raise SystemExit(
                   "Assisted onboarding requires users.email to be nullable at repository head"
+              )
+
+          treatment_plan_columns = {
+              column["name"] for column in inspector.get_columns("treatment_plans")
+          }
+          required_treatment_plan = {
+              "record_origin", "source_evidence_id", "source_extraction_id",
+          }
+          if required_treatment_plan - treatment_plan_columns:
+              raise SystemExit(
+                  "Historical treatment provenance schema missing: "
+                  f"{sorted(required_treatment_plan - treatment_plan_columns)}"
+              )
+
+          completion_columns = {
+              column["name"]
+              for column in inspector.get_columns("treatment_action_completion_details")
+          }
+          required_completion = {
+              "treatment_action_id", "action_kind", "component_name",
+              "component_location", "component_condition", "quantity",
+              "odometer_km", "source_evidence_id", "verification_status",
+              "verified_by_user_id", "verified_at", "created_at",
+          }
+          if required_completion - completion_columns:
+              raise SystemExit(
+                  "Treatment completion detail schema missing: "
+                  f"{sorted(required_completion - completion_columns)}"
               )
 
           invitation_columns = {

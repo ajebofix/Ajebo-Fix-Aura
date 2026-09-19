@@ -40,6 +40,31 @@ Vehicle Health Record
 
 </section>
 
+{% if is_admin_view %}
+<section class="card fade-up">
+    <div class="section-head">
+        <div>
+            <h2>Advisor Actions</h2>
+            <p class="muted">Add existing records before or alongside ongoing care.</p>
+        </div>
+    </div>
+    <div class="button-stack">
+        <a
+            href="{{ url_for('historical_ingestion.import_document', car_id=car.id) }}"
+            class="btn btn-primary"
+        >
+            Import Historical Record
+        </a>
+        <a
+            href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
+            class="btn btn-secondary"
+        >
+            View Care History
+        </a>
+    </div>
+</section>
+{% endif %}
+
 {% if is_admin_view and ownership %}
 
 <form

@@ -558,6 +558,7 @@ def test_owner_navigation_and_vehicle_templates_do_not_regress_to_internal_surfa
     vehicle = (ROOT / "templates/car_detail.html").read_text(encoding="utf-8")
     concerns = (ROOT / "templates/cars/faults_list.html").read_text(encoding="utf-8")
     advisor_dashboard = (ROOT / "templates/admin/dashboard.html").read_text(encoding="utf-8")
+    client_profile = (ROOT / "templates/admin/client_profile.html").read_text(encoding="utf-8")
 
     assert "cars.my_vehicles" in base
     assert '<a href="/cars" class="nav-item">Vehicles</a>' not in base
@@ -565,6 +566,8 @@ def test_owner_navigation_and_vehicle_templates_do_not_regress_to_internal_surfa
     assert "url_for('owner_onboarding.create_client')" in base
     assert "url_for('admin.admin_clients')" in advisor_dashboard
     assert "url_for('owner_onboarding.create_client')" in advisor_dashboard
+    assert "historical_ingestion.import_document" in vehicle
+    assert "historical_ingestion.import_document" in client_profile
     assert "Driver Trust Score" not in vehicle
     assert "fault.severity" not in concerns
 

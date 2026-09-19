@@ -34,6 +34,8 @@ Implemented foundations include:
 - CSRF protection;
 - Redis-capable rate limiting;
 - one-time email verification for protected actions;
+- advisor-assisted owner creation with hashed, expiring, single-use activation links;
+- owner-controlled password activation and guided account completion;
 - authenticated session/device registry and revocation;
 - role and object-level access controls;
 - secure client profile and privacy centre;

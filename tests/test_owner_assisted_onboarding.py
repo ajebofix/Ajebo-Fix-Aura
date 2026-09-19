@@ -412,13 +412,15 @@ def test_advisor_cannot_reissue_activation_after_owner_accepts(app, client):
     )
     assert activation.status_code == 302
 
-    _post(client, "/auth/logout")
-
+    advisor_client = app.test_client()
     with app.app_context():
         advisor = User.query.filter_by(email="advisor8@example.com").one()
-        _sign_in(client, advisor)
+        _sign_in(advisor_client, advisor)
 
-    response = _post(client, f"/admin/clients/{owner_id}/activation-link")
+    response = _post(
+        advisor_client,
+        f"/admin/clients/{owner_id}/activation-link",
+    )
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith(f"/admin/clients/{owner_id}")

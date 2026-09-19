@@ -18,3 +18,4 @@ Pillow==12.3.0
 reportlab>=4.4,<5
 gunicorn==23.0.0
 psycopg2-binary==2.9.10
+pypdf>=6.1,<7

@@ -204,6 +204,8 @@ def verify_email():
         next_page = _safe_next_url(request.args.get("next"))
         if next_page:
             return redirect(next_page)
+        if current_user.role == "user":
+            return redirect(url_for("owner_onboarding.account_setup"))
 
     return redirect(url_for("auth.login"))
 

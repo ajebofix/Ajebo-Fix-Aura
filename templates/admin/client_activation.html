@@ -28,7 +28,7 @@
     <input id="activation-link" type="text" value="{{ activation_link }}" readonly>
 
     <div style="margin-top:14px;">
-        <button type="button" class="btn btn-primary" onclick="copyActivationLink()">
+        <button type="button" class="btn btn-primary" onclick="copyActivationLink(this)">
             Copy activation link
         </button>
         <a href="{{ url_for('owner_onboarding.add_client_vehicle', user_id=client.id) }}"
@@ -47,10 +47,9 @@
 </section>
 
 <script>
-function copyActivationLink() {
+function copyActivationLink(button) {
     const input = document.getElementById("activation-link");
     navigator.clipboard.writeText(input.value).then(() => {
-        const button = event.currentTarget;
         const original = button.textContent;
         button.textContent = "Copied";
         setTimeout(() => button.textContent = original, 1500);

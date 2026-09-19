@@ -21,6 +21,7 @@ from pypdf import PdfReader
 from sqlalchemy.exc import SQLAlchemyError
 
 from evidence.models import EvidenceExtraction, VehicleEvidence
+from evidence.review import EvidenceReviewConflict, review_evidence
 from evidence.storage import (
     EvidenceStorageConfigurationError,
     EvidenceStorageError,
@@ -628,6 +629,22 @@ def save_advisor_review(
     if extraction.status != "completed":
         raise HistoricalIngestionError("Only completed extraction results can be reviewed.")
 
+    if evidence.review_status == "rejected":
+        raise HistoricalIngestionError(
+            "Rejected source evidence cannot be converted into historical truth."
+        )
+
+    try:
+        review_evidence(
+            reviewer_user_id=actor_user_id,
+            evidence_id=evidence.id,
+            decision="accepted",
+            reason_code="sufficient_for_record",
+            commit=False,
+        )
+    except EvidenceReviewConflict as exc:
+        raise HistoricalIngestionError(str(exc)) from exc
+
     cipher, version, digest = _payload_cipher(reviewed_payload)
     extraction.reviewed_result_ciphertext = cipher
     extraction.reviewed_result_key_version = version
@@ -636,9 +653,4 @@ def save_advisor_review(
     extraction.reviewed_by_user_id = actor_user_id
     extraction.reviewed_at = _utcnow_naive()
     extraction.review_reason_code = "historical_record_advisor_review"
-
-    evidence.review_status = "accepted"
-    evidence.reviewed_by_user_id = actor_user_id
-    evidence.reviewed_at = _utcnow_naive()
-    evidence.review_reason_code = "historical_record_source_reviewed"
     db.session.flush()

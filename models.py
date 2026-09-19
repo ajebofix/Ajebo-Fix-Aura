@@ -1709,6 +1709,28 @@ class TreatmentPlan(db.Model):
         default="approved",
     )
 
+    # Provenance for advisor-reviewed historical document imports.
+    # Live plans keep the default and no source extraction.
+    record_origin = db.Column(
+        db.String(40),
+        nullable=False,
+        default="live",
+        server_default="live",
+    )
+
+    source_evidence_id = db.Column(
+        db.Integer,
+        db.ForeignKey("vehicle_evidence.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    source_extraction_id = db.Column(
+        db.Integer,
+        db.ForeignKey("evidence_extractions.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+    )
+
     created_at = db.Column(
         db.DateTime,
         default=datetime.utcnow,

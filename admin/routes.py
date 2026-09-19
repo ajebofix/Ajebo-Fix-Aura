@@ -70,6 +70,7 @@ from sqlalchemy import (
 
 from services.alert_service import AlertService
 from services.alert_history import AlertHistoryService, alert_time
+from services.client_onboarding import ClientOnboardingService
 from security.access import require_vehicle_access
 import uuid
 
@@ -189,38 +190,30 @@ def admin_dashboard():
 @login_required
 @advisor_required
 def admin_clients():
+    """All owner accounts, including clients still completing onboarding."""
 
-    clients = []
+    registry = {
+        user.id: {
+            "client": user,
+            "vehicles": [],
+            "priority": 0,
+            "active_concerns": 0,
+            "account_status": ClientOnboardingService.account_status(user),
+        }
+        for user in User.query.filter_by(role="user").all()
+    }
 
     ownerships = CarOwnership.query.filter_by(is_active=True).all()
 
-    registry = {}
-
     for ownership in ownerships:
-
         user = ownership.user
-
         if user.id not in registry:
-
-            registry[user.id] = {
-                "client": user,
-                "vehicles": [],
-                "priority": 0,
-                "active_concerns": 0,
-            }
-
-        # IMPORTANT:
-        # These lines must stay INSIDE the loop
+            continue
 
         car = ownership.car
-
-        priority = PriorityScoringEngine.calculate(
-            car,
-            ownership,
-        )
+        priority = PriorityScoringEngine.calculate(car, ownership)
 
         registry[user.id]["vehicles"].append(car)
-
         registry[user.id]["priority"] = max(
             registry[user.id]["priority"],
             priority["score"],
@@ -230,19 +223,19 @@ def admin_clients():
             CarFault.car_id == car.id,
             CarFault.status != "resolved",
         ).count()
-
         registry[user.id]["active_concerns"] += concerns
 
     clients = list(registry.values())
-
     clients.sort(
-        key=lambda x: x["priority"],
+        key=lambda item: (
+            item["priority"],
+            item["client"].created_at or datetime.min,
+        ),
         reverse=True,
     )
 
-    critical_clients = len([c for c in clients if c["priority"] >= 80])
-
-    high_clients = len([c for c in clients if c["priority"] >= 60])
+    critical_clients = len([item for item in clients if item["priority"] >= 80])
+    high_clients = len([item for item in clients if item["priority"] >= 60])
 
     return render_template(
         "admin/client_registry.html",
@@ -1845,6 +1838,8 @@ def admin_client_profile(user_id):
         client=user,
         ownerships=ownerships,
         notes=notes,
+        account_status=ClientOnboardingService.account_status(user),
+        latest_invitation=ClientOnboardingService.latest_invitation(user.id),
     )
 
 

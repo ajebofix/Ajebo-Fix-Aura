@@ -1,237 +1,106 @@
-<!-- templates/cars/add_car.html -->
-
 {% extends "base.html" %}
 
-{% block title %}Aura | Register Vehicle{% endblock %}
-
-{% block page_title %}Register Vehicle{% endblock %}
-
-{% block page_subtitle %}
-Add a vehicle to Aura for private health tracking, ownership records,
-and long-term care oversight.
-{% endblock %}
+{% block title %}Aura | Add Vehicle{% endblock %}
+{% block page_title %}Add vehicle{% endblock %}
+{% block page_subtitle %}Start with what you know. Missing details can be completed later.{% endblock %}
 
 {% block content %}
-
-
-
-<!-- ======================= -->
-<!-- FLASH -->
-<!-- ======================= -->
-
-{% with messages = get_flashed_messages(with_categories=true) %}
-{% if messages %}
-{% for category, message in messages %}
-<div class="flash {{ category }}">
-    {{ message }}
-</div>
-{% endfor %}
-{% endif %}
-{% endwith %}
-
-
-
-<!-- ======================= -->
-<!-- INTRO -->
-<!-- ======================= -->
-
 <section class="card">
+    <h2>Vehicle details</h2>
+    <p class="muted">
+        Accurate identity helps Ajebo Fix keep the right history with the right vehicle.
+    </p>
 
-<p class="subtext">
-Registering accurate vehicle data improves monitoring precision,
-service history continuity, and future advisory decisions.
-</p>
+    <form method="POST" action="">
+        <div class="form-grid">
+            <div>
+                <label for="brand">Brand</label>
+                <input type="text" id="brand" name="brand"
+                       value="{{ request.form.get('brand', '') }}"
+                       placeholder="Mercedes-Benz" required>
+            </div>
+            <div>
+                <label for="model">Model</label>
+                <input type="text" id="model" name="model"
+                       value="{{ request.form.get('model', '') }}"
+                       placeholder="GLE 450" required>
+            </div>
+        </div>
 
+        <div class="form-grid">
+            <div>
+                <label for="year">Year</label>
+                <input type="number" id="year" name="year"
+                       value="{{ request.form.get('year', '') }}"
+                       min="1980" max="2099" placeholder="2021" required>
+            </div>
+            <div>
+                <label for="color">Colour <span class="muted">(optional)</span></label>
+                <input type="text" id="color" name="color"
+                       value="{{ request.form.get('color', '') }}"
+                       placeholder="Black">
+            </div>
+        </div>
+
+        <label for="vin">VIN</label>
+        <input type="text" id="vin" name="vin"
+               value="{{ request.form.get('vin', '') }}"
+               placeholder="17-character vehicle identification number"
+               autocomplete="off" required>
+        <div class="hint">
+            You can usually find the VIN on the windscreen, driver's door area or vehicle documents.
+        </div>
+
+        <div class="form-grid">
+            <div>
+                <label for="plate_number">Plate number <span class="muted">(optional)</span></label>
+                <input type="text" id="plate_number" name="plate_number"
+                       value="{{ request.form.get('plate_number', '') }}"
+                       placeholder="ABC-123-XY">
+            </div>
+            <div>
+                <label for="mileage_at_transfer">Current odometer (km) <span class="muted">(optional)</span></label>
+                <input type="number" id="mileage_at_transfer" name="mileage_at_transfer"
+                       value="{{ request.form.get('mileage_at_transfer', '') }}"
+                       min="0" max="5000000" placeholder="85000">
+            </div>
+        </div>
+
+        <div class="hint">
+            If you add an odometer reading, Aura saves it as your report and an advisor can verify it.
+            Leave it blank rather than guessing.
+        </div>
+
+        <details style="margin-top:18px;">
+            <summary>Optional technical details</summary>
+            <div class="form-grid" style="margin-top:12px;">
+                <div>
+                    <label for="engine_number">Engine number</label>
+                    <input type="text" id="engine_number" name="engine_number"
+                           value="{{ request.form.get('engine_number', '') }}">
+                </div>
+                <div>
+                    <label for="engine_type">Engine / fuel type</label>
+                    <input type="text" id="engine_type" name="engine_type"
+                           value="{{ request.form.get('engine_type', '') }}"
+                           placeholder="Petrol, diesel, hybrid…">
+                </div>
+            </div>
+
+            <label for="transmission">Transmission</label>
+            <input type="text" id="transmission" name="transmission"
+                   value="{{ request.form.get('transmission', '') }}"
+                   placeholder="Automatic">
+        </details>
+
+        <div class="alert alert-info" style="margin-top:18px;">
+            Aura keeps observations and records together so your Ajebo Fix advisor can review the vehicle with context. It does not turn owner-entered information into a diagnosis.
+        </div>
+
+        <div class="button-grid">
+            <button type="submit" class="btn btn-primary">Add vehicle</button>
+            <a href="{{ url_for('cars.my_vehicles') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
 </section>
-
-
-
-<!-- ======================= -->
-<!-- FORM -->
-<!-- ======================= -->
-
-<section class="card">
-
-<h2>Vehicle Information</h2>
-
-<form method="POST" action="">
-
-<div class="form-grid">
-
-    <!-- BRAND -->
-    <div>
-        <label for="brand">Manufacturer</label>
-        <input
-            type="text"
-            id="brand"
-            name="brand"
-            placeholder="Mercedes-Benz"
-            required
-        >
-    </div>
-
-    <!-- MODEL -->
-    <div>
-        <label for="model">Model</label>
-        <input
-            type="text"
-            id="model"
-            name="model"
-            placeholder="GLE 450"
-            required
-        >
-    </div>
-
-</div>
-
-
-
-<div class="form-grid">
-
-    <!-- YEAR -->
-    <div>
-        <label>Model Year</label>
-        <input
-            type="number"
-            name="year"
-            placeholder="2026"
-            min="1980"
-            max="2099"
-            required
-        >
-    </div>
-
-    <!-- COLOR -->
-    <div>
-        <label>Exterior Color</label>
-        <input
-            type="text"
-            name="color"
-            placeholder="Black, White, Silver…"
-        >
-    </div>
-
-</div>
-
-
-
-<!-- VIN -->
-<label>Vehicle Identification Number (VIN)</label>
-
-<input
-    type="text"
-    name="vin"
-    placeholder="WDD10NG454GHCGH4CG"
->
-
-<div class="hint">
-Used to uniquely identify the vehicle and improve record accuracy.
-</div>
-
-
-
-<div class="form-grid">
-
-    <!-- ENGINE NUMBER -->
-    <div>
-        <label>Engine Number</label>
-        <input
-            type="text"
-            name="engine_number"
-            placeholder="M278"
-        >
-    </div>
-
-    <!-- ENGINE TYPE -->
-    <div>
-        <label>Engine Type</label>
-        <input
-            type="text"
-            name="engine_type"
-            placeholder="e.g. Diesel, Petrol"
-        >
-    </div>
-
-</div>
-
-
-
-<!-- TRANSMISSION -->
-<label>Transmission</label>
-
-<input
-    type="text"
-    name="transmission"
-    placeholder="e.g. Automatic, Manual"
->
-
-<div class="hint">
-Used to identify transmission type and improve record accuracy.
-</div>
-
-
-
-<div class="form-grid">
-
-    <!-- PLATE -->
-    <div>
-        <label>Registration Plate</label>
-        <input
-            type="text"
-            name="plate_number"
-            placeholder="ABC-123-XY"
-            required
-        >
-    </div>
-
-    <!-- MILEAGE -->
-    <div>
-        <label>Current Mileage</label>
-        <input
-            type="number"
-            name="mileage_at_transfer"
-            placeholder="85,000"
-            min="0"
-            required
-        >
-    </div>
-
-</div>
-
-<div class="hint">
-This becomes the baseline for health assessment and monitoring.
-</div>
-
-
-
-<div class="alert alert-info">
-
-Aura does not diagnose vehicle conditions.
-Insights are based on recorded data and professional review.
-
-</div>
-
-
-
-<div class="button-grid">
-
-<button type="submit" class="btn btn-primary">
-    Save Vehicle
-</button>
-
-<a
-href="{{ url_for('dashboard.aura_home') }}"
-class="btn btn-secondary"
->
-    Return to Dashboard
-</a>
-
-</div>
-
-</form>
-
-</section>
-
-
-
 {% endblock %}

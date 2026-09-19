@@ -117,21 +117,25 @@ The former generic 12,000 km shortcut is no longer authoritative.
 
 ### Evidence
 
-The first secure multimodal evidence slice is production-proven for images.
+The secure evidence architecture now supports the production-proven image path plus an advisor-governed historical PDF ingestion path.
 
 It includes:
 
 - private Cloudflare R2 storage;
 - controlled image upload;
-- explicit consent/purpose;
-- server-side validation/sanitisation;
-- short-lived protected retrieval grants;
-- advisor review;
+- advisor-only PDF historical-record upload;
+- explicit purpose/visibility and finite retention;
+- server-side validation/sanitisation for image media and bounded PDF parsing;
+- encrypted `EvidenceExtraction` payloads;
+- Rina/provider candidate structuring that cannot autonomously publish vehicle truth;
+- advisor review/edit/reject before historical facts can be applied;
+- explicit separation of recommended, authorised and completed work;
+- structured completed-work metadata for services/component replacements, including new versus pre-owned/Tokunbo provenance where known;
 - same-vehicle evidence linking;
-- client-safe and advisor-specific timeline projections;
+- client-safe and advisor-specific timeline/context projections;
 - canonical evidence events.
 
-Deferred: PDF, audio/voice-note, unrestricted video, OCR/extraction, transcription and multimodal AI interpretation.
+Deferred: scanned-only PDF OCR, audio/voice-note ingestion, unrestricted video, transcription, WhatsApp ZIP reconstruction and broader multimodal interpretation.
 
 ### Rina
 
@@ -200,7 +204,7 @@ The advisor console now includes materially more than the original PRD anticipat
 | Access control | **Implemented and hardened** | Object-level vehicle authority, verification and session controls now matter |
 | V2 freeze | **Superseded by architecture governance** | Core identity is frozen; later waves add governed capabilities without reopening product identity |
 | VIN / DTC intelligence | **Implemented foundation** | Provider-backed, provenance-aware, non-diagnostic |
-| Secure evidence | **Implemented first production slice** | Was not present in original PRD |
+| Secure evidence | **Implemented and expanding** | Images are production-proven; governed advisor PDF historical ingestion extends the same authority model |
 | Maintenance Intelligence | **Implemented and boundary-validated** | Was not present in original PRD |
 | Canonical event progression | **Implemented** | Was not explicit in original PRD and is now central |
 | Privacy centre | **Implemented** | Added after original PRD |
@@ -216,7 +220,7 @@ The following should not be described as production-complete merely because arch
 - TSB and warranty intelligence;
 - broad licensed OEM repair-data integration;
 - comprehensive live-vehicle/telematics connection;
-- PDF/audio/video evidence beyond the production-proven image slice;
+- scanned-only PDF OCR, audio/video evidence and WhatsApp ZIP ingestion beyond the governed text-PDF slice;
 - multimodal diagnosis or autonomous repair instruction;
 - production predictive-health model;
 - complete communication delivery/webhook audit;

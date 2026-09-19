@@ -97,8 +97,9 @@ Car                              │
 
 | Model | Table | Key relationships |
 |---|---|---|
-| `TreatmentPlan` | `treatment_plans` | → `cars.id`, `consultations.id`, `vehicle_assessments.id`, `users.id` |
+| `TreatmentPlan` | `treatment_plans` | → `cars.id`, `consultations.id`, `vehicle_assessments.id`, `users.id`; historical imports may also → `vehicle_evidence.id`, `evidence_extractions.id` |
 | `TreatmentAction` | `treatment_actions` | → `treatment_plans.id`, `cars.id`, `users.id` |
+| `TreatmentActionCompletionDetail` | `treatment_action_completion_details` | one-to-one → `treatment_actions.id`; optional → `vehicle_evidence.id`, verifier → `users.id` |
 | `TreatmentOutcome` | `treatment_outcomes` | → `treatment_plans.id`, `treatment_actions.id`, `cars.id`, `users.id` |
 | `AdvisorNote` | `advisor_notes` | → `users.id` client, optional `cars.id`, advisor → `users.id` |
 | `PriorityRequest` | `priority_requests` | → `cars.id`, `car_ownership.id`, `users.id`, optional `consultations.id` |
@@ -165,6 +166,7 @@ erDiagram
     CONSULTATION ||--o{ TREATMENT_PLAN : informs
     VEHICLE_ASSESSMENT ||--o{ TREATMENT_PLAN : informs
     TREATMENT_PLAN ||--o{ TREATMENT_ACTION : contains
+    TREATMENT_ACTION ||--o| TREATMENT_ACTION_COMPLETION_DETAIL : completion_metadata
     TREATMENT_PLAN ||--o{ TREATMENT_OUTCOME : records
     TREATMENT_ACTION ||--o{ TREATMENT_OUTCOME : may_produce
 
@@ -205,6 +207,8 @@ The domain table owns the current state:
 - Care-signal lifecycle → `VehicleHealthAlert`
 - Current verified odometer projection → `Car.current_mileage` backed by `MileageObservation`
 - Evidence review state → `VehicleEvidence`
+- Historical document extraction state → `EvidenceExtraction`; provider output remains candidate evidence
+- Completed intervention metadata → `TreatmentActionCompletionDetail` attached to a completed `TreatmentAction`
 
 ### Longitudinal progression
 

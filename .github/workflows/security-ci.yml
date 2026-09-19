@@ -45,7 +45,7 @@ jobs:
         run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
 
       - name: Compile changed Python sources
-        run: python -m compileall -q app.py models.py auth driver events ownership profiles onboarding security services migrations scripts tests
+        run: python -m compileall -q app.py models.py auth driver events ownership profiles onboarding historical_ingestion security services treatment migrations scripts tests
 
       - name: Rehearse production schema reconciliation
         env:
@@ -248,20 +248,23 @@ jobs:
       - name: Test advisor-assisted owner onboarding
         run: pytest -q --tb=short tests/test_owner_assisted_onboarding.py
 
+      - name: Test historical document ingestion and completed-work governance
+        run: pytest -q --tb=short tests/test_historical_record_ingestion.py
+
       - name: Test canonical event emission
         run: pytest -q --tb=short tests/test_event_emission.py
 
       - name: Run Ruff on security changes
-        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles onboarding security services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py scripts tests
+        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles onboarding historical_ingestion security treatment services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py services/rina_provider_context.py evidence/review.py scripts tests
 
       - name: Run Bandit on security changes
         id: bandit_tests
         shell: bash
         run: |
           set +e
-          bandit -q -r app.py auth driver events ownership profiles onboarding security scripts -x ./tests 2>&1 | tee bandit-output.txt
+          bandit -q -r app.py auth driver events ownership profiles onboarding historical_ingestion security scripts -x ./tests 2>&1 | tee bandit-output.txt
           status=${PIPESTATUS[0]}
-          bandit -q services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py 2>&1 | tee -a bandit-output.txt
+          bandit -q services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py services/rina_provider_context.py evidence/review.py 2>&1 | tee -a bandit-output.txt
           service_status=${PIPESTATUS[0]}
           if [ "$service_status" -ne 0 ]; then
             status="$service_status"

@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block title %}Review Historical Extraction{% endblock %}
+{% block page_title %}Review Historical Extraction{% endblock %}
+{% block page_subtitle %}{{ car.decoded_display_name }} — nothing becomes durable history without your approval.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>Source document</h2>
+            <p class="muted">
+                Evidence #{{ evidence.id }} ·
+                {{ evidence.purpose|replace('_', ' ')|title }} ·
+                {{ evidence.visibility|title }}
+            </p>
+        </div>
+        <span class="badge {{ 'success' if evidence.review_status == 'accepted' else 'warning' }}">
+            {{ evidence.review_status|replace('_',' ')|title }}
+        </span>
+    </div>
+</section>
+
+{% if not extraction or extraction.status != 'completed' %}
+<section class="card">
+    <h2>Structured extraction unavailable</h2>
+    <p class="muted">
+        The source remains stored privately, but no candidate facts are available
+        to review. No vehicle history was changed.
+    </p>
+</section>
+{% else %}
+
+<section class="card">
+    <h2>Rina context summary</h2>
+    <p>{{ payload.rina_summary or "No summary returned." }}</p>
+
+    {% if payload.advisor_suggestions %}
+    <h3>Suggestions for your review</h3>
+    <ul class="clean-list">
+        {% for suggestion in payload.advisor_suggestions %}
+        <li>{{ suggestion }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if payload.document %}
+    <p class="muted">
+        Reference: {{ payload.document.reference or "—" }} ·
+        Job: {{ payload.document.job_reference or "—" }} ·
+        SOW: {{ payload.document.sow_reference or "—" }} ·
+        Date: {{ payload.document.document_date or "—" }}
+    </p>
+    {% endif %}
+</section>
+
+<form
+    method="POST"
+    action="{{ url_for('historical_ingestion.save_review', car_id=car.id, evidence_id=evidence.id) }}"
+>
+    {% for item in payload.candidates or [] %}
+    <section class="card">
+        <div class="section-head">
+            <div>
+                <div class="stat-label">
+                    {{ item.category|replace('_',' ')|title }} ·
+                    {{ item.state|replace('_',' ')|title }}
+                </div>
+                <h3>{{ item.title }}</h3>
+            </div>
+            {% if item.confidence is not none %}
+            <span class="badge">
+                {{ (item.confidence * 100)|round|int }}% extraction
+            </span>
+            {% endif %}
+        </div>
+
+        <label>
+            <input
+                type="checkbox"
+                name="accept_{{ item.candidate_id }}"
+                value="1"
+                {% if item.review_decision == 'accepted' %}checked{% endif %}
+            >
+            Accept this candidate into advisor-reviewed context
+        </label>
+
+        <label>Title</label>
+        <input
+            name="title_{{ item.candidate_id }}"
+            value="{{ item.title }}"
+            maxlength="255"
+        >
+
+        <label>Detail</label>
+        <textarea
+            name="detail_{{ item.candidate_id }}"
+            rows="4"
+        >{{ item.detail }}</textarea>
+
+        <div class="dashboard-grid">
+            <div>
+                <label>Evidence state</label>
+                <select name="state_{{ item.candidate_id }}">
+                    {% for value in ['reported','observed','recommended','authorized','completed','outcome_observed','unknown'] %}
+                    <option value="{{ value }}" {% if item.state == value %}selected{% endif %}>
+                        {{ value|replace('_',' ')|title }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label>Suggested destination</label>
+                <select name="destination_{{ item.candidate_id }}">
+                    {% for value in ['context_only','reported_concern','assessment','treatment_plan','treatment_action','treatment_outcome','mileage_observation','vehicle_identity','financial_separate'] %}
+                    <option
+                        value="{{ value }}"
+                        {% if item.suggested_destination == value %}selected{% endif %}
+                    >
+                        {{ value|replace('_',' ')|title }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <label>Historical date/time</label>
+        <input
+            name="occurred_at_{{ item.candidate_id }}"
+            value="{{ item.occurred_at or '' }}"
+            placeholder="2026-08-18 or 2026-08-18T15:30:00"
+        >
+        <p class="muted">
+            A date is required before completed work can be written into durable history.
+            Leave it unknown rather than guessing.
+        </p>
+
+        {% if item.category == 'work_item' or item.suggested_destination == 'treatment_action' %}
+        <div class="dashboard-grid">
+            <div>
+                <label>Action kind</label>
+                <select name="action_kind_{{ item.candidate_id }}">
+                    {% for value in ['service','component_replacement','other_intervention'] %}
+                    <option
+                        value="{{ value }}"
+                        {% if item.action.kind == value %}selected{% endif %}
+                    >
+                        {{ value|replace('_',' ')|title }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label>Component / service name</label>
+                <input
+                    name="component_name_{{ item.candidate_id }}"
+                    value="{{ item.action.component_name or '' }}"
+                >
+            </div>
+
+            <div>
+                <label>Location / side</label>
+                <input
+                    name="component_location_{{ item.candidate_id }}"
+                    value="{{ item.action.component_location or '' }}"
+                >
+            </div>
+
+            <div>
+                <label>Component condition</label>
+                <select name="component_condition_{{ item.candidate_id }}">
+                    {% for value in ['new','preowned_tokunbo','refurbished','client_supplied','unknown','not_applicable'] %}
+                    <option
+                        value="{{ value }}"
+                        {% if item.action.component_condition == value %}selected{% endif %}
+                    >
+                        {{ value|replace('_',' ')|title }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label>Quantity</label>
+                <input
+                    name="quantity_{{ item.candidate_id }}"
+                    inputmode="numeric"
+                    value="{{ item.action.quantity or '' }}"
+                >
+            </div>
+
+            <div>
+                <label>Odometer km (only if evidenced)</label>
+                <input
+                    name="odometer_{{ item.candidate_id }}"
+                    inputmode="numeric"
+                    value="{{ item.action.odometer_km or '' }}"
+                >
+            </div>
+        </div>
+
+        <label>
+            <input
+                type="checkbox"
+                name="completion_confirmed_{{ item.candidate_id }}"
+                value="1"
+                {% if item.completion_confirmed %}checked{% endif %}
+            >
+            I professionally confirm this work was actually completed,
+            not merely quoted or authorised.
+        </label>
+        {% endif %}
+
+        {% if item.suggested_destination == 'treatment_outcome' or item.category == 'outcome' %}
+        <label>Outcome direction</label>
+        <select name="outcome_{{ item.candidate_id }}">
+            {% for value in ['improving','stable','deteriorating','resolved','insufficient_evidence'] %}
+            <option
+                value="{{ value }}"
+                {% if item.outcome_direction == value %}selected{% endif %}
+            >
+                {{ value|replace('_',' ')|title }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+
+        {% if item.source_excerpt %}
+        <p class="muted">
+            <strong>Source excerpt:</strong> {{ item.source_excerpt }}
+        </p>
+        {% endif %}
+    </section>
+    {% endfor %}
+
+    <section class="card">
+        <label>Advisor review note</label>
+        <textarea
+            name="advisor_review_note"
+            rows="4"
+        >{{ payload.advisor_review_note or '' }}</textarea>
+
+        <button type="submit" class="btn btn-primary btn-block">
+            Save advisor review
+        </button>
+    </section>
+</form>
+
+{% if has_review %}
+<section class="card">
+    <h2>Apply completed work</h2>
+    <p class="muted">
+        This creates durable Treatment Actions only for accepted candidates
+        that you marked Completed and personally confirmed. Financial candidates
+        are never written into vehicle-health history.
+    </p>
+
+    <form
+        method="POST"
+        action="{{ url_for('historical_ingestion.apply_document', car_id=car.id, evidence_id=evidence.id) }}"
+    >
+        <button type="submit" class="btn btn-primary btn-block">
+            Apply advisor-confirmed completed work
+        </button>
+    </form>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

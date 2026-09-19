@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Import Historical Record{% endblock %}
+{% block page_title %}Import Historical Record{% endblock %}
+{% block page_subtitle %}{{ car.decoded_display_name }} — source first, advisor approval before history.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>Upload source document</h2>
+    <p class="muted">
+        Aura stores the original PDF privately, extracts candidate facts, and asks you to review them.
+        Extraction is not a diagnosis and does not change the vehicle record by itself.
+    </p>
+
+    <form method="POST" enctype="multipart/form-data">
+        <label for="document">PDF document</label>
+        <input
+            id="document"
+            name="document"
+            type="file"
+            accept="application/pdf,.pdf"
+            required
+        >
+
+        <label for="purpose">Document purpose</label>
+        <select id="purpose" name="purpose">
+            <option value="service_document">Service / job document</option>
+            <option value="diagnostic_document">Diagnostic document</option>
+            <option value="treatment_evidence">Treatment evidence</option>
+        </select>
+
+        <label for="visibility">Source visibility</label>
+        <select id="visibility" name="visibility">
+            <option value="advisor" selected>Advisor only</option>
+            <option value="client">Client may know this source exists</option>
+        </select>
+
+        <p class="muted">
+            Keep billing/internal documents advisor-only. Client-visible completed-work
+            records can be published later from suitable evidence.
+        </p>
+
+        <button class="btn btn-primary btn-block" type="submit">
+            Upload and extract
+        </button>
+    </form>
+</section>
+
+<section class="card">
+    <h3>Authority boundary</h3>
+    <p class="muted">
+        Recommended, authorised and completed work are different facts. Aura will not
+        call a quoted or paid item replaced unless the source or your professional review
+        establishes completion.
+    </p>
+</section>
+{% endblock %}

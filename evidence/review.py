@@ -161,6 +161,7 @@ def review_evidence(
     evidence_id: int,
     decision: str,
     reason_code: str,
+    commit: bool = True,
 ) -> EvidenceReviewResult:
     """Accept or reject evidence and atomically record its canonical event."""
 
@@ -199,7 +200,10 @@ def review_evidence(
                 evidence=evidence,
                 reviewer_user_id=evidence.reviewed_by_user_id,
             )
-            db.session.commit()
+            if commit:
+                db.session.commit()
+            else:
+                db.session.flush()
         except (SQLAlchemyError, EventEmissionError) as exc:
             db.session.rollback()
             raise EvidenceReviewError(
@@ -233,7 +237,10 @@ def review_evidence(
             evidence=evidence,
             reviewer_user_id=reviewer_user_id,
         )
-        db.session.commit()
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
     except (SQLAlchemyError, EventEmissionError) as exc:
         db.session.rollback()
         raise EvidenceReviewError(

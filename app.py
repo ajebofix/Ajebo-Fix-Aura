@@ -163,10 +163,10 @@ def create_app():
         REMEMBER_COOKIE_HTTPONLY=True,
         REMEMBER_COOKIE_SAMESITE="Lax",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-        # The image sanitizer enforces a strict 2 MB file limit. Keep a small
-        # multipart/form-data allowance so a 2 MB image plus request framing is
-        # not rejected by Flask before the evidence validator can inspect it.
-        MAX_CONTENT_LENGTH=3 * 1024 * 1024,
+        # Image intake still enforces its own strict 2 MB sanitizer limit.
+        # Historical PDF intake has a separate 10 MB validator, so Flask must
+        # allow enough multipart overhead for either governed workflow.
+        MAX_CONTENT_LENGTH=12 * 1024 * 1024,
     )
 
     app.config["MAIL_SERVER"] = "smtp.gmail.com"
@@ -279,6 +279,7 @@ def create_app():
     )
     from profiles.routes import profiles_bp
     from onboarding.routes import owner_onboarding_bp
+    from historical_ingestion.routes import historical_ingestion_bp
     from services.owner_driver_management import init_owner_driver_management
 
     app.register_blueprint(auth_bp)
@@ -291,6 +292,7 @@ def create_app():
     app.register_blueprint(mileage_bp)
     app.register_blueprint(profiles_bp)
     app.register_blueprint(owner_onboarding_bp)
+    app.register_blueprint(historical_ingestion_bp)
     app.register_blueprint(evidence_bp)
     app.register_blueprint(evidence_review_bp)
     app.register_blueprint(evidence_interaction_bp)
@@ -359,17 +361,34 @@ def create_app():
                 "client_profiles",
                 "profile_audit_events",
                 "client_invitations",
+                "treatment_action_completion_details",
             }
             missing_tables = required_tables - tables
+            treatment_plan_columns = (
+                {column["name"] for column in inspector.get_columns("treatment_plans")}
+                if "treatment_plans" in tables
+                else set()
+            )
             missing_columns = {"email_verified_at"} - user_columns
+            missing_treatment_columns = {
+                "record_origin",
+                "source_evidence_id",
+                "source_extraction_id",
+            } - treatment_plan_columns
             evidence_readiness = evaluate_evidence_cutover_readiness(app.config)
 
-            if missing_tables or missing_columns or not evidence_readiness.ready:
+            if (
+                missing_tables
+                or missing_columns
+                or missing_treatment_columns
+                or not evidence_readiness.ready
+            ):
                 return {
                     "status": "not_ready",
                     "commit": app.config["RUNTIME_COMMIT"],
                     "missing_tables": sorted(missing_tables),
                     "missing_columns": sorted(missing_columns),
+                    "missing_treatment_columns": sorted(missing_treatment_columns),
                     "evidence": evidence_readiness.to_public_dict(),
                 }, 503
 

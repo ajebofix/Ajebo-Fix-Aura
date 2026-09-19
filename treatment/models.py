@@ -141,6 +141,77 @@ class TreatmentAction(db.Model):
     )
 
 
+class TreatmentActionCompletionDetail(db.Model):
+    """Structured metadata for work that a Treatment Action actually completed."""
+
+    __tablename__ = "treatment_action_completion_details"
+
+    id = db.Column(db.Integer, primary_key=True)
+    treatment_action_id = db.Column(
+        db.Integer,
+        db.ForeignKey("treatment_actions.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    action_kind = db.Column(db.String(40), nullable=False)
+    component_name = db.Column(db.String(255), nullable=True)
+    component_location = db.Column(db.String(120), nullable=True)
+    component_condition = db.Column(
+        db.String(40),
+        nullable=False,
+        default="unknown",
+        server_default="unknown",
+    )
+    quantity = db.Column(db.Integer, nullable=True)
+    odometer_km = db.Column(db.Integer, nullable=True)
+    source_evidence_id = db.Column(
+        db.Integer,
+        db.ForeignKey("vehicle_evidence.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    verification_status = db.Column(
+        db.String(40),
+        nullable=False,
+        default="advisor_confirmed",
+        server_default="advisor_confirmed",
+    )
+    verified_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    verified_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    action = db.relationship(
+        "TreatmentAction",
+        backref=db.backref("completion_detail", uselist=False),
+    )
+    source_evidence = db.relationship("VehicleEvidence")
+    verified_by = db.relationship("User", foreign_keys=[verified_by_user_id])
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "action_kind IN ('service', 'component_replacement', 'other_intervention')",
+            name="ck_treatment_action_completion_kind",
+        ),
+        db.CheckConstraint(
+            "component_condition IN ('new', 'preowned_tokunbo', 'refurbished', 'client_supplied', 'unknown', 'not_applicable')",
+            name="ck_treatment_action_completion_condition",
+        ),
+        db.CheckConstraint(
+            "quantity IS NULL OR quantity > 0",
+            name="ck_treatment_action_completion_quantity",
+        ),
+        db.CheckConstraint(
+            "odometer_km IS NULL OR odometer_km >= 0",
+            name="ck_treatment_action_completion_odometer",
+        ),
+    )
+
+
 class TreatmentOutcome(db.Model):
     """One additive advisor-reviewed observation about treatment outcome."""
 

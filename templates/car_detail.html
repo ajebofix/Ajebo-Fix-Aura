@@ -1187,12 +1187,26 @@ Vehicle Health Record
 
     {% if is_admin_view %}
 
-    <a
-        href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
-        class="btn btn-secondary"
-    >
-        View Full Care History
-    </a>
+    <div class="button-stack">
+        <a
+            href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
+            class="btn btn-secondary"
+        >
+            View Full Care History
+        </a>
+
+        <a
+            href="{{ url_for('historical_ingestion.import_document', car_id=car.id) }}"
+            class="btn btn-primary"
+        >
+            Import Historical Record
+        </a>
+    </div>
+
+    <p class="muted" style="margin-top:12px;">
+        Upload a prior Ajebo Fix or third-party PDF. Aura will extract candidate
+        facts for advisor review before anything becomes vehicle history.
+    </p>
 
     {% else %}
 

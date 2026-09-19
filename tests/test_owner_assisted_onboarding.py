@@ -366,3 +366,78 @@ def test_client_registry_includes_pending_owner_without_vehicle(app, client):
     assert "Pending Pilot Owner" in html
     assert "Invited" in html
     assert "No vehicle has been added yet." in html
+
+
+def test_advisor_cannot_reissue_activation_after_owner_accepts(app, client):
+    with app.app_context():
+        advisor = _create_user(
+            name="Aura Advisor",
+            email="advisor8@example.com",
+            phone="+2348000000181",
+            role="admin",
+        )
+        owner, issued = ClientOnboardingService.create_client(
+            name="Activated Owner",
+            phone_number="+2348000000182",
+            email=None,
+            created_by_user_id=advisor.id,
+        )
+        owner_id = owner.id
+        token = issued.token
+
+    activation = client.post(
+        f"/auth/activate/{token}",
+        data={
+            "password": "OwnerPassword123",
+            "confirm_password": "OwnerPassword123",
+        },
+    )
+    assert activation.status_code == 302
+
+    client.post("/auth/logout")
+
+    with app.app_context():
+        advisor = User.query.filter_by(email="advisor8@example.com").one()
+        _sign_in(client, advisor)
+
+    response = client.post(f"/admin/clients/{owner_id}/activation-link")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/admin/clients/{owner_id}")
+
+    with app.app_context():
+        invitations = ClientInvitation.query.filter_by(user_id=owner_id).all()
+        assert len(invitations) == 1
+        assert invitations[0].accepted_at is not None
+
+
+def test_unchanged_unverified_email_does_not_send_again(app, client, monkeypatch):
+    deliveries = []
+
+    def fake_send(user):
+        deliveries.append(user.email)
+        return True
+
+    monkeypatch.setattr("onboarding.routes.send_email_verification", fake_send)
+
+    with app.app_context():
+        owner = _create_user(
+            name="Unverified Owner",
+            email="unverified@example.com",
+            phone="+2348000000191",
+            role="user",
+            verified=False,
+        )
+        _sign_in(client, owner)
+
+    response = client.post(
+        "/account/setup",
+        data={
+            "name": "Unverified Owner",
+            "phone_number": "+2348000000191",
+            "email": "unverified@example.com",
+        },
+    )
+
+    assert response.status_code == 302
+    assert deliveries == []

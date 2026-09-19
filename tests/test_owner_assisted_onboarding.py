@@ -52,7 +52,8 @@ def _post(client, path: str, *, data=None, **kwargs):
 
 
 def _sign_in(client, user: User) -> None:
-    response = _post(client, 
+    response = _post(
+        client,
         "/auth/login",
         data={
             "email": user.email,

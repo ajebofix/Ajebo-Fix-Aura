@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Add Client{% endblock %}
+{% block page_title %}Add client{% endblock %}
+{% block page_subtitle %}Start the account for them. They will choose their own password and finish setup privately.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>Client details</h2>
+            <p class="muted">Only enter what you already know. Missing profile details can be completed by the client later.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('owner_onboarding.create_client') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="name">Full name</label>
+        <input id="name" name="name" type="text" maxlength="120"
+               value="{{ request.form.get('name', '') }}" required>
+
+        <label for="phone_number">Phone number</label>
+        <input id="phone_number" name="phone_number" type="tel" maxlength="20"
+               value="{{ request.form.get('phone_number', '') }}"
+               placeholder="+234..." required>
+
+        <label for="email">Email <span class="muted">(optional)</span></label>
+        <input id="email" name="email" type="email" maxlength="120"
+               value="{{ request.form.get('email', '') }}"
+               placeholder="Client can add this later">
+
+        <div class="hint">
+            Aura will create a secure activation link. You will never see or choose the client's password.
+        </div>
+
+        <div style="margin-top:18px;">
+            <button type="submit" class="btn btn-primary">Create client access</button>
+            <a href="{{ url_for('admin.admin_clients') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

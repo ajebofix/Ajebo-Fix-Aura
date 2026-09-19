@@ -41,7 +41,7 @@ Your vehicle is under professional care.
         {% elif dashboard_mode == 'administrator' %}
         Governance access remains distinct from vehicle ownership and advisor clinical scope.
         {% else %}
-        Aura treats this account as the owner only for vehicles with an active ownership relationship.
+        Vehicles connected to your owner account appear here with their latest recorded care context.
         {% endif %}
     </p>
 </div>
@@ -297,24 +297,6 @@ Your vehicle is under professional care.
     {% include "components/rina_chat.html" %}
 
 </div>
-
-
-<div class="divider"></div>
-
-
-<form
-    action="{{ url_for('auth.logout') }}"
-    method="POST"
->
-
-    <button
-        type="submit"
-        class="btn btn-dark btn-block"
-    >
-        Sign Out
-    </button>
-
-</form>
 
 
 <script>

@@ -1840,6 +1840,7 @@ def admin_client_profile(user_id):
         notes=notes,
         account_status=ClientOnboardingService.account_status(user),
         latest_invitation=ClientOnboardingService.latest_invitation(user.id),
+        can_reissue_invitation=ClientOnboardingService.can_reissue_invitation(user),
     )
 
 

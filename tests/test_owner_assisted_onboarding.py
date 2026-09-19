@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from pathlib import Path
 from datetime import datetime, timedelta
 
 from extensions import db
@@ -11,6 +12,7 @@ from services.client_onboarding import ClientOnboardingService
 
 
 PASSWORD = "Password123"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _create_user(
@@ -539,3 +541,19 @@ def test_self_service_vehicle_mileage_is_pending_evidence_not_verified_current(
     html = vehicles.get_data(as_text=True)
     assert "C 300" in html
     assert "Not verified yet" in html
+
+
+def test_owner_navigation_and_vehicle_templates_do_not_regress_to_internal_surfaces():
+    base = (ROOT / "templates/base.html").read_text(encoding="utf-8")
+    vehicle = (ROOT / "templates/car_detail.html").read_text(encoding="utf-8")
+    concerns = (ROOT / "templates/cars/faults_list.html").read_text(encoding="utf-8")
+
+    assert "cars.my_vehicles" in base
+    assert '<a href="/cars" class="nav-item">Vehicles</a>' not in base
+    assert "Driver Trust Score" not in vehicle
+    assert "fault.severity" not in concerns
+
+    dtc_form = "url_for('admin.add_vehicle_dtc', car_id=car.id)"
+    assert dtc_form in vehicle
+    before_form = vehicle[: vehicle.index(dtc_form)]
+    assert "{% if is_admin_view %}" in before_form[-500:]

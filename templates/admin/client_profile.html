@@ -69,8 +69,12 @@
                     <br><small>{{ ownership.plate_number }}</small>
                     {% endif %}
                 </div>
-                <a href="{{ url_for('admin.view_vehicle', car_id=ownership.car.id) }}"
-                   class="btn btn-secondary">Open vehicle</a>
+                <div class="button-stack">
+                    <a href="{{ url_for('admin.view_vehicle', car_id=ownership.car.id) }}"
+                       class="btn btn-secondary">Open vehicle</a>
+                    <a href="{{ url_for('historical_ingestion.import_document', car_id=ownership.car.id) }}"
+                       class="btn btn-primary">Import historical record</a>
+                </div>
             </div>
             {% if not loop.last %}<hr>{% endif %}
         {% endfor %}

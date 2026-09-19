@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Aura | Client Registry{% endblock %}
-
-{% block page_title %}Unified Client Registry{% endblock %}
+{% block title %}Aura | Clients{% endblock %}
+{% block page_title %}Clients{% endblock %}
+{% block page_subtitle %}Owners, vehicles and onboarding status in one place.{% endblock %}
 
 {% block content %}
 
@@ -13,79 +13,97 @@
 
 <section class="card">
     <div class="section-head">
-        <h2>Clients</h2>
-        <span class="badge">{{ clients|length }}</span>
+        <div>
+            <h2>Client list</h2>
+            <p class="muted">Add a client yourself or let them create their own Aura account.</p>
+        </div>
+        <a href="{{ url_for('owner_onboarding.create_client') }}" class="btn btn-primary">
+            Add client
+        </a>
     </div>
-    <p class="muted">
-        Review bands below are computed advisor-support projections. They are
-        not durable Priority Requests and do not create workflow state.
-    </p>
 </section>
 
 <section class="dashboard-grid">
     <div class="card stat-card">
-        <div class="stat-label">Critical review band</div>
-        <div class="stat-value">{{ critical_clients }}</div>
-    </div>
-
-    <div class="card stat-card">
-        <div class="stat-label">High or above</div>
-        <div class="stat-value">{{ high_clients }}</div>
+        <div class="stat-label">Clients</div>
+        <div class="stat-value">{{ clients|length }}</div>
     </div>
 
     <div class="card stat-card">
         <div class="stat-label">Vehicles</div>
         <div class="stat-value">{{ ns.vehicle_count }}</div>
     </div>
+
+    <div class="card stat-card">
+        <div class="stat-label">High review band</div>
+        <div class="stat-value">{{ high_clients }}</div>
+    </div>
 </section>
 
-{% for item in clients %}
-<section class="card">
-    <div class="section-head">
-        <h3>{{ item.client.name }}</h3>
+{% if clients %}
+    {% for item in clients %}
+    <section class="card">
+        <div class="section-head">
+            <div>
+                <h3>{{ item.client.name or "Unnamed client" }}</h3>
+                <p class="muted">
+                    {{ item.client.phone_number }}
+                    {% if item.client.email %} · {{ item.client.email }}{% endif %}
+                </p>
+            </div>
 
-        {% if item.priority >= 80 %}
-            <span class="badge danger">Review: Critical</span>
-        {% elif item.priority >= 60 %}
-            <span class="badge warning">Review: High</span>
-        {% elif item.priority >= 30 %}
-            <span class="badge amber">Review: Moderate</span>
-        {% else %}
-            <span class="badge success">Review: Low</span>
-        {% endif %}
-    </div>
-
-    <div class="meta">
-        Vehicles: {{ item.vehicles|length }}
-        <br>
-        Active Concerns: {{ item.active_concerns }}
-        <br>
-        Advisor review score: {{ item.priority }}/100
-    </div>
-
-    <hr>
-
-    {% for vehicle in item.vehicles %}
-        <div class="list-item">
-            {{ vehicle.display_name }}
-            <a
-                href="{{ url_for('admin.view_vehicle', car_id=vehicle.id) }}"
-                class="btn btn-sm btn-primary"
-            >
-                Open Vehicle
-            </a>
+            {% if item.account_status == 'ready' %}
+                <span class="badge success">Ready</span>
+            {% elif item.account_status == 'invited' %}
+                <span class="badge warning">Invited</span>
+            {% elif item.account_status == 'email_unverified' %}
+                <span class="badge warning">Email unverified</span>
+            {% else %}
+                <span class="badge warning">Setup incomplete</span>
+            {% endif %}
         </div>
-    {% endfor %}
 
-    <div>
-        <a
-            href="{{ url_for('admin.admin_client_profile', user_id=item.client.id) }}"
-            class="btn btn-primary"
-        >
-            Client Profile
-        </a>
-    </div>
+        <div class="meta">
+            Vehicles: {{ item.vehicles|length }}
+            <br>
+            Active concerns: {{ item.active_concerns }}
+            {% if item.vehicles %}
+            <br>
+            Advisor review score: {{ item.priority }}/100
+            {% endif %}
+        </div>
+
+        {% if item.vehicles %}
+            <hr>
+            {% for vehicle in item.vehicles %}
+                <div class="list-item">
+                    <span>{{ vehicle.display_name }}</span>
+                    <a href="{{ url_for('admin.view_vehicle', car_id=vehicle.id) }}"
+                       class="btn btn-sm btn-secondary">Open vehicle</a>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="muted">No vehicle has been added yet.</p>
+        {% endif %}
+
+        <div style="margin-top:14px;">
+            <a href="{{ url_for('admin.admin_client_profile', user_id=item.client.id) }}"
+               class="btn btn-primary">Open client</a>
+            <a href="{{ url_for('owner_onboarding.add_client_vehicle', user_id=item.client.id) }}"
+               class="btn btn-secondary">Add vehicle</a>
+        </div>
+    </section>
+    {% endfor %}
+{% else %}
+<section class="card">
+    <h3>No clients yet</h3>
+    <p class="muted">Create the first client when you are ready to begin a real Aura care journey.</p>
+    <a href="{{ url_for('owner_onboarding.create_client') }}" class="btn btn-primary">Add first client</a>
 </section>
-{% endfor %}
+{% endif %}
+
+<p class="muted">
+    Advisor review scores are support projections only. They are not durable Priority Requests.
+</p>
 
 {% endblock %}

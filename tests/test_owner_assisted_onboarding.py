@@ -441,3 +441,45 @@ def test_unchanged_unverified_email_does_not_send_again(app, client, monkeypatch
 
     assert response.status_code == 302
     assert deliveries == []
+
+
+def test_activated_owner_without_email_can_sign_back_in_by_phone(app, client):
+    with app.app_context():
+        advisor = _create_user(
+            name="Aura Advisor",
+            email="advisor9@example.com",
+            phone="+2348000000201",
+            role="admin",
+        )
+        owner, issued = ClientOnboardingService.create_client(
+            name="Phone Login Owner",
+            phone_number="+2348000000202",
+            email=None,
+            created_by_user_id=advisor.id,
+        )
+        token = issued.token
+
+    activation = client.post(
+        f"/auth/activate/{token}",
+        data={
+            "password": "OwnerPassword123",
+            "confirm_password": "OwnerPassword123",
+        },
+    )
+    assert activation.status_code == 302
+
+    client.post("/auth/logout")
+
+    response = client.post(
+        "/auth/login",
+        data={
+            "identifier": "+2348000000202",
+            "password": "OwnerPassword123",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/dashboard/")
+
+    setup = client.get("/account/setup")
+    assert setup.status_code == 200

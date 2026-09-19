@@ -34,7 +34,11 @@
         <label for="email">Email address</label>
         <input id="email" name="email" type="email" maxlength="120"
                value="{{ current_user.email or '' }}"
-               placeholder="you@example.com" required>
+               placeholder="you@example.com" required
+               {% if email_verified %}readonly{% endif %}>
+        {% if email_verified %}
+        <div class="hint">Your verified email is protected from changes on this setup page.</div>
+        {% endif %}
 
         <button type="submit" class="btn btn-primary" style="margin-top:18px;">
             Save account details

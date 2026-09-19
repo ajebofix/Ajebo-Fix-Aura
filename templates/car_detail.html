@@ -118,11 +118,9 @@ Vehicle Health Record
 
         <h2>Vehicle Identification</h2>
 
-        <div class="info-list"></div>
+        <div class="info-list">
 
-    </div>
-
-            <div class="info-row">
+<div class="info-row">
     <span class="label">VIN</span>
     <span class="value">{{ car.vin }}</span>
 </div>
@@ -171,7 +169,9 @@ Vehicle Health Record
 
 {% endif %}
 
+        </div>
 
+    </div>
 
 
     <!-- OWNERSHIP -->
@@ -193,11 +193,6 @@ Vehicle Health Record
                 <span class="value">
                     {{ ownership.start_date.strftime("%Y-%m-%d") if ownership.start_date }}
                 </span>
-            </div>
-
-            <div class="info-row">
-                <span class="label">Driver Trust Score</span>
-                <span class="value">{{ current_user.driver_score or 0 }}</span>
             </div>
 
         </div>
@@ -280,6 +275,7 @@ Vehicle Health Record
 
     <div class="card-body">
 
+        {% if is_admin_view %}
         <form
             method="POST"
             action="{{ url_for('admin.add_vehicle_dtc', car_id=car.id) }}"
@@ -307,6 +303,7 @@ Vehicle Health Record
             </div>
 
         </form>
+        {% endif %}
 
     </div>
 </div>
@@ -923,10 +920,10 @@ Vehicle Health Record
 
 <section class="card fade-up">
 
-    <h2>Clinical Conversation History</h2>
+    <h2>Advisor Conversation Record</h2>
 
     <p class="muted">
-        Logged conversational concerns and emotional indicators.
+        Internal conversation context recorded for advisor continuity.
     </p>
 
     {% if conversation_records %}
@@ -978,7 +975,7 @@ Vehicle Health Record
     {% else %}
 
     <p class="muted">
-        No clinical conversation records available.
+        No advisor conversation records available.
     </p>
 
     {% endif %}

@@ -483,3 +483,59 @@ def test_activated_owner_without_email_can_sign_back_in_by_phone(app, client):
 
     setup = client.get("/account/setup")
     assert setup.status_code == 200
+
+
+def test_self_service_vehicle_mileage_is_pending_evidence_not_verified_current(
+    app,
+    client,
+):
+    with app.app_context():
+        owner = _create_user(
+            name="Self Service Owner",
+            email="selfservice@example.com",
+            phone="+2348000000211",
+            role="user",
+        )
+        owner_id = owner.id
+        _sign_in(client, owner)
+
+    response = client.post(
+        "/cars/add",
+        data={
+            "brand": "Mercedes-Benz",
+            "model": "C 300",
+            "year": "2022",
+            "vin": "W1KWF8EB0NR123456",
+            "plate_number": "",
+            "mileage_at_transfer": "42000",
+            "color": "",
+            "engine_number": "",
+            "engine_type": "",
+            "transmission": "",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/cars/my-vehicles")
+
+    with app.app_context():
+        car = Car.query.filter_by(vin="W1KWF8EB0NR123456").one()
+        ownership = CarOwnership.query.filter_by(
+            user_id=owner_id,
+            car_id=car.id,
+            is_active=True,
+        ).one()
+        observation = MileageObservation.query.filter_by(car_id=car.id).one()
+
+        assert car.current_mileage is None
+        assert ownership.mileage_at_transfer == 42000
+        assert observation.odometer_km == 42000
+        assert observation.source == "client_report"
+        assert observation.verification_status == "client_reported"
+        assert observation.review_status == "pending"
+
+    vehicles = client.get("/cars/my-vehicles")
+    assert vehicles.status_code == 200
+    html = vehicles.get_data(as_text=True)
+    assert "C 300" in html
+    assert "Not verified yet" in html

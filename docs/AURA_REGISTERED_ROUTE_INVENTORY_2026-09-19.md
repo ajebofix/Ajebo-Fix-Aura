@@ -217,6 +217,10 @@ The advisor-wide Alert Center is the operational surface for durable care signal
 | POST | `/admin/cars/<int:car_id>/service-events/<int:event_id>/verification-review` |
 | POST | `/admin/cars/<int:car_id>/service-events/<int:event_id>/maintenance-classification` |
 | GET | `/admin/cars/<int:car_id>/maintenance` |
+| GET, POST | `/admin/cars/<int:car_id>/historical-records/import` |
+| GET | `/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/review` |
+| POST | `/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/review` |
+| POST | `/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/apply` |
 
 ## 16. Advisor console — VIN / DTC
 

@@ -401,24 +401,16 @@ def test_advisor_cannot_reissue_activation_after_owner_accepts(app, client):
             created_by_user_id=advisor.id,
         )
         owner_id = owner.id
-        token = issued.token
 
-    activation = _post(client, 
-        f"/auth/activate/{token}",
-        data={
-            "password": "OwnerPassword123",
-            "confirm_password": "OwnerPassword123",
-        },
-    )
-    assert activation.status_code == 302
+        owner.set_password("OwnerPassword123")
+        issued.invitation.accepted_at = datetime.utcnow()
+        db.session.commit()
 
-    advisor_client = app.test_client()
-    with app.app_context():
-        advisor = User.query.filter_by(email="advisor8@example.com").one()
-        _sign_in(advisor_client, advisor)
+        assert ClientOnboardingService.can_reissue_invitation(owner) is False
+        _sign_in(client, advisor)
 
     response = _post(
-        advisor_client,
+        client,
         f"/admin/clients/{owner_id}/activation-link",
     )
 

@@ -59,9 +59,13 @@ def _serializer() -> URLSafeTimedSerializer:
 def generate_email_verification_token(user: User) -> str:
     """Create a token tied to the user's current identity and password state."""
 
+    email = (user.email or "").strip().lower()
+    if not email:
+        raise ValueError("An email address is required before verification.")
+
     payload = {
         "user_id": user.id,
-        "email": user.email.strip().lower(),
+        "email": email,
         "password_hash": user.password_hash,
     }
     return _serializer().dumps(payload, salt=_EMAIL_VERIFICATION_SALT)
@@ -96,8 +100,8 @@ def verify_email_token(
     if user.email_verified_at is not None:
         return None
 
-    expected_email = user.email.strip().lower()
-    if payload.get("email") != expected_email:
+    expected_email = (user.email or "").strip().lower()
+    if not expected_email or payload.get("email") != expected_email:
         return None
 
     if payload.get("password_hash") != user.password_hash:
@@ -119,6 +123,14 @@ def _safe_next_url(target: str | None) -> str | None:
 
 
 def send_email_verification(user: User) -> bool:
+    email = (user.email or "").strip().lower()
+    if not email:
+        current_app.logger.info(
+            "Email verification skipped because account has no email yet",
+            extra={"user_id": user.id},
+        )
+        return False
+
     if current_app.config.get("MAIL_SUPPRESS_SEND"):
         current_app.logger.info(
             "Email verification delivery suppressed",
@@ -147,13 +159,13 @@ Ajebo Fix Aura
 """
 
     result = send_transactional_email(
-        to=user.email,
+        to=email,
         subject="Confirm your Aura email address",
         text=body,
         idempotency_key=build_email_idempotency_key(
             "email-verification",
             user.id,
-            user.email.strip().lower(),
+            email,
             user.password_hash,
             token,
         ),
@@ -202,6 +214,10 @@ def verification_required():
     if current_user.email_verified_at is not None:
         return redirect(url_for("dashboard.aura_home"))
 
+    if not (current_user.email or "").strip():
+        flash("Add an email address before verification.", "info")
+        return redirect(url_for("owner_onboarding.account_setup"))
+
     return render_template(
         "auth/verification_required.html",
         email=current_user.email,
@@ -214,6 +230,10 @@ def resend_verification():
     if current_user.email_verified_at is not None:
         flash("Your email address is already verified.", "info")
         return redirect(url_for("dashboard.aura_home"))
+
+    if not (current_user.email or "").strip():
+        flash("Add an email address before requesting verification.", "info")
+        return redirect(url_for("owner_onboarding.account_setup"))
 
     delivered = send_email_verification(current_user)
     if delivered:
@@ -228,6 +248,10 @@ def resend_verification():
 
 
 def _verification_response():
+    if current_user.is_authenticated and not (current_user.email or "").strip():
+        flash("Add and verify your email address before continuing.", "info")
+        return redirect(url_for("owner_onboarding.account_setup"))
+
     message = (
         "Please verify your email address before continuing with this protected action."
     )

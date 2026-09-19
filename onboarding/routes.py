@@ -318,23 +318,27 @@ def account_setup():
                 email_verified=current_user.email_verified_at is not None,
             ), 400
 
-        should_send = email_changed or current_user.email_verified_at is None
         delivered = True
-        if should_send:
+        if email_changed:
             delivered = send_email_verification(current_user)
 
         if current_user.email_verified_at is not None:
             flash("Account details updated.", "success")
-        elif delivered:
+        elif email_changed and delivered:
             flash(
                 "Account details saved. We sent a verification link to your email.",
                 "success",
             )
-        else:
+        elif email_changed:
             flash(
                 "Your details were saved, but Aura could not send the verification "
                 "email right now. You can resend it from this page.",
                 "error",
+            )
+        else:
+            flash(
+                "Account details updated. Verify your email to unlock protected actions.",
+                "info",
             )
 
         return redirect(url_for("owner_onboarding.account_setup"))

@@ -36,8 +36,23 @@ def _create_user(
     return user
 
 
+def _csrf_token(client) -> str:
+    with client.session_transaction() as flask_session:
+        token = flask_session.get("_csrf_token")
+        if not token:
+            token = "owner-onboarding-test-csrf-token"
+            flask_session["_csrf_token"] = token
+        return str(token)
+
+
+def _post(client, path: str, *, data=None, **kwargs):
+    payload = dict(data or {})
+    payload.setdefault("csrf_token", _csrf_token(client))
+    return client.post(path, data=payload, **kwargs)
+
+
 def _sign_in(client, user: User) -> None:
-    response = client.post(
+    response = _post(client, 
         "/auth/login",
         data={
             "email": user.email,
@@ -57,7 +72,7 @@ def test_advisor_can_create_client_without_email_and_get_single_use_link(app, cl
         )
         _sign_in(client, advisor)
 
-    response = client.post(
+    response = _post(client, 
         "/admin/clients/new",
         data={
             "name": "Pilot Owner",
@@ -105,7 +120,7 @@ def test_activation_sets_owner_password_logs_in_and_cannot_be_replayed(app, clie
         invitation_id = issued.invitation.id
         token = issued.token
 
-    response = client.post(
+    response = _post(client, 
         f"/auth/activate/{token}",
         data={
             "password": "OwnerPassword123",
@@ -183,7 +198,7 @@ def test_owner_can_add_email_after_activation_without_weakening_verification_gat
         owner_id = owner.id
         token = issued.token
 
-    client.post(
+    _post(client, 
         f"/auth/activate/{token}",
         data={
             "password": "OwnerPassword123",
@@ -191,7 +206,7 @@ def test_owner_can_add_email_after_activation_without_weakening_verification_gat
         },
     )
 
-    response = client.post(
+    response = _post(client, 
         "/account/setup",
         data={
             "name": "Setup Owner Updated",
@@ -225,7 +240,7 @@ def test_non_advisor_cannot_create_client(app, client):
         )
         _sign_in(client, owner)
 
-    response = client.post(
+    response = _post(client, 
         "/admin/clients/new",
         data={
             "name": "Should Not Exist",
@@ -256,7 +271,7 @@ def test_advisor_can_add_vehicle_with_verified_mileage_provenance(app, client):
         owner_id = owner.id
         _sign_in(client, advisor)
 
-    response = client.post(
+    response = _post(client, 
         f"/admin/clients/{owner_id}/vehicles/new",
         data={
             "brand": "Mercedes-Benz",
@@ -328,7 +343,7 @@ def test_advisor_vehicle_onboarding_does_not_steal_existing_active_vehicle(app, 
         car_id = car.id
         _sign_in(client, advisor)
 
-    response = client.post(
+    response = _post(client, 
         f"/admin/clients/{second_owner_id}/vehicles/new",
         data={
             "brand": "Mercedes-Benz",
@@ -387,7 +402,7 @@ def test_advisor_cannot_reissue_activation_after_owner_accepts(app, client):
         owner_id = owner.id
         token = issued.token
 
-    activation = client.post(
+    activation = _post(client, 
         f"/auth/activate/{token}",
         data={
             "password": "OwnerPassword123",
@@ -396,13 +411,13 @@ def test_advisor_cannot_reissue_activation_after_owner_accepts(app, client):
     )
     assert activation.status_code == 302
 
-    client.post("/auth/logout")
+    _post(client, "/auth/logout")
 
     with app.app_context():
         advisor = User.query.filter_by(email="advisor8@example.com").one()
         _sign_in(client, advisor)
 
-    response = client.post(f"/admin/clients/{owner_id}/activation-link")
+    response = _post(client, f"/admin/clients/{owner_id}/activation-link")
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith(f"/admin/clients/{owner_id}")
@@ -432,7 +447,7 @@ def test_unchanged_unverified_email_does_not_send_again(app, client, monkeypatch
         )
         _sign_in(client, owner)
 
-    response = client.post(
+    response = _post(client, 
         "/account/setup",
         data={
             "name": "Unverified Owner",
@@ -461,7 +476,7 @@ def test_activated_owner_without_email_can_sign_back_in_by_phone(app, client):
         )
         token = issued.token
 
-    activation = client.post(
+    activation = _post(client, 
         f"/auth/activate/{token}",
         data={
             "password": "OwnerPassword123",
@@ -470,9 +485,9 @@ def test_activated_owner_without_email_can_sign_back_in_by_phone(app, client):
     )
     assert activation.status_code == 302
 
-    client.post("/auth/logout")
+    _post(client, "/auth/logout")
 
-    response = client.post(
+    response = _post(client, 
         "/auth/login",
         data={
             "identifier": "+2348000000202",
@@ -501,7 +516,7 @@ def test_self_service_vehicle_mileage_is_pending_evidence_not_verified_current(
         owner_id = owner.id
         _sign_in(client, owner)
 
-    response = client.post(
+    response = _post(client, 
         "/cars/add",
         data={
             "brand": "Mercedes-Benz",

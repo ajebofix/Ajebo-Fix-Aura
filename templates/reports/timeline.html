@@ -18,7 +18,7 @@ href="{{ url_for('static', filename='css/ajebo_fix_report.css') }}">
 {% if is_admin_view %}
 <section class="card">
 <div class="pdf-banner">
-<strong>CONFIDENTIAL — INTERNAL MEDICAL FILE</strong><br>
+<strong>CONFIDENTIAL — INTERNAL VEHICLE CARE RECORD</strong><br>
 Ajebo Fix Advisory Division
 {% if exported_by %}
 <br>Exported by: {{ exported_by }}
@@ -348,7 +348,7 @@ Current service remains consultation-first.
 href="{{ url_for('admin.admin_vehicle_records_pdf', car_id=car.id) }}"
 class="btn btn-secondary btn-block"
 >
-Download Confidential Medical File (PDF)
+Download Confidential Vehicle Care Record (PDF)
 </a>
 
 {% else %}
@@ -371,7 +371,7 @@ Submit Odometer Reading
 href="{{ url_for('cars.vehicle_records_pdf', car_id=car.id) }}"
 class="btn btn-secondary btn-block"
 >
-Download Confidential Medical File (PDF)
+Download Vehicle Care Record (PDF)
 </a>
 {% endif %}
 </section>

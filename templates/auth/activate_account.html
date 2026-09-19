@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Activate Account{% endblock %}
+{% block page_title %}Welcome to Aura{% endblock %}
+{% block page_subtitle %}Ajebo Fix has prepared your private vehicle-care access. You control the password.{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <section class="card auth-card">
+        <h2>Set your password</h2>
+        <p>
+            Hello {{ client.name or "there" }}. Choose a private password to activate your account.
+            Ajebo Fix cannot see the password you choose.
+        </p>
+
+        <form method="POST" action="{{ url_for('owner_onboarding.activate_account', token=token) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <label for="password">New password</label>
+            <div class="password-wrap">
+                <input id="password" name="password" type="password"
+                       minlength="10" autocomplete="new-password" required>
+                <button type="button" class="password-toggle"
+                        onclick="toggleField('password', this)">Show</button>
+            </div>
+            <div class="hint">At least 10 characters, including letters and numbers.</div>
+
+            <label for="confirm_password">Confirm password</label>
+            <div class="password-wrap">
+                <input id="confirm_password" name="confirm_password" type="password"
+                       minlength="10" autocomplete="new-password" required>
+                <button type="button" class="password-toggle"
+                        onclick="toggleField('confirm_password', this)">Show</button>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top:18px;">
+                Activate my account
+            </button>
+        </form>
+
+        <p class="muted" style="margin-top:14px;">
+            This private link expires {{ expires_at.strftime('%d %b %Y, %H:%M') }}.
+        </p>
+    </section>
+</div>
+
+<script>
+function toggleField(id, button) {
+    const field = document.getElementById(id);
+    const showing = field.type === "text";
+    field.type = showing ? "password" : "text";
+    button.textContent = showing ? "Show" : "Hide";
+}
+</script>
+{% endblock %}

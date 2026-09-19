@@ -70,8 +70,7 @@ Observations submitted for professional review by Ajebo Fix.
 
         <p class="meta">
             {{ fault.created_at.strftime("%Y-%m-%d") }} ·
-            Area: {{ fault.category | replace('_', ' ') | title }} ·
-            Severity: {{ fault.severity | capitalize }}
+            Area: {{ fault.category | replace('_', ' ') | title }}
         </p>
 
         <p>

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Add Vehicle{% endblock %}
+{% block page_title %}Add vehicle for {{ client.name }}{% endblock %}
+{% block page_subtitle %}Create the vehicle relationship from facts you can support. Unknown details can stay unknown.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <form method="POST" action="{{ url_for('owner_onboarding.add_client_vehicle', user_id=client.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="brand">Brand</label>
+        <input id="brand" name="brand" type="text" maxlength="100"
+               value="{{ request.form.get('brand', '') }}" required>
+
+        <label for="model">Model</label>
+        <input id="model" name="model" type="text" maxlength="100"
+               value="{{ request.form.get('model', '') }}" required>
+
+        <label for="year">Year</label>
+        <input id="year" name="year" type="number" min="1900" max="2100"
+               value="{{ request.form.get('year', '') }}" required>
+
+        <label for="vin">VIN</label>
+        <input id="vin" name="vin" type="text" maxlength="50"
+               value="{{ request.form.get('vin', '') }}" required>
+        <div class="hint">Use the real VIN. Do not create a placeholder when the VIN is not yet available.</div>
+
+        <label for="plate_number">Plate number <span class="muted">(optional)</span></label>
+        <input id="plate_number" name="plate_number" type="text" maxlength="20"
+               value="{{ request.form.get('plate_number', '') }}">
+
+        <label for="mileage">Verified current odometer (km) <span class="muted">(optional)</span></label>
+        <input id="mileage" name="mileage" type="number" min="0" max="5000000"
+               value="{{ request.form.get('mileage', '') }}">
+        <div class="hint">
+            Enter this only when you can stand behind the reading as the current odometer.
+            If not, leave it blank and capture evidence later.
+        </div>
+
+        <div style="margin-top:18px;">
+            <button type="submit" class="btn btn-primary">Add vehicle</button>
+            <a href="{{ url_for('admin.admin_client_profile', user_id=client.id) }}"
+               class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

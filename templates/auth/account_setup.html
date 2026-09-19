@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Finish Setup{% endblock %}
+{% block page_title %}Finish setup{% endblock %}
+{% block page_subtitle %}Confirm how Aura should identify and reach you.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>Account details</h2>
+            <p class="muted">You can update the rest of your private profile after your email is verified.</p>
+        </div>
+        {% if email_verified %}
+            <span class="badge success">Email verified</span>
+        {% elif current_user.email %}
+            <span class="badge warning">Email not verified</span>
+        {% else %}
+            <span class="badge warning">Setup incomplete</span>
+        {% endif %}
+    </div>
+
+    <form method="POST" action="{{ url_for('owner_onboarding.account_setup') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="name">Full name</label>
+        <input id="name" name="name" type="text" maxlength="120"
+               value="{{ current_user.name or '' }}" required>
+
+        <label for="phone_number">Phone number</label>
+        <input id="phone_number" name="phone_number" type="tel" maxlength="20"
+               value="{{ current_user.phone_number or '' }}" required>
+
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" maxlength="120"
+               value="{{ current_user.email or '' }}"
+               placeholder="you@example.com" required
+               {% if email_verified %}readonly{% endif %}>
+        {% if email_verified %}
+        <div class="hint">Your verified email is protected from changes on this setup page.</div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary" style="margin-top:18px;">
+            Save account details
+        </button>
+    </form>
+
+    {% if current_user.email and not email_verified %}
+    <hr>
+    <h3>Verify your email</h3>
+    <p class="muted">
+        Verification protects sensitive vehicle-care actions and confirms that this email belongs to you.
+    </p>
+    <form method="POST" action="{{ url_for('email_verification.resend_verification') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-secondary">Resend verification email</button>
+    </form>
+    {% elif email_verified %}
+    <hr>
+    <p>Your account identity is ready. You can now complete your preferences and private profile details.</p>
+    <a href="{{ url_for('profiles.edit_profile') }}" class="btn btn-primary">Complete my profile</a>
+    <a href="{{ url_for('dashboard.aura_home') }}" class="btn btn-secondary">Go to Aura</a>
+    {% endif %}
+</section>
+{% endblock %}

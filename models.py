@@ -28,7 +28,7 @@ class User(db.Model, UserMixin):
 
     name = db.Column(db.String(120), nullable=True)
 
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)
 
     phone_number = db.Column(db.String(20), unique=True, nullable=False)
 
@@ -106,6 +106,46 @@ class AccessCode(db.Model):
     is_used = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow())
     expires_at = db.Column(db.DateTime, nullable=False)
+
+
+# ====================================================
+# CLIENT ACTIVATION INVITATIONS
+# ====================================================
+
+
+class ClientInvitation(db.Model):
+    """Single-use advisor-created invitation for an owner account."""
+
+    __tablename__ = "client_invitations"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    created_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+
+    expires_at = db.Column(db.DateTime, nullable=False)
+    accepted_at = db.Column(db.DateTime, nullable=True)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship("User", foreign_keys=[user_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+    @property
+    def is_consumed(self):
+        return self.accepted_at is not None or self.revoked_at is not None
 
 
 # =========================================================

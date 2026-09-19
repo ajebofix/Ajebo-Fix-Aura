@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Aura | Client Access Ready{% endblock %}
+{% block page_title %}Client access ready{% endblock %}
+{% block page_subtitle %}Share this private activation link with {{ client.name }}.{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <p class="profile-eyebrow">Advisor-assisted onboarding</p>
+            <h2>{{ client.name }}</h2>
+            <p class="muted">
+                {{ client.phone_number }}
+                {% if client.email %} · {{ client.email }}{% endif %}
+            </p>
+        </div>
+        <span class="badge warning">Setup incomplete</span>
+    </div>
+
+    <p>
+        The link below is single-use and expires on
+        <strong>{{ invitation.expires_at.strftime('%d %b %Y, %H:%M') }}</strong>.
+        The client will choose their own password.
+    </p>
+
+    <label for="activation-link">Private activation link</label>
+    <input id="activation-link" type="text" value="{{ activation_link }}" readonly>
+
+    <div style="margin-top:14px;">
+        <button type="button" class="btn btn-primary" onclick="copyActivationLink(this)">
+            Copy activation link
+        </button>
+        <a href="{{ url_for('owner_onboarding.add_client_vehicle', user_id=client.id) }}"
+           class="btn btn-secondary">
+            Add vehicle
+        </a>
+        <a href="{{ url_for('admin.admin_client_profile', user_id=client.id) }}"
+           class="btn btn-secondary">
+            Open client
+        </a>
+    </div>
+
+    <p class="muted" style="margin-top:14px;">
+        Treat this link like a temporary credential. Send it only to the intended client.
+    </p>
+</section>
+
+<script>
+function copyActivationLink(button) {
+    const input = document.getElementById("activation-link");
+    navigator.clipboard.writeText(input.value).then(() => {
+        const original = button.textContent;
+        button.textContent = "Copied";
+        setTimeout(() => button.textContent = original, 1500);
+    });
+}
+</script>
+{% endblock %}

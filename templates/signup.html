@@ -2,12 +2,12 @@
 
 {% extends "base.html" %}
 
-{% block title %}Aura Enrollment{% endblock %}
+{% block title %}Aura | Create Account{% endblock %}
 
-{% block page_title %}Client Enrollment{% endblock %}
+{% block page_title %}Create your Aura account{% endblock %}
 
 {% block page_subtitle %}
-Begin your private vehicle health relationship with Ajebo Fix.
+Set up your private access to vehicle history, monitoring and Ajebo Fix care.
 {% endblock %}
 
 {% block content %}
@@ -30,12 +30,11 @@ Begin your private vehicle health relationship with Ajebo Fix.
             </div>
 
             <h2 class="signup-title">
-                Create Your Aura Access
+                Create your account
             </h2>
 
             <p class="signup-subtitle">
-                Secure enrollment for private vehicle health records,
-                consultations, and long-term care management.
+                A few details now. You can complete your profile after you sign in.
             </p>
 
         </div>
@@ -121,7 +120,7 @@ Begin your private vehicle health relationship with Ajebo Fix.
 
             <!-- ACCESS CODE -->
             <label for="access_code">
-                Access Code
+                Driver invitation code
                 <span class="muted">(optional)</span>
             </label>
 
@@ -130,11 +129,11 @@ Begin your private vehicle health relationship with Ajebo Fix.
                 id="access_code"
                 name="access_code"
                 value="{{ request.form.get('access_code', request.args.get('access_code', '')) }}"
-                placeholder="Advisor / Driver Access"
+                placeholder="Only if you were invited as a driver"
             >
 
             <div class="hint">
-                Used for advisor onboarding or invited driver access.
+                Only invited drivers need this code. Owners can leave it blank.
             </div>
 
 
@@ -143,7 +142,7 @@ Begin your private vehicle health relationship with Ajebo Fix.
                 type="submit"
                 class="btn btn-primary btn-block signup-btn"
             >
-                Continue Enrollment
+                Create account
             </button>
 
         </form>
@@ -153,11 +152,11 @@ Begin your private vehicle health relationship with Ajebo Fix.
         <div class="signup-footer">
 
             <span class="muted">
-                Already enrolled?
+                Already have an account?
             </span>
 
             <a href="{{ url_for('auth.login') }}">
-                Access your account
+                Sign in
             </a>
 
         </div>

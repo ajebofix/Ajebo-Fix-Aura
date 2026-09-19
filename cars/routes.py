@@ -51,6 +51,10 @@ from services.care_pathways import (
 )
 
 from services.feature_gateways import has_feature
+from services.mileage_observations import (
+    MileageObservationError,
+    MileageObservationService,
+)
 
 
 from io import BytesIO
@@ -100,6 +104,21 @@ def get_cars():
 # =========================================================
 
 
+@cars_bp.get("/my-vehicles")
+@login_required
+def my_vehicles():
+    ownerships = (
+        CarOwnership.query.join(Car)
+        .filter(
+            CarOwnership.user_id == current_user.id,
+            CarOwnership.is_active.is_(True),
+        )
+        .order_by(CarOwnership.start_date.desc())
+        .all()
+    )
+    return render_template("cars/index.html", ownerships=ownerships)
+
+
 @cars_bp.route("/add", methods=["GET", "POST"])
 @login_required
 def add_car():
@@ -111,13 +130,13 @@ def add_car():
         engine_number = request.form.get("engine_number", "").strip()
         engine_type = request.form.get("engine_type", "").strip()
         transmission_type = request.form.get("transmission", "").strip()
-        plate_number = request.form.get("plate_number", "").strip()
+        plate_number = request.form.get("plate_number", "").strip() or None
         color = request.form.get("color", "").strip()
         mileage = request.form.get("mileage_at_transfer", type=int)
 
-        if not all([brand, model, year, vin, plate_number, mileage]):
-            flash("All fields are required.", "error")
-            return render_template("cars/add_car.html")
+        if not all([brand, model, year, vin]):
+            flash("Brand, model, year and VIN are required.", "error")
+            return render_template("cars/add_car.html"), 400
 
         try:
             car = Car.query.filter_by(vin=vin).first()
@@ -130,8 +149,12 @@ def add_car():
                 ).first()
 
             if existing_owner and existing_owner.user_id != current_user.id:
-                flash("This vehicle is already registered to another user.", "error")
-                return render_template("cars/add_car.html")
+                flash(
+                    "This vehicle is already connected to another active owner. "
+                    "Contact Ajebo Fix if ownership has changed.",
+                    "error",
+                )
+                return render_template("cars/add_car.html"), 409
 
             if not car:
                 car = Car(
@@ -139,17 +162,14 @@ def add_car():
                     model=model,
                     year=year,
                     vin=vin,
-                    engine_number=engine_number,
-                    engine_type=engine_type,
-                    transmission_type=transmission_type,
-                    color=color,
-                    current_mileage=mileage,
+                    engine_number=engine_number or None,
+                    engine_type=engine_type or None,
+                    transmission_type=transmission_type or None,
+                    color=color or None,
+                    current_mileage=None,
                 )
                 db.session.add(car)
                 db.session.flush()
-            else:
-                if mileage > (car.current_mileage or 0):
-                    car.current_mileage = mileage
 
             ownership = CarOwnership.query.filter_by(
                 user_id=current_user.id,
@@ -159,6 +179,10 @@ def add_car():
             if ownership:
                 ownership.is_active = True
                 ownership.start_date = ownership.start_date or datetime.utcnow()
+                if plate_number:
+                    ownership.plate_number = plate_number
+                if mileage is not None:
+                    ownership.mileage_at_transfer = mileage
             else:
                 ownership = CarOwnership(
                     user_id=current_user.id,
@@ -169,15 +193,48 @@ def add_car():
                     is_active=True,
                 )
                 db.session.add(ownership)
+                db.session.flush()
+
+            if mileage is not None:
+                MileageObservationService.record(
+                    car=car,
+                    odometer_km=mileage,
+                    source="client_report",
+                    verification_status="client_reported",
+                    recorded_by_user_id=current_user.id,
+                    ownership_id=ownership.id,
+                    note="Owner-reported odometer captured during self-service onboarding.",
+                    review_status="pending",
+                    advance_current=False,
+                    commit=False,
+                )
 
             db.session.commit()
 
-            flash("Vehicle added.", "success")
-            return redirect(url_for("dashboard.aura_home"))
+            if mileage is not None:
+                flash(
+                    "Vehicle added. Your odometer reading is saved and awaiting advisor review.",
+                    "success",
+                )
+            else:
+                flash(
+                    "Vehicle added. You can add an odometer reading when it is available.",
+                    "success",
+                )
+            return redirect(url_for("cars.my_vehicles"))
 
+        except MileageObservationError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return render_template("cars/add_car.html"), 400
         except IntegrityError:
             db.session.rollback()
-            flash("Vehicle already exists.", "error")
+            flash(
+                "Aura could not add this vehicle because one of its identifiers "
+                "is already in active use.",
+                "error",
+            )
+            return render_template("cars/add_car.html"), 409
 
     return render_template("cars/add_car.html")
 

@@ -35,6 +35,8 @@ Rules for this snapshot:
 | GET, POST | `/auth/forgot-password` |
 | GET, POST | `/auth/change-password` |
 | GET, POST | `/auth/reset-password/<token>` |
+| GET, POST | `/auth/activate/<token>` |
+| GET, POST | `/account/setup` |
 | GET | `/auth/verify-email` |
 | GET | `/auth/verification-required` |
 | POST | `/auth/resend-verification` |
@@ -55,8 +57,9 @@ This is compatibility-sensitive route debt and should not be expanded.
 
 | Methods | Route |
 |---|---|
-| GET | `/cars/` |
-| GET, POST | `/cars/add` |
+| GET | `/cars/` | Compatibility JSON vehicle list |
+| GET | `/cars/my-vehicles` | Owner vehicle list |
+| GET, POST | `/cars/add` | Self-service vehicle onboarding |
 | GET | `/cars/<int:car_id>` |
 | GET | `/cars/<int:car_id>/health` |
 | GET, POST | `/cars/<int:ownership_id>/service/add` |
@@ -180,7 +183,10 @@ The advisor-wide Alert Center is the operational surface for durable care signal
 |---|---|
 | GET | `/admin/dashboard` |
 | GET | `/admin/clients` |
+| GET, POST | `/admin/clients/new` |
 | GET | `/admin/clients/<int:user_id>` |
+| POST | `/admin/clients/<int:user_id>/activation-link` |
+| GET, POST | `/admin/clients/<int:user_id>/vehicles/new` |
 | POST | `/admin/clients/<int:user_id>/notes/add` |
 | GET | `/admin/fleet/health` |
 | GET | `/admin/search` |

@@ -57,6 +57,7 @@ Car                              │
 | `ProfileAuditEvent` | `profile_audit_events` | → `users.id` |
 | `UserSession` | `user_sessions` | → `users.id` |
 | `AccessCode` | `access_code` | → `cars.id`, `users.id` |
+| `ClientInvitation` | `client_invitations` | → owner `users.id`, creating advisor `users.id`; hashed single-use activation state |
 
 ### Vehicle identity, ownership and driver authority
 
@@ -137,6 +138,7 @@ erDiagram
     USER ||--o| CLIENT_PROFILE : has
     USER ||--o{ USER_SESSION : authenticates
     USER ||--o{ PROFILE_AUDIT_EVENT : audited
+    USER ||--o{ CLIENT_INVITATION : receives_or_creates
     USER ||--o{ CAR_OWNERSHIP : owns
     USER ||--o{ CAR_DRIVER : drives
 

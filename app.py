@@ -278,6 +278,7 @@ def create_app():
         evidence_timeline_bp,
     )
     from profiles.routes import profiles_bp
+    from onboarding.routes import owner_onboarding_bp
     from services.owner_driver_management import init_owner_driver_management
 
     app.register_blueprint(auth_bp)
@@ -289,6 +290,7 @@ def create_app():
     app.register_blueprint(driver_bp)
     app.register_blueprint(mileage_bp)
     app.register_blueprint(profiles_bp)
+    app.register_blueprint(owner_onboarding_bp)
     app.register_blueprint(evidence_bp)
     app.register_blueprint(evidence_review_bp)
     app.register_blueprint(evidence_interaction_bp)
@@ -356,6 +358,7 @@ def create_app():
                 "user_sessions",
                 "client_profiles",
                 "profile_audit_events",
+                "client_invitations",
             }
             missing_tables = required_tables - tables
             missing_columns = {"email_verified_at"} - user_columns

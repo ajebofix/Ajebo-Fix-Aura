@@ -2,12 +2,12 @@
 
 {% extends "base.html" %}
 
-{% block title %}Aura Access{% endblock %}
+{% block title %}Aura | Sign In{% endblock %}
 
-{% block page_title %}Aura Access{% endblock %}
+{% block page_title %}Sign in to Aura{% endblock %}
 
 {% block page_subtitle %}
-Secure access to your vehicle health records.
+Your vehicles, history and care — in one place.
 {% endblock %}
 
 {% block content %}
@@ -30,12 +30,11 @@ Secure access to your vehicle health records.
             </div>
 
             <h2 class="login-title">
-                Sign In
+                Welcome back
             </h2>
 
             <p class="login-subtitle">
-                Access consultations, service history,
-                vehicle monitoring, and private care records.
+                Continue to your vehicle records, updates and care.
             </p>
 
         </div>
@@ -61,16 +60,17 @@ Secure access to your vehicle health records.
                 value="{{ csrf_token() }}"
             >
 
-            <!-- EMAIL -->
-            <label for="email">
-                Email Address
+            <!-- ACCOUNT IDENTIFIER -->
+            <label for="identifier">
+                Email or phone number
             </label>
 
             <input
-                type="email"
-                id="email"
-                name="email"
-                placeholder="you@example.com"
+                type="text"
+                id="identifier"
+                name="identifier"
+                placeholder="Email or registered phone"
+                autocomplete="username"
                 required
             >
 
@@ -145,19 +145,6 @@ Secure access to your vehicle health records.
                     Create an account
                 </a>
             </div>
-
-            <div style="margin-top:10px;">
-
-                <span class="muted">
-                    Already signed in?
-                </span>
-
-                <a href="{{ url_for('auth.change_password') }}">
-                    Change password
-                </a>
-
-            </div>
-
         </div>
 
     </div>

@@ -1,231 +1,113 @@
-<!-- templates/admin/client_profile.html -->
-
-
 {% extends "base.html" %}
 
-{% block title %}
-Aura | Client Profile
-{% endblock %}
-
-{% block page_title %}
-Client Profile
-{% endblock %}
+{% block title %}Aura | {{ client.name or "Client" }}{% endblock %}
+{% block page_title %}{{ client.name or "Client" }}{% endblock %}
+{% block page_subtitle %}Client relationship, vehicles and account access.{% endblock %}
 
 {% block content %}
 
 <section class="card">
-
     <div class="section-head">
-
         <div>
-
-            <h2>
-                {{ client.full_name }}
-            </h2>
-
-            <p class="text-muted">
-                Private vehicle health management
+            <h2>{{ client.name or "Unnamed client" }}</h2>
+            <p class="muted">
+                {{ client.phone_number }}
+                {% if client.email %} · {{ client.email }}{% endif %}
             </p>
-
         </div>
 
+        {% if account_status == 'ready' %}
+            <span class="badge success">Ready</span>
+        {% elif account_status == 'invited' %}
+            <span class="badge warning">Invited</span>
+        {% elif account_status == 'email_unverified' %}
+            <span class="badge warning">Email unverified</span>
+        {% else %}
+            <span class="badge warning">Setup incomplete</span>
+        {% endif %}
     </div>
 
-</section>
+    <div>
+        <a href="{{ url_for('owner_onboarding.add_client_vehicle', user_id=client.id) }}"
+           class="btn btn-primary">Add vehicle</a>
 
-<!-- CLIENT SUMMARY -->
-
-<section class="card">
-
-    <h3>
-        Client Summary
-    </h3>
-
-    <div class="stats-grid">
-
-        <div class="stat-card">
-            <span class="stat-label">
-                Vehicles
-            </span>
-
-            <span class="stat-value">
-                {{ ownerships|length }}
-            </span>
-        </div>
-
-        <div class="stat-card">
-            <span class="stat-label">
-                Advisor Notes
-            </span>
-
-            <span class="stat-value">
-                {{ notes|length }}
-            </span>
-        </div>
-
+        {% if can_reissue_invitation %}
+        <form method="POST"
+              action="{{ url_for('owner_onboarding.regenerate_activation_link', user_id=client.id) }}"
+              style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-secondary">
+                Create fresh activation link
+            </button>
+        </form>
+        {% endif %}
     </div>
-
 </section>
 
-<!-- VEHICLES -->
+<section class="dashboard-grid">
+    <div class="card stat-card">
+        <div class="stat-label">Vehicles</div>
+        <div class="stat-value">{{ ownerships|length }}</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-label">Advisor notes</div>
+        <div class="stat-value">{{ notes|length }}</div>
+    </div>
+</section>
 
 <section class="card">
-
-    <h3>
-        Vehicles
-    </h3>
+    <div class="section-head">
+        <h3>Vehicles</h3>
+    </div>
 
     {% if ownerships %}
-
         {% for ownership in ownerships %}
-
             <div class="list-item">
-
                 <div>
-
-                    <strong>
-                        {{ ownership.car.display_name }}
-                    </strong>
-
-                    <br>
-
-                    <small>
-                        {{ ownership.car.year }}
-                    </small>
-
+                    <strong>{{ ownership.car.display_name }}</strong>
+                    {% if ownership.plate_number %}
+                    <br><small>{{ ownership.plate_number }}</small>
+                    {% endif %}
                 </div>
-
-                <a
-                    href="{{ url_for(
-                        'admin.view_vehicle',
-                        car_id=ownership.car.id
-                    ) }}"
-                    class="btn btn-primary"
-                >
-                    Open Vehicle
-                </a>
-
+                <a href="{{ url_for('admin.view_vehicle', car_id=ownership.car.id) }}"
+                   class="btn btn-secondary">Open vehicle</a>
             </div>
-
-            {% if not loop.last %}
-                <hr>
-            {% endif %}
-
+            {% if not loop.last %}<hr>{% endif %}
         {% endfor %}
-
     {% else %}
-
-        <p>
-            No vehicles assigned.
-        </p>
-
+        <p class="muted">No vehicle has been added yet.</p>
+        <a href="{{ url_for('owner_onboarding.add_client_vehicle', user_id=client.id) }}"
+           class="btn btn-primary">Add first vehicle</a>
     {% endif %}
-
 </section>
 
-<!-- ADD NOTE -->
-
 <section class="card">
-
-    <h3>
-        Add Advisor Note
-    </h3>
-
-    <form
-        method="POST"
-        action="{{ url_for(
-            'admin.add_advisor_note',
-            user_id=client.id
-        ) }}"
-    >
-
-        <div class="form-group">
-
-            <textarea
-                name="note"
-                rows="5"
-                required
-                placeholder="Enter advisor note..."
-                class="form-control"
-            ></textarea>
-
-        </div>
-
-        <button
-            type="submit"
-            class="btn btn-primary"
-        >
-            Save Note
-        </button>
-
+    <h3>Add advisor note</h3>
+    <form method="POST"
+          action="{{ url_for('admin.add_advisor_note', user_id=client.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <textarea name="note" rows="5" required
+                  placeholder="Private advisor note..." class="form-control"></textarea>
+        <button type="submit" class="btn btn-primary" style="margin-top:12px;">Save note</button>
     </form>
-
 </section>
 
-<!-- ADVISOR NOTES -->
-
 <section class="card">
-
-    <h3>
-        Advisor Notes
-    </h3>
-
+    <h3>Advisor notes</h3>
     {% if notes %}
-
         {% for note in notes %}
-
             <div class="note-card">
-
                 <div class="note-meta">
-
-                    <strong>
-                        {{ note.advisor.full_name }}
-                    </strong>
-
-                    <span class="text-muted">
-                        •
-                        {{ note.created_at.strftime('%d %b %Y %H:%M') }}
-                    </span>
-
+                    <strong>{{ note.advisor.name or "Advisor" }}</strong>
+                    <span class="text-muted"> · {{ note.created_at.strftime('%d %b %Y %H:%M') }}</span>
                 </div>
-
-                <div class="note-content">
-
-                    {{ note.note }}
-
-                </div>
-
+                <div class="note-content">{{ note.note }}</div>
             </div>
-
-            {% if not loop.last %}
-                <hr>
-            {% endif %}
-
+            {% if not loop.last %}<hr>{% endif %}
         {% endfor %}
-
     {% else %}
-
-        <p>
-            No advisor notes recorded.
-        </p>
-
+        <p class="muted">No advisor notes recorded.</p>
     {% endif %}
-
-</section>
-
-<!-- CLIENT TIMELINE PLACEHOLDER -->
-
-<section class="card">
-
-    <h3>
-        Timeline
-    </h3>
-
-    <p class="text-muted">
-        Consultation records, concerns, assessments, and treatment plans
-        will appear here in future Aura releases.
-    </p>
-
 </section>
 
 {% endblock %}

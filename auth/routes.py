@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import smtplib
+import re
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -330,19 +331,31 @@ def login():
         flash("Too many failed attempts. Try again later.", "error")
         return render_template("login.html"), 429
 
-    email = request.form.get("email", "").strip().lower()
+    identifier = (
+        request.form.get("identifier")
+        or request.form.get("email")
+        or ""
+    ).strip()
     password = request.form.get("password", "")
     remember = bool(request.form.get("remember"))
 
-    if not email or not password:
-        flash("Email and password are required.", "error")
+    if not identifier or not password:
+        flash("Email or phone number and password are required.", "error")
         return render_template("login.html"), 400
 
-    user = User.query.filter(func.lower(User.email) == email).first()
+    if "@" in identifier:
+        user = User.query.filter(
+            func.lower(User.email) == identifier.lower()
+        ).first()
+    else:
+        normalised_phone = re.sub(r"[\\s().-]", "", identifier)
+        user = User.query.filter_by(phone_number=identifier).first()
+        if user is None and normalised_phone != identifier:
+            user = User.query.filter_by(phone_number=normalised_phone).first()
 
     if not user or not user.check_password(password):
         record_failed_login()
-        flash("Invalid email or password.", "error")
+        flash("Invalid sign-in details.", "error")
         return render_template("login.html"), 401
 
     if not user.is_active:

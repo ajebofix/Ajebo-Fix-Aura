@@ -57,8 +57,9 @@ This is compatibility-sensitive route debt and should not be expanded.
 
 | Methods | Route |
 |---|---|
-| GET | `/cars/` |
-| GET, POST | `/cars/add` |
+| GET | `/cars/` | Compatibility JSON vehicle list |
+| GET | `/cars/my-vehicles` | Owner vehicle list |
+| GET, POST | `/cars/add` | Self-service vehicle onboarding |
 | GET | `/cars/<int:car_id>` |
 | GET | `/cars/<int:car_id>/health` |
 | GET, POST | `/cars/<int:ownership_id>/service/add` |

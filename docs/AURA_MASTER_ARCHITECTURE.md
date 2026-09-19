@@ -22,6 +22,17 @@ Every substantial feature must have:
 
 No feature should be implemented merely because it sounds intelligent or impressive.
 
+
+### Current as-built snapshots
+
+For implementation reality as of 19 September 2026, read these alongside this constitution:
+
+- `docs/AURA_AS_BUILT_PRODUCT_RECONCILIATION_2026-09-19.md`
+- `docs/AURA_AS_BUILT_ERD_2026-09-19.md`
+- `docs/AURA_REGISTERED_ROUTE_INVENTORY_2026-09-19.md`
+
+The historical PRD, ERD and route-map files under `scripts/document structure/` remain design history and should not override these later as-built snapshots or production closeout contracts.
+
 ## 2. Permanent product identity
 
 Aura is a private automotive health-management platform.

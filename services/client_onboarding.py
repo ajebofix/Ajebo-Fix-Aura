@@ -104,6 +104,7 @@ class ClientOnboardingService:
             user=user,
             created_by_user_id=created_by_user_id,
             commit=False,
+            initial=True,
         )
         db.session.commit()
         return user, result
@@ -114,10 +115,17 @@ class ClientOnboardingService:
         user: User,
         created_by_user_id: int,
         commit: bool = True,
+        initial: bool = False,
     ) -> InvitationResult:
         if user.role != "user":
             raise ClientOnboardingError(
                 "Only owner/client accounts can use this activation flow."
+            )
+
+        if not initial and not ClientOnboardingService.can_reissue_invitation(user):
+            raise ClientOnboardingError(
+                "This account has already been activated. Use normal account "
+                "security or password recovery instead."
             )
 
         now = _utcnow()
@@ -236,6 +244,10 @@ class ClientOnboardingService:
             )
 
         email_changed = (user.email or "").strip().lower() != clean_email
+        if email_changed and getattr(user, "email_verified_at", None) is not None:
+            raise ClientOnboardingError(
+                "A verified email cannot be replaced from the setup page."
+            )
 
         user.name = clean_name
         user.phone_number = phone
@@ -253,6 +265,21 @@ class ClientOnboardingService:
             .order_by(ClientInvitation.created_at.desc(), ClientInvitation.id.desc())
             .first()
         )
+
+    @staticmethod
+    def can_reissue_invitation(user: User) -> bool:
+        if user.role != "user":
+            return False
+
+        latest = ClientOnboardingService.latest_invitation(user.id)
+        if latest is None:
+            return False
+
+        accepted = ClientInvitation.query.filter(
+            ClientInvitation.user_id == user.id,
+            ClientInvitation.accepted_at.is_not(None),
+        ).first()
+        return accepted is None
 
     @staticmethod
     def account_status(user: User) -> str:

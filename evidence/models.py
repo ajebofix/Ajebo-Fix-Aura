@@ -19,9 +19,23 @@ EVIDENCE_PURPOSES = (
     "treatment_evidence",
     "diagnostic_document",
     "service_document",
+    "vehicle_history_context",
     "driver_observation",
 )
 EVIDENCE_SOURCE_CHANNELS = ("web", "whatsapp", "api")
+HISTORICAL_SOURCE_TYPES = (
+    "standalone_document",
+    "whatsapp_conversation",
+    "instagram_conversation",
+    "tiktok_conversation",
+    "email_conversation",
+    "sms_imessage_conversation",
+    "other_conversation_archive",
+)
+SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES = (
+    "standalone_document",
+    "whatsapp_conversation",
+)
 EVIDENCE_VISIBILITY = ("client", "advisor", "internal")
 EVIDENCE_REVIEW_STATUSES = (
     "pending_review",
@@ -84,6 +98,7 @@ class VehicleEvidence(db.Model):
     evidence_type = db.Column(db.String(24), nullable=False)
     purpose = db.Column(db.String(48), nullable=False)
     source_channel = db.Column(db.String(24), nullable=False, default="web")
+    historical_source_type = db.Column(db.String(48), nullable=True, index=True)
     visibility = db.Column(db.String(20), nullable=False, default="client")
     review_status = db.Column(
         db.String(24), nullable=False, default="pending_review", index=True

@@ -46,7 +46,12 @@ MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 MAX_DOCUMENT_PAGES = 80
 MAX_EXTRACTED_TEXT_CHARS = 180_000
 
-_ALLOWED_PURPOSES = {"service_document", "diagnostic_document", "treatment_evidence"}
+_ALLOWED_PURPOSES = {
+    "service_document",
+    "diagnostic_document",
+    "treatment_evidence",
+    "vehicle_history_context",
+}
 _ALLOWED_VISIBILITY = {"client", "advisor"}
 _ALLOWED_CATEGORIES = {
     "document_reference",
@@ -591,6 +596,7 @@ def _store_document(
         evidence_type="document",
         purpose=purpose,
         source_channel="web",
+        historical_source_type="standalone_document",
         visibility=visibility,
         review_status="pending_review",
         storage_provider=provider.provider_name,

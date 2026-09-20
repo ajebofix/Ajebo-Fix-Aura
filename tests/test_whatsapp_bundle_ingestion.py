@@ -435,6 +435,7 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
         archive = db.session.get(VehicleEvidence, started.evidence_id)
         assert archive.evidence_type == "archive"
         assert archive.source_channel == "whatsapp"
+        assert archive.historical_source_type == "whatsapp_conversation"
         assert archive.visibility == "advisor"
         assert archive.content_type == "application/zip"
 
@@ -459,6 +460,10 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
         }
         assert all(item.child.visibility == "advisor" for item in items)
         assert all(item.child.source_channel == "whatsapp" for item in items)
+        assert all(
+            item.child.historical_source_type == "whatsapp_conversation"
+            for item in items
+        )
 
         manifest = EvidenceExtraction.query.filter_by(
             evidence_id=archive.id,
@@ -621,3 +626,24 @@ def test_bundle_schema_requires_contextual_relevance():
     assert relevance_fields <= required_candidates
     assert "relevance is contextual, never a keyword filter" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
     assert "priority for advisor attention" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
+
+
+def test_whatsapp_bundle_accepts_general_vehicle_history_context(app):
+    with app.app_context():
+        owner = _user(suffix=10)
+        advisor = _user(suffix=11, role="admin")
+        car = _owned_car(owner, suffix=10)
+        storage = RecordingStorageProvider()
+
+        started = ingest_whatsapp_bundle(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(_zip_bytes()),
+            purpose="vehicle_history_context",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+        )
+
+        evidence = db.session.get(VehicleEvidence, started.evidence_id)
+        assert evidence.purpose == "vehicle_history_context"
+        assert evidence.historical_source_type == "whatsapp_conversation"

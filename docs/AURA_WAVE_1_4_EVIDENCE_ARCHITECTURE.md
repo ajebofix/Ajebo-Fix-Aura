@@ -593,3 +593,8 @@ The extension does **not** enable arbitrary archive execution or generic file ho
 Supported bundle media are intentionally constrained to common WhatsApp export formats. Unsupported members are skipped; unsafe members are rejected. A valid chat transcript remains mandatory because it is the chronology spine of the case bundle.
 
 Long-running bundle work uses the same resumable background-analysis contract as historical PDFs. Financial facts remain separate from vehicle-health truth, and this extension does not open predictive implementation or Wave 3.
+
+
+## Historical source-type separation (2026-09-20)
+
+The evidence domain now distinguishes source structure from care purpose. A WhatsApp conversation can be a service/job record, diagnostic record, treatment/completed-work evidence, or general vehicle-history context without losing the fact that it originated as a WhatsApp conversation. Likewise a standalone PDF remains a standalone document regardless of its care purpose. Future social/email conversation adapters must use their own source type and must not be represented as WhatsApp or generic PDFs.

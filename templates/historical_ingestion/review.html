@@ -10,7 +10,16 @@
             <h2>{{ 'WhatsApp case bundle' if evidence.evidence_type == 'archive' else 'Source document' }}</h2>
             <p class="muted">
                 Evidence #{{ evidence.id }} ·
-                {{ evidence.purpose|replace('_', ' ')|title }} ·
+                {% if evidence.historical_source_type == 'whatsapp_conversation' %}
+                    WhatsApp Conversation
+                {% elif evidence.historical_source_type == 'standalone_document' %}
+                    Standalone Document
+                {% elif evidence.historical_source_type %}
+                    {{ evidence.historical_source_type|replace('_', ' ')|title }}
+                {% else %}
+                    Historical Source
+                {% endif %}
+                · {{ evidence.purpose|replace('_', ' ')|title }} ·
                 {{ evidence.visibility|title }}
             </p>
         </div>

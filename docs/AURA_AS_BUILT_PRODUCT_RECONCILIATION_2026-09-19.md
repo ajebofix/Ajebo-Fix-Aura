@@ -279,3 +279,8 @@ The architecture is mature enough that new work should increasingly be justified
 ### WhatsApp historical case bundles
 
 Advisor historical ingestion now accepts a governed WhatsApp ZIP export as a case bundle in addition to a PDF. Aura retains the original archive privately, materializes supported transcript/image/PDF/audio/video members as child evidence, preserves archive-to-child lineage, transcribes voice notes, analyses images, reads PDFs, samples video audio/frames, and reconciles the resulting evidence corpus into one advisor-grade chronology. The workflow is asynchronous/resumable and all resulting facts remain candidates until advisor review.
+
+
+### Historical source type vs record purpose
+
+Historical ingestion now persists **what the source is** separately from **what the source is for**. `VehicleEvidence.historical_source_type` identifies source structure/provenance (for example `standalone_document` or `whatsapp_conversation`), while `VehicleEvidence.purpose` continues to describe vehicle-care meaning (`service_document`, `diagnostic_document`, `treatment_evidence`, or `vehicle_history_context`). Only standalone PDFs and WhatsApp conversation exports are selectable in production; Instagram, TikTok, email, SMS/iMessage and other conversation/archive types remain reserved for future adapters.

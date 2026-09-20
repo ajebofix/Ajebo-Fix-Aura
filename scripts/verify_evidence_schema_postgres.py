@@ -51,6 +51,7 @@ def main() -> None:
         "evidence_type",
         "purpose",
         "source_channel",
+        "historical_source_type",
         "visibility",
         "review_status",
         "storage_provider",
@@ -133,6 +134,7 @@ def main() -> None:
         "ck_vehicle_evidence_type",
         "ck_vehicle_evidence_purpose",
         "ck_vehicle_evidence_source_channel",
+        "ck_vehicle_evidence_historical_source_type",
         "ck_vehicle_evidence_visibility",
         "ck_vehicle_evidence_review_status",
         "ck_vehicle_evidence_storage_state",
@@ -187,6 +189,7 @@ def main() -> None:
         "ix_vehicle_evidence_car_sha256",
         "ix_vehicle_evidence_review_status",
         "ix_vehicle_evidence_storage_state",
+        "ix_vehicle_evidence_historical_source_type",
     } - evidence_indexes:
         raise SystemExit("VehicleEvidence operational indexes are missing")
 
@@ -231,6 +234,24 @@ def main() -> None:
                 "now": now,
             },
         ).scalar_one()
+        history_context_id = connection.execute(
+            text(
+                "INSERT INTO vehicle_evidence "
+                "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, historical_source_type, visibility, review_status, "
+                "storage_provider, storage_state, object_key, safe_display_name, content_type, byte_size, sha256, "
+                "uploaded_at, consent_basis, lawful_purpose, created_at, updated_at) "
+                "VALUES (:car_id, :user_id, 'document', 'vehicle_history_context', 'web', 'standalone_document', "
+                "'advisor', 'pending_review', 'r2', 'available', 'production/evidence/history-context', "
+                "'history.pdf', 'application/pdf', 1200, :sha256, :now, 'advisor_import', "
+                "'vehicle_care_recordkeeping', :now, :now) RETURNING id"
+            ),
+            {
+                "car_id": car_id,
+                "user_id": user_id,
+                "sha256": "f" * 64,
+                "now": now,
+            },
+        ).scalar_one()
 
         connection.execute(
             text(
@@ -256,10 +277,10 @@ def main() -> None:
         archive_id = connection.execute(
             text(
                 "INSERT INTO vehicle_evidence "
-                "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, visibility, review_status, "
+                "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, historical_source_type, visibility, review_status, "
                 "storage_provider, storage_state, object_key, safe_display_name, content_type, byte_size, sha256, "
                 "uploaded_at, consent_basis, lawful_purpose, created_at, updated_at) "
-                "VALUES (:car_id, :user_id, 'archive', 'service_document', 'whatsapp', 'advisor', 'pending_review', "
+                "VALUES (:car_id, :user_id, 'archive', 'service_document', 'whatsapp', 'whatsapp_conversation', 'advisor', 'pending_review', "
                 "'r2', 'available', 'production/evidence/test-archive', 'case.zip', 'application/zip', 2048, :sha256, "
                 ":now, 'advisor_import', 'vehicle_care_recordkeeping', :now, :now) RETURNING id"
             ),
@@ -273,10 +294,10 @@ def main() -> None:
         video_id = connection.execute(
             text(
                 "INSERT INTO vehicle_evidence "
-                "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, visibility, review_status, "
+                "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, historical_source_type, visibility, review_status, "
                 "storage_provider, storage_state, object_key, safe_display_name, content_type, byte_size, sha256, "
                 "uploaded_at, consent_basis, lawful_purpose, created_at, updated_at) "
-                "VALUES (:car_id, :user_id, 'video', 'service_document', 'whatsapp', 'advisor', 'pending_review', "
+                "VALUES (:car_id, :user_id, 'video', 'service_document', 'whatsapp', 'whatsapp_conversation', 'advisor', 'pending_review', "
                 "'r2', 'available', 'production/evidence/test-video', 'clip.mp4', 'video/mp4', 1024, :sha256, "
                 ":now, 'advisor_import', 'vehicle_care_recordkeeping', :now, :now) RETURNING id"
             ),
@@ -334,6 +355,10 @@ def main() -> None:
             text("DELETE FROM vehicle_evidence WHERE id IN (:video_id, :archive_id)"),
             {"video_id": video_id, "archive_id": archive_id},
         )
+        connection.execute(
+            text("DELETE FROM vehicle_evidence WHERE id = :evidence_id"),
+            {"evidence_id": history_context_id},
+        )
 
     base_evidence_params = {
         "car_id": car_id,
@@ -342,6 +367,18 @@ def main() -> None:
         "sha256": "b" * 64,
     }
 
+    _must_fail(
+        engine,
+        "INSERT INTO vehicle_evidence "
+        "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, historical_source_type, visibility, review_status, "
+        "storage_provider, storage_state, object_key, safe_display_name, content_type, byte_size, sha256, "
+        "uploaded_at, consent_basis, lawful_purpose, created_at, updated_at) "
+        "VALUES (:car_id, :user_id, 'document', 'service_document', 'web', 'mystery_conversation', 'advisor', "
+        "'pending_review', 'r2', 'pending', 'production/evidence/invalid-source-type', 'bad.pdf', "
+        "'application/pdf', 100, :sha256, :now, 'advisor_import', 'vehicle_care', :now, :now)",
+        base_evidence_params,
+        "invalid historical source type",
+    )
     _must_fail(
         engine,
         "INSERT INTO vehicle_evidence "

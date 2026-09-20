@@ -11,7 +11,7 @@ from datetime import datetime
 from extensions import db
 
 
-EVIDENCE_TYPES = ("image", "document", "audio")
+EVIDENCE_TYPES = ("image", "document", "audio", "video", "archive")
 EVIDENCE_PURPOSES = (
     "concern_support",
     "consultation_support",
@@ -54,6 +54,7 @@ EXTRACTION_TYPES = (
     "image_observation",
     "document_text",
     "document_understanding",
+    "archive_manifest",
     "transcription",
     "structured_fields",
 )
@@ -138,10 +139,71 @@ class VehicleEvidence(db.Model):
         back_populates="evidence",
         cascade="all, delete-orphan",
     )
+    bundle_items = db.relationship(
+        "EvidenceBundleItem",
+        foreign_keys="EvidenceBundleItem.bundle_evidence_id",
+        back_populates="bundle",
+        cascade="all, delete-orphan",
+    )
+    bundle_parent_items = db.relationship(
+        "EvidenceBundleItem",
+        foreign_keys="EvidenceBundleItem.child_evidence_id",
+        back_populates="child",
+    )
 
     __table_args__ = (
         db.Index("ix_vehicle_evidence_car_time", "car_id", "uploaded_at", "id"),
         db.Index("ix_vehicle_evidence_car_sha256", "car_id", "sha256"),
+    )
+
+
+class EvidenceBundleItem(db.Model):
+    """Lineage from one archive source to one safely materialized child evidence item."""
+
+    __tablename__ = "evidence_bundle_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    bundle_evidence_id = db.Column(
+        db.Integer,
+        db.ForeignKey("vehicle_evidence.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    child_evidence_id = db.Column(
+        db.Integer,
+        db.ForeignKey("vehicle_evidence.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    member_index = db.Column(db.Integer, nullable=False)
+    member_kind = db.Column(db.String(24), nullable=False)
+    member_sha256 = db.Column(db.String(64), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    bundle = db.relationship(
+        "VehicleEvidence",
+        foreign_keys=[bundle_evidence_id],
+        back_populates="bundle_items",
+    )
+    child = db.relationship(
+        "VehicleEvidence",
+        foreign_keys=[child_evidence_id],
+        back_populates="bundle_parent_items",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "bundle_evidence_id",
+            "member_index",
+            name="uq_evidence_bundle_member_index",
+        ),
+        db.Index(
+            "ix_evidence_bundle_items_bundle_kind",
+            "bundle_evidence_id",
+            "member_kind",
+            "member_index",
+        ),
     )
 
 

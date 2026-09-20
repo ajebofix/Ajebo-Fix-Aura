@@ -7,6 +7,8 @@ from evidence.models import (
     EVIDENCE_REVIEW_STATUSES,
     EVIDENCE_SOURCE_CHANNELS,
     EVIDENCE_STORAGE_STATES,
+    HISTORICAL_SOURCE_TYPES,
+    SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES,
     EVIDENCE_SUBJECT_TYPES,
     EVIDENCE_TYPES,
     EVIDENCE_VISIBILITY,
@@ -29,6 +31,7 @@ def test_vehicle_evidence_metadata_only_boundary():
         "evidence_type",
         "purpose",
         "source_channel",
+        "historical_source_type",
         "visibility",
         "review_status",
         "storage_provider",
@@ -105,6 +108,19 @@ def test_extraction_payload_slots_are_encrypted_not_plaintext():
 def test_initial_vocabularies_match_wave_1_4_architecture():
     assert EVIDENCE_TYPES == ("image", "document", "audio", "video", "archive")
     assert set(EVIDENCE_SOURCE_CHANNELS) == {"web", "whatsapp", "api"}
+    assert set(HISTORICAL_SOURCE_TYPES) == {
+        "standalone_document",
+        "whatsapp_conversation",
+        "instagram_conversation",
+        "tiktok_conversation",
+        "email_conversation",
+        "sms_imessage_conversation",
+        "other_conversation_archive",
+    }
+    assert set(SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES) == {
+        "standalone_document",
+        "whatsapp_conversation",
+    }
     assert set(EVIDENCE_VISIBILITY) == {"client", "advisor", "internal"}
     assert set(EVIDENCE_REVIEW_STATUSES) == {
         "pending_review",
@@ -130,6 +146,7 @@ def test_initial_vocabularies_match_wave_1_4_architecture():
     assert "driver_observation" in EVIDENCE_PURPOSES
     assert "diagnostic_document" in EVIDENCE_PURPOSES
     assert "service_document" in EVIDENCE_PURPOSES
+    assert "vehicle_history_context" in EVIDENCE_PURPOSES
     assert set(EVIDENCE_RELATIONSHIP_TYPES) == {"supports", "documents"}
     assert set(EVIDENCE_STORAGE_STATES) == {
         "pending",

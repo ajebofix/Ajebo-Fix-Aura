@@ -10,11 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 import base64
 import json
+import logging
 import os
 from typing import Any
 
 import openai
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
+
 
 from rina.providers.base import (
     RinaProviderConfigurationError,
@@ -359,6 +363,7 @@ class HistoricalAdvisorAnalysis:
     model: str
     understanding_request_id: str | None
     structured_request_id: str | None
+    direct_pdf_used: bool = True
 
 
 class HistoricalAdvisorAnalyzer:
@@ -402,6 +407,37 @@ class HistoricalAdvisorAnalyzer:
             )
         return payload
 
+    @staticmethod
+    def _safe_provider_detail(exc: Exception) -> str:
+        status = getattr(exc, "status_code", None)
+        request_id = getattr(exc, "request_id", None) or getattr(exc, "_request_id", None)
+        body = getattr(exc, "body", None)
+        error_type = None
+        error_code = None
+        error_param = None
+        error_message = None
+
+        if isinstance(body, dict):
+            error = body.get("error") if isinstance(body.get("error"), dict) else body
+            if isinstance(error, dict):
+                error_type = error.get("type")
+                error_code = error.get("code")
+                error_param = error.get("param")
+                error_message = error.get("message")
+
+        parts = [
+            f"status={status}" if status else None,
+            f"type={error_type}" if error_type else None,
+            f"code={error_code}" if error_code else None,
+            f"param={error_param}" if error_param else None,
+            f"request_id={request_id}" if request_id else None,
+        ]
+        detail = " ".join(part for part in parts if part)
+        if error_message:
+            safe_message = str(error_message).replace("\n", " ").strip()[:500]
+            detail = f"{detail} message={safe_message}".strip()
+        return detail or type(exc).__name__
+
     def _call(
         self,
         *,
@@ -409,6 +445,7 @@ class HistoricalAdvisorAnalyzer:
         input_content: list[dict[str, Any]],
         schema_name: str,
         schema: dict[str, Any],
+        stage: str,
     ) -> tuple[dict[str, Any], str | None, str]:
         try:
             response = self._client.responses.create(
@@ -447,16 +484,30 @@ class HistoricalAdvisorAnalyzer:
                 "Historical document analysis credentials were rejected"
             ) from exc
         except openai.BadRequestError as exc:
+            detail = self._safe_provider_detail(exc)
+            logger.warning(
+                "historical_openai_rejected stage=%s model=%s %s",
+                stage,
+                self.model,
+                detail,
+            )
             raise RinaProviderRejectedError(
-                "Historical document analysis request was rejected"
+                f"Historical document analysis request was rejected ({detail})"
             ) from exc
         except openai.APIStatusError as exc:
+            detail = self._safe_provider_detail(exc)
+            logger.warning(
+                "historical_openai_status_error stage=%s model=%s %s",
+                stage,
+                self.model,
+                detail,
+            )
             if int(getattr(exc, "status_code", 0) or 0) >= 500:
                 raise RinaProviderTransientError(
-                    "Historical document analysis returned a transient failure"
+                    f"Historical document analysis returned a transient failure ({detail})"
                 ) from exc
             raise RinaProviderRejectedError(
-                "Historical document analysis request was rejected"
+                f"Historical document analysis request was rejected ({detail})"
             ) from exc
         except openai.OpenAIError as exc:
             raise RinaProviderTransientError(
@@ -523,33 +574,64 @@ Think like a senior Ajebo Fix advisor preparing another advisor to understand th
 case quickly and accurately.
 """.strip()
 
-        understanding, understanding_request_id, response_model = self._call(
-            instructions=understanding_instructions,
-            input_content=[
-                {
-                    "type": "input_text",
-                    "text": (
-                        "Trusted Aura vehicle context (use for disambiguation only; "
-                        "do not overwrite source evidence):\n"
-                        + json.dumps(
-                            trusted_vehicle_context,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                        )
-                        + "\n\nA text extraction is supplied only as a searchable aid. "
-                        "The PDF itself is the primary source:\n"
-                        + extracted_text
-                    ),
-                },
-                {
-                    "type": "input_file",
-                    "filename": "historical_vehicle_record.pdf",
-                    "file_data": encoded_pdf,
-                },
-            ],
-            schema_name="aura_historical_document_understanding",
-            schema=DOCUMENT_UNDERSTANDING_SCHEMA,
+        context_text = (
+            "Trusted Aura vehicle context (use for disambiguation only; "
+            "do not overwrite source evidence):\n"
+            + json.dumps(
+                trusted_vehicle_context,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n\nPage-preserved searchable extraction:\n"
+            + extracted_text
         )
+
+        direct_pdf_used = True
+        try:
+            understanding, understanding_request_id, response_model = self._call(
+                instructions=understanding_instructions,
+                input_content=[
+                    {
+                        "type": "input_text",
+                        "text": (
+                            context_text
+                            + "\n\nThe original PDF is attached and is the primary source."
+                        ),
+                    },
+                    {
+                        "type": "input_file",
+                        "filename": "historical_vehicle_record.pdf",
+                        "file_data": encoded_pdf,
+                    },
+                ],
+                schema_name="aura_historical_document_understanding",
+                schema=DOCUMENT_UNDERSTANDING_SCHEMA,
+                stage="whole_pdf_understanding",
+            )
+        except RinaProviderRejectedError as direct_pdf_error:
+            direct_pdf_used = False
+            logger.warning(
+                "historical_pdf_direct_input_fallback model=%s reason=%s",
+                self.model,
+                str(direct_pdf_error)[:800],
+            )
+            understanding, understanding_request_id, response_model = self._call(
+                instructions=(
+                    understanding_instructions
+                    + "\n\nThe original PDF could not be accepted by the provider. "
+                    "Use the complete page-preserved text below as the authoritative "
+                    "representation for this pass. Do not weaken the evidence rules."
+                ),
+                input_content=[
+                    {
+                        "type": "input_text",
+                        "text": context_text,
+                    }
+                ],
+                schema_name="aura_historical_document_understanding",
+                schema=DOCUMENT_UNDERSTANDING_SCHEMA,
+                stage="page_preserved_text_fallback",
+            )
 
         structuring_instructions = """
 You are A.J. Rina converting an already-read historical vehicle document into
@@ -602,6 +684,7 @@ The review screen is a professional verification surface, not a diagnosis engine
             ],
             schema_name="aura_historical_review_candidates",
             schema=CANDIDATE_SCHEMA,
+            stage="advisor_record_structuring",
         )
 
         return HistoricalAdvisorAnalysis(
@@ -611,4 +694,5 @@ The review screen is a professional verification surface, not a diagnosis engine
             model=structured_model or response_model,
             understanding_request_id=understanding_request_id,
             structured_request_id=structured_request_id,
+            direct_pdf_used=direct_pdf_used,
         )

@@ -29,6 +29,7 @@ from historical_ingestion.service import (
     decrypt_extraction_payload,
     ingest_pdf_document,
     latest_structured_extraction,
+    reanalyze_stored_document,
     save_advisor_review,
 )
 from models import Car
@@ -177,6 +178,65 @@ def import_document(car_id: int):
             "historical_ingestion.review_document",
             car_id=car.id,
             evidence_id=result.evidence_id,
+        )
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/reanalyze"
+)
+@login_required
+@advisor_required
+def reanalyze_document(car_id: int, evidence_id: int):
+    car = Car.query.get_or_404(car_id)
+    evidence = VehicleEvidence.query.filter_by(
+        id=evidence_id,
+        car_id=car.id,
+    ).first_or_404()
+
+    try:
+        result = reanalyze_stored_document(
+            evidence_id=evidence.id,
+            actor_user_id=current_user.id,
+            retention_days=current_app.config.get("EVIDENCE_RETENTION_DAYS"),
+            storage_provider=current_app.extensions.get("evidence_storage_provider"),
+            storage_config=current_app.config,
+            language_provider=current_app.extensions.get(
+                "historical_document_provider"
+            ),
+        )
+    except (
+        HistoricalIngestionError,
+        HistoricalIngestionConfigurationError,
+    ) as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.review_document",
+                car_id=car.id,
+                evidence_id=evidence.id,
+            )
+        )
+
+    if result.structured_status == "completed":
+        flash(
+            "Rina re-read the original PDF using the advisor-grade analysis "
+            "pipeline. Review the new candidates before saving anything.",
+            "success",
+        )
+    else:
+        flash(
+            "The original PDF is still stored safely, but advisor-grade "
+            "re-analysis did not complete. No vehicle history was changed.",
+            "warning",
+        )
+
+    return redirect(
+        url_for(
+            "historical_ingestion.review_document",
+            car_id=car.id,
+            evidence_id=evidence.id,
         )
     )
 

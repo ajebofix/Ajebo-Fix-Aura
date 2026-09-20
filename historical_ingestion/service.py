@@ -855,7 +855,7 @@ def ingest_pdf_document(
         structured_status=structured.status if structured else "failed",
         page_count=page_count,
         extracted_characters=len(text),
-        reused_existing=reused_source,
+        reused_existing=False,
     )
 
 

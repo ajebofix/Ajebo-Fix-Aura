@@ -86,8 +86,9 @@
         </div>
 
         <p class="historical-analysis-note">
-            You do not need to refresh or tap Analyse again. If you refresh or leave this
-            screen, Aura reconnects to the same in-progress analysis instead of starting another one.
+            You do not need to keep this screen open. Rina continues the analysis securely
+            on the server; if you leave, lock your phone or lose connection, Aura reconnects
+            to the same in-progress analysis when you return.
         </p>
         <p class="historical-analysis-elapsed">
             <span id="historical-analysis-elapsed-label">{% if analysis_in_progress %}Analysing for{% else %}Uploading for{% endif %}</span>
@@ -544,10 +545,25 @@
 
             pollId = setTimeout(poll, 2500);
         } catch (error) {
-            message.textContent = "Connection interrupted. Aura will try again automatically.";
+            message.textContent = (
+                "Connection interrupted. Rina is continuing on the server; "
+                + "this screen will reconnect automatically."
+            );
             pollId = setTimeout(poll, 4000);
         }
     }
+
+    function reconnectNow() {
+        if (stopped) return;
+        if (pollId) clearTimeout(pollId);
+        pollId = null;
+        poll();
+    }
+
+    window.addEventListener("online", reconnectNow);
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") reconnectNow();
+    });
 
     poll();
     {% endif %}

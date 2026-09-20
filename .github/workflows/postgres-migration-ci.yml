@@ -90,7 +90,7 @@ jobs:
               "users", "cars", "car_ownership", "vehicle_events",
               "chat_messages", "conversation_records", "rina_ai_audit_events",
               "vehicle_evidence", "evidence_links", "evidence_extractions",
-              "user_sessions", "client_profiles", "profile_audit_events",
+              "evidence_bundle_items", "user_sessions", "client_profiles", "profile_audit_events",
               "client_invitations", "treatment_action_completion_details",
               "alembic_version",
           }
@@ -268,7 +268,10 @@ jobs:
           tables = set(inspector.get_table_names())
           if "rina_ai_audit_events" in tables:
               raise SystemExit("Rina AI audit table exists before its migration")
-          if {"vehicle_evidence", "evidence_links", "evidence_extractions"} & tables:
+          if {
+              "vehicle_evidence", "evidence_links", "evidence_extractions",
+              "evidence_bundle_items",
+          } & tables:
               raise SystemExit("Wave 1.4 evidence tables exist at d42 baseline")
 
           chat_columns = {c["name"] for c in inspector.get_columns("chat_messages")}

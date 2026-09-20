@@ -252,6 +252,13 @@
         </p>
         {% endif %}
 
+        {% if item.source_fact_ids %}
+        <p class="muted">
+            <strong>Source reference{{ 's' if item.source_fact_ids|length != 1 else '' }}:</strong>
+            {{ item.source_fact_ids|join(', ') }}
+        </p>
+        {% endif %}
+
         {% if item.source_excerpt %}
         <p class="muted">
             <strong>Source excerpt:</strong> {{ item.source_excerpt }}
@@ -261,7 +268,11 @@
         {% if item.source_verified is defined %}
         <p class="muted">
             <strong>Source check:</strong>
-            {{ 'Matched against extracted PDF text' if item.source_verified else 'Needs manual PDF verification' }}
+            {% if evidence.evidence_type == 'archive' %}
+                {{ 'Matched against the reconstructed case-bundle corpus' if item.source_verified else 'Needs manual source verification in the WhatsApp bundle' }}
+            {% else %}
+                {{ 'Matched against extracted PDF text' if item.source_verified else 'Needs manual PDF verification' }}
+            {% endif %}
         </p>
         {% endif %}
 
@@ -328,8 +339,13 @@
         if (window.AuraHistoricalAnalysis) {
             window.AuraHistoricalAnalysis.show();
             window.AuraHistoricalAnalysis.setPhase(
-                "understanding",
-                "Aura is retrieving the private source and starting advisor-grade analysis."
+                {{ "'unpacking'" if evidence.evidence_type == "archive" else "'understanding'" }},
+                {{ (
+                    "'Aura is retrieving the private WhatsApp bundle and resuming multimodal analysis.'"
+                    if evidence.evidence_type == "archive"
+                    else
+                    "'Aura is retrieving the private source and starting advisor-grade analysis.'"
+                )|safe }}
             );
         }
     });

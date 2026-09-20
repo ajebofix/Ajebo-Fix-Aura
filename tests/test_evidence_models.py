@@ -142,6 +142,7 @@ def test_initial_vocabularies_match_wave_1_4_architecture():
     assert set(EXTRACTION_TYPES) == {
         "image_observation",
         "document_text",
+        "document_understanding",
         "transcription",
         "structured_fields",
     }

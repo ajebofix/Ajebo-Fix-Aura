@@ -258,3 +258,8 @@ The old design ERD under `scripts/document structure/aura_ERD.md` remains histor
 | `EvidenceBundleItem` | `evidence_bundle_items` | bundle → `vehicle_evidence.id`; unique child → `vehicle_evidence.id`; preserves member index/kind/hash without plaintext original filename |
 
 `VehicleEvidence.evidence_type` additionally supports governed `archive` and `video` evidence, while `EvidenceExtraction.extraction_type` additionally supports encrypted `archive_manifest` payloads.
+
+
+### Historical source provenance extension
+
+`VehicleEvidence` includes nullable `historical_source_type` for governed historical imports. Existing WhatsApp case bundles and their child evidence backfill to `whatsapp_conversation`; qualifying historical web PDFs backfill to `standalone_document`. Non-historical evidence may remain NULL.

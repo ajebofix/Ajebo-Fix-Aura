@@ -482,7 +482,7 @@ class HistoricalAdvisorAnalyzer:
         encoded_pdf = base64.b64encode(pdf_payload).decode("ascii")
 
         understanding_instructions = """
-You are A.J. Rina performing historical vehicle-record analysis for an AJEB0 FIX
+You are A.J. Rina performing historical vehicle-record analysis for an AJEBO FIX
 PROFESSIONAL ADVISOR. You are not speaking to the vehicle owner.
 
 Read the ENTIRE uploaded PDF before forming conclusions. Treat it as a real

@@ -153,7 +153,13 @@ def import_document(car_id: int):
         flash("Aura could not import this historical document.", "error")
         return redirect(request.url)
 
-    if result.structured_status != "completed":
+    if result.reused_existing:
+        flash(
+            "This exact PDF is already stored for this vehicle. Aura reopened "
+            "the existing analysis instead of creating a different interpretation.",
+            "info",
+        )
+    elif result.structured_status != "completed":
         flash(
             "The PDF was stored and its text was captured, but Rina could not "
             "structure candidate records yet. No vehicle history was changed.",
@@ -161,8 +167,8 @@ def import_document(car_id: int):
         )
     else:
         flash(
-            "Document stored privately. Rina prepared candidate records for "
-            "your review; nothing has been published yet.",
+            "Document stored privately. Rina read the full PDF and prepared "
+            "candidate records for your review; nothing has been published yet.",
             "success",
         )
 

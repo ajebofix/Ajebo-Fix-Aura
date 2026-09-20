@@ -73,7 +73,7 @@
                     <a href="{{ url_for('admin.view_vehicle', car_id=ownership.car.id) }}"
                        class="btn btn-secondary">Open vehicle</a>
                     <a href="{{ url_for('historical_ingestion.import_document', car_id=ownership.car.id) }}"
-                       class="btn btn-primary">Import historical record</a>
+                       class="btn btn-primary">Import historical source</a>
                 </div>
             </div>
             {% if not loop.last %}<hr>{% endif %}

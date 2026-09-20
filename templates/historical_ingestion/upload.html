@@ -11,7 +11,7 @@
         Extraction is not a diagnosis and does not change the vehicle record by itself.
     </p>
 
-    <form method="POST" enctype="multipart/form-data">
+    <form id="historical-upload-form" method="POST" enctype="multipart/form-data">
         <label for="document">PDF document</label>
         <input
             id="document"
@@ -39,8 +39,8 @@
             records can be published later from suitable evidence.
         </p>
 
-        <button class="btn btn-primary btn-block" type="submit">
-            Upload and extract
+        <button id="historical-upload-button" class="btn btn-primary btn-block" type="submit">
+            Upload and analyse
         </button>
     </form>
 </section>
@@ -53,4 +53,28 @@
         establishes completion.
     </p>
 </section>
+
+{% set analysis_in_progress = false %}
+{% include "historical_ingestion/_analysis_overlay.html" %}
+
+<script>
+(function () {
+    const form = document.getElementById("historical-upload-form");
+    const button = document.getElementById("historical-upload-button");
+    if (!form || !button) return;
+
+    form.addEventListener("submit", function () {
+        if (!form.checkValidity()) return;
+        button.disabled = true;
+        button.textContent = "Securing document…";
+        if (window.AuraHistoricalAnalysis) {
+            window.AuraHistoricalAnalysis.show();
+            window.AuraHistoricalAnalysis.setPhase(
+                "understanding",
+                "Aura is securely storing the document and starting Rina's advisor-grade analysis."
+            );
+        }
+    });
+})();
+</script>
 {% endblock %}

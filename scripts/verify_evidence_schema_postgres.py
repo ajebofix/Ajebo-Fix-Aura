@@ -248,6 +248,15 @@ def main() -> None:
             ),
             {"evidence_id": evidence_id, "now": now},
         )
+        connection.execute(
+            text(
+                "INSERT INTO evidence_extractions "
+                "(evidence_id, extraction_type, provider, status, review_status, created_at, completed_at) "
+                "VALUES (:evidence_id, 'document_understanding', 'test-provider', "
+                "'completed', 'unreviewed', :now, :now)"
+            ),
+            {"evidence_id": evidence_id, "now": now},
+        )
 
     base_evidence_params = {
         "car_id": car_id,

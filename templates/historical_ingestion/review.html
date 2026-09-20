@@ -18,6 +18,19 @@
             {{ evidence.review_status|replace('_',' ')|title }}
         </span>
     </div>
+
+    <form
+        method="POST"
+        action="{{ url_for('historical_ingestion.reanalyze_document', car_id=car.id, evidence_id=evidence.id) }}"
+        style="margin-top:16px;"
+    >
+        <button type="submit" class="btn btn-secondary btn-block">
+            Re-analyze with advisor-grade Rina
+        </button>
+    </form>
+    <p class="muted" style="margin-top:8px;">
+        Uses the original private PDF. You do not need to upload the file again.
+    </p>
 </section>
 
 {% if not extraction or extraction.status != 'completed' %}

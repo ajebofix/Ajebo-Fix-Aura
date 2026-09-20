@@ -420,6 +420,13 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
                 [_image_bytes()],
             ),
         )
+        monkeypatch.setattr(
+            bundle_module,
+            "_audio_wav_chunks",
+            lambda *_args, **_kwargs: [
+                b"RIFF" + b"\x00" * 32 + b"WAVE" + b"\x00" * 80
+            ],
+        )
 
         started = ingest_whatsapp_bundle(
             user_id=advisor.id,
@@ -491,7 +498,7 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
         assert state.total_items == 5
         assert analyzer.images == 1
         assert analyzer.videos == 1
-        assert analyzer.audio >= 2  # voice note + extracted video audio
+        assert analyzer.audio >= 2  # normalized voice note + extracted video audio
         assert analyzer.started_understanding == 1
         assert analyzer.started_structuring == 1
 
@@ -647,3 +654,73 @@ def test_whatsapp_bundle_accepts_general_vehicle_history_context(app):
         evidence = db.session.get(VehicleEvidence, started.evidence_id)
         assert evidence.purpose == "vehicle_history_context"
         assert evidence.historical_source_type == "whatsapp_conversation"
+
+
+def test_whatsapp_audio_is_normalized_to_wav_before_transcription(
+    app,
+    monkeypatch,
+):
+    from historical_ingestion import whatsapp_bundle as bundle_module
+
+    class WavOnlyAnalyzer(FakeBundleAnalyzer):
+        def transcribe_audio(self, *, payload: bytes, filename: str, content_type: str):
+            assert payload.startswith(b"RIFF")
+            assert filename.endswith(".wav")
+            assert content_type == "audio/wav"
+            return super().transcribe_audio(
+                payload=payload,
+                filename=filename,
+                content_type=content_type,
+            )
+
+    with app.app_context():
+        owner = _user(suffix=12)
+        advisor = _user(suffix=13, role="admin")
+        car = _owned_car(owner, suffix=12)
+        storage = RecordingStorageProvider()
+        analyzer = WavOnlyAnalyzer()
+
+        monkeypatch.setattr(
+            bundle_module,
+            "_audio_wav_chunks",
+            lambda *_args, **_kwargs: [
+                b"RIFF" + b"\x00" * 32 + b"WAVE" + b"\x00" * 80
+            ],
+        )
+        monkeypatch.setattr(
+            bundle_module,
+            "_video_derivatives",
+            lambda *_args, **_kwargs: (
+                b"RIFF" + b"\x00" * 32 + b"WAVE" + b"\x00" * 80,
+                [_image_bytes()],
+            ),
+        )
+
+        started = ingest_whatsapp_bundle(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(_zip_bytes()),
+            purpose="service_document",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+        )
+
+        state = advance_whatsapp_bundle_analysis(
+            extraction_id=started.extraction_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            analyzer=analyzer,
+        )
+        assert state.phase == "preprocessing"
+
+        for _ in range(8):
+            state = advance_whatsapp_bundle_analysis(
+                extraction_id=started.extraction_id,
+                actor_user_id=advisor.id,
+                storage_provider=storage,
+                analyzer=analyzer,
+            )
+            if analyzer.audio:
+                break
+
+        assert analyzer.audio >= 1

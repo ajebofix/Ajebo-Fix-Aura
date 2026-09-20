@@ -249,3 +249,12 @@ Those should be added only through explicit product/architecture review, not by 
 When a future migration changes this persistence map, update this snapshot or replace it with a dated successor.
 
 The old design ERD under `scripts/document structure/aura_ERD.md` remains historical product architecture and must not be treated as a literal description of the production schema.
+
+
+### WhatsApp bundle lineage extension
+
+| Model | Table | Key relationships |
+|---|---|---|
+| `EvidenceBundleItem` | `evidence_bundle_items` | bundle → `vehicle_evidence.id`; unique child → `vehicle_evidence.id`; preserves member index/kind/hash without plaintext original filename |
+
+`VehicleEvidence.evidence_type` additionally supports governed `archive` and `video` evidence, while `EvidenceExtraction.extraction_type` additionally supports encrypted `archive_manifest` payloads.

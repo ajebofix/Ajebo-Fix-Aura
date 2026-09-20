@@ -1,52 +1,77 @@
 {% extends "base.html" %}
-{% block title %}Import Historical Record{% endblock %}
-{% block page_title %}Import Historical Record{% endblock %}
+{% block title %}Import Historical Source{% endblock %}
+{% block page_title %}Import Historical Source{% endblock %}
 {% block page_subtitle %}{{ car.decoded_display_name }} — source first, advisor approval before history.{% endblock %}
 
 {% block content %}
 <section class="card">
-    <h2>Upload historical source</h2>
+    <h2>Add a historical source</h2>
     <p class="muted">
-        Upload a PDF or a WhatsApp ZIP export. Aura keeps the original source private,
-        analyses supported chat text and media, and asks you to review candidate facts.
-        Extraction is not a diagnosis and does not change the vehicle record by itself.
+        Tell Aura what kind of source you are importing, then what the source is for.
+        Rina uses the source type to interpret its structure and context; nothing becomes
+        durable vehicle history without advisor review.
     </p>
 
     <form id="historical-upload-form" method="POST" enctype="multipart/form-data">
-        <label for="document">PDF document or WhatsApp ZIP</label>
+        <label for="source_type">Historical source type</label>
+        <select id="source_type" name="source_type" required>
+            <option value="" selected disabled>Select source type</option>
+            <option value="standalone_document">Standalone document / PDF</option>
+            <option value="whatsapp_conversation">WhatsApp conversation export</option>
+            <optgroup label="Coming later">
+                <option value="instagram_conversation" disabled>Instagram conversation</option>
+                <option value="tiktok_conversation" disabled>TikTok conversation</option>
+                <option value="email_conversation" disabled>Email conversation</option>
+                <option value="sms_imessage_conversation" disabled>SMS / iMessage conversation</option>
+                <option value="other_conversation_archive" disabled>Other conversation / archive</option>
+            </optgroup>
+        </select>
+        <p class="muted" id="source-type-help">
+            Choose the source Aura is about to interpret. Only currently supported
+            source types can be selected.
+        </p>
+
+        <label id="source-file-label" for="document">Source file</label>
         <input
             id="document"
             name="document"
             type="file"
-            accept="application/pdf,.pdf,application/zip,application/x-zip-compressed,.zip"
             required
+            disabled
         >
-        <p class="muted">
-            WhatsApp bundles may include the exported chat, JPEG/PNG/WebP images,
-            PDFs, voice notes/audio and MP4/MOV video. The original ZIP and derived
-            evidence stay private and advisor-only during analysis.
+        <p class="muted" id="source-file-help">
+            Select a source type first so Aura can request the correct file format.
         </p>
 
-        <label for="purpose">Document purpose</label>
+        <label for="purpose">Record purpose</label>
         <select id="purpose" name="purpose">
-            <option value="service_document">Service / job document</option>
-            <option value="diagnostic_document">Diagnostic document</option>
-            <option value="treatment_evidence">Treatment evidence</option>
+            <option value="service_document">Service / job record</option>
+            <option value="diagnostic_document">Diagnostic record</option>
+            <option value="treatment_evidence">Treatment / completed-work evidence</option>
+            <option value="vehicle_history_context">General vehicle-history context</option>
         </select>
+        <p class="muted">
+            Purpose describes why this source matters to the vehicle. It does not change
+            what the source itself is.
+        </p>
 
         <label for="visibility">Source visibility</label>
         <select id="visibility" name="visibility">
             <option value="advisor" selected>Advisor only</option>
-            <option value="client">Client may know this source exists</option>
+            <option id="client-visibility-option" value="client">Client may know this source exists</option>
         </select>
 
-        <p class="muted">
-            Keep billing/internal sources advisor-only. WhatsApp ZIP imports are always
-            held advisor-only during analysis even if this selector is changed. Client-safe
-            completed-work records can be published later from reviewed evidence.
+        <p class="muted" id="visibility-help">
+            Keep billing and internal material advisor-only. Client-safe records can be
+            published later from reviewed evidence.
         </p>
 
-        <button id="historical-upload-button" class="btn btn-primary btn-block" type="submit">
+        <button
+            id="historical-upload-button"
+            class="btn btn-primary btn-block"
+            type="submit"
+            disabled
+        >
             Upload and analyse
         </button>
     </form>
@@ -55,9 +80,9 @@
 <section class="card">
     <h3>Authority boundary</h3>
     <p class="muted">
-        Recommended, authorised and completed work are different facts. Aura will not
-        call a quoted or paid item replaced unless the source or your professional review
-        establishes completion.
+        Recommended, authorised, paid, purchased and completed work are different facts.
+        Aura will not call an item installed or a concern resolved unless the source or
+        your professional review establishes it.
     </p>
 </section>
 
@@ -67,19 +92,79 @@
 <script>
 (function () {
     const form = document.getElementById("historical-upload-form");
+    const sourceType = document.getElementById("source_type");
+    const fileInput = document.getElementById("document");
+    const fileLabel = document.getElementById("source-file-label");
+    const fileHelp = document.getElementById("source-file-help");
+    const sourceHelp = document.getElementById("source-type-help");
+    const visibility = document.getElementById("visibility");
+    const visibilityHelp = document.getElementById("visibility-help");
+    const clientVisibility = document.getElementById("client-visibility-option");
     const button = document.getElementById("historical-upload-button");
-    if (!form || !button) return;
+    if (!form || !sourceType || !fileInput || !button) return;
+
+    function updateSourceUI() {
+        const selected = sourceType.value;
+        fileInput.value = "";
+
+        if (selected === "whatsapp_conversation") {
+            fileInput.disabled = false;
+            button.disabled = false;
+            fileInput.accept = "application/zip,application/x-zip-compressed,.zip";
+            fileLabel.textContent = "Original WhatsApp ZIP export";
+            fileHelp.textContent =
+                "Upload the original WhatsApp export ZIP with media included. Rina will reconstruct the chat chronology and analyse supported images, PDFs, voice notes/audio and video in context.";
+            sourceHelp.textContent =
+                "WhatsApp tells Rina to interpret senders, message order, attachments, voice notes and conversational context as one case bundle.";
+            visibility.value = "advisor";
+            if (clientVisibility) clientVisibility.disabled = true;
+            visibilityHelp.textContent =
+                "WhatsApp conversation bundles stay advisor-only during analysis. Client-safe vehicle-history records can be published later from reviewed evidence.";
+            return;
+        }
+
+        if (selected === "standalone_document") {
+            fileInput.disabled = false;
+            button.disabled = false;
+            fileInput.accept = "application/pdf,.pdf";
+            fileLabel.textContent = "PDF document";
+            fileHelp.textContent =
+                "Upload a text-bearing PDF. Aura stores the original privately and Rina reads the whole document before preparing advisor-review candidates.";
+            sourceHelp.textContent =
+                "Standalone document tells Rina to interpret this as one self-contained PDF source rather than a conversation archive.";
+            if (clientVisibility) clientVisibility.disabled = false;
+            visibilityHelp.textContent =
+                "Keep billing and internal documents advisor-only. Client-safe records can be published later from reviewed evidence.";
+            return;
+        }
+
+        fileInput.disabled = true;
+        button.disabled = true;
+        fileInput.removeAttribute("accept");
+        fileLabel.textContent = "Source file";
+        fileHelp.textContent =
+            "Select a source type first so Aura can request the correct file format.";
+        sourceHelp.textContent =
+            "Choose the source Aura is about to interpret. Only currently supported source types can be selected.";
+        if (clientVisibility) clientVisibility.disabled = false;
+    }
+
+    sourceType.addEventListener("change", updateSourceUI);
+    updateSourceUI();
 
     form.addEventListener("submit", function () {
         if (!form.checkValidity()) return;
         button.disabled = true;
         button.textContent = "Securing source…";
+
         if (window.AuraHistoricalAnalysis) {
             window.AuraHistoricalAnalysis.show();
-            window.AuraHistoricalAnalysis.setPhase(
-                "understanding",
-                "Aura is securely storing the source and preparing Rina's advisor-grade analysis."
-            );
+            if (sourceType.value === "standalone_document") {
+                window.AuraHistoricalAnalysis.setPhase(
+                    "understanding",
+                    "Aura is securely storing the PDF and starting Rina's advisor-grade analysis."
+                );
+            }
         }
     });
 })();

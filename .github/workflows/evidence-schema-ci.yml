@@ -69,6 +69,7 @@ jobs:
         run: |
           python -m py_compile evidence/__init__.py evidence/models.py
           python -m py_compile migrations/versions/c62f1a4e8d30_add_vehicle_evidence_domain.py
+          python -m py_compile migrations/versions/a7e2c4f9b310_add_whatsapp_case_bundle_evidence.py
           python -m py_compile scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py
 
       - name: Run evidence model contract tests
@@ -76,7 +77,7 @@ jobs:
 
       - name: Lint evidence schema sources
         run: |
-          ruff check evidence tests/test_evidence_models.py scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py migrations/versions/c62f1a4e8d30_add_vehicle_evidence_domain.py
+          ruff check evidence tests/test_evidence_models.py scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py migrations/versions/c62f1a4e8d30_add_vehicle_evidence_domain.py migrations/versions/a7e2c4f9b310_add_whatsapp_case_bundle_evidence.py
           bandit -q -r evidence scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py
 
       - name: Upgrade fresh PostgreSQL database to current repository head
@@ -99,7 +100,10 @@ jobs:
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
           inspector = inspect(engine)
           tables = set(inspector.get_table_names())
-          forbidden = {"vehicle_evidence", "evidence_links", "evidence_extractions"}
+          forbidden = {
+              "vehicle_evidence", "evidence_links", "evidence_extractions",
+              "evidence_bundle_items",
+          }
           present = forbidden & tables
           if present:
               raise SystemExit(f"Evidence tables survived downgrade: {sorted(present)}")
@@ -122,7 +126,10 @@ jobs:
 
           engine = create_engine(os.environ["SQLALCHEMY_DATABASE_URI"])
           inspector = inspect(engine)
-          required = {"vehicle_evidence", "evidence_links", "evidence_extractions"}
+          required = {
+              "vehicle_evidence", "evidence_links", "evidence_extractions",
+              "evidence_bundle_items",
+          }
           missing = required - set(inspector.get_table_names())
           if missing:
               raise SystemExit(f"Evidence tables missing after re-upgrade: {sorted(missing)}")

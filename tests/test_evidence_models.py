@@ -13,6 +13,7 @@ from evidence.models import (
     EXTRACTION_REVIEW_STATUSES,
     EXTRACTION_STATUSES,
     EXTRACTION_TYPES,
+    EvidenceBundleItem,
     EvidenceExtraction,
     EvidenceLink,
     VehicleEvidence,
@@ -102,7 +103,7 @@ def test_extraction_payload_slots_are_encrypted_not_plaintext():
 
 
 def test_initial_vocabularies_match_wave_1_4_architecture():
-    assert EVIDENCE_TYPES == ("image", "document", "audio")
+    assert EVIDENCE_TYPES == ("image", "document", "audio", "video", "archive")
     assert set(EVIDENCE_SOURCE_CHANNELS) == {"web", "whatsapp", "api"}
     assert set(EVIDENCE_VISIBILITY) == {"client", "advisor", "internal"}
     assert set(EVIDENCE_REVIEW_STATUSES) == {
@@ -143,6 +144,7 @@ def test_initial_vocabularies_match_wave_1_4_architecture():
         "image_observation",
         "document_text",
         "document_understanding",
+        "archive_manifest",
         "transcription",
         "structured_fields",
     }
@@ -153,3 +155,24 @@ def test_initial_vocabularies_match_wave_1_4_architecture():
         "rejected",
         "corrected",
     }
+
+
+def test_evidence_bundle_lineage_is_metadata_only():
+    columns = set(EvidenceBundleItem.__table__.columns.keys())
+    assert {
+        "bundle_evidence_id",
+        "child_evidence_id",
+        "member_index",
+        "member_kind",
+        "member_sha256",
+        "created_at",
+    } <= columns
+    prohibited = {"original_name", "raw_bytes", "transcript", "public_url"}
+    assert not (columns & prohibited)
+
+    constraint_names = {
+        constraint.name
+        for constraint in EvidenceBundleItem.__table__.constraints
+        if constraint.name
+    }
+    assert "uq_evidence_bundle_member_index" in constraint_names

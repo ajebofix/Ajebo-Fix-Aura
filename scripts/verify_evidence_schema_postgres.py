@@ -33,7 +33,12 @@ def main() -> None:
     inspector = inspect(engine)
 
     tables = set(inspector.get_table_names())
-    required_tables = {"vehicle_evidence", "evidence_links", "evidence_extractions"}
+    required_tables = {
+        "vehicle_evidence",
+        "evidence_links",
+        "evidence_extractions",
+        "evidence_bundle_items",
+    }
     missing_tables = required_tables - tables
     if missing_tables:
         raise SystemExit(f"Evidence schema missing tables: {sorted(missing_tables)}")
@@ -248,6 +253,62 @@ def main() -> None:
             ),
             {"evidence_id": evidence_id, "now": now},
         )
+        archive_id = connection.execute(
+            text(
+                "INSERT INTO vehicle_evidence "
+                "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, visibility, review_status, "
+                "storage_provider, storage_state, object_key, safe_display_name, content_type, byte_size, sha256, "
+                "uploaded_at, consent_basis, lawful_purpose, created_at, updated_at) "
+                "VALUES (:car_id, :user_id, 'archive', 'service_document', 'whatsapp', 'advisor', 'pending_review', "
+                "'r2', 'available', 'production/evidence/test-archive', 'case.zip', 'application/zip', 2048, :sha256, "
+                ":now, 'advisor_import', 'vehicle_care_recordkeeping', :now, :now) RETURNING id"
+            ),
+            {
+                "car_id": car_id,
+                "user_id": user_id,
+                "sha256": "c" * 64,
+                "now": now,
+            },
+        ).scalar_one()
+        video_id = connection.execute(
+            text(
+                "INSERT INTO vehicle_evidence "
+                "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, visibility, review_status, "
+                "storage_provider, storage_state, object_key, safe_display_name, content_type, byte_size, sha256, "
+                "uploaded_at, consent_basis, lawful_purpose, created_at, updated_at) "
+                "VALUES (:car_id, :user_id, 'video', 'service_document', 'whatsapp', 'advisor', 'pending_review', "
+                "'r2', 'available', 'production/evidence/test-video', 'clip.mp4', 'video/mp4', 1024, :sha256, "
+                ":now, 'advisor_import', 'vehicle_care_recordkeeping', :now, :now) RETURNING id"
+            ),
+            {
+                "car_id": car_id,
+                "user_id": user_id,
+                "sha256": "d" * 64,
+                "now": now,
+            },
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO evidence_bundle_items "
+                "(bundle_evidence_id, child_evidence_id, member_index, member_kind, member_sha256, created_at) "
+                "VALUES (:bundle_id, :child_id, 1, 'video', :sha256, :now)"
+            ),
+            {
+                "bundle_id": archive_id,
+                "child_id": video_id,
+                "sha256": "e" * 64,
+                "now": now,
+            },
+        )
+        archive_manifest_id = connection.execute(
+            text(
+                "INSERT INTO evidence_extractions "
+                "(evidence_id, extraction_type, provider, status, review_status, created_at, completed_at) "
+                "VALUES (:evidence_id, 'archive_manifest', 'aura_zip', 'completed', 'unreviewed', :now, :now) "
+                "RETURNING id"
+            ),
+            {"evidence_id": archive_id, "now": now},
+        ).scalar_one()
         document_understanding_id = connection.execute(
             text(
                 "INSERT INTO evidence_extractions "
@@ -265,6 +326,14 @@ def main() -> None:
             text("DELETE FROM evidence_extractions WHERE id = :extraction_id"),
             {"extraction_id": document_understanding_id},
         )
+        connection.execute(
+            text("DELETE FROM evidence_extractions WHERE id = :extraction_id"),
+            {"extraction_id": archive_manifest_id},
+        )
+        connection.execute(
+            text("DELETE FROM vehicle_evidence WHERE id IN (:video_id, :archive_id)"),
+            {"video_id": video_id, "archive_id": archive_id},
+        )
 
     base_evidence_params = {
         "car_id": car_id,
@@ -279,7 +348,7 @@ def main() -> None:
         "(car_id, uploaded_by_user_id, evidence_type, purpose, source_channel, visibility, review_status, "
         "storage_provider, storage_state, object_key, safe_display_name, content_type, byte_size, sha256, "
         "uploaded_at, consent_basis, lawful_purpose, created_at, updated_at) "
-        "VALUES (:car_id, :user_id, 'video', 'concern_support', 'web', 'client', 'pending_review', "
+        "VALUES (:car_id, :user_id, 'executable', 'concern_support', 'web', 'client', 'pending_review', "
         "'r2', 'pending', 'production/evidence/invalid-type', 'bad.bin', 'application/octet-stream', 100, :sha256, "
         ":now, 'explicit_upload', 'vehicle_care', :now, :now)",
         base_evidence_params,

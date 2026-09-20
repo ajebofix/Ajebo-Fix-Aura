@@ -5,21 +5,27 @@
 
 {% block content %}
 <section class="card">
-    <h2>Upload source document</h2>
+    <h2>Upload historical source</h2>
     <p class="muted">
-        Aura stores the original PDF privately, extracts candidate facts, and asks you to review them.
+        Upload a PDF or a WhatsApp ZIP export. Aura keeps the original source private,
+        analyses supported chat text and media, and asks you to review candidate facts.
         Extraction is not a diagnosis and does not change the vehicle record by itself.
     </p>
 
     <form id="historical-upload-form" method="POST" enctype="multipart/form-data">
-        <label for="document">PDF document</label>
+        <label for="document">PDF document or WhatsApp ZIP</label>
         <input
             id="document"
             name="document"
             type="file"
-            accept="application/pdf,.pdf"
+            accept="application/pdf,.pdf,application/zip,application/x-zip-compressed,.zip"
             required
         >
+        <p class="muted">
+            WhatsApp bundles may include the exported chat, JPEG/PNG/WebP images,
+            PDFs, voice notes/audio and MP4/MOV video. The original ZIP and derived
+            evidence stay private and advisor-only during analysis.
+        </p>
 
         <label for="purpose">Document purpose</label>
         <select id="purpose" name="purpose">
@@ -35,8 +41,9 @@
         </select>
 
         <p class="muted">
-            Keep billing/internal documents advisor-only. Client-visible completed-work
-            records can be published later from suitable evidence.
+            Keep billing/internal sources advisor-only. WhatsApp ZIP imports are always
+            held advisor-only during analysis even if this selector is changed. Client-safe
+            completed-work records can be published later from reviewed evidence.
         </p>
 
         <button id="historical-upload-button" class="btn btn-primary btn-block" type="submit">
@@ -66,12 +73,12 @@
     form.addEventListener("submit", function () {
         if (!form.checkValidity()) return;
         button.disabled = true;
-        button.textContent = "Securing document…";
+        button.textContent = "Securing source…";
         if (window.AuraHistoricalAnalysis) {
             window.AuraHistoricalAnalysis.show();
             window.AuraHistoricalAnalysis.setPhase(
                 "understanding",
-                "Aura is securely storing the document and starting Rina's advisor-grade analysis."
+                "Aura is securely storing the source and preparing Rina's advisor-grade analysis."
             );
         }
     });

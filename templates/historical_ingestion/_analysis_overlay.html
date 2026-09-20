@@ -35,9 +35,39 @@
                 <span>1</span>
                 <div>
                     <strong>Source secured</strong>
-                    <small>Original document remains private.</small>
+                    <small>Original source remains private.</small>
                 </div>
             </div>
+            {% if analysis_kind|default('pdf') == 'whatsapp_bundle' %}
+            <div class="analysis-step{% if analysis_in_progress %} is-active{% endif %}" data-analysis-step="unpacking">
+                <span>2</span>
+                <div>
+                    <strong>Open the case bundle safely</strong>
+                    <small>Validate the ZIP and preserve child-evidence lineage.</small>
+                </div>
+            </div>
+            <div class="analysis-step" data-analysis-step="preprocessing">
+                <span>3</span>
+                <div>
+                    <strong>Analyse chat and media</strong>
+                    <small>Text, images, PDFs, voice notes, audio and video.</small>
+                </div>
+            </div>
+            <div class="analysis-step" data-analysis-step="understanding">
+                <span>4</span>
+                <div>
+                    <strong>Reconcile the complete case</strong>
+                    <small>Chronology, contradictions, completed work and outcomes.</small>
+                </div>
+            </div>
+            <div class="analysis-step" data-analysis-step="structuring">
+                <span>5</span>
+                <div>
+                    <strong>Prepare advisor review</strong>
+                    <small>Separate evidence, plans, completed work, outcomes and finance.</small>
+                </div>
+            </div>
+            {% else %}
             <div class="analysis-step{% if analysis_in_progress %} is-active{% endif %}" data-analysis-step="understanding">
                 <span>2</span>
                 <div>
@@ -52,6 +82,7 @@
                     <small>Separate evidence, plans, completed work, outcomes and finance.</small>
                 </div>
             </div>
+            {% endif %}
         </div>
 
         <p class="historical-analysis-note">
@@ -296,8 +327,11 @@
     const message = document.getElementById("historical-analysis-message");
     const elapsed = document.getElementById("historical-analysis-elapsed");
     const closeButton = document.getElementById("historical-analysis-close");
+    const unpackingStep = overlay.querySelector('[data-analysis-step="unpacking"]');
+    const preprocessingStep = overlay.querySelector('[data-analysis-step="preprocessing"]');
     const understandingStep = overlay.querySelector('[data-analysis-step="understanding"]');
     const structuringStep = overlay.querySelector('[data-analysis-step="structuring"]');
+    const isBundle = {{ (analysis_kind|default('pdf') == 'whatsapp_bundle')|tojson }};
 
     let startedAt = Date.now();
     let timerId = null;
@@ -333,23 +367,67 @@
         timerId = null;
     }
 
-    function setPhase(phase, serverMessage) {
-        understandingStep.classList.remove("is-active", "is-done");
-        structuringStep.classList.remove("is-active", "is-done");
+    function resetStep(step) {
+        if (step) step.classList.remove("is-active", "is-done");
+    }
 
-        if (phase === "understanding") {
-            understandingStep.classList.add("is-active");
-            title.textContent = "Rina is reading the full document";
-        } else if (phase === "structuring") {
-            understandingStep.classList.add("is-done");
-            structuringStep.classList.add("is-active");
-            title.textContent = "Rina is preparing the advisor review";
-        } else if (phase === "completed") {
-            understandingStep.classList.add("is-done");
-            structuringStep.classList.add("is-done");
-            title.textContent = "Analysis complete";
-        } else if (phase === "failed") {
-            title.textContent = "Analysis could not finish";
+    function doneStep(step) {
+        if (step) step.classList.add("is-done");
+    }
+
+    function activeStep(step) {
+        if (step) step.classList.add("is-active");
+    }
+
+    function setPhase(phase, serverMessage) {
+        resetStep(unpackingStep);
+        resetStep(preprocessingStep);
+        resetStep(understandingStep);
+        resetStep(structuringStep);
+
+        if (isBundle) {
+            if (phase === "unpacking") {
+                activeStep(unpackingStep);
+                title.textContent = "Aura is opening the WhatsApp case bundle";
+            } else if (phase === "preprocessing") {
+                doneStep(unpackingStep);
+                activeStep(preprocessingStep);
+                title.textContent = "Rina is analysing the chat and media";
+            } else if (phase === "understanding") {
+                doneStep(unpackingStep);
+                doneStep(preprocessingStep);
+                activeStep(understandingStep);
+                title.textContent = "Rina is reconciling the complete case";
+            } else if (phase === "structuring") {
+                doneStep(unpackingStep);
+                doneStep(preprocessingStep);
+                doneStep(understandingStep);
+                activeStep(structuringStep);
+                title.textContent = "Rina is preparing the advisor review";
+            } else if (phase === "completed") {
+                doneStep(unpackingStep);
+                doneStep(preprocessingStep);
+                doneStep(understandingStep);
+                doneStep(structuringStep);
+                title.textContent = "Case-bundle analysis complete";
+            } else if (phase === "failed") {
+                title.textContent = "Bundle analysis could not finish";
+            }
+        } else {
+            if (phase === "understanding") {
+                activeStep(understandingStep);
+                title.textContent = "Rina is reading the full document";
+            } else if (phase === "structuring") {
+                doneStep(understandingStep);
+                activeStep(structuringStep);
+                title.textContent = "Rina is preparing the advisor review";
+            } else if (phase === "completed") {
+                doneStep(understandingStep);
+                doneStep(structuringStep);
+                title.textContent = "Analysis complete";
+            } else if (phase === "failed") {
+                title.textContent = "Analysis could not finish";
+            }
         }
 
         if (serverMessage) message.textContent = serverMessage;
@@ -400,7 +478,15 @@
             }
 
             const data = await response.json();
-            setPhase(data.phase || "understanding", data.message || "");
+            let statusMessage = data.message || "";
+            if (
+                data.phase === "preprocessing"
+                && Number(data.total_items || 0) > 0
+            ) {
+                statusMessage += " (" + Number(data.completed_items || 0)
+                    + "/" + Number(data.total_items || 0) + " complete)";
+            }
+            setPhase(data.phase || (isBundle ? "unpacking" : "understanding"), statusMessage);
 
             if (data.status === "completed") {
                 stopped = true;

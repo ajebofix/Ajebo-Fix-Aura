@@ -163,10 +163,10 @@ def create_app():
         REMEMBER_COOKIE_HTTPONLY=True,
         REMEMBER_COOKIE_SAMESITE="Lax",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-        # Image intake still enforces its own strict 2 MB sanitizer limit.
-        # Historical PDF intake has a separate 10 MB validator, so Flask must
-        # allow enough multipart overhead for either governed workflow.
-        MAX_CONTENT_LENGTH=12 * 1024 * 1024,
+        # Each evidence workflow enforces its own stricter payload/member bounds.
+        # The larger request ceiling is required for advisor-imported WhatsApp
+        # case bundles that can contain media alongside the chat transcript.
+        MAX_CONTENT_LENGTH=160 * 1024 * 1024,
     )
 
     app.config["MAIL_SERVER"] = "smtp.gmail.com"
@@ -361,6 +361,7 @@ def create_app():
                 "client_profiles",
                 "profile_audit_events",
                 "client_invitations",
+                "evidence_bundle_items",
                 "treatment_action_completion_details",
             }
             missing_tables = required_tables - tables

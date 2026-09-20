@@ -450,6 +450,7 @@ def test_pdf_extraction_is_candidate_only_until_advisor_review_and_apply(app):
         evidence = db.session.get(VehicleEvidence, result.evidence_id)
         extraction = latest_structured_extraction(evidence.id)
         assert evidence.evidence_type == "document"
+        assert evidence.historical_source_type == "standalone_document"
         assert evidence.storage_state == "available"
         assert evidence.review_status == "pending_review"
         assert evidence.object_key in storage.objects

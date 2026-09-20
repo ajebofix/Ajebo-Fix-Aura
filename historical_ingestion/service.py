@@ -821,6 +821,53 @@ def _mark_background_failed(
     )
 
 
+def _mark_background_persistence_failed(
+    *,
+    extraction_id: int,
+    exc: SQLAlchemyError,
+) -> HistoricalBackgroundStatus:
+    db.session.rollback()
+    current_app.logger.exception(
+        "historical_background_persistence_failed extraction_id=%s",
+        extraction_id,
+    )
+
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    if extraction is None:
+        raise HistoricalIngestionError(
+            "Aura could not persist the historical analysis state."
+        ) from exc
+
+    evidence_id = extraction.evidence_id
+    extraction.status = "failed"
+    extraction.completed_at = _utcnow_naive()
+    extraction.provenance = {
+        **(extraction.provenance or {}),
+        "background_stage": "failed",
+        "failure_class": type(exc).__name__,
+        "failure_detail": "Aura could not persist an analysis transition.",
+    }
+    try:
+        db.session.commit()
+    except SQLAlchemyError as commit_exc:
+        db.session.rollback()
+        raise HistoricalIngestionError(
+            "Aura could not persist the historical analysis state."
+        ) from commit_exc
+
+    return HistoricalBackgroundStatus(
+        evidence_id=evidence_id,
+        extraction_id=extraction.id,
+        status="failed",
+        phase="failed",
+        message=(
+            "Rina finished a reasoning step, but Aura could not save the analysis "
+            "transition. No vehicle history was changed."
+        ),
+        review_ready=has_completed_structured_extraction(evidence_id),
+    )
+
+
 def _start_background_for_evidence(
     *,
     evidence: VehicleEvidence,
@@ -1215,8 +1262,14 @@ def advance_historical_background_analysis(
             },
             completed_at=_utcnow_naive(),
         )
-        db.session.add(understanding)
-        db.session.flush()
+        try:
+            db.session.add(understanding)
+            db.session.flush()
+        except SQLAlchemyError as exc:
+            return _mark_background_persistence_failed(
+                extraction_id=extraction.id,
+                exc=exc,
+            )
 
         try:
             next_response = analyzer.start_structuring_background(
@@ -1235,7 +1288,13 @@ def advance_historical_background_analysis(
             "understanding_extraction_id": understanding.id,
             "understanding_response_id": response.response_id,
         }
-        db.session.commit()
+        try:
+            db.session.commit()
+        except SQLAlchemyError as exc:
+            return _mark_background_persistence_failed(
+                extraction_id=extraction.id,
+                exc=exc,
+            )
         return HistoricalBackgroundStatus(
             evidence_id=evidence.id,
             extraction_id=extraction.id,
@@ -1265,7 +1324,13 @@ def advance_historical_background_analysis(
             "provider_output_normalized": True,
             "reasoning_stage": "advisor_record_structuring",
         }
-        db.session.commit()
+        try:
+            db.session.commit()
+        except SQLAlchemyError as exc:
+            return _mark_background_persistence_failed(
+                extraction_id=extraction.id,
+                exc=exc,
+            )
         return HistoricalBackgroundStatus(
             evidence_id=evidence.id,
             extraction_id=extraction.id,

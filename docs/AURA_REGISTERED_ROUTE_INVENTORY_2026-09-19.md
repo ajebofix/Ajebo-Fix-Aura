@@ -224,6 +224,8 @@ The advisor-wide Alert Center is the operational surface for durable care signal
 | GET | `/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/analysis-status` |
 | POST | `/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/apply` |
 
+The historical-record import route accepts governed PDFs and advisor-imported WhatsApp ZIP case bundles. ZIP media analysis reuses the same review, status and re-analysis endpoints; no parallel public archive route is introduced.
+
 ## 16. Advisor console — VIN / DTC
 
 | Methods | Route |

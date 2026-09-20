@@ -36,6 +36,13 @@ from historical_ingestion.service import (
     reanalyze_stored_document_background,
     save_advisor_review,
 )
+from historical_ingestion.whatsapp_bundle import (
+    WhatsAppBundleValidationError,
+    advance_whatsapp_bundle_analysis,
+    ingest_whatsapp_bundle,
+    latest_whatsapp_bundle_extraction,
+    restart_whatsapp_bundle_analysis,
+)
 from models import Car
 
 
@@ -123,26 +130,44 @@ def import_document(car_id: int):
 
     uploaded = request.files.get("document")
     if uploaded is None:
-        flash("Select a PDF document.", "error")
+        flash("Select a PDF document or WhatsApp ZIP export.", "error")
         return redirect(request.url)
 
+    filename = str(uploaded.filename or "").lower()
+    is_zip = filename.endswith(".zip") or (
+        (uploaded.content_type or "").lower()
+        in {"application/zip", "application/x-zip-compressed"}
+    )
+
     try:
-        result = ingest_pdf_document_background(
-            user_id=current_user.id,
-            car_id=car.id,
-            file_stream=uploaded.stream,
-            declared_content_type=uploaded.content_type or "",
-            purpose=request.form.get("purpose", "service_document"),
-            visibility=request.form.get("visibility", "advisor"),
-            retention_days=current_app.config.get("EVIDENCE_RETENTION_DAYS"),
-            storage_provider=current_app.extensions.get("evidence_storage_provider"),
-            storage_config=current_app.config,
-            language_provider=current_app.extensions.get(
-                "historical_document_provider"
-            ),
-        )
+        if is_zip:
+            result = ingest_whatsapp_bundle(
+                user_id=current_user.id,
+                car_id=car.id,
+                file_stream=uploaded.stream,
+                purpose=request.form.get("purpose", "service_document"),
+                retention_days=current_app.config.get("EVIDENCE_RETENTION_DAYS"),
+                storage_provider=current_app.extensions.get("evidence_storage_provider"),
+                storage_config=current_app.config,
+            )
+        else:
+            result = ingest_pdf_document_background(
+                user_id=current_user.id,
+                car_id=car.id,
+                file_stream=uploaded.stream,
+                declared_content_type=uploaded.content_type or "",
+                purpose=request.form.get("purpose", "service_document"),
+                visibility=request.form.get("visibility", "advisor"),
+                retention_days=current_app.config.get("EVIDENCE_RETENTION_DAYS"),
+                storage_provider=current_app.extensions.get("evidence_storage_provider"),
+                storage_config=current_app.config,
+                language_provider=current_app.extensions.get(
+                    "historical_document_provider"
+                ),
+            )
     except (
         HistoricalDocumentValidationError,
+        WhatsAppBundleValidationError,
         HistoricalIngestionConfigurationError,
     ) as exc:
         db.session.rollback()
@@ -163,16 +188,24 @@ def import_document(car_id: int):
             "This source already has an advisor-grade analysis ready for review.",
             "info",
         )
-    elif result.reused_analysis:
+    elif getattr(result, "reused_analysis", False) or getattr(
+        result, "reused_existing", False
+    ):
         flash(
-            "Rina is already analysing this document. Aura resumed the existing "
+            "Rina is already analysing this source. Aura resumed the existing "
             "analysis instead of starting another one.",
             "info",
         )
     else:
         flash(
-            "Document stored privately. Rina has started advisor-grade analysis; "
-            "the review page will update automatically when it is ready.",
+            (
+                "WhatsApp case bundle stored privately. Rina will reconcile the chat, "
+                "images, voice notes, videos and documents for advisor review."
+                if is_zip
+                else
+                "Document stored privately. Rina has started advisor-grade analysis; "
+                "the review page will update automatically when it is ready."
+            ),
             "success",
         )
 
@@ -198,15 +231,21 @@ def reanalyze_document(car_id: int, evidence_id: int):
     ).first_or_404()
 
     try:
-        result = reanalyze_stored_document_background(
-            evidence_id=evidence.id,
-            actor_user_id=current_user.id,
-            storage_provider=current_app.extensions.get("evidence_storage_provider"),
-            storage_config=current_app.config,
-            language_provider=current_app.extensions.get(
-                "historical_document_provider"
-            ),
-        )
+        if evidence.evidence_type == "archive":
+            result = restart_whatsapp_bundle_analysis(
+                evidence_id=evidence.id,
+                actor_user_id=current_user.id,
+            )
+        else:
+            result = reanalyze_stored_document_background(
+                evidence_id=evidence.id,
+                actor_user_id=current_user.id,
+                storage_provider=current_app.extensions.get("evidence_storage_provider"),
+                storage_config=current_app.config,
+                language_provider=current_app.extensions.get(
+                    "historical_document_provider"
+                ),
+            )
     except (
         HistoricalIngestionError,
         HistoricalIngestionConfigurationError,
@@ -233,8 +272,12 @@ def reanalyze_document(car_id: int, evidence_id: int):
         )
     else:
         flash(
-            "Rina has started re-analysing the original private PDF. "
-            "You can stay on this page; it will update automatically.",
+            (
+                "Rina has started re-analysing the original private WhatsApp bundle. "
+                if evidence.evidence_type == "archive"
+                else "Rina has started re-analysing the original private PDF. "
+            )
+            + "You can stay on this page; it will update automatically.",
             "success",
         )
 
@@ -258,7 +301,11 @@ def analysis_status(car_id: int, evidence_id: int):
         id=evidence_id,
         car_id=car.id,
     ).first_or_404()
-    analysis = latest_background_extraction(evidence.id)
+    analysis = (
+        latest_whatsapp_bundle_extraction(evidence.id)
+        if evidence.evidence_type == "archive"
+        else latest_background_extraction(evidence.id)
+    )
 
     if analysis is None:
         return jsonify(
@@ -272,13 +319,23 @@ def analysis_status(car_id: int, evidence_id: int):
 
     if analysis.status == "processing":
         try:
-            state = advance_historical_background_analysis(
-                extraction_id=analysis.id,
-                actor_user_id=current_user.id,
-                language_provider=current_app.extensions.get(
-                    "historical_document_provider"
-                ),
-            )
+            if evidence.evidence_type == "archive":
+                state = advance_whatsapp_bundle_analysis(
+                    extraction_id=analysis.id,
+                    actor_user_id=current_user.id,
+                    storage_provider=current_app.extensions.get(
+                        "evidence_storage_provider"
+                    ),
+                    storage_config=current_app.config,
+                )
+            else:
+                state = advance_historical_background_analysis(
+                    extraction_id=analysis.id,
+                    actor_user_id=current_user.id,
+                    language_provider=current_app.extensions.get(
+                        "historical_document_provider"
+                    ),
+                )
         except HistoricalIngestionError as exc:
             db.session.rollback()
             current_app.logger.warning(
@@ -307,6 +364,8 @@ def analysis_status(car_id: int, evidence_id: int):
                 "phase": state.phase,
                 "message": state.message,
                 "review_ready": state.review_ready,
+                "completed_items": getattr(state, "completed_items", 0),
+                "total_items": getattr(state, "total_items", 0),
             }
         )
 
@@ -343,7 +402,11 @@ def review_document(car_id: int, evidence_id: int):
         car_id=car.id,
     ).first_or_404()
     extraction = latest_structured_extraction(evidence.id)
-    background_analysis = latest_background_extraction(evidence.id)
+    background_analysis = (
+        latest_whatsapp_bundle_extraction(evidence.id)
+        if evidence.evidence_type == "archive"
+        else latest_background_extraction(evidence.id)
+    )
     analysis_in_progress = bool(
         background_analysis and background_analysis.status == "processing"
     )
@@ -367,6 +430,9 @@ def review_document(car_id: int, evidence_id: int):
         has_review=bool(reviewed_payload),
         background_analysis=background_analysis,
         analysis_in_progress=analysis_in_progress,
+        analysis_kind=(
+            "whatsapp_bundle" if evidence.evidence_type == "archive" else "pdf"
+        ),
     )
 
 

@@ -206,7 +206,9 @@
 
         const xhr = new XMLHttpRequest();
         xhr.open("POST", form.action || window.location.href, true);
-        xhr.responseType = "text";
+        xhr.responseType = "json";
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.setRequestHeader("X-Aura-Upload", "1");
 
         const csrfElement = document.querySelector('meta[name="csrf-token"]');
         const csrfToken = csrfElement ? csrfElement.content : "";
@@ -239,19 +241,21 @@
         });
 
         xhr.addEventListener("load", function () {
-            const succeeded = xhr.status >= 200 && xhr.status < 400;
+            const payload = (
+                xhr.response && typeof xhr.response === "object"
+            ) ? xhr.response : {};
+            const succeeded = (
+                xhr.status >= 200
+                && xhr.status < 300
+                && payload.ok === true
+                && payload.redirect_url
+            );
+
             if (!succeeded) {
                 showUploadFailure(
-                    "Aura could not complete this upload. Nothing was added to vehicle history. Please try again."
+                    payload.message
+                    || "Aura could not complete this upload. Nothing was added to vehicle history. Please try again."
                 );
-                return;
-            }
-
-            const target = xhr.responseURL || window.location.href;
-            const targetUrl = new URL(target, window.location.href);
-
-            if (targetUrl.pathname === window.location.pathname) {
-                window.location.assign(targetUrl.href);
                 return;
             }
 
@@ -262,6 +266,10 @@
                 );
             }
 
+            const targetUrl = new URL(
+                payload.redirect_url,
+                window.location.href
+            );
             window.setTimeout(function () {
                 window.location.assign(targetUrl.href);
             }, 180);

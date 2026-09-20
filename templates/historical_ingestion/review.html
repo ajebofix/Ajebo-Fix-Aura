@@ -338,15 +338,15 @@
         button.textContent = "Starting advisor-grade analysis…";
         if (window.AuraHistoricalAnalysis) {
             window.AuraHistoricalAnalysis.show();
-            window.AuraHistoricalAnalysis.setPhase(
-                {{ "'unpacking'" if evidence.evidence_type == "archive" else "'understanding'" }},
-                {{ (
-                    "'Aura is retrieving the private WhatsApp bundle and resuming multimodal analysis.'"
-                    if evidence.evidence_type == "archive"
-                    else
-                    "'Aura is retrieving the private source and starting advisor-grade analysis.'"
-                )|safe }}
-            );
+            const phase = {{ (
+                "unpacking" if evidence.evidence_type == "archive" else "understanding"
+            )|tojson }};
+            const progressMessage = {{ (
+                "Aura is retrieving the private WhatsApp bundle and resuming multimodal analysis."
+                if evidence.evidence_type == "archive"
+                else "Aura is retrieving the private source and starting advisor-grade analysis."
+            )|tojson }};
+            window.AuraHistoricalAnalysis.setPhase(phase, progressMessage);
         }
     });
 })();

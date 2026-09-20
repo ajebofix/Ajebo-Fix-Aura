@@ -10,6 +10,7 @@ import json
 import mimetypes
 from pathlib import PurePosixPath
 import re
+import stat
 import subprocess
 import tempfile
 import uuid
@@ -19,10 +20,9 @@ from typing import Any, Mapping
 from flask import current_app
 from sqlalchemy.exc import SQLAlchemyError
 
-from evidence.image_sanitizer import (
-    EvidenceImageValidationError,
-    sanitize_evidence_image,
-)
+from PIL import Image, ImageOps, UnidentifiedImageError
+
+from evidence.image_sanitizer import EvidenceImageValidationError
 from evidence.models import EvidenceBundleItem, EvidenceExtraction, VehicleEvidence
 from evidence.storage import (
     EvidenceStorageConfigurationError,
@@ -56,6 +56,8 @@ MAX_TOTAL_UNCOMPRESSED_BYTES = 750 * 1024 * 1024
 MAX_MEMBER_BYTES = 100 * 1024 * 1024
 MAX_TEXT_BYTES = 12 * 1024 * 1024
 MAX_CORPUS_CHARS = 500_000
+MAX_BUNDLE_IMAGE_BYTES = 15 * 1024 * 1024
+MAX_BUNDLE_IMAGE_OUTPUT_BYTES = 8 * 1024 * 1024
 PIPELINE = "whatsapp_bundle_v1"
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -186,6 +188,9 @@ def _validate_zip(payload: bytes) -> list[dict[str, Any]]:
     transcript_count = 0
     for index, info in enumerate(members):
         safe_name = _safe_member_name(info.filename)
+        unix_mode = (info.external_attr >> 16) & 0xFFFF
+        if unix_mode and stat.S_ISLNK(unix_mode):
+            raise WhatsAppBundleValidationError("Symbolic links inside ZIPs are not supported.")
         if info.flag_bits & 0x1:
             raise WhatsAppBundleValidationError("Encrypted ZIP members are not supported.")
         if info.file_size <= 0:
@@ -230,6 +235,100 @@ def _validate_zip(payload: bytes) -> list[dict[str, Any]]:
             "No WhatsApp text transcript (.txt) was found in the ZIP."
         )
     return manifest
+
+
+
+def _sanitize_bundle_image(payload: bytes) -> tuple[bytes, str, str]:
+    if not payload or len(payload) > MAX_BUNDLE_IMAGE_BYTES:
+        raise EvidenceImageValidationError(
+            "Image inside WhatsApp bundle exceeds Aura's safe image limit."
+        )
+    try:
+        with Image.open(BytesIO(payload)) as probe:
+            detected = str(probe.format or "").upper()
+            probe.verify()
+        with Image.open(BytesIO(payload)) as image:
+            image.load()
+            if detected not in {"JPEG", "PNG", "WEBP"}:
+                raise EvidenceImageValidationError(
+                    "Only JPEG, PNG and WebP images are supported in WhatsApp bundles."
+                )
+            if getattr(image, "is_animated", False) or getattr(image, "n_frames", 1) != 1:
+                raise EvidenceImageValidationError(
+                    "Animated images are not supported in WhatsApp bundles."
+                )
+            width, height = image.size
+            if (
+                width <= 0
+                or height <= 0
+                or width > 10000
+                or height > 10000
+                or width * height > 25_000_000
+            ):
+                raise EvidenceImageValidationError(
+                    "Image dimensions exceed Aura's safety limit."
+                )
+            transposed = ImageOps.exif_transpose(image)
+            if detected == "JPEG":
+                normalized = transposed.convert("RGB")
+                content_type, extension, format_name = "image/jpeg", ".jpg", "JPEG"
+                save_kwargs = {"quality": 88, "optimize": True}
+            elif detected == "PNG":
+                has_alpha = transposed.mode in {"RGBA", "LA"} or (
+                    transposed.mode == "P" and "transparency" in transposed.info
+                )
+                normalized = transposed.convert("RGBA" if has_alpha else "RGB")
+                content_type, extension, format_name = "image/png", ".png", "PNG"
+                save_kwargs = {"optimize": True}
+            else:
+                has_alpha = transposed.mode in {"RGBA", "LA"} or (
+                    transposed.mode == "P" and "transparency" in transposed.info
+                )
+                normalized = transposed.convert("RGBA" if has_alpha else "RGB")
+                content_type, extension, format_name = "image/webp", ".webp", "WEBP"
+                save_kwargs = {"quality": 88, "method": 4}
+            try:
+                output = BytesIO()
+                normalized.save(output, format=format_name, **save_kwargs)
+                sanitized = output.getvalue()
+            finally:
+                normalized.close()
+    except (UnidentifiedImageError, OSError, SyntaxError) as exc:
+        raise EvidenceImageValidationError(
+            "Aura could not safely decode an image in this WhatsApp bundle."
+        ) from exc
+
+    if not sanitized or len(sanitized) > MAX_BUNDLE_IMAGE_OUTPUT_BYTES:
+        raise EvidenceImageValidationError(
+            "Sanitized WhatsApp image exceeds Aura's safe storage limit."
+        )
+    return sanitized, content_type, extension
+
+
+def _validate_media_signature(payload: bytes, suffix: str, kind: str) -> None:
+    if not payload:
+        raise WhatsAppBundleValidationError("A media file inside the ZIP is empty.")
+
+    if kind == "audio":
+        valid = (
+            (suffix in {".ogg", ".opus"} and payload.startswith(b"OggS"))
+            or (suffix == ".wav" and payload.startswith(b"RIFF") and payload[8:12] == b"WAVE")
+            or (suffix == ".mp3" and (payload.startswith(b"ID3") or payload[:1] == b"\xff"))
+            or (suffix in {".m4a", ".aac"} and len(payload) > 12 and b"ftyp" in payload[:16])
+            or (suffix == ".webm" and payload.startswith(b"\x1aE\xdf\xa3"))
+        )
+        if not valid:
+            raise WhatsAppBundleValidationError(
+                "An audio member does not match its expected media format."
+            )
+    elif kind == "video":
+        valid = (
+            (suffix in {".mp4", ".mov", ".m4v", ".3gp"} and len(payload) > 12 and b"ftyp" in payload[:16])
+        )
+        if not valid:
+            raise WhatsAppBundleValidationError(
+                "A video member does not match its expected media format."
+            )
 
 
 def _object_key(extension: str) -> tuple[str, str]:
@@ -603,14 +702,9 @@ def _materialize_bundle_children(
             suffix = PurePosixPath(str(item["original_name"])).suffix.lower()
 
             if kind == "image":
-                content_type = mimetypes.types_map.get(suffix, "")
-                sanitized = sanitize_evidence_image(
-                    BytesIO(member_payload),
-                    declared_content_type=content_type,
+                stored_payload, content_type, extension = _sanitize_bundle_image(
+                    member_payload
                 )
-                stored_payload = sanitized.payload
-                content_type = sanitized.content_type
-                extension = sanitized.extension
                 evidence_type = "image"
             elif kind == "document":
                 if not member_payload.startswith(b"%PDF-"):
@@ -629,11 +723,13 @@ def _materialize_bundle_children(
                 extension = ".txt"
                 evidence_type = "document"
             elif kind == "audio":
+                _validate_media_signature(member_payload, suffix, kind)
                 stored_payload = member_payload
                 content_type = _AUDIO_MIME.get(suffix, "application/octet-stream")
                 extension = suffix or ".audio"
                 evidence_type = "audio"
             elif kind == "video":
+                _validate_media_signature(member_payload, suffix, kind)
                 stored_payload = member_payload
                 content_type = _VIDEO_MIME.get(suffix, "application/octet-stream")
                 extension = suffix or ".video"
@@ -775,7 +871,7 @@ def _video_derivatives(payload: bytes, suffix: str) -> tuple[bytes | None, list[
             run = subprocess.run(
                 [
                     ffmpeg, "-y", "-ss", timestamp, "-i", source,
-                    "-frames:v", "1", "-vf", "scale='min(1280,iw)':-2",
+                    "-frames:v", "1", "-vf", "scale=1280:-2:force_original_aspect_ratio=decrease",
                     "-q:v", "3", frame_path,
                 ],
                 stdout=subprocess.DEVNULL,
@@ -1171,6 +1267,18 @@ def advance_whatsapp_bundle_analysis(
                         provider="aura_bundle",
                         exc=exc,
                     )
+                    if pending.member_kind == "video":
+                        child = pending.child
+                        existing_types = {
+                            row.extraction_type for row in child.extractions
+                        } if child is not None else set()
+                        for missing_type in {"transcription", "image_observation"} - existing_types:
+                            _mark_child_failure(
+                                evidence_id=pending.child_evidence_id,
+                                extraction_type=missing_type,
+                                provider="aura_bundle",
+                                exc=exc,
+                            )
                 done, total = _counts(evidence.id)
                 return WhatsAppBundleStatus(
                     evidence_id=evidence.id,

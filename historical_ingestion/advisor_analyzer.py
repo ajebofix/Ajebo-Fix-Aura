@@ -17,14 +17,14 @@ from typing import Any
 import openai
 from openai import OpenAI
 
-logger = logging.getLogger(__name__)
-
-
 from rina.providers.base import (
     RinaProviderConfigurationError,
     RinaProviderRejectedError,
     RinaProviderTransientError,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _historical_model() -> str:

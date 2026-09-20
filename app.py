@@ -370,7 +370,15 @@ def create_app():
                 if "treatment_plans" in tables
                 else set()
             )
+            vehicle_evidence_columns = (
+                {column["name"] for column in inspector.get_columns("vehicle_evidence")}
+                if "vehicle_evidence" in tables
+                else set()
+            )
             missing_columns = {"email_verified_at"} - user_columns
+            missing_evidence_columns = {
+                "historical_source_type",
+            } - vehicle_evidence_columns
             missing_treatment_columns = {
                 "record_origin",
                 "source_evidence_id",
@@ -382,6 +390,7 @@ def create_app():
                 missing_tables
                 or missing_columns
                 or missing_treatment_columns
+                or missing_evidence_columns
                 or not evidence_readiness.ready
             ):
                 return {
@@ -390,6 +399,7 @@ def create_app():
                     "missing_tables": sorted(missing_tables),
                     "missing_columns": sorted(missing_columns),
                     "missing_treatment_columns": sorted(missing_treatment_columns),
+                    "missing_evidence_columns": sorted(missing_evidence_columns),
                     "evidence": evidence_readiness.to_public_dict(),
                 }, 503
 

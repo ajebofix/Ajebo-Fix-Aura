@@ -1315,7 +1315,6 @@ def advance_whatsapp_bundle_analysis(
                     EvidenceStorageError,
                     HistoricalIngestionError,
                     EvidenceImageValidationError,
-                    subprocess.SubprocessError,
                     OSError,
                     ValueError,
                 ) as exc:
@@ -1470,6 +1469,24 @@ def advance_whatsapp_bundle_analysis(
                 source_text=corpus,
                 page_count=500,
             )
+            normalized["case_focus"] = str(
+                response.payload.get("case_focus") or ""
+            ).strip()[:4000]
+            normalized["priority_threads"] = (
+                response.payload.get("priority_threads")
+                if isinstance(response.payload.get("priority_threads"), list)
+                else []
+            )[:40]
+            normalized["supporting_context"] = (
+                response.payload.get("supporting_context")
+                if isinstance(response.payload.get("supporting_context"), list)
+                else []
+            )[:40]
+            normalized["low_relevance_context"] = (
+                response.payload.get("low_relevance_context")
+                if isinstance(response.payload.get("low_relevance_context"), list)
+                else []
+            )[:40]
             cipher, version, digest = _payload_cipher(normalized)
             analysis.result_ciphertext = cipher
             analysis.result_key_version = version

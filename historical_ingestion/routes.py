@@ -78,6 +78,17 @@ def _validate_historical_source_upload(
     return None
 
 
+def _is_async_historical_upload() -> bool:
+    return request.headers.get("X-Aura-Upload", "").strip() == "1"
+
+
+def _historical_upload_error(message: str, *, status: int = 400):
+    if _is_async_historical_upload():
+        return jsonify({"ok": False, "message": message}), status
+    flash(message, "error")
+    return redirect(request.url)
+
+
 def _reviewed_candidate(source: dict, candidate_id: str) -> dict:
     row = deepcopy(source)
     row["candidate_id"] = candidate_id
@@ -161,8 +172,7 @@ def import_document(car_id: int):
 
     uploaded = request.files.get("document")
     if uploaded is None:
-        flash("Select a source file to upload.", "error")
-        return redirect(request.url)
+        return _historical_upload_error("Select a source file to upload.")
 
     validation_error = _validate_historical_source_upload(
         source_type=source_type,
@@ -170,8 +180,7 @@ def import_document(car_id: int):
         content_type=uploaded.content_type or "",
     )
     if validation_error:
-        flash(validation_error, "error")
-        return redirect(request.url)
+        return _historical_upload_error(validation_error)
 
     try:
         if source_type == "whatsapp_conversation":
@@ -205,8 +214,7 @@ def import_document(car_id: int):
         HistoricalIngestionConfigurationError,
     ) as exc:
         db.session.rollback()
-        flash(str(exc), "error")
-        return redirect(request.url)
+        return _historical_upload_error(str(exc))
     except HistoricalIngestionError:
         db.session.rollback()
         current_app.logger.exception(
@@ -214,8 +222,10 @@ def import_document(car_id: int):
             car.id,
             current_user.id,
         )
-        flash("Aura could not import this historical document.", "error")
-        return redirect(request.url)
+        return _historical_upload_error(
+            "Aura could not import this historical source.",
+            status=500,
+        )
 
     if result.status == "completed":
         flash(
@@ -243,13 +253,21 @@ def import_document(car_id: int):
             "success",
         )
 
-    return redirect(
-        url_for(
-            "historical_ingestion.review_document",
-            car_id=car.id,
-            evidence_id=result.evidence_id,
-        )
+    review_url = url_for(
+        "historical_ingestion.review_document",
+        car_id=car.id,
+        evidence_id=result.evidence_id,
     )
+    if _is_async_historical_upload():
+        return jsonify(
+            {
+                "ok": True,
+                "redirect_url": review_url,
+                "status": result.status,
+                "evidence_id": result.evidence_id,
+            }
+        )
+    return redirect(review_url)
 
 
 @historical_ingestion_bp.post(

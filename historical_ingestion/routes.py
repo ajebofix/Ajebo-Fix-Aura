@@ -265,7 +265,9 @@ def reanalyze_document(car_id: int, evidence_id: int):
             "Advisor-grade analysis is already ready for review.",
             "info",
         )
-    elif result.reused_analysis:
+    elif getattr(result, "reused_analysis", False) or getattr(
+        result, "reused_existing", False
+    ):
         flash(
             "Rina is already analysing this source. The existing analysis was resumed.",
             "info",

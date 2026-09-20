@@ -29,6 +29,7 @@ from historical_ingestion.service import (
     HistoricalIngestionError,
     advance_historical_background_analysis,
     decrypt_extraction_payload,
+    has_completed_structured_extraction,
     ingest_pdf_document_background,
     latest_background_extraction,
     latest_structured_extraction,
@@ -265,7 +266,7 @@ def analysis_status(car_id: int, evidence_id: int):
                 "status": "idle",
                 "phase": "idle",
                 "message": "No advisor-grade analysis is currently running.",
-                "review_ready": bool(latest_structured_extraction(evidence.id)),
+                "review_ready": has_completed_structured_extraction(evidence.id),
             }
         )
 
@@ -296,7 +297,7 @@ def analysis_status(car_id: int, evidence_id: int):
                     "message": (
                         "Rina is still analysing. Aura will check again automatically."
                     ),
-                    "review_ready": bool(latest_structured_extraction(evidence.id)),
+                    "review_ready": has_completed_structured_extraction(evidence.id),
                 }
             )
 
@@ -325,7 +326,7 @@ def analysis_status(car_id: int, evidence_id: int):
                 if analysis.status == "completed"
                 else "Rina could not complete this analysis. No vehicle history was changed."
             ),
-            "review_ready": bool(latest_structured_extraction(evidence.id)),
+            "review_ready": has_completed_structured_extraction(evidence.id),
         }
     )
 

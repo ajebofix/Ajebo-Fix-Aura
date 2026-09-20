@@ -10,6 +10,7 @@ from evidence.models import EvidenceExtraction, EvidenceLink, VehicleEvidence
 from evidence.storage import RetrievedEvidenceObject, StoredEvidenceObject
 from extensions import db
 from historical_ingestion.application import apply_reviewed_historical_treatment
+from historical_ingestion.routes import _validate_historical_source_upload
 from historical_ingestion.service import (
     HistoricalIngestionAccessError,
     advance_historical_background_analysis,
@@ -842,3 +843,38 @@ def test_rina_historical_context_is_advisor_only(app):
         assert advisor_records[0]["job_reference"] == "JOB-2026-002"
         assert advisor_records[0]["accepted_facts"][0]["title"] == "Alternator"
         assert owner_records == []
+
+
+def test_historical_source_type_rejects_mismatched_file_formats():
+    assert _validate_historical_source_upload(
+        source_type="whatsapp_conversation",
+        filename="job.pdf",
+        content_type="application/pdf",
+    ) == (
+        "WhatsApp conversation sources must be uploaded as the original "
+        "WhatsApp ZIP export."
+    )
+
+    assert _validate_historical_source_upload(
+        source_type="standalone_document",
+        filename="chat.zip",
+        content_type="application/zip",
+    ) == "Standalone document sources accept PDF files, not ZIP archives."
+
+    assert _validate_historical_source_upload(
+        source_type="whatsapp_conversation",
+        filename="WhatsApp Chat.zip",
+        content_type="application/octet-stream",
+    ) is None
+
+    assert _validate_historical_source_upload(
+        source_type="standalone_document",
+        filename="service-record.pdf",
+        content_type="application/pdf",
+    ) is None
+
+    assert _validate_historical_source_upload(
+        source_type="instagram_conversation",
+        filename="instagram.zip",
+        content_type="application/zip",
+    ) == "Select a supported historical source type."

@@ -22,6 +22,11 @@ from historical_ingestion.whatsapp_bundle import (
     ingest_whatsapp_bundle,
     latest_whatsapp_bundle_extraction,
 )
+from historical_ingestion.whatsapp_bundle_analyzer import (
+    BUNDLE_CANDIDATE_SCHEMA,
+    BUNDLE_UNDERSTANDING_INSTRUCTIONS,
+    BUNDLE_UNDERSTANDING_SCHEMA,
+)
 from models import Car, CarOwnership, User
 
 
@@ -156,6 +161,37 @@ class FakeBundleAnalyzer:
                     "advisor_suggestions": [
                         "Confirm installed parts against advisor completion evidence."
                     ],
+                    "case_focus": (
+                        "Intermittent electrical interruption, completed work discussion "
+                        "and whether the symptom recurred afterward."
+                    ),
+                    "priority_threads": [
+                        {
+                            "title": "Post-work electrical outcome",
+                            "priority": "high",
+                            "reason": (
+                                "The post-work client update establishes whether the "
+                                "original symptom recurred."
+                            ),
+                            "status": "outcome_followup",
+                            "source_refs": ["CHAT m000002"],
+                        }
+                    ],
+                    "supporting_context": [
+                        {
+                            "summary": "Workshop media supports chronology.",
+                            "why_it_matters": (
+                                "It places the vehicle at the workshop around the care episode."
+                            ),
+                            "source_refs": ["IMAGE evidence:2"],
+                        }
+                    ],
+                    "low_relevance_context": [
+                        {
+                            "summary": "Greetings and acknowledgements.",
+                            "reason": "They do not alter the vehicle-care chronology.",
+                        }
+                    ],
                 },
             )
         if response_id == "bundle-structuring":
@@ -181,6 +217,37 @@ class FakeBundleAnalyzer:
                     ),
                     "advisor_suggestions": [
                         "Review completion facts before applying durable history."
+                    ],
+                    "case_focus": (
+                        "Intermittent electrical interruption, completed work discussion "
+                        "and whether the symptom recurred afterward."
+                    ),
+                    "priority_threads": [
+                        {
+                            "title": "Post-work electrical outcome",
+                            "priority": "high",
+                            "reason": (
+                                "The post-work client update establishes whether the "
+                                "original symptom recurred."
+                            ),
+                            "status": "outcome_followup",
+                            "source_refs": ["CHAT m000002"],
+                        }
+                    ],
+                    "supporting_context": [
+                        {
+                            "summary": "Workshop media supports chronology.",
+                            "why_it_matters": (
+                                "It places the vehicle at the workshop around the care episode."
+                            ),
+                            "source_refs": ["IMAGE evidence:2"],
+                        }
+                    ],
+                    "low_relevance_context": [
+                        {
+                            "summary": "Greetings and acknowledgements.",
+                            "reason": "They do not alter the vehicle-care chronology.",
+                        }
                     ],
                     "candidates": [
                         {
@@ -428,6 +495,11 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
         assert final.status == "completed"
         payload = decrypt_extraction_payload(final)
         assert payload["document"]["document_type"] == "whatsapp_case_bundle"
+        assert "Intermittent electrical interruption" in payload["case_focus"]
+        assert payload["priority_threads"][0]["priority"] == "high"
+        assert payload["priority_threads"][0]["status"] == "outcome_followup"
+        assert payload["supporting_context"][0]["source_refs"] == ["IMAGE evidence:2"]
+        assert payload["low_relevance_context"][0]["reason"]
         candidate = payload["candidates"][0]
         assert candidate["source_verified"] is True
         assert candidate["source_fact_ids"] == ["CHAT m000002"]
@@ -534,3 +606,18 @@ def test_corrupt_non_transcript_media_is_recorded_and_does_not_kill_bundle(app):
         assert EvidenceBundleItem.query.filter_by(
             bundle_evidence_id=started.evidence_id
         ).count() == 4
+
+
+def test_bundle_schema_requires_contextual_relevance():
+    required_understanding = set(BUNDLE_UNDERSTANDING_SCHEMA["required"])
+    required_candidates = set(BUNDLE_CANDIDATE_SCHEMA["required"])
+    relevance_fields = {
+        "case_focus",
+        "priority_threads",
+        "supporting_context",
+        "low_relevance_context",
+    }
+    assert relevance_fields <= required_understanding
+    assert relevance_fields <= required_candidates
+    assert "relevance is contextual, never a keyword filter" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
+    assert "priority for advisor attention" in BUNDLE_UNDERSTANDING_INSTRUCTIONS

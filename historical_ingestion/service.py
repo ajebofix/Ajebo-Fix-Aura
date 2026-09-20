@@ -689,6 +689,17 @@ def _latest_text_extraction(evidence_id: int) -> EvidenceExtraction | None:
     )
 
 
+def has_completed_structured_extraction(evidence_id: int) -> bool:
+    return (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence_id,
+            extraction_type="structured_fields",
+            status="completed",
+        ).first()
+        is not None
+    )
+
+
 def latest_background_extraction(evidence_id: int) -> EvidenceExtraction | None:
     rows = (
         EvidenceExtraction.query.filter_by(
@@ -806,7 +817,7 @@ def _mark_background_failed(
         status="failed",
         phase="failed",
         message=_background_message("failed"),
-        review_ready=latest_structured_extraction(extraction.evidence_id) is not None,
+        review_ready=has_completed_structured_extraction(extraction.evidence_id),
     )
 
 

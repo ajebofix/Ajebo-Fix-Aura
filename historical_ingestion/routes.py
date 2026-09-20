@@ -26,11 +26,13 @@ from historical_ingestion.application import (
     HistoricalApplicationError,
     apply_reviewed_historical_treatment,
 )
+from historical_ingestion.background_runner import (
+    advance_historical_analysis_once,
+)
 from historical_ingestion.service import (
     HistoricalDocumentValidationError,
     HistoricalIngestionConfigurationError,
     HistoricalIngestionError,
-    advance_historical_background_analysis,
     decrypt_extraction_payload,
     has_completed_structured_extraction,
     ingest_pdf_document_background,
@@ -41,7 +43,6 @@ from historical_ingestion.service import (
 )
 from historical_ingestion.whatsapp_bundle import (
     WhatsAppBundleValidationError,
-    advance_whatsapp_bundle_analysis,
     ingest_whatsapp_bundle,
     latest_whatsapp_bundle_extraction,
     restart_whatsapp_bundle_analysis,
@@ -373,23 +374,13 @@ def analysis_status(car_id: int, evidence_id: int):
 
     if analysis.status == "processing":
         try:
-            if evidence.evidence_type == "archive":
-                state = advance_whatsapp_bundle_analysis(
-                    extraction_id=analysis.id,
-                    actor_user_id=current_user.id,
-                    storage_provider=current_app.extensions.get(
-                        "evidence_storage_provider"
-                    ),
-                    storage_config=current_app.config,
-                )
-            else:
-                state = advance_historical_background_analysis(
-                    extraction_id=analysis.id,
-                    actor_user_id=current_user.id,
-                    language_provider=current_app.extensions.get(
-                        "historical_document_provider"
-                    ),
-                )
+            # The production background runner owns progress even when the client
+            # disconnects. A status request may opportunistically advance one
+            # transition only when it can acquire the same cross-process lock.
+            state = advance_historical_analysis_once(
+                current_app._get_current_object(),
+                analysis.id,
+            )
         except HistoricalIngestionError as exc:
             db.session.rollback()
             current_app.logger.warning(
@@ -398,17 +389,26 @@ def analysis_status(car_id: int, evidence_id: int):
                 analysis.id,
                 str(exc)[:500],
             )
+            state = None
+
+        if state is None:
+            db.session.expire_all()
+            analysis = db.session.get(type(analysis), analysis.id) or analysis
+            phase = str(
+                (analysis.provenance or {}).get("background_stage")
+                or ("preprocessing" if evidence.evidence_type == "archive" else "understanding")
+            )
             return jsonify(
                 {
                     "status": "processing",
-                    "phase": str(
-                        (analysis.provenance or {}).get("background_stage")
-                        or "understanding"
-                    ),
+                    "phase": phase,
                     "message": (
-                        "Rina is still analysing. Aura will check again automatically."
+                        "Rina is continuing this analysis securely on the server. "
+                        "You can leave this page and come back later."
                     ),
                     "review_ready": has_completed_structured_extraction(evidence.id),
+                    "completed_items": 0,
+                    "total_items": 0,
                 }
             )
 

@@ -274,3 +274,8 @@ The next phase should emphasise:
 - evidence-backed expansion of Vehicle Intelligence and Rina.
 
 The architecture is mature enough that new work should increasingly be justified by real operational or commercial evidence rather than by feature completeness.
+
+
+### WhatsApp historical case bundles
+
+Advisor historical ingestion now accepts a governed WhatsApp ZIP export as a case bundle in addition to a PDF. Aura retains the original archive privately, materializes supported transcript/image/PDF/audio/video members as child evidence, preserves archive-to-child lineage, transcribes voice notes, analyses images, reads PDFs, samples video audio/frames, and reconciles the resulting evidence corpus into one advisor-grade chronology. The workflow is asynchronous/resumable and all resulting facts remain candidates until advisor review.

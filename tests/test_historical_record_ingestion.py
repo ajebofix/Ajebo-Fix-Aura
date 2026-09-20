@@ -7,7 +7,7 @@ import pytest
 from reportlab.pdfgen import canvas
 
 from evidence.models import EvidenceExtraction, EvidenceLink, VehicleEvidence
-from evidence.storage import StoredEvidenceObject
+from evidence.storage import RetrievedEvidenceObject, StoredEvidenceObject
 from extensions import db
 from historical_ingestion.application import apply_reviewed_historical_treatment
 from historical_ingestion.service import (
@@ -15,6 +15,7 @@ from historical_ingestion.service import (
     decrypt_extraction_payload,
     ingest_pdf_document,
     latest_structured_extraction,
+    reanalyze_stored_document,
     save_advisor_review,
 )
 from models import Car, CarOwnership, TreatmentPlan, User
@@ -43,6 +44,18 @@ class RecordingStorageProvider:
         return StoredEvidenceObject(
             provider=self.provider_name,
             object_key=object_key,
+            byte_size=len(payload),
+            etag="historical-test",
+        )
+
+    def get_bytes(self, *, object_key: str, max_bytes: int):
+        payload = self.objects[object_key]
+        if len(payload) > max_bytes:
+            raise AssertionError("test object exceeded retrieval bound")
+        return RetrievedEvidenceObject(
+            provider=self.provider_name,
+            object_key=object_key,
+            payload=payload,
             byte_size=len(payload),
             etag="historical-test",
         )
@@ -431,6 +444,50 @@ def test_identical_pdf_reopens_existing_analysis_instead_of_reinterpreting(app):
         assert analyzer.calls == 1
         assert VehicleEvidence.query.filter_by(car_id=car.id).count() == 1
 
+
+
+def test_advisor_can_reanalyze_private_source_without_reupload(app):
+    with app.app_context():
+        owner = _user(suffix=8)
+        advisor = _user(suffix=9, role="admin")
+        car = _owned_car(owner, suffix=8)
+        analyzer = FakeHistoricalProvider()
+        storage = RecordingStorageProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-002\n"
+            "A pre-owned alternator will be purchased.\n"
+            "Paid across this Job."
+        )
+
+        first = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+        first_structured_id = first.structured_extraction_id
+
+        second = reanalyze_stored_document(
+            evidence_id=first.evidence_id,
+            actor_user_id=advisor.id,
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+
+        assert second.evidence_id == first.evidence_id
+        assert second.structured_extraction_id != first_structured_id
+        assert analyzer.calls == 2
+        assert VehicleEvidence.query.filter_by(car_id=car.id).count() == 1
+        assert EvidenceExtraction.query.filter_by(
+            evidence_id=first.evidence_id,
+            extraction_type="structured_fields",
+        ).count() == 2
 
 
 def test_rina_historical_context_is_advisor_only(app):

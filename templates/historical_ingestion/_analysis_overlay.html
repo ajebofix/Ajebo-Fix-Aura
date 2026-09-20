@@ -15,14 +15,14 @@
             {% if analysis_in_progress %}
                 Rina is reading the full document
             {% else %}
-                Preparing secure analysis
+                Uploading source securely
             {% endif %}
         </h2>
         <p id="historical-analysis-message" class="muted">
             {% if analysis_in_progress %}
                 Rina is reconstructing the vehicle-care story before creating any review candidates.
             {% else %}
-                Aura is securing the source and preparing it for advisor-grade analysis.
+                Your file is being transferred privately. Analysis begins only after Aura confirms the source was stored.
             {% endif %}
         </p>
 
@@ -31,11 +31,11 @@
         </div>
 
         <div class="historical-analysis-steps">
-            <div class="analysis-step is-done" data-analysis-step="source">
+            <div class="analysis-step{% if analysis_in_progress %} is-done{% else %} is-active{% endif %}" data-analysis-step="source">
                 <span>1</span>
                 <div>
-                    <strong>Source secured</strong>
-                    <small>Original source remains private.</small>
+                    <strong>{% if analysis_in_progress %}Source secured{% else %}Upload source securely{% endif %}</strong>
+                    <small>{% if analysis_in_progress %}Original source remains private.{% else %}Waiting for private-storage confirmation.{% endif %}</small>
                 </div>
             </div>
             {% if analysis_kind|default('pdf') == 'whatsapp_bundle' %}
@@ -90,7 +90,8 @@
             screen, Aura reconnects to the same in-progress analysis instead of starting another one.
         </p>
         <p class="historical-analysis-elapsed">
-            Analysing for <strong id="historical-analysis-elapsed">0:00</strong>
+            <span id="historical-analysis-elapsed-label">{% if analysis_in_progress %}Analysing for{% else %}Uploading for{% endif %}</span>
+            <strong id="historical-analysis-elapsed">0:00</strong>
         </p>
 
         <button
@@ -327,6 +328,8 @@
     const message = document.getElementById("historical-analysis-message");
     const elapsed = document.getElementById("historical-analysis-elapsed");
     const closeButton = document.getElementById("historical-analysis-close");
+    const elapsedLabel = document.getElementById("historical-analysis-elapsed-label");
+    const sourceStep = overlay.querySelector('[data-analysis-step="source"]');
     const unpackingStep = overlay.querySelector('[data-analysis-step="unpacking"]');
     const preprocessingStep = overlay.querySelector('[data-analysis-step="preprocessing"]');
     const understandingStep = overlay.querySelector('[data-analysis-step="understanding"]');
@@ -380,12 +383,26 @@
     }
 
     function setPhase(phase, serverMessage) {
+        resetStep(sourceStep);
         resetStep(unpackingStep);
         resetStep(preprocessingStep);
         resetStep(understandingStep);
         resetStep(structuringStep);
 
-        if (isBundle) {
+        if (phase === "uploading") {
+            activeStep(sourceStep);
+            title.textContent = "Uploading source securely";
+            if (elapsedLabel) elapsedLabel.textContent = "Uploading for";
+        } else if (phase === "secured") {
+            doneStep(sourceStep);
+            title.textContent = "Source secured";
+            if (elapsedLabel) elapsedLabel.textContent = "Preparing for";
+        } else if (phase === "upload_failed") {
+            title.textContent = "Upload did not complete";
+            if (elapsedLabel) elapsedLabel.textContent = "Stopped after";
+        } else if (isBundle) {
+            doneStep(sourceStep);
+            if (elapsedLabel) elapsedLabel.textContent = "Analysing for";
             if (phase === "unpacking") {
                 activeStep(unpackingStep);
                 title.textContent = "Aura is opening the WhatsApp case bundle";
@@ -414,6 +431,8 @@
                 title.textContent = "Bundle analysis could not finish";
             }
         } else {
+            doneStep(sourceStep);
+            if (elapsedLabel) elapsedLabel.textContent = "Analysing for";
             if (phase === "understanding") {
                 activeStep(understandingStep);
                 title.textContent = "Rina is reading the full document";
@@ -437,8 +456,27 @@
         stopped = true;
         if (pollId) clearTimeout(pollId);
         stopTimer();
-        setPhase("failed", messageText || "The source is still safe and no vehicle history was changed.");
+        setPhase("failed", messageText || "The source remains private and no vehicle history was changed.");
         if (closeButton) closeButton.hidden = false;
+    }
+
+    function uploadFailure(messageText) {
+        stopped = true;
+        if (pollId) clearTimeout(pollId);
+        stopTimer();
+        setPhase(
+            "upload_failed",
+            messageText || "The upload did not complete. Nothing was added to vehicle history."
+        );
+        if (closeButton) closeButton.hidden = false;
+    }
+
+    function setUploadProgress(percent) {
+        const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+        setPhase(
+            "uploading",
+            "Uploading source securely… " + Math.round(safePercent) + "% transferred."
+        );
     }
 
     if (closeButton) {
@@ -452,7 +490,9 @@
     window.AuraHistoricalAnalysis = {
         show: showOverlay,
         fail: fail,
-        setPhase: setPhase
+        uploadFailure: uploadFailure,
+        setPhase: setPhase,
+        setUploadProgress: setUploadProgress
     };
 
     {% if analysis_in_progress %}

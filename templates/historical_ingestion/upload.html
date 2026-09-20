@@ -152,20 +152,122 @@
     sourceType.addEventListener("change", updateSourceUI);
     updateSourceUI();
 
-    form.addEventListener("submit", function () {
-        if (!form.checkValidity()) return;
+    const MAX_WHATSAPP_ZIP_BYTES = 150 * 1024 * 1024;
+
+    function resetUploadButton() {
+        button.disabled = false;
+        button.textContent = "Upload and analyse";
+    }
+
+    function showUploadFailure(messageText) {
+        resetUploadButton();
+        if (window.AuraHistoricalAnalysis) {
+            window.AuraHistoricalAnalysis.uploadFailure(messageText);
+        }
+    }
+
+    form.addEventListener("submit", function (event) {
+        event.preventDefault();
+
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const selectedFile = fileInput.files && fileInput.files[0];
+        if (!selectedFile) {
+            form.reportValidity();
+            return;
+        }
+
+        if (
+            sourceType.value === "whatsapp_conversation"
+            && selectedFile.size > MAX_WHATSAPP_ZIP_BYTES
+        ) {
+            if (window.AuraHistoricalAnalysis) {
+                window.AuraHistoricalAnalysis.show();
+            }
+            showUploadFailure(
+                "This WhatsApp ZIP exceeds Aura's current 150 MB upload limit. Nothing was uploaded."
+            );
+            return;
+        }
+
         button.disabled = true;
-        button.textContent = "Securing source…";
+        button.textContent = "Uploading source…";
 
         if (window.AuraHistoricalAnalysis) {
             window.AuraHistoricalAnalysis.show();
-            if (sourceType.value === "standalone_document") {
+            window.AuraHistoricalAnalysis.setPhase(
+                "uploading",
+                "Uploading " + selectedFile.name + " securely…"
+            );
+        }
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", form.action || window.location.href, true);
+        xhr.responseType = "text";
+
+        const csrfElement = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = csrfElement ? csrfElement.content : "";
+        if (csrfToken) {
+            xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+        }
+
+        xhr.upload.addEventListener("progress", function (progressEvent) {
+            if (
+                progressEvent.lengthComputable
+                && window.AuraHistoricalAnalysis
+            ) {
+                const percent = (
+                    progressEvent.loaded / progressEvent.total
+                ) * 100;
+                window.AuraHistoricalAnalysis.setUploadProgress(percent);
+            }
+        });
+
+        xhr.addEventListener("error", function () {
+            showUploadFailure(
+                "The connection ended before Aura could secure the source. Nothing was added to vehicle history. Please try again on a stable connection."
+            );
+        });
+
+        xhr.addEventListener("abort", function () {
+            showUploadFailure(
+                "The upload was cancelled before Aura secured the source. Nothing was added to vehicle history."
+            );
+        });
+
+        xhr.addEventListener("load", function () {
+            const succeeded = xhr.status >= 200 && xhr.status < 400;
+            if (!succeeded) {
+                showUploadFailure(
+                    "Aura could not complete this upload. Nothing was added to vehicle history. Please try again."
+                );
+                return;
+            }
+
+            const target = xhr.responseURL || window.location.href;
+            const targetUrl = new URL(target, window.location.href);
+
+            if (targetUrl.pathname === window.location.pathname) {
+                window.location.assign(targetUrl.href);
+                return;
+            }
+
+            if (window.AuraHistoricalAnalysis) {
                 window.AuraHistoricalAnalysis.setPhase(
-                    "understanding",
-                    "Aura is securely storing the PDF and starting Rina's advisor-grade analysis."
+                    "secured",
+                    "Source secured privately. Opening Rina's advisor analysis…"
                 );
             }
-        }
+
+            window.setTimeout(function () {
+                window.location.assign(targetUrl.href);
+            }, 180);
+        });
+
+        xhr.send(new FormData(form));
     });
 })();
 </script>

@@ -572,3 +572,24 @@ Wave 1.4 implementation may proceed only when this document and the companion th
 - privacy-safe observability.
 
 Until those decisions are reviewed, adding upload buttons or AI media handling is explicitly out of scope.
+
+
+## Post-first-slice extension — WhatsApp case bundles (2026-09-20)
+
+The first Wave 1.4 slice deliberately rejected arbitrary ZIP archives and unrestricted video. That boundary remains the historical record of the initial rollout; Issue #177 adds a narrower, governed exception for **advisor-imported WhatsApp case bundles** after a real longitudinal pilot required it.
+
+The extension does **not** enable arbitrary archive execution or generic file hosting. It adds:
+
+- one original private `archive` evidence object for the WhatsApp ZIP;
+- bounded ZIP inspection with path-traversal, symlink, encryption, nested-archive, executable, member-count, size and compression-ratio controls;
+- child `VehicleEvidence` objects for supported transcript, image, PDF, audio and video members;
+- `EvidenceBundleItem` lineage from every materialized child back to the original archive without storing original filenames as plaintext database columns;
+- encrypted `archive_manifest` extraction containing the private member manifest;
+- chat chronology parsing without guessing ambiguous timestamp locale;
+- image/PDF observation, audio transcription, and video audio + representative-frame analysis;
+- advisor-grade whole-case reconciliation after per-media processing;
+- the existing rule that AI output remains candidate-only until advisor review.
+
+Supported bundle media are intentionally constrained to common WhatsApp export formats. Unsupported members are skipped; unsafe members are rejected. A valid chat transcript remains mandatory because it is the chronology spine of the case bundle.
+
+Long-running bundle work uses the same resumable background-analysis contract as historical PDFs. Financial facts remain separate from vehicle-health truth, and this extension does not open predictive implementation or Wave 3.

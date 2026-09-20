@@ -7,7 +7,7 @@
 <section class="card">
     <div class="section-head">
         <div>
-            <h2>Source document</h2>
+            <h2>{{ 'WhatsApp case bundle' if evidence.evidence_type == 'archive' else 'Source document' }}</h2>
             <p class="muted">
                 Evidence #{{ evidence.id }} ·
                 {{ evidence.purpose|replace('_', ' ')|title }} ·
@@ -31,11 +31,20 @@
             class="btn btn-secondary btn-block"
             {% if analysis_in_progress %}disabled{% endif %}
         >
-            {{ 'Rina is analysing this document…' if analysis_in_progress else 'Re-analyze with advisor-grade Rina' }}
+            {{ (
+                'Rina is analysing this case bundle…'
+                if evidence.evidence_type == 'archive'
+                else 'Rina is analysing this document…'
+            ) if analysis_in_progress else 'Re-analyze with advisor-grade Rina' }}
         </button>
     </form>
     <p class="muted" style="margin-top:8px;">
+        {% if evidence.evidence_type == 'archive' %}
+        Uses the original private WhatsApp ZIP and its linked media evidence. You do not
+        need to upload the export again.
+        {% else %}
         Uses the original private PDF. You do not need to upload the file again.
+        {% endif %}
     </p>
 </section>
 
@@ -52,6 +61,63 @@
 <section class="card">
     <h2>Rina context summary</h2>
     <p>{{ payload.rina_summary or "No summary returned." }}</p>
+
+    {% if evidence.evidence_type == 'archive' and payload.case_focus %}
+    <h3>Case focus</h3>
+    <p>{{ payload.case_focus }}</p>
+    {% endif %}
+
+    {% if evidence.evidence_type == 'archive' and payload.priority_threads %}
+    <h3>Priority threads</h3>
+    <div class="dashboard-grid">
+        {% for thread in payload.priority_threads %}
+        <div class="card" style="margin:0;">
+            <div class="section-head">
+                <strong>{{ thread.title }}</strong>
+                <span class="badge">{{ thread.priority|replace('_',' ')|title }}</span>
+            </div>
+            <p>{{ thread.reason }}</p>
+            <p class="muted">
+                Status: {{ thread.status|replace('_',' ')|title }}
+                {% if thread.source_refs %}
+                · Sources: {{ thread.source_refs|join(', ') }}
+                {% endif %}
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if evidence.evidence_type == 'archive' and payload.supporting_context %}
+    <details style="margin-top:16px;">
+        <summary><strong>Supporting context Rina kept</strong></summary>
+        <ul class="clean-list" style="margin-top:10px;">
+            {% for item in payload.supporting_context %}
+            <li>
+                {{ item.summary }}
+                <span class="muted">— {{ item.why_it_matters }}</span>
+                {% if item.source_refs %}
+                <span class="muted"> ({{ item.source_refs|join(', ') }})</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+
+    {% if evidence.evidence_type == 'archive' and payload.low_relevance_context %}
+    <details style="margin-top:12px;">
+        <summary><strong>Low-relevance conversation Rina deprioritized</strong></summary>
+        <p class="muted" style="margin-top:8px;">
+            These items were read for context but were not treated as vehicle-history facts.
+        </p>
+        <ul class="clean-list">
+            {% for item in payload.low_relevance_context %}
+            <li>{{ item.summary }} <span class="muted">— {{ item.reason }}</span></li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
 
     {% if payload.advisor_suggestions %}
     <h3>Suggestions for your review</h3>

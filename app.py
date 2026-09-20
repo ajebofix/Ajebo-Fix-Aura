@@ -280,6 +280,9 @@ def create_app():
     from profiles.routes import profiles_bp
     from onboarding.routes import owner_onboarding_bp
     from historical_ingestion.routes import historical_ingestion_bp
+    from historical_ingestion.background_runner import (
+        ensure_historical_background_runner,
+    )
     from services.owner_driver_management import init_owner_driver_management
 
     app.register_blueprint(auth_bp)
@@ -316,6 +319,10 @@ def create_app():
     init_owner_driver_management(app)
     register_rate_limits(app)
     register_email_verification_gates(app)
+
+    @app.before_request
+    def _ensure_historical_analysis_runner():
+        ensure_historical_background_runner(app)
 
     @app.get("/")
     def home():

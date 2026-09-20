@@ -34,7 +34,7 @@ from evidence.storage import (
 from extensions import db
 from historical_ingestion.advisor_analyzer import HistoricalAdvisorAnalyzer
 from models import Car
-from rina.providers.base import RinaProviderError
+from rina.providers.base import RinaProviderError, RinaProviderTransientError
 from security.access import resolve_vehicle_authority
 from security.field_encryption import (
     ProfileEncryptionError,

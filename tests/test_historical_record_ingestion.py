@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
-import json
 
 import pytest
 from reportlab.pdfgen import canvas

@@ -20,6 +20,7 @@ from historical_ingestion.service import (
 )
 from models import Car, CarOwnership, TreatmentPlan, User
 from historical_ingestion.advisor_analyzer import HistoricalAdvisorAnalysis
+from rina.providers.base import RinaProviderRejectedError
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_provider_context import _reviewed_historical_records
 from treatment.models import (
@@ -195,6 +196,13 @@ class FakeHistoricalProvider:
             understanding_request_id="req-understanding",
             structured_request_id="req-structured",
         )
+
+
+class FailingHistoricalProvider:
+    provider_name = "failing-history"
+
+    def analyze_pdf(self, **_kwargs):
+        raise RinaProviderRejectedError("safe provider rejection")
 
 
 class ExplodingStream:
@@ -488,6 +496,63 @@ def test_advisor_can_reanalyze_private_source_without_reupload(app):
             evidence_id=first.evidence_id,
             extraction_type="structured_fields",
         ).count() == 2
+
+
+def test_failed_reanalysis_does_not_hide_previous_completed_candidates(app):
+    with app.app_context():
+        owner = _user(suffix=10)
+        advisor = _user(suffix=11, role="admin")
+        car = _owned_car(owner, suffix=10)
+        good = FakeHistoricalProvider()
+        storage = RecordingStorageProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-002\n"
+            "A pre-owned alternator will be purchased.\n"
+            "Paid across this Job."
+        )
+
+        first = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=good,
+        )
+        first_completed = db.session.get(
+            EvidenceExtraction,
+            first.structured_extraction_id,
+        )
+
+        failed = reanalyze_stored_document(
+            evidence_id=first.evidence_id,
+            actor_user_id=advisor.id,
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=FailingHistoricalProvider(),
+        )
+
+        assert failed.structured_status == "failed"
+        usable = latest_structured_extraction(first.evidence_id)
+        assert usable is not None
+        assert usable.id == first_completed.id
+        assert usable.status == "completed"
+
+        failed_row = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=first.evidence_id,
+                extraction_type="structured_fields",
+                status="failed",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        assert failed_row is not None
+        assert failed_row.provenance["failure_class"] == "RinaProviderRejectedError"
+        assert "safe provider rejection" in failed_row.provenance["failure_detail"]
 
 
 def test_rina_historical_context_is_advisor_only(app):

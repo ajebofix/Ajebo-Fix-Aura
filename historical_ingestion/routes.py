@@ -17,7 +17,10 @@ from flask import (
 from flask_login import current_user, login_required
 
 from admin.utils import advisor_required
-from evidence.models import VehicleEvidence
+from evidence.models import (
+    SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES,
+    VehicleEvidence,
+)
 from extensions import db
 from historical_ingestion.application import (
     HistoricalApplicationError,
@@ -128,19 +131,38 @@ def import_document(car_id: int):
     if request.method == "GET":
         return render_template("historical_ingestion/upload.html", car=car)
 
+    source_type = request.form.get("source_type", "").strip().lower()
+    if source_type not in SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES:
+        flash("Select a supported historical source type.", "error")
+        return redirect(request.url)
+
     uploaded = request.files.get("document")
     if uploaded is None:
-        flash("Select a PDF document or WhatsApp ZIP export.", "error")
+        flash("Select a source file to upload.", "error")
         return redirect(request.url)
 
     filename = str(uploaded.filename or "").lower()
-    is_zip = filename.endswith(".zip") or (
-        (uploaded.content_type or "").lower()
-        in {"application/zip", "application/x-zip-compressed"}
-    )
+    content_type = (uploaded.content_type or "").lower()
+    is_zip = filename.endswith(".zip") or content_type in {
+        "application/zip",
+        "application/x-zip-compressed",
+    }
+
+    if source_type == "whatsapp_conversation" and not is_zip:
+        flash(
+            "WhatsApp conversation sources must be uploaded as the original WhatsApp ZIP export.",
+            "error",
+        )
+        return redirect(request.url)
+    if source_type == "standalone_document" and is_zip:
+        flash(
+            "Standalone document sources accept PDF files, not ZIP archives.",
+            "error",
+        )
+        return redirect(request.url)
 
     try:
-        if is_zip:
+        if source_type == "whatsapp_conversation":
             result = ingest_whatsapp_bundle(
                 user_id=current_user.id,
                 car_id=car.id,
@@ -201,7 +223,7 @@ def import_document(car_id: int):
             (
                 "WhatsApp case bundle stored privately. Rina will reconcile the chat, "
                 "images, voice notes, videos and documents for advisor review."
-                if is_zip
+                if source_type == "whatsapp_conversation"
                 else
                 "Document stored privately. Rina has started advisor-grade analysis; "
                 "the review page will update automatically when it is ready."

@@ -9,9 +9,8 @@ import hashlib
 from pathlib import PurePosixPath
 import re
 import stat
-import subprocess
-import tempfile
 import uuid
+import wave
 import zipfile
 from typing import Any, Mapping
 
@@ -870,63 +869,84 @@ def _mark_child_failure(
 
 
 def _video_derivatives(payload: bytes, suffix: str) -> tuple[bytes | None, list[bytes]]:
+    del suffix  # Media type has already been signature-validated at archive intake.
     try:
-        import imageio_ffmpeg
+        import av
     except ImportError as exc:
         raise HistoricalIngestionConfigurationError(
             "Video analysis runtime is not installed."
         ) from exc
 
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    frames: list[bytes] = []
     audio: bytes | None = None
+    frames: list[bytes] = []
 
-    with tempfile.TemporaryDirectory(prefix="aura-whatsapp-video-") as tmp:
-        source = f"{tmp}/source{suffix or '.mp4'}"
-        with open(source, "wb") as handle:
-            handle.write(payload)
-
-        audio_path = f"{tmp}/audio.mp3"
-        audio_run = subprocess.run(
-            [
-                ffmpeg, "-y", "-i", source, "-vn", "-ac", "1", "-ar", "16000",
-                "-b:a", "48k", audio_path,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=20,
-            check=False,
-        )
-        if audio_run.returncode == 0:
-            try:
-                with open(audio_path, "rb") as handle:
-                    value = handle.read(25 * 1024 * 1024 + 1)
-                if value and len(value) <= 25 * 1024 * 1024:
+    try:
+        with av.open(BytesIO(payload), mode="r") as container:
+            if container.streams.audio:
+                output = BytesIO()
+                sample_limit = 16_000 * 10 * 60  # At most 10 minutes per video.
+                samples_written = 0
+                resampler = av.AudioResampler(
+                    format="s16",
+                    layout="mono",
+                    rate=16_000,
+                )
+                with wave.open(output, "wb") as wav:
+                    wav.setnchannels(1)
+                    wav.setsampwidth(2)
+                    wav.setframerate(16_000)
+                    for frame in container.decode(audio=0):
+                        for resampled in resampler.resample(frame):
+                            remaining = sample_limit - samples_written
+                            if remaining <= 0:
+                                break
+                            pcm = bytes(resampled.planes[0])
+                            max_bytes = remaining * 2
+                            pcm = pcm[:max_bytes]
+                            wav.writeframes(pcm)
+                            samples_written += len(pcm) // 2
+                        if samples_written >= sample_limit:
+                            break
+                value = output.getvalue()
+                if len(value) > 44:
                     audio = value
-            except OSError:
-                audio = None
+    except (av.error.FFmpegError, OSError, ValueError):
+        audio = None
 
-        for idx, timestamp in enumerate(("0.5", "3", "8"), start=1):
-            frame_path = f"{tmp}/frame-{idx}.jpg"
-            run = subprocess.run(
-                [
-                    ffmpeg, "-y", "-ss", timestamp, "-i", source,
-                    "-frames:v", "1", "-vf", "scale=1280:-2:force_original_aspect_ratio=decrease",
-                    "-q:v", "3", frame_path,
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=12,
-                check=False,
-            )
-            if run.returncode == 0:
-                try:
-                    with open(frame_path, "rb") as handle:
-                        frame = handle.read(3 * 1024 * 1024 + 1)
-                    if frame and len(frame) <= 3 * 1024 * 1024:
-                        frames.append(frame)
-                except OSError:
-                    pass
+    try:
+        with av.open(BytesIO(payload), mode="r") as container:
+            if container.streams.video:
+                stream = container.streams.video[0]
+                targets = [0.0, 3.0, 8.0]
+                target_index = 0
+
+                for frame in container.decode(video=0):
+                    if target_index >= len(targets):
+                        break
+                    when = frame.time
+                    if when is None and frame.pts is not None:
+                        when = float(frame.pts * stream.time_base)
+                    if when is None:
+                        when = 0.0
+
+                    if when + 0.001 < targets[target_index]:
+                        continue
+
+                    image = frame.to_image()
+                    try:
+                        image.thumbnail((1280, 1280))
+                        if image.mode != "RGB":
+                            image = image.convert("RGB")
+                        output = BytesIO()
+                        image.save(output, format="JPEG", quality=85, optimize=True)
+                        value = output.getvalue()
+                        if value and len(value) <= 3 * 1024 * 1024:
+                            frames.append(value)
+                    finally:
+                        image.close()
+                    target_index += 1
+    except (av.error.FFmpegError, OSError, ValueError):
+        frames = []
 
     return audio, frames
 
@@ -1055,8 +1075,8 @@ def _process_child(
             try:
                 transcript = analyzer.transcribe_audio(
                     payload=audio,
-                    filename="video-audio.mp3",
-                    content_type="audio/mpeg",
+                    filename="video-audio.wav",
+                    content_type="audio/wav",
                 )
             except Exception as exc:
                 _mark_child_failure(

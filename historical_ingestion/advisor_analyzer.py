@@ -355,6 +355,87 @@ CANDIDATE_SCHEMA: dict[str, Any] = {
 }
 
 
+
+UNDERSTANDING_INSTRUCTIONS = """
+You are A.J. Rina performing historical vehicle-record analysis for an AJEBO FIX
+PROFESSIONAL ADVISOR. You are not speaking to the vehicle owner.
+
+Read the ENTIRE uploaded PDF before forming conclusions. Treat it as a real
+automotive care file: headings, tables, dated updates, appendices, notes, payment
+sections and later amendments can change the meaning of earlier text.
+
+Your job in this first pass is DOCUMENT UNDERSTANDING, not database entry.
+
+Reconstruct:
+- what document this is and its references;
+- which vehicle/client/job it concerns;
+- why the vehicle came under care;
+- what was reported by the owner;
+- what Ajebo Fix actually observed/tested/measured;
+- what remained uncertain;
+- what was recommended;
+- what was authorised;
+- what the document explicitly proves was completed;
+- what outcomes were actually observed after work;
+- the chronology of updates;
+- financial/commercial facts separately.
+
+CRITICAL AUTHORITY RULES:
+- "recommended", "quoted", "authorised", "purchased", "paid" and "completed"
+  are not synonyms;
+- future wording ("will replace", "will reassess", "to be checked") is not an
+  outcome and is not completed work;
+- a payment or final job value does not prove a component was installed;
+- never invent an event date from a nearby document date;
+- never invent a diagnosis, result, odometer, VIN, component condition or outcome;
+- distinguish owner-reported symptoms from advisor observations;
+- preserve uncertainty explicitly;
+- every extracted fact must cite the page(s) and a short source excerpt;
+- advisor suggestions may identify what should be checked/confirmed, but must be
+  clearly separate from what the source proves.
+
+Think like a senior Ajebo Fix advisor preparing another advisor to understand the
+case quickly and accurately.
+""".strip()
+
+
+STRUCTURING_INSTRUCTIONS = """
+You are A.J. Rina converting an already-read historical vehicle document into
+candidate Aura records for an AJEBO FIX PROFESSIONAL ADVISOR.
+
+Use ONLY the document-understanding object supplied by the previous pass. Do not
+invent new source facts. This is not a second opportunity to reinterpret the PDF.
+
+Build review candidates that help an advisor create accurate vehicle memory.
+
+Rules:
+- owner complaint -> Reported Concern only when the source says it was reported;
+- advisor/test finding -> Assessment;
+- recommended or authorised work -> Treatment Plan;
+- Treatment Action with state=completed ONLY when a cited source fact explicitly
+  proves the work was performed, installed, replaced or completed;
+- a planned reassessment is Treatment Plan/context, never Treatment Outcome;
+- Treatment Outcome requires an actual post-work observation/result;
+- financial facts ALWAYS go to Financial Separate and use state=observed;
+- do not convert job value, invoice status or payment into mechanical completion;
+- occurred_at must be null unless that specific fact has an evidenced date;
+- retain source page numbers and exact/near-exact source excerpt;
+- keep separate facts separate instead of collapsing an entire job into one card;
+- use preowned_tokunbo only when the source actually establishes pre-owned/Tokunbo;
+- suggestions must be concise plain strings for an Ajebo Fix advisor.
+
+The review screen is a professional verification surface, not a diagnosis engine.
+""".strip()
+
+
+@dataclass(frozen=True)
+class HistoricalBackgroundResponse:
+    response_id: str
+    status: str
+    model: str
+    payload: dict[str, Any] | None = None
+
+
 @dataclass(frozen=True)
 class HistoricalAdvisorAnalysis:
     understanding: dict[str, Any]
@@ -523,6 +604,236 @@ class HistoricalAdvisorAnalyzer:
             response_model,
         )
 
+    def _start_background(
+        self,
+        *,
+        instructions: str,
+        input_content: list[dict[str, Any]],
+        schema_name: str,
+        schema: dict[str, Any],
+        stage: str,
+    ) -> HistoricalBackgroundResponse:
+        try:
+            response = self._client.responses.create(
+                model=self.model,
+                instructions=instructions,
+                input=[
+                    {
+                        "role": "user",
+                        "content": input_content,
+                    }
+                ],
+                reasoning={"effort": self.reasoning_effort},
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": schema_name,
+                        "strict": True,
+                        "schema": schema,
+                    }
+                },
+                background=True,
+                store=False,
+            )
+        except (
+            openai.APITimeoutError,
+            openai.APIConnectionError,
+            openai.RateLimitError,
+        ) as exc:
+            raise RinaProviderTransientError(
+                "Historical document analysis is temporarily unavailable"
+            ) from exc
+        except (
+            openai.AuthenticationError,
+            openai.PermissionDeniedError,
+        ) as exc:
+            raise RinaProviderConfigurationError(
+                "Historical document analysis credentials were rejected"
+            ) from exc
+        except openai.BadRequestError as exc:
+            detail = self._safe_provider_detail(exc)
+            logger.warning(
+                "historical_openai_rejected stage=%s model=%s %s",
+                stage,
+                self.model,
+                detail,
+            )
+            raise RinaProviderRejectedError(
+                f"Historical document analysis request was rejected ({detail})"
+            ) from exc
+        except openai.APIStatusError as exc:
+            detail = self._safe_provider_detail(exc)
+            logger.warning(
+                "historical_openai_status_error stage=%s model=%s %s",
+                stage,
+                self.model,
+                detail,
+            )
+            if int(getattr(exc, "status_code", 0) or 0) >= 500:
+                raise RinaProviderTransientError(
+                    f"Historical document analysis returned a transient failure ({detail})"
+                ) from exc
+            raise RinaProviderRejectedError(
+                f"Historical document analysis request was rejected ({detail})"
+            ) from exc
+        except openai.OpenAIError as exc:
+            raise RinaProviderTransientError(
+                "Historical document analysis failed"
+            ) from exc
+
+        response_id = str(getattr(response, "id", "") or "").strip()
+        if not response_id:
+            raise RinaProviderRejectedError(
+                "Historical background analysis did not return a response id"
+            )
+        return HistoricalBackgroundResponse(
+            response_id=response_id,
+            status=str(getattr(response, "status", "") or "queued"),
+            model=str(getattr(response, "model", "") or self.model),
+        )
+
+    def retrieve_background(self, response_id: str) -> HistoricalBackgroundResponse:
+        try:
+            response = self._client.responses.retrieve(response_id)
+        except (
+            openai.APITimeoutError,
+            openai.APIConnectionError,
+            openai.RateLimitError,
+        ) as exc:
+            raise RinaProviderTransientError(
+                "Historical background status is temporarily unavailable"
+            ) from exc
+        except (
+            openai.AuthenticationError,
+            openai.PermissionDeniedError,
+        ) as exc:
+            raise RinaProviderConfigurationError(
+                "Historical document analysis credentials were rejected"
+            ) from exc
+        except openai.APIStatusError as exc:
+            detail = self._safe_provider_detail(exc)
+            if int(getattr(exc, "status_code", 0) or 0) >= 500:
+                raise RinaProviderTransientError(
+                    f"Historical background status returned a transient failure ({detail})"
+                ) from exc
+            raise RinaProviderRejectedError(
+                f"Historical background status request was rejected ({detail})"
+            ) from exc
+        except openai.OpenAIError as exc:
+            raise RinaProviderTransientError(
+                "Historical background status failed"
+            ) from exc
+
+        status = str(getattr(response, "status", "") or "unknown")
+        payload = self._response_json(response) if status == "completed" else None
+        return HistoricalBackgroundResponse(
+            response_id=str(getattr(response, "id", "") or response_id),
+            status=status,
+            model=str(getattr(response, "model", "") or self.model),
+            payload=payload,
+        )
+
+    def start_understanding_background(
+        self,
+        *,
+        pdf_payload: bytes,
+        extracted_text: str,
+        trusted_vehicle_context: dict[str, Any],
+    ) -> tuple[HistoricalBackgroundResponse, bool]:
+        encoded_pdf = base64.b64encode(pdf_payload).decode("ascii")
+        context_text = (
+            "Trusted Aura vehicle context (use for disambiguation only; "
+            "do not overwrite source evidence):\n"
+            + json.dumps(
+                trusted_vehicle_context,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n\nPage-preserved searchable extraction:\n"
+            + extracted_text
+        )
+
+        try:
+            response = self._start_background(
+                instructions=UNDERSTANDING_INSTRUCTIONS,
+                input_content=[
+                    {
+                        "type": "input_text",
+                        "text": (
+                            context_text
+                            + "\n\nThe original PDF is attached and is the primary source."
+                        ),
+                    },
+                    {
+                        "type": "input_file",
+                        "filename": "historical_vehicle_record.pdf",
+                        "file_data": (
+                            f"data:application/pdf;base64,{encoded_pdf}"
+                        ),
+                    },
+                ],
+                schema_name="aura_historical_document_understanding",
+                schema=DOCUMENT_UNDERSTANDING_SCHEMA,
+                stage="whole_pdf_understanding_background",
+            )
+            return response, True
+        except RinaProviderRejectedError as direct_pdf_error:
+            logger.warning(
+                "historical_pdf_background_fallback model=%s reason=%s",
+                self.model,
+                str(direct_pdf_error)[:800],
+            )
+            response = self._start_background(
+                instructions=(
+                    UNDERSTANDING_INSTRUCTIONS
+                    + "\n\nThe original PDF could not be accepted by the provider. "
+                    "Use the complete page-preserved text below as the authoritative "
+                    "representation for this pass. Do not weaken the evidence rules."
+                ),
+                input_content=[
+                    {
+                        "type": "input_text",
+                        "text": context_text,
+                    }
+                ],
+                schema_name="aura_historical_document_understanding",
+                schema=DOCUMENT_UNDERSTANDING_SCHEMA,
+                stage="page_preserved_text_background",
+            )
+            return response, False
+
+    def start_structuring_background(
+        self,
+        *,
+        understanding: dict[str, Any],
+        trusted_vehicle_context: dict[str, Any],
+    ) -> HistoricalBackgroundResponse:
+        return self._start_background(
+            instructions=STRUCTURING_INSTRUCTIONS,
+            input_content=[
+                {
+                    "type": "input_text",
+                    "text": (
+                        "Trusted vehicle context:\n"
+                        + json.dumps(
+                            trusted_vehicle_context,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        + "\n\nDocument understanding from pass 1:\n"
+                        + json.dumps(
+                            understanding,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                    ),
+                }
+            ],
+            schema_name="aura_historical_review_candidates",
+            schema=CANDIDATE_SCHEMA,
+            stage="advisor_record_structuring_background",
+        )
+
     def analyze_pdf(
         self,
         *,
@@ -531,48 +842,6 @@ class HistoricalAdvisorAnalyzer:
         trusted_vehicle_context: dict[str, Any],
     ) -> HistoricalAdvisorAnalysis:
         encoded_pdf = base64.b64encode(pdf_payload).decode("ascii")
-
-        understanding_instructions = """
-You are A.J. Rina performing historical vehicle-record analysis for an AJEBO FIX
-PROFESSIONAL ADVISOR. You are not speaking to the vehicle owner.
-
-Read the ENTIRE uploaded PDF before forming conclusions. Treat it as a real
-automotive care file: headings, tables, dated updates, appendices, notes, payment
-sections and later amendments can change the meaning of earlier text.
-
-Your job in this first pass is DOCUMENT UNDERSTANDING, not database entry.
-
-Reconstruct:
-- what document this is and its references;
-- which vehicle/client/job it concerns;
-- why the vehicle came under care;
-- what was reported by the owner;
-- what Ajebo Fix actually observed/tested/measured;
-- what remained uncertain;
-- what was recommended;
-- what was authorised;
-- what the document explicitly proves was completed;
-- what outcomes were actually observed after work;
-- the chronology of updates;
-- financial/commercial facts separately.
-
-CRITICAL AUTHORITY RULES:
-- "recommended", "quoted", "authorised", "purchased", "paid" and "completed"
-  are not synonyms;
-- future wording ("will replace", "will reassess", "to be checked") is not an
-  outcome and is not completed work;
-- a payment or final job value does not prove a component was installed;
-- never invent an event date from a nearby document date;
-- never invent a diagnosis, result, odometer, VIN, component condition or outcome;
-- distinguish owner-reported symptoms from advisor observations;
-- preserve uncertainty explicitly;
-- every extracted fact must cite the page(s) and a short source excerpt;
-- advisor suggestions may identify what should be checked/confirmed, but must be
-  clearly separate from what the source proves.
-
-Think like a senior Ajebo Fix advisor preparing another advisor to understand the
-case quickly and accurately.
-""".strip()
 
         context_text = (
             "Trusted Aura vehicle context (use for disambiguation only; "
@@ -589,7 +858,7 @@ case quickly and accurately.
         direct_pdf_used = True
         try:
             understanding, understanding_request_id, response_model = self._call(
-                instructions=understanding_instructions,
+                instructions=UNDERSTANDING_INSTRUCTIONS,
                 input_content=[
                     {
                         "type": "input_text",
@@ -601,7 +870,7 @@ case quickly and accurately.
                     {
                         "type": "input_file",
                         "filename": "historical_vehicle_record.pdf",
-                        "file_data": encoded_pdf,
+                        "file_data": f"data:application/pdf;base64,{encoded_pdf}",
                     },
                 ],
                 schema_name="aura_historical_document_understanding",
@@ -617,7 +886,7 @@ case quickly and accurately.
             )
             understanding, understanding_request_id, response_model = self._call(
                 instructions=(
-                    understanding_instructions
+                    UNDERSTANDING_INSTRUCTIONS
                     + "\n\nThe original PDF could not be accepted by the provider. "
                     "Use the complete page-preserved text below as the authoritative "
                     "representation for this pass. Do not weaken the evidence rules."
@@ -633,36 +902,8 @@ case quickly and accurately.
                 stage="page_preserved_text_fallback",
             )
 
-        structuring_instructions = """
-You are A.J. Rina converting an already-read historical vehicle document into
-candidate Aura records for an AJEBO FIX PROFESSIONAL ADVISOR.
-
-Use ONLY the document-understanding object supplied by the previous pass. Do not
-invent new source facts. This is not a second opportunity to reinterpret the PDF.
-
-Build review candidates that help an advisor create accurate vehicle memory.
-
-Rules:
-- owner complaint -> Reported Concern only when the source says it was reported;
-- advisor/test finding -> Assessment;
-- recommended or authorised work -> Treatment Plan;
-- Treatment Action with state=completed ONLY when a cited source fact explicitly
-  proves the work was performed, installed, replaced or completed;
-- a planned reassessment is Treatment Plan/context, never Treatment Outcome;
-- Treatment Outcome requires an actual post-work observation/result;
-- financial facts ALWAYS go to Financial Separate and use state=observed;
-- do not convert job value, invoice status or payment into mechanical completion;
-- occurred_at must be null unless that specific fact has an evidenced date;
-- retain source page numbers and exact/near-exact source excerpt;
-- keep separate facts separate instead of collapsing an entire job into one card;
-- use preowned_tokunbo only when the source actually establishes pre-owned/Tokunbo;
-- suggestions must be concise plain strings for an Ajebo Fix advisor.
-
-The review screen is a professional verification surface, not a diagnosis engine.
-""".strip()
-
         structured, structured_request_id, structured_model = self._call(
-            instructions=structuring_instructions,
+            instructions=STRUCTURING_INSTRUCTIONS,
             input_content=[
                 {
                     "type": "input_text",

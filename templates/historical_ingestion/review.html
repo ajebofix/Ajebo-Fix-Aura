@@ -20,12 +20,18 @@
     </div>
 
     <form
+        id="historical-reanalysis-form"
         method="POST"
         action="{{ url_for('historical_ingestion.reanalyze_document', car_id=car.id, evidence_id=evidence.id) }}"
         style="margin-top:16px;"
     >
-        <button type="submit" class="btn btn-secondary btn-block">
-            Re-analyze with advisor-grade Rina
+        <button
+            id="historical-reanalysis-button"
+            type="submit"
+            class="btn btn-secondary btn-block"
+            {% if analysis_in_progress %}disabled{% endif %}
+        >
+            {{ 'Rina is analysing this document…' if analysis_in_progress else 'Re-analyze with advisor-grade Rina' }}
         </button>
     </form>
     <p class="muted" style="margin-top:8px;">
@@ -307,4 +313,26 @@
 </section>
 {% endif %}
 {% endif %}
+
+{% include "historical_ingestion/_analysis_overlay.html" %}
+
+<script>
+(function () {
+    const form = document.getElementById("historical-reanalysis-form");
+    const button = document.getElementById("historical-reanalysis-button");
+    if (!form || !button) return;
+
+    form.addEventListener("submit", function () {
+        button.disabled = true;
+        button.textContent = "Starting advisor-grade analysis…";
+        if (window.AuraHistoricalAnalysis) {
+            window.AuraHistoricalAnalysis.show();
+            window.AuraHistoricalAnalysis.setPhase(
+                "understanding",
+                "Aura is retrieving the private source and starting advisor-grade analysis."
+            );
+        }
+    });
+})();
+</script>
 {% endblock %}

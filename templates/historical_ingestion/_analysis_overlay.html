@@ -1,0 +1,429 @@
+<div
+    id="historical-analysis-overlay"
+    class="historical-analysis-overlay{% if analysis_in_progress %} is-active{% endif %}"
+    aria-hidden="{{ 'false' if analysis_in_progress else 'true' }}"
+>
+    <div class="historical-analysis-panel" role="status" aria-live="polite">
+        <div class="historical-analysis-visual" aria-hidden="true">
+            <span class="historical-analysis-ring ring-one"></span>
+            <span class="historical-analysis-ring ring-two"></span>
+            <span class="historical-analysis-core">R</span>
+        </div>
+
+        <p class="historical-analysis-kicker">A.J. Rina · Advisor analysis</p>
+        <h2 id="historical-analysis-title">
+            {% if analysis_in_progress %}
+                Rina is reading the full document
+            {% else %}
+                Preparing secure analysis
+            {% endif %}
+        </h2>
+        <p id="historical-analysis-message" class="muted">
+            {% if analysis_in_progress %}
+                Rina is reconstructing the vehicle-care story before creating any review candidates.
+            {% else %}
+                Aura is securing the source and preparing it for advisor-grade analysis.
+            {% endif %}
+        </p>
+
+        <div class="historical-analysis-track" aria-hidden="true">
+            <span></span>
+        </div>
+
+        <div class="historical-analysis-steps">
+            <div class="analysis-step is-done" data-analysis-step="source">
+                <span>1</span>
+                <div>
+                    <strong>Source secured</strong>
+                    <small>Original document remains private.</small>
+                </div>
+            </div>
+            <div class="analysis-step{% if analysis_in_progress %} is-active{% endif %}" data-analysis-step="understanding">
+                <span>2</span>
+                <div>
+                    <strong>Understand the complete record</strong>
+                    <small>Concerns, findings, chronology, recommendations and uncertainty.</small>
+                </div>
+            </div>
+            <div class="analysis-step" data-analysis-step="structuring">
+                <span>3</span>
+                <div>
+                    <strong>Prepare advisor review</strong>
+                    <small>Separate evidence, plans, completed work, outcomes and finance.</small>
+                </div>
+            </div>
+        </div>
+
+        <p class="historical-analysis-note">
+            You do not need to refresh or tap Analyse again. If you refresh or leave this
+            screen, Aura reconnects to the same in-progress analysis instead of starting another one.
+        </p>
+        <p class="historical-analysis-elapsed">
+            Analysing for <strong id="historical-analysis-elapsed">0:00</strong>
+        </p>
+
+        <button
+            id="historical-analysis-close"
+            type="button"
+            class="btn btn-secondary"
+            hidden
+        >
+            Close
+        </button>
+    </div>
+</div>
+
+<style>
+.historical-analysis-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(8, 17, 35, 0.76);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.historical-analysis-overlay.is-active {
+    display: flex;
+}
+
+.historical-analysis-panel {
+    width: min(560px, 100%);
+    max-height: 88vh;
+    overflow-y: auto;
+    border-radius: 28px;
+    background: #ffffff;
+    padding: 30px 26px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+    text-align: center;
+}
+
+.historical-analysis-visual {
+    position: relative;
+    width: 108px;
+    height: 108px;
+    margin: 0 auto 18px;
+}
+
+.historical-analysis-ring,
+.historical-analysis-core {
+    position: absolute;
+    inset: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+}
+
+.historical-analysis-ring {
+    border: 2px solid rgba(37, 99, 235, 0.28);
+    animation: historical-analysis-pulse 2.2s ease-out infinite;
+}
+
+.historical-analysis-ring.ring-one {
+    width: 76px;
+    height: 76px;
+}
+
+.historical-analysis-ring.ring-two {
+    width: 104px;
+    height: 104px;
+    animation-delay: 0.7s;
+}
+
+.historical-analysis-core {
+    display: grid;
+    place-items: center;
+    width: 58px;
+    height: 58px;
+    background: linear-gradient(145deg, #2563eb, #0798f6);
+    color: #fff;
+    font-size: 24px;
+    font-weight: 800;
+    box-shadow: 0 12px 34px rgba(37, 99, 235, 0.32);
+}
+
+.historical-analysis-kicker {
+    margin: 0 0 7px;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.historical-analysis-panel h2 {
+    margin: 0 0 10px;
+    font-size: clamp(24px, 6vw, 34px);
+    line-height: 1.1;
+}
+
+.historical-analysis-track {
+    position: relative;
+    height: 5px;
+    margin: 22px 0;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.historical-analysis-track span {
+    position: absolute;
+    inset-block: 0;
+    left: -42%;
+    width: 42%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, transparent, #2563eb, #0798f6, transparent);
+    animation: historical-analysis-scan 1.55s ease-in-out infinite;
+}
+
+.historical-analysis-steps {
+    display: grid;
+    gap: 10px;
+    text-align: left;
+}
+
+.analysis-step {
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid rgba(31, 41, 55, 0.08);
+    border-radius: 16px;
+    opacity: 0.58;
+}
+
+.analysis-step > span {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background: #eef3fb;
+    font-weight: 800;
+}
+
+.analysis-step strong,
+.analysis-step small {
+    display: block;
+}
+
+.analysis-step small {
+    margin-top: 3px;
+    color: #6b7280;
+    line-height: 1.35;
+}
+
+.analysis-step.is-active {
+    opacity: 1;
+    border-color: rgba(37, 99, 235, 0.24);
+    background: rgba(37, 99, 235, 0.055);
+}
+
+.analysis-step.is-active > span {
+    background: #2563eb;
+    color: #fff;
+}
+
+.analysis-step.is-done {
+    opacity: 0.92;
+}
+
+.analysis-step.is-done > span {
+    background: #dff8ed;
+    color: #087b59;
+}
+
+.historical-analysis-note {
+    margin: 18px 0 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #f6f8fc;
+    color: #5c6678;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.historical-analysis-elapsed {
+    margin: 12px 0 0;
+    color: #7a8394;
+    font-size: 13px;
+}
+
+#historical-analysis-close {
+    margin-top: 16px;
+}
+
+@keyframes historical-analysis-pulse {
+    0% {
+        opacity: 0.8;
+        transform: translate(-50%, -50%) scale(0.68);
+    }
+    80%,
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.08);
+    }
+}
+
+@keyframes historical-analysis-scan {
+    0% { left: -42%; }
+    55% { left: 52%; }
+    100% { left: 105%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .historical-analysis-ring,
+    .historical-analysis-track span {
+        animation: none;
+    }
+
+    .historical-analysis-track span {
+        left: 28%;
+    }
+}
+</style>
+
+<script>
+(function () {
+    const overlay = document.getElementById("historical-analysis-overlay");
+    if (!overlay) return;
+
+    const title = document.getElementById("historical-analysis-title");
+    const message = document.getElementById("historical-analysis-message");
+    const elapsed = document.getElementById("historical-analysis-elapsed");
+    const closeButton = document.getElementById("historical-analysis-close");
+    const understandingStep = overlay.querySelector('[data-analysis-step="understanding"]');
+    const structuringStep = overlay.querySelector('[data-analysis-step="structuring"]');
+
+    let startedAt = Date.now();
+    let timerId = null;
+    let pollId = null;
+    let stopped = false;
+
+    function formatElapsed(ms) {
+        const total = Math.max(0, Math.floor(ms / 1000));
+        const minutes = Math.floor(total / 60);
+        const seconds = String(total % 60).padStart(2, "0");
+        return minutes + ":" + seconds;
+    }
+
+    function startTimer() {
+        startedAt = Date.now();
+        if (timerId) clearInterval(timerId);
+        timerId = setInterval(function () {
+            if (elapsed) elapsed.textContent = formatElapsed(Date.now() - startedAt);
+        }, 1000);
+    }
+
+    function showOverlay() {
+        overlay.classList.add("is-active");
+        overlay.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+        stopped = false;
+        if (closeButton) closeButton.hidden = true;
+        startTimer();
+    }
+
+    function stopTimer() {
+        if (timerId) clearInterval(timerId);
+        timerId = null;
+    }
+
+    function setPhase(phase, serverMessage) {
+        understandingStep.classList.remove("is-active", "is-done");
+        structuringStep.classList.remove("is-active", "is-done");
+
+        if (phase === "understanding") {
+            understandingStep.classList.add("is-active");
+            title.textContent = "Rina is reading the full document";
+        } else if (phase === "structuring") {
+            understandingStep.classList.add("is-done");
+            structuringStep.classList.add("is-active");
+            title.textContent = "Rina is preparing the advisor review";
+        } else if (phase === "completed") {
+            understandingStep.classList.add("is-done");
+            structuringStep.classList.add("is-done");
+            title.textContent = "Analysis complete";
+        } else if (phase === "failed") {
+            title.textContent = "Analysis could not finish";
+        }
+
+        if (serverMessage) message.textContent = serverMessage;
+    }
+
+    function fail(messageText) {
+        stopped = true;
+        if (pollId) clearTimeout(pollId);
+        stopTimer();
+        setPhase("failed", messageText || "The source is still safe and no vehicle history was changed.");
+        if (closeButton) closeButton.hidden = false;
+    }
+
+    if (closeButton) {
+        closeButton.addEventListener("click", function () {
+            overlay.classList.remove("is-active");
+            overlay.setAttribute("aria-hidden", "true");
+            document.body.style.overflow = "";
+        });
+    }
+
+    window.AuraHistoricalAnalysis = {
+        show: showOverlay,
+        fail: fail,
+        setPhase: setPhase
+    };
+
+    {% if analysis_in_progress %}
+    showOverlay();
+
+    const statusUrl = {{ url_for(
+        'historical_ingestion.analysis_status',
+        car_id=car.id,
+        evidence_id=evidence.id
+    )|tojson }};
+
+    async function poll() {
+        if (stopped) return;
+        try {
+            const response = await fetch(statusUrl, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                cache: "no-store"
+            });
+
+            if (!response.ok) {
+                throw new Error("status request failed");
+            }
+
+            const data = await response.json();
+            setPhase(data.phase || "understanding", data.message || "");
+
+            if (data.status === "completed") {
+                stopped = true;
+                stopTimer();
+                setTimeout(function () {
+                    window.location.reload();
+                }, 800);
+                return;
+            }
+
+            if (data.status === "failed") {
+                fail(data.message);
+                return;
+            }
+
+            pollId = setTimeout(poll, 2500);
+        } catch (error) {
+            message.textContent = "Connection interrupted. Aura will try again automatically.";
+            pollId = setTimeout(poll, 4000);
+        }
+    }
+
+    poll();
+    {% endif %}
+})();
+</script>

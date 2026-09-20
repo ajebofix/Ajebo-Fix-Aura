@@ -8,6 +8,7 @@ from flask import (
     Blueprint,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -26,10 +27,13 @@ from historical_ingestion.service import (
     HistoricalDocumentValidationError,
     HistoricalIngestionConfigurationError,
     HistoricalIngestionError,
+    advance_historical_background_analysis,
     decrypt_extraction_payload,
-    ingest_pdf_document,
+    has_completed_structured_extraction,
+    ingest_pdf_document_background,
+    latest_background_extraction,
     latest_structured_extraction,
-    reanalyze_stored_document,
+    reanalyze_stored_document_background,
     save_advisor_review,
 )
 from models import Car
@@ -123,7 +127,7 @@ def import_document(car_id: int):
         return redirect(request.url)
 
     try:
-        result = ingest_pdf_document(
+        result = ingest_pdf_document_background(
             user_id=current_user.id,
             car_id=car.id,
             file_stream=uploaded.stream,
@@ -154,22 +158,21 @@ def import_document(car_id: int):
         flash("Aura could not import this historical document.", "error")
         return redirect(request.url)
 
-    if result.reused_existing:
+    if result.status == "completed":
         flash(
-            "This exact PDF is already stored for this vehicle. Aura reopened "
-            "the existing analysis instead of creating a different interpretation.",
+            "This source already has an advisor-grade analysis ready for review.",
             "info",
         )
-    elif result.structured_status != "completed":
+    elif result.reused_analysis:
         flash(
-            "The PDF was stored and its text was captured, but Rina could not "
-            "structure candidate records yet. No vehicle history was changed.",
-            "warning",
+            "Rina is already analysing this document. Aura resumed the existing "
+            "analysis instead of starting another one.",
+            "info",
         )
     else:
         flash(
-            "Document stored privately. Rina read the full PDF and prepared "
-            "candidate records for your review; nothing has been published yet.",
+            "Document stored privately. Rina has started advisor-grade analysis; "
+            "the review page will update automatically when it is ready.",
             "success",
         )
 
@@ -195,10 +198,9 @@ def reanalyze_document(car_id: int, evidence_id: int):
     ).first_or_404()
 
     try:
-        result = reanalyze_stored_document(
+        result = reanalyze_stored_document_background(
             evidence_id=evidence.id,
             actor_user_id=current_user.id,
-            retention_days=current_app.config.get("EVIDENCE_RETENTION_DAYS"),
             storage_provider=current_app.extensions.get("evidence_storage_provider"),
             storage_config=current_app.config,
             language_provider=current_app.extensions.get(
@@ -219,17 +221,21 @@ def reanalyze_document(car_id: int, evidence_id: int):
             )
         )
 
-    if result.structured_status == "completed":
+    if result.status == "completed":
         flash(
-            "Rina re-read the original PDF using the advisor-grade analysis "
-            "pipeline. Review the new candidates before saving anything.",
-            "success",
+            "Advisor-grade analysis is already ready for review.",
+            "info",
+        )
+    elif result.reused_analysis:
+        flash(
+            "Rina is already analysing this source. The existing analysis was resumed.",
+            "info",
         )
     else:
         flash(
-            "The original PDF is still stored safely, but advisor-grade "
-            "re-analysis did not complete. No vehicle history was changed.",
-            "warning",
+            "Rina has started re-analysing the original private PDF. "
+            "You can stay on this page; it will update automatically.",
+            "success",
         )
 
     return redirect(
@@ -238,6 +244,90 @@ def reanalyze_document(car_id: int, evidence_id: int):
             car_id=car.id,
             evidence_id=evidence.id,
         )
+    )
+
+
+@historical_ingestion_bp.get(
+    "/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/analysis-status"
+)
+@login_required
+@advisor_required
+def analysis_status(car_id: int, evidence_id: int):
+    car = Car.query.get_or_404(car_id)
+    evidence = VehicleEvidence.query.filter_by(
+        id=evidence_id,
+        car_id=car.id,
+    ).first_or_404()
+    analysis = latest_background_extraction(evidence.id)
+
+    if analysis is None:
+        return jsonify(
+            {
+                "status": "idle",
+                "phase": "idle",
+                "message": "No advisor-grade analysis is currently running.",
+                "review_ready": has_completed_structured_extraction(evidence.id),
+            }
+        )
+
+    if analysis.status == "processing":
+        try:
+            state = advance_historical_background_analysis(
+                extraction_id=analysis.id,
+                actor_user_id=current_user.id,
+                language_provider=current_app.extensions.get(
+                    "historical_document_provider"
+                ),
+            )
+        except HistoricalIngestionError as exc:
+            db.session.rollback()
+            current_app.logger.warning(
+                "historical_analysis_status_failed evidence_id=%s extraction_id=%s detail=%s",
+                evidence.id,
+                analysis.id,
+                str(exc)[:500],
+            )
+            return jsonify(
+                {
+                    "status": "processing",
+                    "phase": str(
+                        (analysis.provenance or {}).get("background_stage")
+                        or "understanding"
+                    ),
+                    "message": (
+                        "Rina is still analysing. Aura will check again automatically."
+                    ),
+                    "review_ready": has_completed_structured_extraction(evidence.id),
+                }
+            )
+
+        return jsonify(
+            {
+                "status": state.status,
+                "phase": state.phase,
+                "message": state.message,
+                "review_ready": state.review_ready,
+            }
+        )
+
+    phase = (
+        "completed"
+        if analysis.status == "completed"
+        else "failed"
+        if analysis.status == "failed"
+        else str((analysis.provenance or {}).get("background_stage") or "idle")
+    )
+    return jsonify(
+        {
+            "status": analysis.status,
+            "phase": phase,
+            "message": (
+                "Advisor-grade extraction is ready for review."
+                if analysis.status == "completed"
+                else "Rina could not complete this analysis. No vehicle history was changed."
+            ),
+            "review_ready": has_completed_structured_extraction(evidence.id),
+        }
     )
 
 
@@ -253,6 +343,10 @@ def review_document(car_id: int, evidence_id: int):
         car_id=car.id,
     ).first_or_404()
     extraction = latest_structured_extraction(evidence.id)
+    background_analysis = latest_background_extraction(evidence.id)
+    analysis_in_progress = bool(
+        background_analysis and background_analysis.status == "processing"
+    )
 
     payload = {}
     reviewed_payload = {}
@@ -271,6 +365,8 @@ def review_document(car_id: int, evidence_id: int):
         extraction=extraction,
         payload=reviewed_payload or payload,
         has_review=bool(reviewed_payload),
+        background_analysis=background_analysis,
+        analysis_in_progress=analysis_in_progress,
     )
 
 

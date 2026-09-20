@@ -212,3 +212,100 @@ def test_advisor_analyzer_falls_back_to_page_preserved_text_when_pdf_is_rejected
     assert result.direct_pdf_used is False
     assert result.understanding_request_id == "req-text-fallback"
     assert result.structured_request_id == "req-structured-after-fallback"
+
+
+class BackgroundFakeResponse:
+    def __init__(
+        self,
+        *,
+        response_id: str,
+        status: str,
+        payload: dict | None = None,
+    ):
+        self.id = response_id
+        self.status = status
+        self.model = "gpt-5.6-sol"
+        self.output_text = json.dumps(payload) if payload is not None else ""
+
+
+class BackgroundResponses:
+    def __init__(self):
+        self.create_calls = []
+        self.retrieve_calls = []
+
+    def create(self, **kwargs):
+        self.create_calls.append(kwargs)
+        return BackgroundFakeResponse(
+            response_id="resp-background-understanding",
+            status="queued",
+        )
+
+    def retrieve(self, response_id: str):
+        self.retrieve_calls.append(response_id)
+        return BackgroundFakeResponse(
+            response_id=response_id,
+            status="completed",
+            payload={
+                "document": {
+                    "document_type": "job_record",
+                    "title": "Ajebo Fix Job",
+                    "reference": "JOB-2026-002",
+                    "job_reference": "JOB-2026-002",
+                    "sow_reference": "SOW-2026-002",
+                    "document_date": "2026-08-18",
+                    "client_name": "Client",
+                    "vehicle_description": "2014 Mercedes-Benz GL 450",
+                    "vin": "4JG166TEST000001",
+                    "plate_number": "JJJ926HX",
+                },
+                "advisor_narrative": "Background understanding complete.",
+                "chronology": [],
+                "facts": [],
+                "ambiguities": [],
+                "advisor_suggestions": [],
+            },
+        )
+
+
+class BackgroundClient:
+    def __init__(self):
+        self.responses = BackgroundResponses()
+
+
+def test_background_analyzer_uses_data_uri_and_openai_background_mode():
+    client = BackgroundClient()
+    analyzer = HistoricalAdvisorAnalyzer(
+        client=client,
+        model="gpt-5.6-sol",
+        reasoning_effort="high",
+    )
+
+    started, direct_pdf_used = analyzer.start_understanding_background(
+        pdf_payload=b"%PDF-1.4 background bytes",
+        extracted_text="--- PAGE 1 ---\nJOB-2026-002",
+        trusted_vehicle_context={
+            "car_id": 1,
+            "display_name": "Mercedes-Benz GL 450 2014",
+            "vin": "4JG166TEST000001",
+            "audience": "Ajebo Fix professional advisor",
+        },
+    )
+
+    assert direct_pdf_used is True
+    assert started.response_id == "resp-background-understanding"
+    assert started.status == "queued"
+
+    call = client.responses.create_calls[0]
+    assert call["background"] is True
+    assert call["store"] is False
+    file_item = next(
+        item
+        for item in call["input"][0]["content"]
+        if item["type"] == "input_file"
+    )
+    assert file_item["file_data"].startswith("data:application/pdf;base64,")
+
+    completed = analyzer.retrieve_background(started.response_id)
+    assert completed.status == "completed"
+    assert completed.payload["document"]["job_reference"] == "JOB-2026-002"
+    assert client.responses.retrieve_calls == ["resp-background-understanding"]

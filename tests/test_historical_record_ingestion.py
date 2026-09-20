@@ -12,14 +12,21 @@ from extensions import db
 from historical_ingestion.application import apply_reviewed_historical_treatment
 from historical_ingestion.service import (
     HistoricalIngestionAccessError,
+    advance_historical_background_analysis,
     decrypt_extraction_payload,
     ingest_pdf_document,
+    ingest_pdf_document_background,
+    latest_background_extraction,
     latest_structured_extraction,
     reanalyze_stored_document,
+    reanalyze_stored_document_background,
     save_advisor_review,
 )
 from models import Car, CarOwnership, TreatmentPlan, User
-from historical_ingestion.advisor_analyzer import HistoricalAdvisorAnalysis
+from historical_ingestion.advisor_analyzer import (
+    HistoricalAdvisorAnalysis,
+    HistoricalBackgroundResponse,
+)
 from rina.providers.base import RinaProviderRejectedError
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_provider_context import _reviewed_historical_records
@@ -195,6 +202,134 @@ class FakeHistoricalProvider:
             model=self.model,
             understanding_request_id="req-understanding",
             structured_request_id="req-structured",
+        )
+
+
+class FakeBackgroundHistoricalProvider:
+    provider_name = "fake-background-history"
+    model = "fake-background-model"
+
+    def __init__(self):
+        self.started_understanding = 0
+        self.started_structuring = 0
+        self.retrieve_calls = []
+
+    def start_understanding_background(
+        self,
+        *,
+        pdf_payload: bytes,
+        extracted_text: str,
+        trusted_vehicle_context: dict,
+    ):
+        self.started_understanding += 1
+        assert pdf_payload.startswith(b"%PDF-")
+        assert "--- PAGE 1 ---" in extracted_text
+        assert trusted_vehicle_context["audience"] == "Ajebo Fix professional advisor"
+        return (
+            HistoricalBackgroundResponse(
+                response_id="resp-understanding",
+                status="queued",
+                model=self.model,
+            ),
+            True,
+        )
+
+    def retrieve_background(self, response_id: str):
+        self.retrieve_calls.append(response_id)
+        if response_id == "resp-understanding":
+            return HistoricalBackgroundResponse(
+                response_id=response_id,
+                status="completed",
+                model=self.model,
+                payload={
+                    "document": {
+                        "document_type": "job_record",
+                        "title": "Ajebo Fix job record",
+                        "reference": "JOB-2026-002",
+                        "document_date": "2026-08-18",
+                        "job_reference": "JOB-2026-002",
+                        "sow_reference": "SOW-2026-002",
+                        "client_name": "Historical Owner",
+                        "vehicle_description": "2014 Mercedes-Benz GL 450",
+                        "vin": "4JG166HIST0000012",
+                        "plate_number": None,
+                    },
+                    "advisor_narrative": (
+                        "The source records an electrical concern, an observed "
+                        "AIRMATIC leak and recommended work."
+                    ),
+                    "chronology": [],
+                    "facts": [],
+                    "ambiguities": [],
+                    "advisor_suggestions": [
+                        "Confirm completed work from completion evidence."
+                    ],
+                },
+            )
+        if response_id == "resp-structuring":
+            return HistoricalBackgroundResponse(
+                response_id=response_id,
+                status="completed",
+                model=self.model,
+                payload={
+                    "document": {
+                        "document_type": "job_record",
+                        "title": "Ajebo Fix job record",
+                        "reference": "JOB-2026-002",
+                        "document_date": "2026-08-18",
+                        "job_reference": "JOB-2026-002",
+                        "sow_reference": "SOW-2026-002",
+                        "client_name": "Historical Owner",
+                        "vehicle_description": "2014 Mercedes-Benz GL 450",
+                        "vin": "4JG166HIST0000012",
+                        "plate_number": None,
+                    },
+                    "rina_summary": "Advisor-grade historical summary.",
+                    "advisor_suggestions": [
+                        "Confirm completed work from completion evidence."
+                    ],
+                    "candidates": [
+                        {
+                            "category": "reported_concern",
+                            "state": "reported",
+                            "title": "Intermittent electrical concern",
+                            "detail": "Owner reported intermittent electrical loss.",
+                            "occurred_at": None,
+                            "source_pages": [1],
+                            "source_fact_ids": ["f1"],
+                            "source_excerpt": "Intermittent electrical concern",
+                            "confidence": 0.93,
+                            "confidence_reason": "Explicitly reported in the source.",
+                            "suggested_destination": "reported_concern",
+                            "outcome_direction": "insufficient_evidence",
+                            "advisor_attention": "",
+                            "action": {
+                                "kind": "other_intervention",
+                                "component_name": None,
+                                "component_location": None,
+                                "component_condition": "not_applicable",
+                                "quantity": None,
+                                "odometer_km": None,
+                            },
+                        }
+                    ],
+                },
+            )
+        raise AssertionError(f"unexpected response id {response_id}")
+
+    def start_structuring_background(
+        self,
+        *,
+        understanding: dict,
+        trusted_vehicle_context: dict,
+    ):
+        self.started_structuring += 1
+        assert understanding["document"]["job_reference"] == "JOB-2026-002"
+        assert trusted_vehicle_context["audience"] == "Ajebo Fix professional advisor"
+        return HistoricalBackgroundResponse(
+            response_id="resp-structuring",
+            status="queued",
+            model=self.model,
         )
 
 
@@ -496,6 +631,111 @@ def test_advisor_can_reanalyze_private_source_without_reupload(app):
             evidence_id=first.evidence_id,
             extraction_type="structured_fields",
         ).count() == 2
+
+
+def test_background_import_returns_immediately_and_advances_in_two_poll_steps(app):
+    with app.app_context():
+        owner = _user(suffix=12)
+        advisor = _user(suffix=13, role="admin")
+        car = _owned_car(owner, suffix=12)
+        analyzer = FakeBackgroundHistoricalProvider()
+        storage = RecordingStorageProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-002\n"
+            "Intermittent electrical concern\n"
+            "AIRMATIC leak observed"
+        )
+
+        started = ingest_pdf_document_background(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+
+        assert started.status == "processing"
+        assert started.phase == "understanding"
+        assert analyzer.started_understanding == 1
+        background = latest_background_extraction(started.evidence_id)
+        assert background is not None
+        assert background.status == "processing"
+        assert background.provenance["background_stage"] == "understanding"
+
+        first_poll = advance_historical_background_analysis(
+            extraction_id=background.id,
+            actor_user_id=advisor.id,
+            language_provider=analyzer,
+        )
+        assert first_poll.status == "processing"
+        assert first_poll.phase == "structuring"
+        assert analyzer.started_structuring == 1
+
+        second_poll = advance_historical_background_analysis(
+            extraction_id=background.id,
+            actor_user_id=advisor.id,
+            language_provider=analyzer,
+        )
+        assert second_poll.status == "completed"
+        assert second_poll.review_ready is True
+
+        usable = latest_structured_extraction(started.evidence_id)
+        assert usable is not None
+        assert usable.id == background.id
+        assert usable.status == "completed"
+        payload = decrypt_extraction_payload(usable)
+        assert payload["rina_summary"] == "Advisor-grade historical summary."
+        assert payload["candidates"][0]["suggested_destination"] == "reported_concern"
+
+
+def test_background_reanalysis_is_idempotent_while_processing(app):
+    with app.app_context():
+        owner = _user(suffix=14)
+        advisor = _user(suffix=15, role="admin")
+        car = _owned_car(owner, suffix=14)
+        storage = RecordingStorageProvider()
+        source_provider = FakeHistoricalProvider()
+        background_provider = FakeBackgroundHistoricalProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-002\n"
+            "Intermittent electrical concern\n"
+            "AIRMATIC leak observed"
+        )
+
+        source = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=source_provider,
+        )
+
+        first = reanalyze_stored_document_background(
+            evidence_id=source.evidence_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            language_provider=background_provider,
+        )
+        second = reanalyze_stored_document_background(
+            evidence_id=source.evidence_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            language_provider=background_provider,
+        )
+
+        assert first.status == "processing"
+        assert second.status == "processing"
+        assert second.reused_analysis is True
+        assert second.extraction_id == first.extraction_id
+        assert background_provider.started_understanding == 1
 
 
 def test_failed_reanalysis_does_not_hide_previous_completed_candidates(app):

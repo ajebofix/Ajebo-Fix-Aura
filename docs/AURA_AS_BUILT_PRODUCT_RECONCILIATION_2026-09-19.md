@@ -131,6 +131,8 @@ It includes:
 - direct private PDF input to the dedicated historical analyzer plus page-preserving searchable text;
 - strict structured-output contracts, source-page/excerpt traceability and deterministic guardrails;
 - duplicate-PDF fingerprint reuse and one-tap re-analysis from the original private source;
+- OpenAI Responses background-mode orchestration for long-running historical analysis, with resumable status polling instead of holding a Gunicorn request open;
+- advisor-facing animated analysis state that survives refresh/navigation and blocks duplicate submits;
 - Rina/provider candidate structuring that cannot autonomously publish vehicle truth;
 - advisor review/edit/reject before historical facts can be applied;
 - explicit separation of recommended, authorised and completed work;

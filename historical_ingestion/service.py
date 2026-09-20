@@ -34,7 +34,7 @@ from evidence.storage import (
 from extensions import db
 from historical_ingestion.advisor_analyzer import HistoricalAdvisorAnalyzer
 from models import Car
-from rina.providers.base import RinaProviderError
+from rina.providers.base import RinaProviderError, RinaProviderTransientError
 from security.access import resolve_vehicle_authority
 from security.field_encryption import (
     ProfileEncryptionError,
@@ -650,6 +650,635 @@ def _trusted_vehicle_context(car: Car) -> dict[str, Any]:
         "audience": "Ajebo Fix professional advisor",
         "purpose": "historical vehicle-care reconstruction",
     }
+
+
+
+@dataclass(frozen=True)
+class HistoricalBackgroundStartResult:
+    evidence_id: int
+    extraction_id: int
+    status: str
+    phase: str
+    reused_source: bool = False
+    reused_analysis: bool = False
+
+
+@dataclass(frozen=True)
+class HistoricalBackgroundStatus:
+    evidence_id: int
+    extraction_id: int
+    status: str
+    phase: str
+    message: str
+    review_ready: bool = False
+
+
+_BACKGROUND_PIPELINE = "advisor_grade_background_v3"
+_BACKGROUND_TERMINAL = {"completed", "failed"}
+
+
+def _latest_text_extraction(evidence_id: int) -> EvidenceExtraction | None:
+    return (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence_id,
+            extraction_type="document_text",
+            status="completed",
+        )
+        .order_by(EvidenceExtraction.created_at.desc(), EvidenceExtraction.id.desc())
+        .first()
+    )
+
+
+def has_completed_structured_extraction(evidence_id: int) -> bool:
+    return (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence_id,
+            extraction_type="structured_fields",
+            status="completed",
+        ).first()
+        is not None
+    )
+
+
+def latest_background_extraction(evidence_id: int) -> EvidenceExtraction | None:
+    rows = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence_id,
+            extraction_type="structured_fields",
+        )
+        .order_by(EvidenceExtraction.created_at.desc(), EvidenceExtraction.id.desc())
+        .limit(20)
+        .all()
+    )
+    for row in rows:
+        if (row.provenance or {}).get("analysis_pipeline") == _BACKGROUND_PIPELINE:
+            return row
+    return None
+
+
+def _create_text_extraction(
+    *,
+    evidence: VehicleEvidence,
+    pdf_payload: bytes,
+) -> tuple[EvidenceExtraction, str, int]:
+    text, page_count = _extract_pdf_text(pdf_payload)
+    text_payload = {
+        "schema_version": 2,
+        "text": text,
+        "page_count": page_count,
+        "characters": len(text),
+        "layout_preserved": True,
+    }
+    cipher, version, digest = _payload_cipher(text_payload)
+    extraction = EvidenceExtraction(
+        evidence_id=evidence.id,
+        extraction_type="document_text",
+        provider="pypdf",
+        provider_model=None,
+        status="completed",
+        confidence=1.0,
+        result_ciphertext=cipher,
+        result_key_version=version,
+        result_sha256=digest,
+        provenance={
+            "parser": "pypdf",
+            "page_count": page_count,
+            "characters": len(text),
+            "layout_preserved": True,
+            "semantic_authority": "none",
+        },
+        completed_at=_utcnow_naive(),
+    )
+    db.session.add(extraction)
+    db.session.commit()
+    return extraction, text, page_count
+
+
+def _text_from_extraction(
+    extraction: EvidenceExtraction,
+) -> tuple[str, int]:
+    payload = decrypt_extraction_payload(extraction)
+    text = str(payload.get("text") or "")
+    page_count = int(
+        payload.get("page_count")
+        or (extraction.provenance or {}).get("page_count")
+        or 0
+    )
+    if not text:
+        raise HistoricalIngestionError(
+            "The stored document text is unavailable for analysis."
+        )
+    return text, page_count
+
+
+def _background_message(phase: str) -> str:
+    if phase == "understanding":
+        return (
+            "Rina is reading the full document and reconstructing the vehicle-care story."
+        )
+    if phase == "structuring":
+        return (
+            "Rina understood the source and is separating evidence, plans, completed "
+            "work and outcomes for advisor review."
+        )
+    if phase == "completed":
+        return "Advisor-grade extraction is ready for review."
+    if phase == "failed":
+        return (
+            "Rina could not complete this analysis. The private source remains safe "
+            "and no vehicle history was changed."
+        )
+    return "Rina is preparing the historical document analysis."
+
+
+def _mark_background_failed(
+    extraction: EvidenceExtraction,
+    exc: Exception | str,
+) -> HistoricalBackgroundStatus:
+    safe_detail = str(exc).replace("\n", " ").strip()[:900]
+    extraction.status = "failed"
+    extraction.completed_at = _utcnow_naive()
+    extraction.provenance = {
+        **(extraction.provenance or {}),
+        "background_stage": "failed",
+        "failure_class": type(exc).__name__ if isinstance(exc, Exception) else "ProviderFailure",
+        "failure_detail": safe_detail,
+    }
+    db.session.commit()
+    current_app.logger.warning(
+        "historical_background_analysis_failed evidence_id=%s extraction_id=%s detail=%s",
+        extraction.evidence_id,
+        extraction.id,
+        safe_detail,
+    )
+    return HistoricalBackgroundStatus(
+        evidence_id=extraction.evidence_id,
+        extraction_id=extraction.id,
+        status="failed",
+        phase="failed",
+        message=_background_message("failed"),
+        review_ready=has_completed_structured_extraction(extraction.evidence_id),
+    )
+
+
+def _start_background_for_evidence(
+    *,
+    evidence: VehicleEvidence,
+    actor_user_id: int,
+    pdf_payload: bytes,
+    text_extraction: EvidenceExtraction,
+    text: str,
+    language_provider=None,
+) -> HistoricalBackgroundStartResult:
+    _authority(actor_user_id, evidence.car_id)
+
+    existing = latest_background_extraction(evidence.id)
+    if existing is not None and existing.status == "processing":
+        return HistoricalBackgroundStartResult(
+            evidence_id=evidence.id,
+            extraction_id=existing.id,
+            status="processing",
+            phase=str((existing.provenance or {}).get("background_stage") or "understanding"),
+            reused_source=True,
+            reused_analysis=True,
+        )
+    if existing is not None and existing.status == "completed":
+        return HistoricalBackgroundStartResult(
+            evidence_id=evidence.id,
+            extraction_id=existing.id,
+            status="completed",
+            phase="completed",
+            reused_source=True,
+            reused_analysis=True,
+        )
+
+    analyzer = language_provider or HistoricalAdvisorAnalyzer()
+    if not hasattr(analyzer, "start_understanding_background"):
+        raise HistoricalIngestionConfigurationError(
+            "Historical document analyzer does not support background analysis."
+        )
+
+    car = db.session.get(Car, evidence.car_id)
+    if car is None:
+        raise HistoricalIngestionAccessError("Vehicle was not found.")
+
+    response, direct_pdf_used = analyzer.start_understanding_background(
+        pdf_payload=pdf_payload,
+        extracted_text=text,
+        trusted_vehicle_context=_trusted_vehicle_context(car),
+    )
+    extraction = EvidenceExtraction(
+        evidence_id=evidence.id,
+        extraction_type="structured_fields",
+        provider=getattr(analyzer, "provider_name", "openai"),
+        provider_model=response.model,
+        provider_request_id=response.response_id,
+        status="processing",
+        review_status="unreviewed",
+        provenance={
+            "source_extraction_id": text_extraction.id,
+            "analysis_pipeline": _BACKGROUND_PIPELINE,
+            "semantic_authority": "candidate_only",
+            "background_stage": "understanding",
+            "background_response_id": response.response_id,
+            "direct_pdf_input": bool(direct_pdf_used),
+            "started_by_user_id": actor_user_id,
+            "schema_version": 2,
+        },
+    )
+    db.session.add(extraction)
+    db.session.commit()
+    return HistoricalBackgroundStartResult(
+        evidence_id=evidence.id,
+        extraction_id=extraction.id,
+        status="processing",
+        phase="understanding",
+    )
+
+
+def ingest_pdf_document_background(
+    *,
+    user_id: int,
+    car_id: int,
+    file_stream,
+    declared_content_type: str,
+    purpose: str,
+    visibility: str,
+    retention_days: object,
+    storage_provider: EvidenceStorageProvider | None = None,
+    storage_config: Mapping[str, object] | None = None,
+    language_provider=None,
+) -> HistoricalBackgroundStartResult:
+    _authority(user_id, car_id)
+    if declared_content_type and declared_content_type not in {
+        "application/pdf",
+        "application/octet-stream",
+    }:
+        raise HistoricalDocumentValidationError("Upload a PDF document.")
+
+    pdf_payload = _read_pdf(file_stream)
+    source_sha = hashlib.sha256(pdf_payload).hexdigest()
+    evidence = _find_existing_source(car_id=car_id, sha256=source_sha)
+    reused_source = evidence is not None
+
+    if evidence is None:
+        evidence = _store_document(
+            user_id=user_id,
+            car_id=car_id,
+            payload=pdf_payload,
+            purpose=purpose,
+            visibility=visibility,
+            retention_days=retention_days,
+            storage_provider=storage_provider,
+            storage_config=storage_config or current_app.config,
+        )
+
+    existing_background = latest_background_extraction(evidence.id)
+    if existing_background is not None and existing_background.status in {
+        "processing",
+        "completed",
+    }:
+        phase = (
+            "completed"
+            if existing_background.status == "completed"
+            else str(
+                (existing_background.provenance or {}).get("background_stage")
+                or "understanding"
+            )
+        )
+        return HistoricalBackgroundStartResult(
+            evidence_id=evidence.id,
+            extraction_id=existing_background.id,
+            status=existing_background.status,
+            phase=phase,
+            reused_source=True,
+            reused_analysis=True,
+        )
+
+    text_extraction = _latest_text_extraction(evidence.id)
+    if text_extraction is None:
+        text_extraction, text, _ = _create_text_extraction(
+            evidence=evidence,
+            pdf_payload=pdf_payload,
+        )
+    else:
+        text, _ = _text_from_extraction(text_extraction)
+
+    result = _start_background_for_evidence(
+        evidence=evidence,
+        actor_user_id=user_id,
+        pdf_payload=pdf_payload,
+        text_extraction=text_extraction,
+        text=text,
+        language_provider=language_provider,
+    )
+    return HistoricalBackgroundStartResult(
+        evidence_id=result.evidence_id,
+        extraction_id=result.extraction_id,
+        status=result.status,
+        phase=result.phase,
+        reused_source=reused_source,
+        reused_analysis=result.reused_analysis,
+    )
+
+
+def reanalyze_stored_document_background(
+    *,
+    evidence_id: int,
+    actor_user_id: int,
+    storage_provider: EvidenceStorageProvider | None = None,
+    storage_config: Mapping[str, object] | None = None,
+    language_provider=None,
+) -> HistoricalBackgroundStartResult:
+    evidence = db.session.get(VehicleEvidence, evidence_id)
+    if evidence is None or evidence.deleted_at is not None:
+        raise HistoricalIngestionError("Historical source document was not found.")
+    _authority(actor_user_id, evidence.car_id)
+    if evidence.evidence_type != "document" or evidence.storage_state != "available":
+        raise HistoricalIngestionError(
+            "Only an available historical document can be re-analyzed."
+        )
+
+    existing = latest_background_extraction(evidence.id)
+    if existing is not None and existing.status == "processing":
+        return HistoricalBackgroundStartResult(
+            evidence_id=evidence.id,
+            extraction_id=existing.id,
+            status="processing",
+            phase=str((existing.provenance or {}).get("background_stage") or "understanding"),
+            reused_source=True,
+            reused_analysis=True,
+        )
+
+    provider = storage_provider
+    if provider is None:
+        try:
+            provider = build_evidence_storage_provider(
+                storage_config or current_app.config
+            )
+        except EvidenceStorageConfigurationError as exc:
+            raise HistoricalIngestionConfigurationError(
+                "Private evidence storage is not configured."
+            ) from exc
+
+    try:
+        retrieved = provider.get_bytes(
+            object_key=evidence.object_key,
+            max_bytes=MAX_DOCUMENT_BYTES,
+        )
+    except EvidenceStorageError as exc:
+        raise HistoricalIngestionError(
+            "Aura could not retrieve the private source document."
+        ) from exc
+
+    text_extraction = _latest_text_extraction(evidence.id)
+    if text_extraction is None:
+        text_extraction, text, _ = _create_text_extraction(
+            evidence=evidence,
+            pdf_payload=retrieved.payload,
+        )
+    else:
+        text, _ = _text_from_extraction(text_extraction)
+
+    # A completed background result can be deliberately superseded by a fresh
+    # advisor-requested re-analysis. Only an in-flight job is deduplicated.
+    existing_completed = latest_background_extraction(evidence.id)
+    if existing_completed is not None and existing_completed.status == "completed":
+        existing_completed.provenance = {
+            **(existing_completed.provenance or {}),
+            "superseded_by_reanalysis_request_at": _utcnow_naive().isoformat(),
+        }
+        db.session.commit()
+
+    # Temporarily ignore the completed row so a new background job is created.
+    analyzer = language_provider or HistoricalAdvisorAnalyzer()
+    car = db.session.get(Car, evidence.car_id)
+    if car is None:
+        raise HistoricalIngestionAccessError("Vehicle was not found.")
+    response, direct_pdf_used = analyzer.start_understanding_background(
+        pdf_payload=retrieved.payload,
+        extracted_text=text,
+        trusted_vehicle_context=_trusted_vehicle_context(car),
+    )
+    extraction = EvidenceExtraction(
+        evidence_id=evidence.id,
+        extraction_type="structured_fields",
+        provider=getattr(analyzer, "provider_name", "openai"),
+        provider_model=response.model,
+        provider_request_id=response.response_id,
+        status="processing",
+        review_status="unreviewed",
+        provenance={
+            "source_extraction_id": text_extraction.id,
+            "analysis_pipeline": _BACKGROUND_PIPELINE,
+            "semantic_authority": "candidate_only",
+            "background_stage": "understanding",
+            "background_response_id": response.response_id,
+            "direct_pdf_input": bool(direct_pdf_used),
+            "started_by_user_id": actor_user_id,
+            "schema_version": 2,
+        },
+    )
+    db.session.add(extraction)
+    db.session.commit()
+    return HistoricalBackgroundStartResult(
+        evidence_id=evidence.id,
+        extraction_id=extraction.id,
+        status="processing",
+        phase="understanding",
+        reused_source=True,
+        reused_analysis=False,
+    )
+
+
+def advance_historical_background_analysis(
+    *,
+    extraction_id: int,
+    actor_user_id: int,
+    language_provider=None,
+) -> HistoricalBackgroundStatus:
+    extraction = (
+        db.session.query(EvidenceExtraction)
+        .filter(EvidenceExtraction.id == extraction_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if extraction is None:
+        raise HistoricalIngestionError("Historical analysis was not found.")
+
+    evidence = extraction.evidence
+    if evidence is None:
+        raise HistoricalIngestionError("Historical source document was not found.")
+    _authority(actor_user_id, evidence.car_id)
+
+    provenance = dict(extraction.provenance or {})
+    if provenance.get("analysis_pipeline") != _BACKGROUND_PIPELINE:
+        raise HistoricalIngestionError("This is not a background historical analysis.")
+
+    if extraction.status == "completed":
+        return HistoricalBackgroundStatus(
+            evidence_id=evidence.id,
+            extraction_id=extraction.id,
+            status="completed",
+            phase="completed",
+            message=_background_message("completed"),
+            review_ready=True,
+        )
+    if extraction.status == "failed":
+        return HistoricalBackgroundStatus(
+            evidence_id=evidence.id,
+            extraction_id=extraction.id,
+            status="failed",
+            phase="failed",
+            message=_background_message("failed"),
+            review_ready=latest_structured_extraction(evidence.id) is not None,
+        )
+
+    response_id = str(
+        provenance.get("background_response_id")
+        or extraction.provider_request_id
+        or ""
+    ).strip()
+    if not response_id:
+        return _mark_background_failed(
+            extraction,
+            "Background response identifier is missing.",
+        )
+
+    analyzer = language_provider or HistoricalAdvisorAnalyzer()
+    try:
+        response = analyzer.retrieve_background(response_id)
+    except RinaProviderError as exc:
+        # Transient polling failures must not destroy an in-flight job.
+        if isinstance(exc, RinaProviderTransientError):
+            db.session.rollback()
+            return HistoricalBackgroundStatus(
+                evidence_id=evidence.id,
+                extraction_id=extraction.id,
+                status="processing",
+                phase=str(provenance.get("background_stage") or "understanding"),
+                message="Rina is still analysing. Aura will check again automatically.",
+            )
+        return _mark_background_failed(extraction, exc)
+
+    stage = str(provenance.get("background_stage") or "understanding")
+    if response.status in {"queued", "in_progress"}:
+        db.session.rollback()
+        return HistoricalBackgroundStatus(
+            evidence_id=evidence.id,
+            extraction_id=extraction.id,
+            status="processing",
+            phase=stage,
+            message=_background_message(stage),
+        )
+
+    if response.status != "completed" or not isinstance(response.payload, dict):
+        return _mark_background_failed(
+            extraction,
+            f"OpenAI background response ended with status {response.status}.",
+        )
+
+    source_extraction_id = int(provenance.get("source_extraction_id") or 0)
+    text_extraction = db.session.get(EvidenceExtraction, source_extraction_id)
+    if text_extraction is None:
+        return _mark_background_failed(
+            extraction,
+            "Source text extraction is unavailable.",
+        )
+    source_text, page_count = _text_from_extraction(text_extraction)
+
+    car = db.session.get(Car, evidence.car_id)
+    if car is None:
+        return _mark_background_failed(extraction, "Vehicle was not found.")
+    trusted_context = _trusted_vehicle_context(car)
+
+    if stage == "understanding":
+        understanding_payload = response.payload
+        cipher, version, digest = _payload_cipher(understanding_payload)
+        understanding = EvidenceExtraction(
+            evidence_id=evidence.id,
+            extraction_type="document_understanding",
+            provider=extraction.provider,
+            provider_model=response.model,
+            provider_request_id=response.response_id,
+            status="completed",
+            review_status="unreviewed",
+            result_ciphertext=cipher,
+            result_key_version=version,
+            result_sha256=digest,
+            provenance={
+                "source_extraction_id": text_extraction.id,
+                "analysis_pipeline": _BACKGROUND_PIPELINE,
+                "reasoning_stage": "whole_document_understanding",
+                "semantic_authority": "candidate_only",
+                "direct_pdf_input": bool(provenance.get("direct_pdf_input")),
+            },
+            completed_at=_utcnow_naive(),
+        )
+        db.session.add(understanding)
+        db.session.flush()
+
+        try:
+            next_response = analyzer.start_structuring_background(
+                understanding=understanding_payload,
+                trusted_vehicle_context=trusted_context,
+            )
+        except RinaProviderError as exc:
+            return _mark_background_failed(extraction, exc)
+
+        extraction.provider_model = next_response.model
+        extraction.provider_request_id = next_response.response_id
+        extraction.provenance = {
+            **provenance,
+            "background_stage": "structuring",
+            "background_response_id": next_response.response_id,
+            "understanding_extraction_id": understanding.id,
+            "understanding_response_id": response.response_id,
+        }
+        db.session.commit()
+        return HistoricalBackgroundStatus(
+            evidence_id=evidence.id,
+            extraction_id=extraction.id,
+            status="processing",
+            phase="structuring",
+            message=_background_message("structuring"),
+        )
+
+    if stage == "structuring":
+        normalized = _normalise_provider_payload(
+            response.payload,
+            source_text=source_text,
+            page_count=page_count,
+        )
+        cipher, version, digest = _payload_cipher(normalized)
+        extraction.provider_model = response.model
+        extraction.provider_request_id = response.response_id
+        extraction.status = "completed"
+        extraction.result_ciphertext = cipher
+        extraction.result_key_version = version
+        extraction.result_sha256 = digest
+        extraction.completed_at = _utcnow_naive()
+        extraction.provenance = {
+            **provenance,
+            "background_stage": "completed",
+            "background_response_id": response.response_id,
+            "provider_output_normalized": True,
+            "reasoning_stage": "advisor_record_structuring",
+        }
+        db.session.commit()
+        return HistoricalBackgroundStatus(
+            evidence_id=evidence.id,
+            extraction_id=extraction.id,
+            status="completed",
+            phase="completed",
+            message=_background_message("completed"),
+            review_ready=True,
+        )
+
+    return _mark_background_failed(
+        extraction,
+        f"Unknown background analysis stage: {stage}",
+    )
 
 
 def ingest_pdf_document(

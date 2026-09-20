@@ -51,7 +51,7 @@ MAX_ARCHIVE_MEMBERS = 800
 MAX_TOTAL_UNCOMPRESSED_BYTES = 750 * 1024 * 1024
 MAX_MEMBER_BYTES = 100 * 1024 * 1024
 MAX_TEXT_BYTES = 12 * 1024 * 1024
-MAX_CORPUS_CHARS = 500_000
+MAX_CORPUS_CHARS = 3_000_000
 MAX_BUNDLE_IMAGE_BYTES = 15 * 1024 * 1024
 MAX_BUNDLE_IMAGE_OUTPUT_BYTES = 8 * 1024 * 1024
 PIPELINE = "whatsapp_bundle_v1"
@@ -806,6 +806,28 @@ def _materialize_bundle_children(
     )
 
 
+def _member_source_ref(item: EvidenceBundleItem) -> str:
+    kind = item.member_kind.upper()
+    name = None
+    manifest = _manifest_extraction(item.bundle_evidence_id)
+    if manifest is not None:
+        payload = decrypt_extraction_payload(manifest)
+        members = payload.get("members")
+        if isinstance(members, list):
+            for row in members:
+                if (
+                    isinstance(row, dict)
+                    and int(row.get("member_index", -1)) == item.member_index
+                ):
+                    name = str(row.get("original_name") or "").strip() or None
+                    break
+
+    base = f"[{kind} evidence:{item.child_evidence_id}"
+    if name:
+        return f"{base} | member:{name}]"
+    return base + "]"
+
+
 def _child_done(item: EvidenceBundleItem) -> bool:
     required = {
         "transcript": {"document_text"},
@@ -923,7 +945,7 @@ def _process_child(
         max_bytes=MAX_MEMBER_BYTES,
     )
     payload = retrieved.payload
-    source_ref = f"[{item.member_kind.upper()} evidence:{child.id}]"
+    source_ref = _member_source_ref(item)
 
     if item.member_kind == "transcript":
         raw = _decode_text(payload)
@@ -1099,7 +1121,7 @@ def _corpus(evidence: VehicleEvidence) -> str:
         child = item.child
         if child is None:
             continue
-        source_ref = f"[{item.member_kind.upper()} evidence:{child.id}]"
+        source_ref = _member_source_ref(item)
         for extraction_type in (
             "document_text",
             "transcription",
@@ -1138,7 +1160,12 @@ def _corpus(evidence: VehicleEvidence) -> str:
     joined = "\n\n".join(chunk for chunk in chunks if chunk).strip()
     if not joined:
         raise HistoricalIngestionError("No usable evidence was extracted from this bundle.")
-    return joined[:MAX_CORPUS_CHARS]
+    if len(joined) > MAX_CORPUS_CHARS:
+        raise HistoricalIngestionError(
+            "This WhatsApp case bundle contains more extracted evidence than Aura can "
+            "reconcile safely in one whole-case pass. No source was silently truncated."
+        )
+    return joined
 
 
 def _counts(evidence_id: int) -> tuple[int, int]:

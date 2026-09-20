@@ -491,17 +491,12 @@ def _normalise_provider_payload(
     }
 
 
-def _find_reusable_document(
+def _find_existing_source(
     *,
     car_id: int,
     sha256: str,
-) -> tuple[
-    VehicleEvidence,
-    EvidenceExtraction,
-    EvidenceExtraction | None,
-    EvidenceExtraction,
-] | None:
-    evidence = (
+) -> VehicleEvidence | None:
+    return (
         VehicleEvidence.query.filter(
             VehicleEvidence.car_id == car_id,
             VehicleEvidence.evidence_type == "document",
@@ -512,6 +507,19 @@ def _find_reusable_document(
         .order_by(VehicleEvidence.created_at.desc(), VehicleEvidence.id.desc())
         .first()
     )
+
+
+def _find_reusable_document(
+    *,
+    car_id: int,
+    sha256: str,
+) -> tuple[
+    VehicleEvidence,
+    EvidenceExtraction,
+    EvidenceExtraction | None,
+    EvidenceExtraction,
+] | None:
+    evidence = _find_existing_source(car_id=car_id, sha256=sha256)
     if evidence is None:
         return None
 
@@ -526,6 +534,8 @@ def _find_reusable_document(
     )
     structured = latest_structured_extraction(evidence.id)
     if text_extraction is None or structured is None or structured.status != "completed":
+        return None
+    if (structured.provenance or {}).get("analysis_pipeline") != "advisor_grade_v2":
         return None
 
     understanding = (
@@ -654,6 +664,7 @@ def ingest_pdf_document(
     storage_provider: EvidenceStorageProvider | None = None,
     storage_config: Mapping[str, object] | None = None,
     language_provider=None,
+    force_reanalysis: bool = False,
 ) -> HistoricalIngestionResult:
     _authority(user_id, car_id)
     if declared_content_type and declared_content_type not in {
@@ -665,34 +676,38 @@ def ingest_pdf_document(
     pdf_payload = _read_pdf(file_stream)
     source_sha = hashlib.sha256(pdf_payload).hexdigest()
 
-    reusable = _find_reusable_document(car_id=car_id, sha256=source_sha)
-    if reusable is not None:
-        evidence, text_extraction, understanding, structured = reusable
-        provenance = text_extraction.provenance or {}
-        return HistoricalIngestionResult(
-            evidence_id=evidence.id,
-            text_extraction_id=text_extraction.id,
-            understanding_extraction_id=(
-                understanding.id if understanding is not None else None
-            ),
-            structured_extraction_id=structured.id,
-            structured_status=structured.status,
-            page_count=int(provenance.get("page_count") or 0),
-            extracted_characters=int(provenance.get("characters") or 0),
-            reused_existing=True,
-        )
+    if not force_reanalysis:
+        reusable = _find_reusable_document(car_id=car_id, sha256=source_sha)
+        if reusable is not None:
+            evidence, text_extraction, understanding, structured = reusable
+            provenance = text_extraction.provenance or {}
+            return HistoricalIngestionResult(
+                evidence_id=evidence.id,
+                text_extraction_id=text_extraction.id,
+                understanding_extraction_id=(
+                    understanding.id if understanding is not None else None
+                ),
+                structured_extraction_id=structured.id,
+                structured_status=structured.status,
+                page_count=int(provenance.get("page_count") or 0),
+                extracted_characters=int(provenance.get("characters") or 0),
+                reused_existing=True,
+            )
 
     text, page_count = _extract_pdf_text(pdf_payload)
-    evidence = _store_document(
-        user_id=user_id,
-        car_id=car_id,
-        payload=pdf_payload,
-        purpose=purpose,
-        visibility=visibility,
-        retention_days=retention_days,
-        storage_provider=storage_provider,
-        storage_config=storage_config or current_app.config,
-    )
+    evidence = _find_existing_source(car_id=car_id, sha256=source_sha)
+    reused_source = evidence is not None
+    if evidence is None:
+        evidence = _store_document(
+            user_id=user_id,
+            car_id=car_id,
+            payload=pdf_payload,
+            purpose=purpose,
+            visibility=visibility,
+            retention_days=retention_days,
+            storage_provider=storage_provider,
+            storage_config=storage_config or current_app.config,
+        )
 
     text_payload = {
         "schema_version": 2,
@@ -840,7 +855,61 @@ def ingest_pdf_document(
         structured_status=structured.status if structured else "failed",
         page_count=page_count,
         extracted_characters=len(text),
-        reused_existing=False,
+        reused_existing=reused_source,
+    )
+
+
+def reanalyze_stored_document(
+    *,
+    evidence_id: int,
+    actor_user_id: int,
+    retention_days: object,
+    storage_provider: EvidenceStorageProvider | None = None,
+    storage_config: Mapping[str, object] | None = None,
+    language_provider=None,
+) -> HistoricalIngestionResult:
+    evidence = db.session.get(VehicleEvidence, evidence_id)
+    if evidence is None or evidence.deleted_at is not None:
+        raise HistoricalIngestionError("Historical source document was not found.")
+    _authority(actor_user_id, evidence.car_id)
+    if evidence.evidence_type != "document" or evidence.storage_state != "available":
+        raise HistoricalIngestionError(
+            "Only an available historical document can be re-analyzed."
+        )
+
+    provider = storage_provider
+    if provider is None:
+        try:
+            provider = build_evidence_storage_provider(
+                storage_config or current_app.config
+            )
+        except EvidenceStorageConfigurationError as exc:
+            raise HistoricalIngestionConfigurationError(
+                "Private evidence storage is not configured."
+            ) from exc
+
+    try:
+        retrieved = provider.get_bytes(
+            object_key=evidence.object_key,
+            max_bytes=MAX_DOCUMENT_BYTES,
+        )
+    except EvidenceStorageError as exc:
+        raise HistoricalIngestionError(
+            "Aura could not retrieve the private source document."
+        ) from exc
+
+    return ingest_pdf_document(
+        user_id=actor_user_id,
+        car_id=evidence.car_id,
+        file_stream=BytesIO(retrieved.payload),
+        declared_content_type="application/pdf",
+        purpose=evidence.purpose,
+        visibility=evidence.visibility,
+        retention_days=retention_days,
+        storage_provider=provider,
+        storage_config=storage_config or current_app.config,
+        language_provider=language_provider,
+        force_reanalysis=True,
     )
 
 

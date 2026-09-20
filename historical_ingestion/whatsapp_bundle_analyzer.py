@@ -8,13 +8,19 @@ import json
 import os
 from typing import Any
 
+import openai
+
 from historical_ingestion.advisor_analyzer import (
     CANDIDATE_SCHEMA,
     DOCUMENT_UNDERSTANDING_SCHEMA,
     HistoricalAdvisorAnalyzer,
     HistoricalBackgroundResponse,
 )
-from rina.providers.base import RinaProviderRejectedError
+from rina.providers.base import (
+    RinaProviderConfigurationError,
+    RinaProviderRejectedError,
+    RinaProviderTransientError,
+)
 
 
 
@@ -346,10 +352,45 @@ class WhatsAppBundleAdvisorAnalyzer(HistoricalAdvisorAnalyzer):
         filename: str,
         content_type: str,
     ) -> str:
-        response = self._client.audio.transcriptions.create(
-            model=self.transcription_model,
-            file=(filename, payload, content_type),
-        )
+        try:
+            response = self._client.audio.transcriptions.create(
+                model=self.transcription_model,
+                file=(filename, payload, content_type),
+            )
+        except (
+            openai.APITimeoutError,
+            openai.APIConnectionError,
+            openai.RateLimitError,
+        ) as exc:
+            raise RinaProviderTransientError(
+                "WhatsApp audio transcription is temporarily unavailable"
+            ) from exc
+        except (
+            openai.AuthenticationError,
+            openai.PermissionDeniedError,
+        ) as exc:
+            raise RinaProviderConfigurationError(
+                "WhatsApp audio transcription credentials were rejected"
+            ) from exc
+        except openai.BadRequestError as exc:
+            detail = self._safe_provider_detail(exc)
+            raise RinaProviderRejectedError(
+                f"WhatsApp audio transcription request was rejected ({detail})"
+            ) from exc
+        except openai.APIStatusError as exc:
+            detail = self._safe_provider_detail(exc)
+            if int(getattr(exc, "status_code", 0) or 0) >= 500:
+                raise RinaProviderTransientError(
+                    f"WhatsApp audio transcription returned a transient failure ({detail})"
+                ) from exc
+            raise RinaProviderRejectedError(
+                f"WhatsApp audio transcription request was rejected ({detail})"
+            ) from exc
+        except openai.OpenAIError as exc:
+            raise RinaProviderTransientError(
+                "WhatsApp audio transcription failed"
+            ) from exc
+
         text = getattr(response, "text", response)
         value = str(text or "").strip()
         if not value:

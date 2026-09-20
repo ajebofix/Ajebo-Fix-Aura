@@ -420,6 +420,8 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
                 [_image_bytes()],
             ),
         )
+        # WhatsApp OPUS/OGG attachments must be normalized before they ever
+        # reach the transcription provider.
         monkeypatch.setattr(
             bundle_module,
             "_audio_wav_chunks",

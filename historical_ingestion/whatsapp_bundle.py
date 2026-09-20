@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 import hashlib
-import json
-import mimetypes
 from pathlib import PurePosixPath
 import re
 import stat
@@ -18,8 +16,6 @@ import zipfile
 from typing import Any, Mapping
 
 from flask import current_app
-from sqlalchemy.exc import SQLAlchemyError
-
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from evidence.image_sanitizer import EvidenceImageValidationError
@@ -689,75 +685,101 @@ def _materialize_bundle_children(
     manifest = _validate_zip(archive_payload)
     created: list[dict[str, Any]] = []
     try:
+        valid_transcripts = 0
         for item in manifest:
             kind = item["kind"]
             if kind == "unsupported":
                 created.append({**item, "child_evidence_id": None, "status": "skipped"})
                 continue
 
-            member_payload = _extract_member_bytes(
-                archive_payload,
-                str(item["original_name"]),
-            )
-            suffix = PurePosixPath(str(item["original_name"])).suffix.lower()
-
-            if kind == "image":
-                stored_payload, content_type, extension = _sanitize_bundle_image(
-                    member_payload
+            try:
+                member_payload = _extract_member_bytes(
+                    archive_payload,
+                    str(item["original_name"]),
                 )
-                evidence_type = "image"
-            elif kind == "document":
-                if not member_payload.startswith(b"%PDF-"):
-                    raise WhatsAppBundleValidationError(
-                        "A .pdf member did not contain a valid PDF signature."
-                    )
-                stored_payload = member_payload
-                content_type = "application/pdf"
-                extension = ".pdf"
-                evidence_type = "document"
-            elif kind == "transcript":
-                # Validate the text now; store the original bytes as evidence.
-                _decode_text(member_payload)
-                stored_payload = member_payload
-                content_type = "text/plain"
-                extension = ".txt"
-                evidence_type = "document"
-            elif kind == "audio":
-                _validate_media_signature(member_payload, suffix, kind)
-                stored_payload = member_payload
-                content_type = _AUDIO_MIME.get(suffix, "application/octet-stream")
-                extension = suffix or ".audio"
-                evidence_type = "audio"
-            elif kind == "video":
-                _validate_media_signature(member_payload, suffix, kind)
-                stored_payload = member_payload
-                content_type = _VIDEO_MIME.get(suffix, "application/octet-stream")
-                extension = suffix or ".video"
-                evidence_type = "video"
-            else:
-                continue
+                suffix = PurePosixPath(str(item["original_name"])).suffix.lower()
 
-            child = _store_evidence_bytes(
-                user_id=actor_user_id,
-                car_id=evidence.car_id,
-                payload=stored_payload,
-                evidence_type=evidence_type,
-                content_type=content_type,
-                extension=extension,
-                purpose=evidence.purpose,
-                retention_until=evidence.retention_until,
-                storage_provider=storage_provider,
+                if kind == "image":
+                    stored_payload, content_type, extension = _sanitize_bundle_image(
+                        member_payload
+                    )
+                    evidence_type = "image"
+                elif kind == "document":
+                    if not member_payload.startswith(b"%PDF-"):
+                        raise WhatsAppBundleValidationError(
+                            "A .pdf member did not contain a valid PDF signature."
+                        )
+                    stored_payload = member_payload
+                    content_type = "application/pdf"
+                    extension = ".pdf"
+                    evidence_type = "document"
+                elif kind == "transcript":
+                    # The chat transcript is the chronology spine of a WhatsApp export.
+                    _decode_text(member_payload)
+                    stored_payload = member_payload
+                    content_type = "text/plain"
+                    extension = ".txt"
+                    evidence_type = "document"
+                elif kind == "audio":
+                    _validate_media_signature(member_payload, suffix, kind)
+                    stored_payload = member_payload
+                    content_type = _AUDIO_MIME.get(suffix, "application/octet-stream")
+                    extension = suffix or ".audio"
+                    evidence_type = "audio"
+                elif kind == "video":
+                    _validate_media_signature(member_payload, suffix, kind)
+                    stored_payload = member_payload
+                    content_type = _VIDEO_MIME.get(suffix, "application/octet-stream")
+                    extension = suffix or ".video"
+                    evidence_type = "video"
+                else:
+                    continue
+
+                child = _store_evidence_bytes(
+                    user_id=actor_user_id,
+                    car_id=evidence.car_id,
+                    payload=stored_payload,
+                    evidence_type=evidence_type,
+                    content_type=content_type,
+                    extension=extension,
+                    purpose=evidence.purpose,
+                    retention_until=evidence.retention_until,
+                    storage_provider=storage_provider,
+                )
+                lineage = EvidenceBundleItem(
+                    bundle_evidence_id=evidence.id,
+                    child_evidence_id=child.id,
+                    member_index=int(item["member_index"]),
+                    member_kind=kind,
+                    member_sha256=hashlib.sha256(stored_payload).hexdigest(),
+                )
+                db.session.add(lineage)
+                db.session.commit()
+                if kind == "transcript":
+                    valid_transcripts += 1
+                created.append(
+                    {**item, "child_evidence_id": child.id, "status": "materialized"}
+                )
+            except (
+                WhatsAppBundleValidationError,
+                EvidenceImageValidationError,
+            ) as exc:
+                db.session.rollback()
+                if kind == "transcript":
+                    raise
+                created.append(
+                    {
+                        **item,
+                        "child_evidence_id": None,
+                        "status": "rejected_unsafe",
+                        "reason": type(exc).__name__,
+                    }
+                )
+
+        if valid_transcripts == 0:
+            raise WhatsAppBundleValidationError(
+                "Aura could not safely materialize the WhatsApp chat transcript."
             )
-            lineage = EvidenceBundleItem(
-                bundle_evidence_id=evidence.id,
-                child_evidence_id=child.id,
-                member_index=int(item["member_index"]),
-                member_kind=kind,
-                member_sha256=hashlib.sha256(stored_payload).hexdigest(),
-            )
-            db.session.add(lineage)
-            db.session.commit()
-            created.append({**item, "child_evidence_id": child.id, "status": "materialized"})
     except Exception:
         db.session.rollback()
         raise
@@ -792,17 +814,13 @@ def _child_done(item: EvidenceBundleItem) -> bool:
         "audio": {"transcription"},
         "video": {"transcription", "image_observation"},
     }[item.member_kind]
-    completed = {
-        row.extraction_type
-        for row in item.child.extractions
-        if row.status == "completed"
-    }
-    failed = {
-        row.extraction_type
-        for row in item.child.extractions
-        if row.status == "failed"
-    }
-    return required <= (completed | failed)
+    rows = EvidenceExtraction.query.filter(
+        EvidenceExtraction.evidence_id == item.child_evidence_id,
+        EvidenceExtraction.extraction_type.in_(required),
+        EvidenceExtraction.status.in_({"completed", "failed"}),
+    ).all()
+    terminal = {row.extraction_type for row in rows}
+    return required <= terminal
 
 
 def _mark_child_failure(

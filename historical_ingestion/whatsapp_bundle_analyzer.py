@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 import json
 import os
 from typing import Any
@@ -14,6 +15,105 @@ from historical_ingestion.advisor_analyzer import (
     HistoricalBackgroundResponse,
 )
 from rina.providers.base import RinaProviderRejectedError
+
+
+
+RELEVANCE_CONTEXT_PROPERTIES: dict[str, Any] = {
+    "case_focus": {"type": "string"},
+    "priority_threads": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "title": {"type": "string"},
+                "priority": {
+                    "type": "string",
+                    "enum": [
+                        "immediate_review",
+                        "high",
+                        "normal",
+                        "commercial_only",
+                    ],
+                },
+                "reason": {"type": "string"},
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active_concern",
+                        "unresolved",
+                        "decision_needed",
+                        "completed_work",
+                        "outcome_followup",
+                        "context_only",
+                        "commercial_only",
+                        "unknown",
+                    ],
+                },
+                "source_refs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": [
+                "title",
+                "priority",
+                "reason",
+                "status",
+                "source_refs",
+            ],
+        },
+    },
+    "supporting_context": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "summary": {"type": "string"},
+                "why_it_matters": {"type": "string"},
+                "source_refs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["summary", "why_it_matters", "source_refs"],
+        },
+    },
+    "low_relevance_context": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "summary": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["summary", "reason"],
+        },
+    },
+}
+
+
+BUNDLE_UNDERSTANDING_SCHEMA = deepcopy(DOCUMENT_UNDERSTANDING_SCHEMA)
+BUNDLE_UNDERSTANDING_SCHEMA["properties"].update(RELEVANCE_CONTEXT_PROPERTIES)
+BUNDLE_UNDERSTANDING_SCHEMA["required"] = [
+    *BUNDLE_UNDERSTANDING_SCHEMA["required"],
+    "case_focus",
+    "priority_threads",
+    "supporting_context",
+    "low_relevance_context",
+]
+
+BUNDLE_CANDIDATE_SCHEMA = deepcopy(CANDIDATE_SCHEMA)
+BUNDLE_CANDIDATE_SCHEMA["properties"].update(RELEVANCE_CONTEXT_PROPERTIES)
+BUNDLE_CANDIDATE_SCHEMA["required"] = [
+    *BUNDLE_CANDIDATE_SCHEMA["required"],
+    "case_focus",
+    "priority_threads",
+    "supporting_context",
+    "low_relevance_context",
+]
 
 
 BUNDLE_UNDERSTANDING_INSTRUCTIONS = """
@@ -30,6 +130,31 @@ The input is a reconciled evidence corpus built from:
 Read the ENTIRE corpus before forming conclusions. Treat source labels such as
 [CHAT m000123], [IMAGE evidence:45], [AUDIO evidence:46],
 [VIDEO evidence:47], and [PDF evidence:48 p3] as provenance references.
+
+CONTEXTUAL RELEVANCE:
+- relevance is contextual, never a keyword filter;
+- do not discard greetings, scheduling, payment, repeated acknowledgements or
+  apparently unrelated messages until you have read what comes before and after;
+- a message that looks trivial in isolation may establish timing, identity,
+  authorisation, contradiction, symptom recurrence, completion or outcome;
+- after reading everything, identify the central vehicle-care case focus;
+- group related messages/media into priority threads rather than treating every
+  message as equally important;
+- "priority" means priority for advisor attention, NOT mechanical diagnosis or
+  severity;
+- use immediate_review only for information requiring prompt human attention
+  because of an active safety/immobility concern, an important unresolved
+  contradiction, or a decision that blocks responsible next action;
+- use high for unresolved concerns, key findings, authorisations, completion
+  evidence or outcomes central to the case;
+- use normal for useful but non-critical vehicle-care context;
+- use commercial_only for billing/payment/commercial information that matters to
+  the relationship but must not become vehicle-health truth;
+- supporting_context should preserve logistics, scheduling, identity, location,
+  driver/client handoffs or other details that materially explain the chronology;
+- low_relevance_context should summarize greetings, social chat, duplicate
+  acknowledgements and unrelated discussion only after confirming they do not
+  change the interpretation of the case.
 
 Reconstruct the case chronology and distinguish carefully:
 - what the client/owner reported;
@@ -78,6 +203,10 @@ Rules:
 - financial facts always go to Financial Separate with state=observed;
 - occurred_at must be null unless that specific fact has an evidenced timestamp/date;
 - preserve source labels in source_fact_ids and source_excerpt;
+- carry forward case_focus, priority_threads, supporting_context and
+  low_relevance_context from the understanding pass;
+- create candidates only from relevant/supporting evidence; low-relevance chat
+  must not become vehicle-history candidates unless later context changed its meaning;
 - keep separate events separate when chronology matters;
 - use preowned_tokunbo only when a source establishes that condition;
 - contradictions or incomplete evidence belong in advisor_attention.
@@ -287,7 +416,7 @@ class WhatsAppBundleAdvisorAnalyzer(HistoricalAdvisorAnalyzer):
                 }
             ],
             schema_name="aura_whatsapp_bundle_understanding",
-            schema=DOCUMENT_UNDERSTANDING_SCHEMA,
+            schema=BUNDLE_UNDERSTANDING_SCHEMA,
             stage="whatsapp_bundle_understanding",
         )
 
@@ -319,6 +448,6 @@ class WhatsAppBundleAdvisorAnalyzer(HistoricalAdvisorAnalyzer):
                 }
             ],
             schema_name="aura_whatsapp_bundle_review_candidates",
-            schema=CANDIDATE_SCHEMA,
+            schema=BUNDLE_CANDIDATE_SCHEMA,
             stage="whatsapp_bundle_structuring",
         )

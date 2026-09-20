@@ -127,6 +127,10 @@ It includes:
 - explicit purpose/visibility and finite retention;
 - server-side validation/sanitisation for image media and bounded PDF parsing;
 - encrypted `EvidenceExtraction` payloads;
+- advisor-grade two-pass historical PDF analysis: whole-document understanding first, structured candidate generation second;
+- direct private PDF input to the dedicated historical analyzer plus page-preserving searchable text;
+- strict structured-output contracts, source-page/excerpt traceability and deterministic guardrails;
+- duplicate-PDF fingerprint reuse and one-tap re-analysis from the original private source;
 - Rina/provider candidate structuring that cannot autonomously publish vehicle truth;
 - advisor review/edit/reject before historical facts can be applied;
 - explicit separation of recommended, authorised and completed work;

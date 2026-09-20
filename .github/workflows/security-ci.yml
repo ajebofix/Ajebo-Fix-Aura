@@ -251,6 +251,9 @@ jobs:
       - name: Test historical document ingestion and completed-work governance
         run: pytest -q --tb=short tests/test_historical_record_ingestion.py
 
+      - name: Test advisor-grade whole-PDF analysis contract
+        run: pytest -q --tb=short tests/test_historical_advisor_analyzer.py
+
       - name: Test canonical event emission
         run: pytest -q --tb=short tests/test_event_emission.py
 

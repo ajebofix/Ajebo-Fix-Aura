@@ -62,6 +62,30 @@ Vehicle Health Record
             View Care History
         </a>
     </div>
+
+    {% if historical_documents %}
+    <div style="margin-top:18px;">
+        <h3>Recent historical documents</h3>
+        <p class="muted">Resume a previous review after signing back in — no re-upload required.</p>
+        {% for source in historical_documents %}
+        <div class="timeline-item">
+            <div>
+                <strong>Evidence #{{ source.id }}</strong>
+                <div class="muted">
+                    {{ source.purpose|replace('_',' ')|title }} ·
+                    {{ source.review_status|replace('_',' ')|title }}
+                </div>
+            </div>
+            <a
+                href="{{ url_for('historical_ingestion.review_document', car_id=car.id, evidence_id=source.id) }}"
+                class="btn btn-secondary"
+            >
+                Resume review
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
 </section>
 {% endif %}
 

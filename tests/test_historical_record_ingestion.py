@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
-import json
 
 import pytest
 from reportlab.pdfgen import canvas
 
 from evidence.models import EvidenceExtraction, EvidenceLink, VehicleEvidence
-from evidence.storage import StoredEvidenceObject
+from evidence.storage import RetrievedEvidenceObject, StoredEvidenceObject
 from extensions import db
 from historical_ingestion.application import apply_reviewed_historical_treatment
 from historical_ingestion.service import (
@@ -16,10 +15,11 @@ from historical_ingestion.service import (
     decrypt_extraction_payload,
     ingest_pdf_document,
     latest_structured_extraction,
+    reanalyze_stored_document,
     save_advisor_review,
 )
 from models import Car, CarOwnership, TreatmentPlan, User
-from rina.providers.base import RinaProviderRequest, RinaProviderResult
+from historical_ingestion.advisor_analyzer import HistoricalAdvisorAnalysis
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_provider_context import _reviewed_historical_records
 from treatment.models import (
@@ -48,6 +48,18 @@ class RecordingStorageProvider:
             etag="historical-test",
         )
 
+    def get_bytes(self, *, object_key: str, max_bytes: int):
+        payload = self.objects[object_key]
+        if len(payload) > max_bytes:
+            raise AssertionError("test object exceeded retrieval bound")
+        return RetrievedEvidenceObject(
+            provider=self.provider_name,
+            object_key=object_key,
+            payload=payload,
+            byte_size=len(payload),
+            etag="historical-test",
+        )
+
     def delete(self, *, object_key: str) -> None:
         self.objects.pop(object_key, None)
 
@@ -60,22 +72,45 @@ class FakeHistoricalProvider:
     model = "fake-history-model"
 
     def __init__(self):
-        self.calls: list[RinaProviderRequest] = []
+        self.calls = 0
 
-    def generate(self, request: RinaProviderRequest) -> RinaProviderResult:
-        self.calls.append(request)
-        payload = {
+    def analyze_pdf(
+        self,
+        *,
+        pdf_payload: bytes,
+        extracted_text: str,
+        trusted_vehicle_context: dict,
+    ) -> HistoricalAdvisorAnalysis:
+        self.calls += 1
+        understanding = {
             "document": {
                 "document_type": "job_record",
+                "title": "Ajebo Fix job record",
                 "reference": "JOB-2026-002",
                 "document_date": "2026-08-18",
                 "job_reference": "JOB-2026-002",
                 "sow_reference": "SOW-2026-002",
+                "client_name": "Historical Owner",
+                "vehicle_description": "2014 Mercedes-Benz GL 450",
+                "vin": trusted_vehicle_context["vin"],
+                "plate_number": None,
             },
-            "rina_summary": (
-                "The source records authorised AIRMATIC and electrical work. "
-                "The source alone does not prove every listed item was installed."
+            "advisor_narrative": (
+                "The source documents an electrical concern and authorised work. "
+                "It does not by itself prove every authorised item was installed."
             ),
+            "chronology": [],
+            "facts": [],
+            "ambiguities": [
+                "Installation of the alternator requires advisor confirmation."
+            ],
+            "advisor_suggestions": [
+                "Confirm which authorised components were actually installed."
+            ],
+        }
+        structured = {
+            "document": understanding["document"],
+            "rina_summary": understanding["advisor_narrative"],
             "advisor_suggestions": [
                 "Confirm which authorised components were actually installed.",
                 "Keep payment facts separate from vehicle-health history.",
@@ -87,10 +122,14 @@ class FakeHistoricalProvider:
                     "title": "Alternator",
                     "detail": "A pre-owned alternator was authorised.",
                     "occurred_at": "2026-08-18",
-                    "source_excerpt": "A pre-owned alternator will be purchased",
+                    "source_pages": [1],
+                    "source_fact_ids": ["f1"],
+                    "source_excerpt": "A pre-owned alternator will be purchased.",
                     "confidence": 0.96,
+                    "confidence_reason": "The source states the plan directly.",
                     "suggested_destination": "treatment_plan",
                     "outcome_direction": "insufficient_evidence",
+                    "advisor_attention": "Confirm actual installation separately.",
                     "action": {
                         "kind": "component_replacement",
                         "component_name": "Alternator",
@@ -102,14 +141,18 @@ class FakeHistoricalProvider:
                 },
                 {
                     "category": "financial",
-                    "state": "observed",
+                    "state": "completed",
                     "title": "Paid across this job",
                     "detail": "The document records a paid commercial amount.",
                     "occurred_at": "2026-08-18",
-                    "source_excerpt": "Paid across this Job",
+                    "source_pages": [1],
+                    "source_fact_ids": ["f2"],
+                    "source_excerpt": "Paid across this Job.",
                     "confidence": 0.99,
+                    "confidence_reason": "The commercial line is explicit.",
                     "suggested_destination": "financial_separate",
                     "outcome_direction": "insufficient_evidence",
+                    "advisor_attention": "",
                     "action": {
                         "kind": "other_intervention",
                         "component_name": None,
@@ -125,10 +168,14 @@ class FakeHistoricalProvider:
                     "title": "Post-work electrical outcome",
                     "detail": "The source does not establish whether the symptom returned.",
                     "occurred_at": None,
+                    "source_pages": [],
+                    "source_fact_ids": [],
                     "source_excerpt": "",
                     "confidence": 0.55,
+                    "confidence_reason": "No post-work observation is present.",
                     "suggested_destination": "treatment_outcome",
                     "outcome_direction": "insufficient_evidence",
+                    "advisor_attention": "Do not convert this into a resolved outcome.",
                     "action": {
                         "kind": "other_intervention",
                         "component_name": None,
@@ -140,11 +187,13 @@ class FakeHistoricalProvider:
                 },
             ],
         }
-        return RinaProviderResult(
-            text=json.dumps(payload),
+        return HistoricalAdvisorAnalysis(
+            understanding=understanding,
+            structured=structured,
             provider=self.provider_name,
             model=self.model,
-            provider_request_id="req-historical-test",
+            understanding_request_id="req-understanding",
+            structured_request_id="req-structured",
         )
 
 
@@ -263,6 +312,11 @@ def test_pdf_extraction_is_candidate_only_until_advisor_review_and_apply(app):
         assert evidence.object_key in storage.objects
         assert extraction is not None
         assert extraction.review_status == "unreviewed"
+        understanding = EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="document_understanding",
+        ).one()
+        assert understanding.provider_model == "fake-history-model"
         assert "Alternator" not in (extraction.result_ciphertext or "")
 
         raw = decrypt_extraction_payload(extraction)
@@ -274,6 +328,8 @@ def test_pdf_extraction_is_candidate_only_until_advisor_review_and_apply(app):
         assert work["state"] == "authorized"
         assert work["suggested_destination"] == "treatment_plan"
         assert financial["suggested_destination"] == "financial_separate"
+        assert financial["state"] == "observed"
+        assert work["source_verified"] is True
 
         # The advisor supplies the stronger real-world facts. This is the only
         # place the test changes "authorised" into "completed".
@@ -342,6 +398,96 @@ def test_pdf_extraction_is_candidate_only_until_advisor_review_and_apply(app):
 
         # Financial extraction remains context-only for a future finance layer.
         assert "Paid across this Job" in financial["detail"] or financial["title"]
+
+
+
+def test_identical_pdf_reopens_existing_analysis_instead_of_reinterpreting(app):
+    with app.app_context():
+        owner = _user(suffix=6)
+        advisor = _user(suffix=7, role="admin")
+        car = _owned_car(owner, suffix=6)
+        analyzer = FakeHistoricalProvider()
+        storage = RecordingStorageProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-002\n"
+            "A pre-owned alternator will be purchased.\n"
+            "Paid across this Job."
+        )
+
+        first = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+        second = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+
+        assert first.reused_existing is False
+        assert second.reused_existing is True
+        assert second.evidence_id == first.evidence_id
+        assert second.structured_extraction_id == first.structured_extraction_id
+        assert analyzer.calls == 1
+        assert VehicleEvidence.query.filter_by(car_id=car.id).count() == 1
+
+
+
+def test_advisor_can_reanalyze_private_source_without_reupload(app):
+    with app.app_context():
+        owner = _user(suffix=8)
+        advisor = _user(suffix=9, role="admin")
+        car = _owned_car(owner, suffix=8)
+        analyzer = FakeHistoricalProvider()
+        storage = RecordingStorageProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-002\n"
+            "A pre-owned alternator will be purchased.\n"
+            "Paid across this Job."
+        )
+
+        first = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+        first_structured_id = first.structured_extraction_id
+
+        second = reanalyze_stored_document(
+            evidence_id=first.evidence_id,
+            actor_user_id=advisor.id,
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+
+        assert second.evidence_id == first.evidence_id
+        assert second.structured_extraction_id != first_structured_id
+        assert analyzer.calls == 2
+        assert VehicleEvidence.query.filter_by(car_id=car.id).count() == 1
+        assert EvidenceExtraction.query.filter_by(
+            evidence_id=first.evidence_id,
+            extraction_type="structured_fields",
+        ).count() == 2
 
 
 def test_rina_historical_context_is_advisor_only(app):

@@ -565,6 +565,20 @@ def admin_view_vehicle(car_id):
             .all()
         )
 
+        from evidence.models import VehicleEvidence
+
+        historical_documents = (
+            VehicleEvidence.query.filter(
+                VehicleEvidence.car_id == car.id,
+                VehicleEvidence.evidence_type == "document",
+                VehicleEvidence.storage_state == "available",
+                VehicleEvidence.deleted_at.is_(None),
+            )
+            .order_by(VehicleEvidence.created_at.desc(), VehicleEvidence.id.desc())
+            .limit(5)
+            .all()
+        )
+
         has_active_consultation = any(
             getattr(c, "status", None) == "in_progress" for c in consultations
         )
@@ -581,6 +595,7 @@ def admin_view_vehicle(car_id):
             assessments=assessments,
             conversation_records=conversation_records,
             treatment_plans=treatment_plans,
+            historical_documents=historical_documents,
             CARE_PLAN_LABELS=CARE_PLAN_LABELS,
             has_feature=has_feature,
             FEATURE_EMERGENCY_REVIEW=FEATURE_EMERGENCY_REVIEW,

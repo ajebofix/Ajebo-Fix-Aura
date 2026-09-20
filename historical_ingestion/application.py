@@ -105,6 +105,13 @@ def apply_reviewed_historical_treatment(
         row
         for row in accepted
         if row.get("suggested_destination") == "treatment_outcome"
+        and row.get("state") == "outcome_observed"
+        and row.get("outcome_direction") in {
+            "improving",
+            "stable",
+            "deteriorating",
+            "resolved",
+        }
     ]
 
     if not work and not outcomes:

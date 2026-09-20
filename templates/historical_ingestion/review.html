@@ -18,6 +18,19 @@
             {{ evidence.review_status|replace('_',' ')|title }}
         </span>
     </div>
+
+    <form
+        method="POST"
+        action="{{ url_for('historical_ingestion.reanalyze_document', car_id=car.id, evidence_id=evidence.id) }}"
+        style="margin-top:16px;"
+    >
+        <button type="submit" class="btn btn-secondary btn-block">
+            Re-analyze with advisor-grade Rina
+        </button>
+    </form>
+    <p class="muted" style="margin-top:8px;">
+        Uses the original private PDF. You do not need to upload the file again.
+    </p>
 </section>
 
 {% if not extraction or extraction.status != 'completed' %}
@@ -128,7 +141,7 @@
         <input
             name="occurred_at_{{ item.candidate_id }}"
             value="{{ item.occurred_at or '' }}"
-            placeholder="2026-08-18 or 2026-08-18T15:30:00"
+            placeholder="YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS"
         >
         <p class="muted">
             A date is required before completed work can be written into durable history.
@@ -226,10 +239,37 @@
         </select>
         {% endif %}
 
+        {% if item.source_pages %}
+        <p class="muted">
+            <strong>Source page{{ 's' if item.source_pages|length != 1 else '' }}:</strong>
+            {{ item.source_pages|join(', ') }}
+        </p>
+        {% endif %}
+
         {% if item.source_excerpt %}
         <p class="muted">
             <strong>Source excerpt:</strong> {{ item.source_excerpt }}
         </p>
+        {% endif %}
+
+        {% if item.source_verified is defined %}
+        <p class="muted">
+            <strong>Source check:</strong>
+            {{ 'Matched against extracted PDF text' if item.source_verified else 'Needs manual PDF verification' }}
+        </p>
+        {% endif %}
+
+        {% if item.confidence_reason %}
+        <p class="muted">
+            <strong>Why Rina is {{ ((item.confidence or 0) * 100)|round|int }}% confident:</strong>
+            {{ item.confidence_reason }}
+        </p>
+        {% endif %}
+
+        {% if item.advisor_attention %}
+        <div class="alert alert-warning">
+            <strong>Advisor attention:</strong> {{ item.advisor_attention }}
+        </div>
         {% endif %}
     </section>
     {% endfor %}

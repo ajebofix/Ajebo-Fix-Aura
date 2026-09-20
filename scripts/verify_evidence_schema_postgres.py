@@ -248,6 +248,23 @@ def main() -> None:
             ),
             {"evidence_id": evidence_id, "now": now},
         )
+        document_understanding_id = connection.execute(
+            text(
+                "INSERT INTO evidence_extractions "
+                "(evidence_id, extraction_type, provider, status, review_status, created_at, completed_at) "
+                "VALUES (:evidence_id, 'document_understanding', 'test-provider', "
+                "'completed', 'unreviewed', :now, :now) RETURNING id"
+            ),
+            {"evidence_id": evidence_id, "now": now},
+        ).scalar_one()
+
+        # This row exists only to prove the current PostgreSQL vocabulary accepts
+        # document_understanding. Remove it before the workflow rehearses downgrade
+        # to the older schema, where that newer type is intentionally unsupported.
+        connection.execute(
+            text("DELETE FROM evidence_extractions WHERE id = :extraction_id"),
+            {"extraction_id": document_understanding_id},
+        )
 
     base_evidence_params = {
         "car_id": car_id,

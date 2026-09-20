@@ -696,7 +696,6 @@ def ingest_pdf_document(
 
     text, page_count = _extract_pdf_text(pdf_payload)
     evidence = _find_existing_source(car_id=car_id, sha256=source_sha)
-    reused_source = evidence is not None
     if evidence is None:
         evidence = _store_document(
             user_id=user_id,

@@ -139,6 +139,27 @@ def upgrade():
 
 def downgrade():
     if op.get_bind().dialect.name != "sqlite":
+        bind = op.get_bind()
+        newer_evidence = bind.execute(
+            sa.text(
+                "SELECT count(*) FROM vehicle_evidence "
+                "WHERE evidence_type IN ('video', 'archive')"
+            )
+        ).scalar_one()
+        newer_extractions = bind.execute(
+            sa.text(
+                "SELECT count(*) FROM evidence_extractions "
+                "WHERE extraction_type = 'archive_manifest'"
+            )
+        ).scalar_one()
+        bundle_items = bind.execute(
+            sa.text("SELECT count(*) FROM evidence_bundle_items")
+        ).scalar_one()
+        if newer_evidence or newer_extractions or bundle_items:
+            raise RuntimeError(
+                "Refusing to downgrade WhatsApp bundle evidence while archive/video "
+                "records, archive manifests, or bundle lineage still exist."
+            )
         op.drop_constraint(
             "ck_evidence_extractions_type",
             "evidence_extractions",

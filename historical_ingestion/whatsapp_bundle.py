@@ -355,6 +355,7 @@ def _store_evidence_bytes(
         evidence_type=evidence_type,
         purpose=purpose,
         source_channel=source_channel,
+        historical_source_type="whatsapp_conversation",
         visibility="advisor",
         review_status="pending_review",
         storage_provider=storage_provider.provider_name,
@@ -501,7 +502,12 @@ def ingest_whatsapp_bundle(
     _authority(user_id, car_id)
 
     purpose = (purpose or "service_document").strip().lower()
-    if purpose not in {"service_document", "diagnostic_document", "treatment_evidence"}:
+    if purpose not in {
+        "service_document",
+        "diagnostic_document",
+        "treatment_evidence",
+        "vehicle_history_context",
+    }:
         raise WhatsAppBundleValidationError("Select a supported historical source purpose.")
 
     payload = _read_archive(file_stream)

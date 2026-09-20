@@ -1,4 +1,4 @@
-"""Advisor routes for historical PDF ingestion and review."""
+"""Advisor routes for governed historical-source ingestion and review."""
 
 from __future__ import annotations
 
@@ -50,6 +50,32 @@ from models import Car
 
 
 historical_ingestion_bp = Blueprint("historical_ingestion", __name__)
+
+
+def _validate_historical_source_upload(
+    *,
+    source_type: str,
+    filename: str,
+    content_type: str,
+) -> str | None:
+    if source_type not in SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES:
+        return "Select a supported historical source type."
+
+    normalized_name = (filename or "").strip().lower()
+    normalized_content_type = (content_type or "").strip().lower()
+    is_zip = normalized_name.endswith(".zip") or normalized_content_type in {
+        "application/zip",
+        "application/x-zip-compressed",
+    }
+
+    if source_type == "whatsapp_conversation" and not is_zip:
+        return (
+            "WhatsApp conversation sources must be uploaded as the original "
+            "WhatsApp ZIP export."
+        )
+    if source_type == "standalone_document" and is_zip:
+        return "Standalone document sources accept PDF files, not ZIP archives."
+    return None
 
 
 def _reviewed_candidate(source: dict, candidate_id: str) -> dict:
@@ -132,33 +158,19 @@ def import_document(car_id: int):
         return render_template("historical_ingestion/upload.html", car=car)
 
     source_type = request.form.get("source_type", "").strip().lower()
-    if source_type not in SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES:
-        flash("Select a supported historical source type.", "error")
-        return redirect(request.url)
 
     uploaded = request.files.get("document")
     if uploaded is None:
         flash("Select a source file to upload.", "error")
         return redirect(request.url)
 
-    filename = str(uploaded.filename or "").lower()
-    content_type = (uploaded.content_type or "").lower()
-    is_zip = filename.endswith(".zip") or content_type in {
-        "application/zip",
-        "application/x-zip-compressed",
-    }
-
-    if source_type == "whatsapp_conversation" and not is_zip:
-        flash(
-            "WhatsApp conversation sources must be uploaded as the original WhatsApp ZIP export.",
-            "error",
-        )
-        return redirect(request.url)
-    if source_type == "standalone_document" and is_zip:
-        flash(
-            "Standalone document sources accept PDF files, not ZIP archives.",
-            "error",
-        )
+    validation_error = _validate_historical_source_upload(
+        source_type=source_type,
+        filename=str(uploaded.filename or ""),
+        content_type=uploaded.content_type or "",
+    )
+    if validation_error:
+        flash(validation_error, "error")
         return redirect(request.url)
 
     try:

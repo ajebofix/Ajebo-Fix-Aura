@@ -823,7 +823,7 @@ def ingest_pdf_document(
             "schema_version": 2,
             "understanding_extraction_id": understanding.id,
             "provider_output_normalized": True,
-            "direct_pdf_input": True,
+            "direct_pdf_input": bool(analysis.direct_pdf_used),
             "reasoning_stage": "advisor_record_structuring",
         }
         db.session.commit()
@@ -837,12 +837,22 @@ def ingest_pdf_document(
         db.session.rollback()
         structured = db.session.get(EvidenceExtraction, structured_id)
         if structured is not None:
+            safe_detail = str(exc).replace("\n", " ").strip()[:900]
             structured.status = "failed"
             structured.completed_at = _utcnow_naive()
             structured.provenance = {
                 **(structured.provenance or {}),
                 "failure_class": type(exc).__name__,
+                "failure_detail": safe_detail,
             }
+            current_app.logger.warning(
+                "historical_document_analysis_failed evidence_id=%s extraction_id=%s "
+                "failure_class=%s detail=%s",
+                evidence.id,
+                structured.id,
+                type(exc).__name__,
+                safe_detail,
+            )
             db.session.commit()
 
     structured = db.session.get(EvidenceExtraction, structured_id)
@@ -913,6 +923,25 @@ def reanalyze_stored_document(
 
 
 def latest_structured_extraction(evidence_id: int) -> EvidenceExtraction | None:
+    """Return the newest usable structured extraction.
+
+    A failed re-analysis must never hide a previously completed review candidate
+    set. Prefer the newest completed extraction and only return a failed/pending
+    row when no completed extraction exists yet.
+    """
+
+    completed = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence_id,
+            extraction_type="structured_fields",
+            status="completed",
+        )
+        .order_by(EvidenceExtraction.created_at.desc(), EvidenceExtraction.id.desc())
+        .first()
+    )
+    if completed is not None:
+        return completed
+
     return (
         EvidenceExtraction.query.filter_by(
             evidence_id=evidence_id,

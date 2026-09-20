@@ -874,6 +874,101 @@ def _mark_child_failure(
     db.session.commit()
 
 
+def _audio_wav_chunks(payload: bytes) -> list[bytes]:
+    """Decode supported WhatsApp audio into bounded transcription-safe WAV chunks."""
+    try:
+        import av
+    except ImportError as exc:
+        raise HistoricalIngestionConfigurationError(
+            "Audio analysis runtime is not installed."
+        ) from exc
+
+    sample_rate = 16_000
+    chunk_seconds = 6 * 60
+    max_total_seconds = 30 * 60
+    bytes_per_sample = 2
+    chunk_pcm_limit = sample_rate * chunk_seconds * bytes_per_sample
+    total_sample_limit = sample_rate * max_total_seconds
+
+    pcm_chunks: list[bytes] = []
+    current = bytearray()
+    samples_written = 0
+
+    try:
+        with av.open(BytesIO(payload), mode="r") as container:
+            if not container.streams.audio:
+                raise HistoricalIngestionError(
+                    "This WhatsApp audio attachment contains no decodable audio stream."
+                )
+
+            resampler = av.AudioResampler(
+                format="s16",
+                layout="mono",
+                rate=sample_rate,
+            )
+
+            def append_frame(resampled) -> None:
+                nonlocal current, samples_written
+                pcm = bytes(resampled.planes[0])[: resampled.samples * bytes_per_sample]
+                cursor = 0
+
+                while cursor < len(pcm):
+                    remaining_total_samples = total_sample_limit - samples_written
+                    if remaining_total_samples <= 0:
+                        raise HistoricalIngestionError(
+                            "This WhatsApp audio attachment exceeds Aura's current "
+                            "30-minute per-file transcription limit."
+                        )
+
+                    room = chunk_pcm_limit - len(current)
+                    allowed_total_bytes = remaining_total_samples * bytes_per_sample
+                    take = min(len(pcm) - cursor, room, allowed_total_bytes)
+                    take -= take % bytes_per_sample
+                    if take <= 0:
+                        continue
+
+                    current.extend(pcm[cursor : cursor + take])
+                    cursor += take
+                    samples_written += take // bytes_per_sample
+
+                    if len(current) >= chunk_pcm_limit:
+                        pcm_chunks.append(bytes(current))
+                        current = bytearray()
+
+            for frame in container.decode(audio=0):
+                for resampled in resampler.resample(frame):
+                    append_frame(resampled)
+
+            for resampled in resampler.resample(None):
+                append_frame(resampled)
+
+    except HistoricalIngestionError:
+        raise
+    except (av.error.FFmpegError, OSError, ValueError) as exc:
+        raise HistoricalIngestionError(
+            "Aura could not decode this WhatsApp audio attachment."
+        ) from exc
+
+    if current:
+        pcm_chunks.append(bytes(current))
+    if not pcm_chunks:
+        raise HistoricalIngestionError(
+            "This WhatsApp audio attachment contained no usable speech audio."
+        )
+
+    wav_chunks: list[bytes] = []
+    for pcm in pcm_chunks:
+        output = BytesIO()
+        with wave.open(output, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(bytes_per_sample)
+            wav.setframerate(sample_rate)
+            wav.writeframes(pcm)
+        wav_chunks.append(output.getvalue())
+
+    return wav_chunks
+
+
 def _video_derivatives(payload: bytes, suffix: str) -> tuple[bytes | None, list[bytes]]:
     del suffix  # Media type has already been signature-validated at archive intake.
     try:
@@ -1055,10 +1150,23 @@ def _process_child(
         return
 
     if item.member_kind == "audio":
-        transcript = analyzer.transcribe_audio(
-            payload=payload,
-            filename=child.safe_display_name,
-            content_type=child.content_type,
+        wav_chunks = _audio_wav_chunks(payload)
+        transcript_parts: list[str] = []
+        for chunk_index, wav_payload in enumerate(wav_chunks, start=1):
+            text = analyzer.transcribe_audio(
+                payload=wav_payload,
+                filename=f"whatsapp-audio-{chunk_index:03d}.wav",
+                content_type="audio/wav",
+            )
+            transcript_parts.append(text)
+
+        transcript = "\n".join(
+            (
+                f"[audio part {index}/{len(transcript_parts)}] {text}"
+                if len(transcript_parts) > 1
+                else text
+            )
+            for index, text in enumerate(transcript_parts, start=1)
         )
         _create_encrypted_extraction(
             evidence_id=child.id,
@@ -1069,6 +1177,8 @@ def _process_child(
             provenance={
                 "analysis_pipeline": PIPELINE,
                 "semantic_authority": "source_transcription",
+                "audio_normalization": "pcm_s16_mono_16khz_wav",
+                "transcription_chunks": len(wav_chunks),
             },
         )
         return

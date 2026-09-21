@@ -56,6 +56,12 @@ Vehicle Health Record
             Import Historical Source
         </a>
         <a
+            href="{{ url_for('historical_ingestion.source_library', car_id=car.id) }}"
+            class="btn btn-secondary"
+        >
+            Historical Source Library
+        </a>
+        <a
             href="{{ url_for('admin.admin_vehicle_records', car_id=car.id) }}"
             class="btn btn-secondary"
         >
@@ -63,27 +69,44 @@ Vehicle Health Record
         </a>
     </div>
 
-    {% if historical_documents %}
+    {% if historical_sources %}
     <div style="margin-top:18px;">
-        <h3>Recent historical documents</h3>
-        <p class="muted">Resume a previous review after signing back in — no re-upload required.</p>
-        {% for source in historical_documents %}
+        <h3>Recent historical sources</h3>
+        <p class="muted">
+            Analysis and advisor review are saved to Aura. You can leave, sign out,
+            or return later without re-uploading or re-analysing a completed source.
+        </p>
+        {% for item in historical_sources %}
+        {% set source = item.evidence %}
         <div class="timeline-item">
             <div>
-                <strong>Evidence #{{ source.id }}</strong>
+                <strong>
+                    {% if source.historical_source_type == 'whatsapp_conversation' %}
+                        WhatsApp case bundle
+                    {% else %}
+                        Historical document
+                    {% endif %}
+                    · Evidence #{{ source.id }}
+                </strong>
                 <div class="muted">
-                    {{ source.purpose|replace('_',' ')|title }} ·
-                    {{ source.review_status|replace('_',' ')|title }}
+                    {{ source.purpose|replace('_',' ')|title }} · {{ item.state_label }}
                 </div>
             </div>
             <a
                 href="{{ url_for('historical_ingestion.review_document', car_id=car.id, evidence_id=source.id) }}"
                 class="btn btn-secondary"
             >
-                Resume review
+                {{ item.action_label }}
             </a>
         </div>
         {% endfor %}
+        <a
+            href="{{ url_for('historical_ingestion.source_library', car_id=car.id) }}"
+            class="btn btn-secondary btn-block"
+            style="margin-top:12px;"
+        >
+            View all historical sources
+        </a>
     </div>
     {% endif %}
 </section>

@@ -117,6 +117,10 @@ class HistoricalDocumentValidationError(HistoricalIngestionError):
     pass
 
 
+class HistoricalSourceSupersessionError(HistoricalIngestionError):
+    """Safe failure for advisor-controlled historical source supersession."""
+
+
 @dataclass(frozen=True)
 class HistoricalIngestionResult:
     evidence_id: int
@@ -1622,6 +1626,118 @@ def reanalyze_stored_document(
     )
 
 
+def supersession_replacement_candidates(
+    car_id: int,
+    *,
+    exclude_evidence_id: int | None = None,
+) -> list[VehicleEvidence]:
+    """Return reviewed standalone sources eligible to replace an obsolete source."""
+
+    query = VehicleEvidence.query.filter(
+        VehicleEvidence.car_id == car_id,
+        VehicleEvidence.historical_source_type == "standalone_document",
+        VehicleEvidence.storage_state == "available",
+        VehicleEvidence.deleted_at.is_(None),
+        VehicleEvidence.review_status == "accepted",
+        ~VehicleEvidence.bundle_parent_items.any(),
+    )
+    if exclude_evidence_id is not None:
+        query = query.filter(VehicleEvidence.id != int(exclude_evidence_id))
+    return query.order_by(
+        VehicleEvidence.reviewed_at.desc(),
+        VehicleEvidence.created_at.desc(),
+        VehicleEvidence.id.desc(),
+    ).all()
+
+
+def supersede_historical_source(
+    *,
+    evidence_id: int,
+    replacement_evidence_id: int,
+    actor_user_id: int,
+) -> VehicleEvidence:
+    """Archive one obsolete unreviewed source in favour of a reviewed source.
+
+    Supersession preserves the source and every extraction for audit/recovery.
+    It does not delete bytes, overwrite extraction payloads, or alter durable
+    treatment history.
+    """
+
+    source = db.session.get(VehicleEvidence, evidence_id)
+    replacement = db.session.get(VehicleEvidence, replacement_evidence_id)
+    if source is None or replacement is None:
+        raise HistoricalSourceSupersessionError("Historical source was not found.")
+
+    _authority(actor_user_id, source.car_id)
+
+    if source.id == replacement.id:
+        raise HistoricalSourceSupersessionError(
+            "A historical source cannot supersede itself."
+        )
+    if replacement.car_id != source.car_id:
+        raise HistoricalSourceSupersessionError(
+            "Replacement source must belong to the same vehicle."
+        )
+    if (
+        source.historical_source_type != "standalone_document"
+        or replacement.historical_source_type != "standalone_document"
+    ):
+        raise HistoricalSourceSupersessionError(
+            "Only standalone historical documents can use source supersession."
+        )
+    if source.bundle_parent_items or replacement.bundle_parent_items:
+        raise HistoricalSourceSupersessionError(
+            "Bundle child evidence cannot be superseded as an independent source."
+        )
+    if (
+        source.deleted_at is not None
+        or source.storage_state != "available"
+        or replacement.deleted_at is not None
+        or replacement.storage_state != "available"
+    ):
+        raise HistoricalSourceSupersessionError(
+            "Both historical sources must remain available."
+        )
+
+    reason = f"superseded_by_evidence:{replacement.id}"
+    if source.review_status == "superseded":
+        if source.review_reason_code == reason:
+            return source
+        raise HistoricalSourceSupersessionError(
+            "This source has already been superseded by another record."
+        )
+
+    if source.review_status != "pending_review":
+        raise HistoricalSourceSupersessionError(
+            "Only an unreviewed source can be superseded in this cleanup workflow."
+        )
+    if source.links:
+        raise HistoricalSourceSupersessionError(
+            "A source already linked to durable care records cannot be superseded here."
+        )
+    if replacement.review_status != "accepted":
+        raise HistoricalSourceSupersessionError(
+            "Choose a reviewed/finalised standalone source as the replacement."
+        )
+
+    now = _utcnow_naive()
+    source.review_status = "superseded"
+    source.reviewed_by_user_id = actor_user_id
+    source.reviewed_at = now
+    source.review_reason_code = reason
+    source.updated_at = now
+    db.session.flush()
+
+    current_app.logger.info(
+        "historical_source_superseded source_evidence_id=%s replacement_evidence_id=%s car_id=%s actor_user_id=%s",
+        source.id,
+        replacement.id,
+        source.car_id,
+        actor_user_id,
+    )
+    return source
+
+
 @dataclass(frozen=True)
 class HistoricalSourceSummary:
     evidence: VehicleEvidence
@@ -1649,6 +1765,7 @@ def historical_source_summaries(
     car_id: int,
     *,
     limit: int | None = None,
+    include_superseded: bool = False,
 ) -> list[HistoricalSourceSummary]:
     """Return only top-level historical sources, never bundle child evidence.
 
@@ -1657,15 +1774,19 @@ def historical_source_summaries(
     advisor documents.
     """
 
-    query = (
-        VehicleEvidence.query.filter(
-            VehicleEvidence.car_id == car_id,
-            VehicleEvidence.historical_source_type.isnot(None),
-            VehicleEvidence.storage_state == "available",
-            VehicleEvidence.deleted_at.is_(None),
-            ~VehicleEvidence.bundle_parent_items.any(),
-        )
-        .order_by(VehicleEvidence.created_at.desc(), VehicleEvidence.id.desc())
+    filters = [
+        VehicleEvidence.car_id == car_id,
+        VehicleEvidence.historical_source_type.isnot(None),
+        VehicleEvidence.storage_state == "available",
+        VehicleEvidence.deleted_at.is_(None),
+        ~VehicleEvidence.bundle_parent_items.any(),
+    ]
+    if not include_superseded:
+        filters.append(VehicleEvidence.review_status != "superseded")
+
+    query = VehicleEvidence.query.filter(*filters).order_by(
+        VehicleEvidence.created_at.desc(),
+        VehicleEvidence.id.desc(),
     )
     if limit is not None:
         query = query.limit(max(1, int(limit)))
@@ -1691,7 +1812,11 @@ def historical_source_summaries(
             )
         )
 
-        if latest is not None and latest.status == "processing":
+        if evidence.review_status == "superseded":
+            state = "superseded"
+            label = "Superseded"
+            action = "Open archived source"
+        elif latest is not None and latest.status == "processing":
             state = "analyzing"
             label = "Analysing"
             action = "View progress"

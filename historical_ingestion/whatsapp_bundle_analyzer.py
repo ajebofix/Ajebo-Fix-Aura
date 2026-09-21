@@ -351,6 +351,121 @@ becomes durable vehicle-health truth automatically.
 """.strip()
 
 
+RECONCILIATION_CANDIDATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "candidate_id": {"type": "string"},
+        "title": {"type": "string"},
+        "kind": {
+            "type": "string",
+            "enum": ["component_replacement", "service", "other_intervention"],
+        },
+        "component_name": {"type": ["string", "null"]},
+        "component_location": {"type": ["string", "null"]},
+        "suggested_occurred_at": {"type": ["string", "null"]},
+        "evidence_state": {
+            "type": "string",
+            "enum": [
+                "recommended",
+                "authorized",
+                "workshop_claim",
+                "completion_claim",
+                "uncertain",
+            ],
+        },
+        "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"},
+        },
+        "evidence_basis": {"type": "string"},
+        "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+        },
+        "reconciliation_reason": {"type": "string"},
+    },
+    "required": [
+        "candidate_id",
+        "title",
+        "kind",
+        "component_name",
+        "component_location",
+        "suggested_occurred_at",
+        "evidence_state",
+        "source_refs",
+        "evidence_basis",
+        "confidence",
+        "reconciliation_reason",
+    ],
+}
+
+
+RECONCILIATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "summary": {"type": "string"},
+        "advisor_notice": {"type": "string"},
+        "candidates": {
+            "type": "array",
+            "items": RECONCILIATION_CANDIDATE_SCHEMA,
+        },
+    },
+    "required": ["summary", "advisor_notice", "candidates"],
+}
+
+
+RECONCILIATION_INSTRUCTIONS = """
+You are A.J. Rina preparing a HISTORICAL WORK RECONCILIATION REVIEW for an
+AJEBO FIX PROFESSIONAL ADVISOR.
+
+You receive:
+1. one advisor-reviewed historical service episode anchor;
+2. one completed episode-specific WhatsApp attribution result; and
+3. durable work already recorded for this episode.
+
+Your job is to identify DISTINCT interventions that may have actually happened
+but are not yet safely preserved as durable completed work.
+
+Create ONE candidate per distinct component replacement, service or other
+professional intervention. Split bundled recommendations into separate
+candidates when they concern different components or services.
+
+Examples of candidate kinds:
+- component_replacement: air spring, compressor, valve block, alternator, hose,
+  oil cap, battery, sensor, pump;
+- service: oil service, leak test, alignment, fluid service, diagnostic testing;
+- other_intervention: welding/reconstruction, reseating, wiring repair, coding.
+
+Important:
+- DO NOT mark anything complete. You only prepare advisor-confirmation candidates.
+- Recommendation, estimate, authorization, payment, parts purchase, workshop
+  status or a visual of a loose/removed component do not by themselves prove
+  completion.
+- A workshop statement that work was done may justify a completion_claim
+  candidate, but still requires advisor confirmation.
+- Exclude work already present in the supplied durable-work list.
+- Avoid duplicate candidates that describe the same intervention.
+- Preserve the strongest exact source references from the attribution result.
+- Never invent source references.
+- suggested_occurred_at must be null if the historical date cannot be responsibly
+  established.
+- confidence is confidence that this item needs reconciliation for THIS episode,
+  not confidence that the work was actually completed.
+- candidate_id must be stable and concise, e.g. R001, R002.
+- For service candidates, component_name/component_location may be null.
+- For component replacements, component_name should name only one component.
+- Keep advisor_notice concise and action-oriented.
+
+Return only structured reconciliation candidates for advisor review. The advisor
+will decide Confirm completed, Not done, or Still unsure. Nothing in this pass
+becomes durable vehicle history automatically.
+""".strip()
+
+
 MEDIA_OBSERVATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -595,6 +710,52 @@ class WhatsAppBundleAdvisorAnalyzer(HistoricalAdvisorAnalyzer):
             schema_name="aura_historical_case_attribution",
             schema=CASE_ATTRIBUTION_SCHEMA,
             stage="historical_case_attribution",
+        )
+
+    def start_episode_reconciliation_background(
+        self,
+        *,
+        episode_anchor: dict[str, Any],
+        attribution_payload: dict[str, Any],
+        durable_work: list[dict[str, Any]],
+        trusted_vehicle_context: dict[str, Any],
+    ) -> HistoricalBackgroundResponse:
+        return self._start_background(
+            instructions=RECONCILIATION_INSTRUCTIONS,
+            input_content=[
+                {
+                    "type": "input_text",
+                    "text": (
+                        "Trusted Aura vehicle context (for disambiguation only):\n"
+                        + json.dumps(
+                            trusted_vehicle_context,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        + "\n\nAdvisor-reviewed historical episode anchor:\n"
+                        + json.dumps(
+                            episode_anchor,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        + "\n\nCompleted episode-specific WhatsApp attribution:\n"
+                        + json.dumps(
+                            attribution_payload,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        + "\n\nDurable work already recorded for this episode:\n"
+                        + json.dumps(
+                            durable_work,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                    ),
+                }
+            ],
+            schema_name="aura_historical_episode_reconciliation",
+            schema=RECONCILIATION_SCHEMA,
+            stage="historical_episode_reconciliation",
         )
 
     def start_bundle_understanding_background(

@@ -15,8 +15,17 @@ from historical_ingestion.case_attribution import (
     create_episode_from_finalized_source,
     start_case_attribution,
 )
+from historical_ingestion.reconciliation import (
+    advance_episode_reconciliation,
+    apply_reconciliation,
+    reconciliation_payload,
+    reconciliation_signal,
+    save_reconciliation_review,
+    start_episode_reconciliation,
+)
 from historical_ingestion.service import _payload_cipher
-from models import Car, CarOwnership, User
+from models import Car, CarOwnership, TreatmentPlan, User
+from treatment.models import TreatmentAction, TreatmentActionCompletionDetail
 
 
 PASSWORD = "Password123"
@@ -487,3 +496,228 @@ def test_episode_creation_reuses_same_finalised_anchor(app):
         assert first.created is True
         assert second.created is False
         assert second.episode_id == first.episode_id
+
+
+class FakeReconciliationAnalyzer:
+    provider_name = "fake-reconciliation"
+    model = "fake-reconciliation-model"
+
+    def start_episode_reconciliation_background(
+        self,
+        *,
+        episode_anchor: dict,
+        attribution_payload: dict,
+        durable_work: list[dict],
+        trusted_vehicle_context: dict,
+    ):
+        assert attribution_payload["evidence_groups"]
+        assert trusted_vehicle_context["audience"] == "Ajebo Fix professional advisor"
+        assert isinstance(durable_work, list)
+        return HistoricalBackgroundResponse(
+            response_id="reconcile-job-2026-a",
+            status="queued",
+            model=self.model,
+        )
+
+    def retrieve_background(self, response_id: str):
+        assert response_id == "reconcile-job-2026-a"
+        return HistoricalBackgroundResponse(
+            response_id=response_id,
+            status="completed",
+            model=self.model,
+            payload={
+                "summary": "Two historical interventions need advisor confirmation.",
+                "advisor_notice": (
+                    "Confirm what was actually replaced or serviced before applying history."
+                ),
+                "candidates": [
+                    {
+                        "candidate_id": "R001",
+                        "title": "Rear air spring replacement",
+                        "kind": "component_replacement",
+                        "component_name": "Rear air spring",
+                        "component_location": "left rear",
+                        "suggested_occurred_at": "2026-08-18T09:00:00",
+                        "evidence_state": "completion_claim",
+                        "source_refs": ["CHAT m000001"],
+                        "evidence_basis": "The workshop thread says the air spring was fitted.",
+                        "confidence": 0.98,
+                        "reconciliation_reason": (
+                            "The intervention is not yet preserved as durable completed work."
+                        ),
+                    },
+                    {
+                        "candidate_id": "R002",
+                        "title": "Battery replacement",
+                        "kind": "component_replacement",
+                        "component_name": "Battery",
+                        "component_location": None,
+                        "suggested_occurred_at": "2026-02-10T10:00:00",
+                        "evidence_state": "uncertain",
+                        "source_refs": ["CHAT m000003", "CHAT m999999"],
+                        "evidence_basis": "Battery concerns appear in the stored conversation.",
+                        "confidence": 0.72,
+                        "reconciliation_reason": (
+                            "The evidence does not prove this was completed in the episode."
+                        ),
+                    },
+                ],
+            },
+        )
+
+
+def test_reconciliation_signal_only_uses_matched_intervention_groups():
+    assert reconciliation_signal(
+        {
+            "evidence_groups": [
+                {
+                    "classification": "matched",
+                    "evidence_role": "completed_work",
+                }
+            ]
+        }
+    )
+    assert not reconciliation_signal(
+        {
+            "evidence_groups": [
+                {
+                    "classification": "other_episode",
+                    "evidence_role": "completed_work",
+                }
+            ]
+        }
+    )
+
+
+def test_advisor_reconciliation_applies_only_confirmed_work(app):
+    with app.app_context():
+        owner = _user(suffix=20)
+        advisor = _user(suffix=21, role="admin")
+        car = _car(owner, suffix=20)
+        anchor = _finalised_anchor(
+            car=car,
+            advisor=advisor,
+            key="reconciliation-anchor",
+            job_reference="JOB-2026-A",
+            document_date="2026-08-18",
+            title="Rear AIRMATIC intervention",
+        )
+        corpus, _ = _whatsapp_corpus(car=car, advisor=advisor)
+
+        episode = create_episode_from_finalized_source(
+            car_id=car.id,
+            evidence_id=anchor.id,
+            actor_user_id=advisor.id,
+        )
+        db.session.commit()
+
+        case_analyzer = FakeCaseAttributionAnalyzer()
+        case_start = start_case_attribution(
+            episode_id=episode.episode_id,
+            corpus_evidence_id=corpus.id,
+            actor_user_id=advisor.id,
+            analyzer=case_analyzer,
+        )
+        advance_case_attribution(
+            extraction_id=case_start.extraction_id,
+            actor_user_id=advisor.id,
+            analyzer=case_analyzer,
+        )
+
+        analyzer = FakeReconciliationAnalyzer()
+        started = start_episode_reconciliation(
+            episode_id=episode.episode_id,
+            attribution_extraction_id=case_start.extraction_id,
+            actor_user_id=advisor.id,
+            analyzer=analyzer,
+        )
+        ready = advance_episode_reconciliation(
+            extraction_id=started.extraction_id,
+            actor_user_id=advisor.id,
+            analyzer=analyzer,
+        )
+        assert ready.status == "completed"
+
+        extraction = db.session.get(EvidenceExtraction, started.extraction_id)
+        proposed = reconciliation_payload(extraction)
+        assert len(proposed["candidates"]) == 2
+        battery = next(
+            row for row in proposed["candidates"] if row["candidate_id"] == "R002"
+        )
+        assert battery["source_refs"] == ["CHAT m000003"]
+
+        reviewed_rows = []
+        for row in proposed["candidates"]:
+            item = dict(row)
+            if item["candidate_id"] == "R001":
+                item.update(
+                    {
+                        "advisor_decision": "confirmed",
+                        "occurred_at": "2026-08-18T09:00:00",
+                        "component_condition": "new",
+                        "advisor_note": "Advisor confirms the air spring was replaced.",
+                    }
+                )
+            else:
+                item.update(
+                    {
+                        "advisor_decision": "not_done",
+                        "occurred_at": "2026-02-10T10:00:00",
+                        "component_condition": "unknown",
+                        "advisor_note": "This did not happen in this episode.",
+                    }
+                )
+            reviewed_rows.append(item)
+
+        reviewed = {
+            **proposed,
+            "candidates": reviewed_rows,
+            "advisor_review_note": "Reconciled against advisor memory.",
+        }
+        save_reconciliation_review(
+            extraction_id=extraction.id,
+            actor_user_id=advisor.id,
+            reviewed_payload=reviewed,
+        )
+        db.session.commit()
+
+        db.session.refresh(corpus)
+        assert corpus.review_status == "pending_review"
+
+        plan = apply_reconciliation(
+            extraction_id=extraction.id,
+            actor_user_id=advisor.id,
+        )
+        db.session.commit()
+
+        assert plan is not None
+        assert plan.record_origin == "historical_reconciliation"
+        assert plan.source_evidence_id == corpus.id
+        assert plan.status == "completed"
+
+        actions = TreatmentAction.query.filter_by(
+            treatment_plan_id=plan.id
+        ).all()
+        assert len(actions) == 1
+        assert actions[0].title == "Rear air spring replacement"
+
+        detail = TreatmentActionCompletionDetail.query.filter_by(
+            treatment_action_id=actions[0].id
+        ).one()
+        assert detail.component_name == "Rear air spring"
+        assert detail.component_location == "left rear"
+        assert detail.component_condition == "new"
+        assert detail.verification_status == "advisor_reconciled"
+
+        replay = apply_reconciliation(
+            extraction_id=extraction.id,
+            actor_user_id=advisor.id,
+        )
+        db.session.commit()
+        assert replay.id == plan.id
+        assert TreatmentPlan.query.filter_by(
+            source_extraction_id=extraction.id
+        ).count() == 1
+        assert TreatmentAction.query.filter_by(
+            treatment_plan_id=plan.id
+        ).count() == 1

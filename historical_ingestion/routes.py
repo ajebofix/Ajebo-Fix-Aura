@@ -15,6 +15,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from werkzeug.exceptions import NotFound
 
 from admin.utils import advisor_required
 from evidence.models import (
@@ -36,6 +37,16 @@ from historical_ingestion.case_attribution import (
     start_case_attribution,
 )
 from historical_ingestion.models import HistoricalServiceEpisode
+from historical_ingestion.reconciliation import (
+    HistoricalReconciliationError,
+    applied_reconciliation_plan,
+    apply_reconciliation,
+    latest_reconciliation,
+    reconciliation_payload,
+    reconciliation_signal,
+    save_reconciliation_review,
+    start_episode_reconciliation,
+)
 from historical_ingestion.background_runner import (
     advance_historical_analysis_once,
 )
@@ -207,6 +218,62 @@ def source_library(car_id: int):
             item.state in {"analysis_failed", "stored"} for item in active_sources
         ),
     }
+    whatsapp_sources = [
+        item.evidence
+        for item in active_sources
+        if item.evidence.historical_source_type == "whatsapp_conversation"
+        and item.evidence.evidence_type == "archive"
+    ]
+    episode_views = []
+    state_priority = {
+        "none": 0,
+        "reconciled": 1,
+        "preparing": 2,
+        "advisor_review": 3,
+        "ready_to_apply": 4,
+        "needs_attention": 5,
+        "reconciliation_needed": 6,
+    }
+    for episode in episodes_for_car(car.id):
+        reconciliation_state = "none"
+        for source in whatsapp_sources:
+            analysis = latest_case_attribution(
+                episode_id=episode.id,
+                corpus_evidence_id=source.id,
+            )
+            if analysis is None or analysis.status != "completed":
+                continue
+            payload = attribution_payload(analysis)
+            if not reconciliation_signal(payload):
+                continue
+
+            reconciliation = latest_reconciliation(
+                episode_id=episode.id,
+                attribution_extraction_id=analysis.id,
+            )
+            candidate_state = "reconciliation_needed"
+            if reconciliation is not None:
+                if reconciliation.status == "processing":
+                    candidate_state = "preparing"
+                elif reconciliation.status == "failed":
+                    candidate_state = "needs_attention"
+                elif applied_reconciliation_plan(reconciliation.id) is not None:
+                    candidate_state = "reconciled"
+                elif reconciliation.review_status in {"accepted", "corrected"}:
+                    candidate_state = "ready_to_apply"
+                elif reconciliation.status == "completed":
+                    candidate_state = "advisor_review"
+
+            if state_priority[candidate_state] > state_priority[reconciliation_state]:
+                reconciliation_state = candidate_state
+
+        episode_views.append(
+            {
+                "episode": episode,
+                "reconciliation_state": reconciliation_state,
+            }
+        )
+
     return render_template(
         "historical_ingestion/library.html",
         car=car,
@@ -214,7 +281,7 @@ def source_library(car_id: int):
         counts=counts,
         superseded_count=superseded_count,
         show_superseded=show_superseded,
-        episodes=episodes_for_car(car.id),
+        episode_views=episode_views,
     )
 
 
@@ -676,11 +743,42 @@ def episode_detail(car_id: int, episode_id: int):
             if analysis is not None and analysis.status == "completed"
             else {}
         )
+        reconciliation = (
+            latest_reconciliation(
+                episode_id=episode.id,
+                attribution_extraction_id=analysis.id,
+            )
+            if analysis is not None and analysis.status == "completed"
+            else None
+        )
+        reconciliation_result = (
+            reconciliation_payload(reconciliation)
+            if reconciliation is not None
+            and reconciliation.status == "completed"
+            else {}
+        )
+        reconciliation_review = (
+            reconciliation_payload(reconciliation, reviewed=True)
+            if reconciliation is not None
+            and reconciliation.status == "completed"
+            and reconciliation.review_status in {"accepted", "corrected"}
+            else {}
+        )
+        applied_plan = (
+            applied_reconciliation_plan(reconciliation.id)
+            if reconciliation is not None
+            else None
+        )
         attribution_views.append(
             {
                 "source": source,
                 "analysis": analysis,
                 "payload": payload,
+                "reconciliation_needed": reconciliation_signal(payload),
+                "reconciliation": reconciliation,
+                "reconciliation_result": reconciliation_result,
+                "reconciliation_review": reconciliation_review,
+                "reconciliation_plan": applied_plan,
             }
         )
 
@@ -833,6 +931,335 @@ def episode_attribution_status(
             ),
             "review_ready": analysis.status == "completed",
         }
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>/"
+    "reconcile/<int:attribution_extraction_id>/start"
+)
+@login_required
+@advisor_required
+def start_episode_reconciliation_review(
+    car_id: int,
+    episode_id: int,
+    attribution_extraction_id: int,
+):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+
+    try:
+        result = start_episode_reconciliation(
+            episode_id=episode.id,
+            attribution_extraction_id=attribution_extraction_id,
+            actor_user_id=current_user.id,
+        )
+    except HistoricalReconciliationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.episode_detail",
+                car_id=car.id,
+                episode_id=episode.id,
+            )
+        )
+
+    flash(
+        (
+            "Rina is preparing a reconciliation checklist for work that may be missing "
+            "from durable history."
+            if result.status == "processing" and not result.reused_existing
+            else "Aura reopened the existing reconciliation review."
+        ),
+        "success" if not result.reused_existing else "info",
+    )
+    return redirect(
+        url_for(
+            "historical_ingestion.episode_detail",
+            car_id=car.id,
+            episode_id=episode.id,
+        )
+    )
+
+
+@historical_ingestion_bp.get(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>/"
+    "reconciliations/<int:extraction_id>/status"
+)
+@login_required
+@advisor_required
+def episode_reconciliation_status(
+    car_id: int,
+    episode_id: int,
+    extraction_id: int,
+):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+    analysis = db.session.get(EvidenceExtraction, extraction_id)
+    if analysis is None:
+        return jsonify(
+            {
+                "status": "missing",
+                "phase": "missing",
+                "message": "Historical reconciliation was not found.",
+                "review_ready": False,
+            }
+        ), 404
+
+    provenance = analysis.provenance or {}
+    if (
+        analysis.extraction_type != "historical_reconciliation"
+        or int(provenance.get("episode_id") or 0) != episode.id
+        or analysis.evidence is None
+        or analysis.evidence.car_id != car.id
+    ):
+        return jsonify(
+            {
+                "status": "invalid",
+                "phase": "invalid",
+                "message": "Historical reconciliation does not belong to this episode.",
+                "review_ready": False,
+            }
+        ), 404
+
+    if analysis.status == "processing":
+        try:
+            state = advance_historical_analysis_once(
+                current_app._get_current_object(),
+                analysis.id,
+            )
+        except HistoricalIngestionError as exc:
+            db.session.rollback()
+            current_app.logger.warning(
+                "historical_reconciliation_status_failed episode_id=%s extraction_id=%s detail=%s",
+                episode.id,
+                analysis.id,
+                str(exc)[:500],
+            )
+            state = None
+
+        if state is not None:
+            return jsonify(
+                {
+                    "status": state.status,
+                    "phase": state.phase,
+                    "message": state.message,
+                    "review_ready": state.review_ready,
+                }
+            )
+        db.session.expire_all()
+        analysis = db.session.get(EvidenceExtraction, extraction_id) or analysis
+
+    return jsonify(
+        {
+            "status": analysis.status,
+            "phase": str(
+                (analysis.provenance or {}).get("background_stage")
+                or analysis.status
+            ),
+            "message": (
+                "Historical reconciliation is ready for advisor decisions."
+                if analysis.status == "completed"
+                else "Rina is preparing the advisor reconciliation checklist."
+                if analysis.status == "processing"
+                else "Historical reconciliation failed safely. No vehicle history changed."
+            ),
+            "review_ready": analysis.status == "completed",
+        }
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>/"
+    "reconciliations/<int:extraction_id>/review"
+)
+@login_required
+@advisor_required
+def save_episode_reconciliation_review(
+    car_id: int,
+    episode_id: int,
+    extraction_id: int,
+):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    if extraction is None:
+        raise NotFound()
+
+    provenance = extraction.provenance or {}
+    if (
+        extraction.extraction_type != "historical_reconciliation"
+        or int(provenance.get("episode_id") or 0) != episode.id
+        or extraction.evidence is None
+        or extraction.evidence.car_id != car.id
+    ):
+        raise NotFound()
+
+    source = reconciliation_payload(extraction)
+    rows = source.get("candidates") if isinstance(source, dict) else []
+    reviewed_candidates = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        candidate_id = str(row.get("candidate_id") or "").strip()
+        decision = request.form.get(
+            f"decision_{candidate_id}",
+            "unsure",
+        ).strip()
+        kind = request.form.get(
+            f"kind_{candidate_id}",
+            str(row.get("kind") or "other_intervention"),
+        ).strip()
+        component_name = request.form.get(
+            f"component_name_{candidate_id}",
+            str(row.get("component_name") or ""),
+        ).strip()
+        component_location = request.form.get(
+            f"component_location_{candidate_id}",
+            str(row.get("component_location") or ""),
+        ).strip()
+        occurred_at = request.form.get(
+            f"occurred_at_{candidate_id}",
+            str(row.get("suggested_occurred_at") or ""),
+        ).strip()
+        condition = request.form.get(
+            f"component_condition_{candidate_id}",
+            str(row.get("component_condition") or "unknown"),
+        ).strip()
+        advisor_note = request.form.get(
+            f"advisor_note_{candidate_id}",
+            "",
+        ).strip()
+
+        reviewed = dict(row)
+        reviewed["advisor_decision"] = decision
+        reviewed["kind"] = kind
+        reviewed["component_name"] = component_name or None
+        reviewed["component_location"] = component_location or None
+        reviewed["occurred_at"] = occurred_at or None
+        reviewed["component_condition"] = condition
+        reviewed["advisor_note"] = advisor_note[:1200]
+        reviewed_candidates.append(reviewed)
+
+    reviewed_payload = {
+        **source,
+        "candidates": reviewed_candidates,
+        "advisor_review_note": request.form.get(
+            "advisor_review_note",
+            "",
+        ).strip()[:2000],
+    }
+
+    try:
+        save_reconciliation_review(
+            extraction_id=extraction.id,
+            actor_user_id=current_user.id,
+            reviewed_payload=reviewed_payload,
+        )
+        db.session.commit()
+    except HistoricalReconciliationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.episode_detail",
+                car_id=car.id,
+                episode_id=episode.id,
+            )
+        )
+
+    confirmed_count = sum(
+        row.get("advisor_decision") == "confirmed"
+        for row in reviewed_candidates
+    )
+    flash(
+        (
+            f"Reconciliation decisions saved. {confirmed_count} completed "
+            "intervention(s) are ready to apply to durable history."
+        ),
+        "success",
+    )
+    return redirect(
+        url_for(
+            "historical_ingestion.episode_detail",
+            car_id=car.id,
+            episode_id=episode.id,
+        )
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>/"
+    "reconciliations/<int:extraction_id>/apply"
+)
+@login_required
+@advisor_required
+def apply_episode_reconciliation(
+    car_id: int,
+    episode_id: int,
+    extraction_id: int,
+):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    if extraction is None:
+        raise NotFound()
+    provenance = extraction.provenance or {}
+    if (
+        extraction.extraction_type != "historical_reconciliation"
+        or int(provenance.get("episode_id") or 0) != episode.id
+        or extraction.evidence is None
+        or extraction.evidence.car_id != car.id
+    ):
+        raise NotFound()
+
+    try:
+        plan = apply_reconciliation(
+            extraction_id=extraction.id,
+            actor_user_id=current_user.id,
+        )
+        db.session.commit()
+    except HistoricalReconciliationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.episode_detail",
+                car_id=car.id,
+                episode_id=episode.id,
+            )
+        )
+
+    if plan is None:
+        flash("No completed work was confirmed for durable history.", "info")
+    else:
+        flash(
+            "Advisor-confirmed reconciliation was added to the vehicle's durable care history.",
+            "success",
+        )
+    return redirect(
+        url_for(
+            "historical_ingestion.episode_detail",
+            car_id=car.id,
+            episode_id=episode.id,
+        )
     )
 
 

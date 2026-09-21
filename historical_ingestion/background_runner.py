@@ -27,6 +27,10 @@ from historical_ingestion.case_attribution import (
     PIPELINE as CASE_ATTRIBUTION_PIPELINE,
     advance_case_attribution,
 )
+from historical_ingestion.reconciliation import (
+    PIPELINE as RECONCILIATION_PIPELINE,
+    advance_episode_reconciliation,
+)
 from historical_ingestion.whatsapp_bundle import (
     PIPELINE as WHATSAPP_PIPELINE,
     advance_whatsapp_bundle_analysis,
@@ -38,6 +42,7 @@ _SUPPORTED_PIPELINES = {
     WHATSAPP_PIPELINE,
     PDF_PIPELINE,
     CASE_ATTRIBUTION_PIPELINE,
+    RECONCILIATION_PIPELINE,
 }
 
 _RUNNER_START_LOCK = threading.Lock()
@@ -147,6 +152,12 @@ def advance_historical_analysis_once(app, extraction_id: int):
                 actor_user_id=actor_user_id,
             )
 
+        if pipeline == RECONCILIATION_PIPELINE:
+            return advance_episode_reconciliation(
+                extraction_id=analysis.id,
+                actor_user_id=actor_user_id,
+            )
+
         return advance_historical_background_analysis(
             extraction_id=analysis.id,
             actor_user_id=actor_user_id,
@@ -158,7 +169,11 @@ def _processing_extraction_ids() -> list[int]:
     rows = (
         EvidenceExtraction.query.filter(
             EvidenceExtraction.extraction_type.in_(
-                {"structured_fields", "historical_case_attribution"}
+                {
+                    "structured_fields",
+                    "historical_case_attribution",
+                    "historical_reconciliation",
+                }
             ),
             EvidenceExtraction.status == "processing",
         )

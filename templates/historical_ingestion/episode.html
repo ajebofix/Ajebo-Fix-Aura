@@ -156,6 +156,330 @@
         </div>
     </div>
 
+    {% if view.reconciliation_needed %}
+    {% set reconciliation = view.reconciliation %}
+    {% set recon_payload = view.reconciliation_review or view.reconciliation_result %}
+    <div class="card" style="margin-top:18px; border:1px solid rgba(245, 158, 11, 0.28);">
+        <div class="section-head">
+            <div>
+                <h3>Advisor reconciliation</h3>
+                <p class="muted">
+                    Rina found work in this episode that may have happened but is not
+                    safely preserved as completed work in durable history.
+                </p>
+            </div>
+            <span class="badge warning">
+                {% if not reconciliation %}
+                    Reconciliation needed
+                {% elif reconciliation.status == 'processing' %}
+                    Preparing checklist
+                {% elif reconciliation.status == 'failed' %}
+                    Needs attention
+                {% elif view.reconciliation_plan %}
+                    Applied
+                {% elif reconciliation.review_status in ['accepted', 'corrected'] %}
+                    Decisions saved
+                {% else %}
+                    Advisor review
+                {% endif %}
+            </span>
+        </div>
+
+        {% if not reconciliation %}
+        <div class="alert alert-warning">
+            <strong>Rina caught a documentation gap.</strong>
+            Recommendations, authorisations and workshop completion claims are not
+            automatically treated as completed work. Prepare a short checklist so you
+            can confirm what was actually replaced or serviced.
+        </div>
+        <form
+            method="POST"
+            action="{{ url_for(
+                'historical_ingestion.start_episode_reconciliation_review',
+                car_id=car.id,
+                episode_id=episode.id,
+                attribution_extraction_id=analysis.id
+            ) }}"
+        >
+            <button type="submit" class="btn btn-primary btn-block">
+                Prepare reconciliation checklist
+            </button>
+        </form>
+
+        {% elif reconciliation.status == 'processing' %}
+        <div
+            class="alert alert-info historical-reconciliation-progress"
+            data-status-url="{{ url_for(
+                'historical_ingestion.episode_reconciliation_status',
+                car_id=car.id,
+                episode_id=episode.id,
+                extraction_id=reconciliation.id
+            ) }}"
+        >
+            <strong>Rina is preparing the advisor reconciliation checklist.</strong>
+            This uses the saved episode attribution; it does not re-upload or re-process
+            the WhatsApp media.
+        </div>
+
+        {% elif reconciliation.status == 'failed' %}
+        <div class="alert alert-warning">
+            The reconciliation pass failed safely. No durable vehicle history changed.
+        </div>
+        <form
+            method="POST"
+            action="{{ url_for(
+                'historical_ingestion.start_episode_reconciliation_review',
+                car_id=car.id,
+                episode_id=episode.id,
+                attribution_extraction_id=analysis.id
+            ) }}"
+        >
+            <button type="submit" class="btn btn-primary btn-block">
+                Retry reconciliation checklist
+            </button>
+        </form>
+
+        {% elif view.reconciliation_plan %}
+        <div class="alert alert-success">
+            <strong>Advisor-confirmed reconciliation is in durable history.</strong>
+            The original anchor and WhatsApp corpus remain unchanged; the confirmed work
+            was added as an auditable historical reconciliation addendum.
+        </div>
+        {% for candidate in recon_payload.candidates or [] %}
+            {% if candidate.advisor_decision == 'confirmed' %}
+            <div class="card" style="margin-top:10px;">
+                <strong>{{ candidate.title }}</strong>
+                <div class="muted" style="margin-top:4px;">
+                    {{ candidate.kind|replace('_', ' ')|title }}
+                    {% if candidate.component_name %} · {{ candidate.component_name }}{% endif %}
+                    {% if candidate.occurred_at %} · {{ candidate.occurred_at }}{% endif %}
+                </div>
+                {% if candidate.advisor_note %}
+                <p class="muted" style="margin-top:8px;">
+                    Advisor note: {{ candidate.advisor_note }}
+                </p>
+                {% endif %}
+            </div>
+            {% endif %}
+        {% endfor %}
+
+        {% else %}
+        {% if recon_payload.advisor_notice %}
+        <div class="alert alert-warning">
+            <strong>Rina's notice:</strong> {{ recon_payload.advisor_notice }}
+        </div>
+        {% endif %}
+        {% if recon_payload.summary %}
+        <p>{{ recon_payload.summary }}</p>
+        {% endif %}
+
+        <form
+            method="POST"
+            action="{{ url_for(
+                'historical_ingestion.save_episode_reconciliation_review',
+                car_id=car.id,
+                episode_id=episode.id,
+                extraction_id=reconciliation.id
+            ) }}"
+        >
+            {% for candidate in recon_payload.candidates or [] %}
+            <div class="card" style="margin-top:12px;">
+                <div class="section-head">
+                    <div>
+                        <strong>{{ candidate.title }}</strong>
+                        <div class="muted">
+                            {{ candidate.evidence_state|replace('_', ' ')|title }}
+                            · {{ ((candidate.confidence or 0) * 100)|round|int }}% reconciliation relevance
+                        </div>
+                    </div>
+                </div>
+
+                {% if candidate.evidence_basis %}
+                <p>{{ candidate.evidence_basis }}</p>
+                {% endif %}
+                {% if candidate.reconciliation_reason %}
+                <p class="muted">
+                    <strong>Why Rina is asking:</strong>
+                    {{ candidate.reconciliation_reason }}
+                </p>
+                {% endif %}
+                {% if candidate.source_refs %}
+                <p class="muted">
+                    <strong>Sources:</strong> {{ candidate.source_refs|join(', ') }}
+                </p>
+                {% endif %}
+
+                <div style="margin-top:14px;">
+                    <strong>What actually happened?</strong>
+                    <div style="display:grid; gap:8px; margin-top:8px;">
+                        <label class="card" style="margin:0; padding:12px;">
+                            <input
+                                type="radio"
+                                name="decision_{{ candidate.candidate_id }}"
+                                value="confirmed"
+                                {% if candidate.advisor_decision == 'confirmed' %}checked{% endif %}
+                            >
+                            <strong>
+                                {% if candidate.kind == 'component_replacement' %}
+                                    Confirm replaced
+                                {% elif candidate.kind == 'service' %}
+                                    Confirm service done
+                                {% else %}
+                                    Confirm completed
+                                {% endif %}
+                            </strong>
+                        </label>
+                        <label class="card" style="margin:0; padding:12px;">
+                            <input
+                                type="radio"
+                                name="decision_{{ candidate.candidate_id }}"
+                                value="not_done"
+                                {% if candidate.advisor_decision == 'not_done' %}checked{% endif %}
+                            >
+                            <strong>Not done</strong>
+                        </label>
+                        <label class="card" style="margin:0; padding:12px;">
+                            <input
+                                type="radio"
+                                name="decision_{{ candidate.candidate_id }}"
+                                value="unsure"
+                                {% if candidate.advisor_decision not in ['confirmed', 'not_done'] %}checked{% endif %}
+                            >
+                            <strong>Still unsure</strong>
+                        </label>
+                    </div>
+                </div>
+
+                <label style="display:block; margin-top:14px;">
+                    <strong>Record as</strong>
+                    <select
+                        name="kind_{{ candidate.candidate_id }}"
+                        style="width:100%; margin-top:6px;"
+                    >
+                        {% for kind_value, kind_label in [
+                            ('component_replacement', 'Component replacement'),
+                            ('service', 'Service'),
+                            ('other_intervention', 'Other intervention')
+                        ] %}
+                        <option
+                            value="{{ kind_value }}"
+                            {% if candidate.kind == kind_value %}selected{% endif %}
+                        >
+                            {{ kind_label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label style="display:block; margin-top:12px;">
+                    <strong>Component / service name</strong>
+                    <input
+                        type="text"
+                        name="component_name_{{ candidate.candidate_id }}"
+                        value="{{ candidate.component_name or candidate.title }}"
+                        style="width:100%; margin-top:6px;"
+                    >
+                </label>
+
+                <label style="display:block; margin-top:12px;">
+                    <strong>Location (optional)</strong>
+                    <input
+                        type="text"
+                        name="component_location_{{ candidate.candidate_id }}"
+                        value="{{ candidate.component_location or '' }}"
+                        placeholder="e.g. left rear"
+                        style="width:100%; margin-top:6px;"
+                    >
+                </label>
+
+                <label style="display:block; margin-top:12px;">
+                    <strong>Historical completion date/time</strong>
+                    <input
+                        type="datetime-local"
+                        name="occurred_at_{{ candidate.candidate_id }}"
+                        value="{{ (candidate.occurred_at or candidate.suggested_occurred_at or '')[:16] }}"
+                        style="width:100%; margin-top:6px;"
+                    >
+                </label>
+
+                <label style="display:block; margin-top:12px;">
+                    <strong>Component condition</strong>
+                    <select
+                        name="component_condition_{{ candidate.candidate_id }}"
+                        style="width:100%; margin-top:6px;"
+                    >
+                        {% for condition_value, condition_label in [
+                            ('new', 'New'),
+                            ('preowned_tokunbo', 'Pre-owned / Tokunbo'),
+                            ('refurbished', 'Refurbished'),
+                            ('client_supplied', 'Client supplied'),
+                            ('unknown', 'Unknown'),
+                            ('not_applicable', 'Not applicable')
+                        ] %}
+                        <option
+                            value="{{ condition_value }}"
+                            {% if candidate.component_condition == condition_value %}selected{% endif %}
+                        >
+                            {{ condition_label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label style="display:block; margin-top:12px;">
+                    <strong>Advisor note (optional)</strong>
+                    <textarea
+                        name="advisor_note_{{ candidate.candidate_id }}"
+                        rows="2"
+                        style="width:100%; margin-top:6px;"
+                        placeholder="Anything you personally remember that helps reconcile this item."
+                    >{{ candidate.advisor_note or '' }}</textarea>
+                </label>
+            </div>
+            {% endfor %}
+
+            <label style="display:block; margin-top:14px;">
+                <strong>Overall reconciliation note (optional)</strong>
+                <textarea
+                    name="advisor_review_note"
+                    rows="3"
+                    style="width:100%; margin-top:6px;"
+                    placeholder="Why these confirmations are being added to the historical record."
+                >{{ recon_payload.advisor_review_note or '' }}</textarea>
+            </label>
+
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top:14px;">
+                Save reconciliation decisions
+            </button>
+        </form>
+
+        {% if reconciliation.review_status in ['accepted', 'corrected'] %}
+        {% set confirmed = (recon_payload.candidates or [])|selectattr('advisor_decision', 'equalto', 'confirmed')|list %}
+        <div class="alert alert-info" style="margin-top:14px;">
+            <strong>{{ confirmed|length }} confirmed item{{ '' if confirmed|length == 1 else 's' }}</strong>
+            ready to become durable completed-work history. Saving decisions alone does
+            not change vehicle history.
+        </div>
+        {% if confirmed %}
+        <form
+            method="POST"
+            action="{{ url_for(
+                'historical_ingestion.apply_episode_reconciliation',
+                car_id=car.id,
+                episode_id=episode.id,
+                extraction_id=reconciliation.id
+            ) }}"
+        >
+            <button type="submit" class="btn btn-primary btn-block">
+                Apply confirmed reconciliation to durable history
+            </button>
+        </form>
+        {% endif %}
+        {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+
     {% for classification, heading, description in [
         ('matched', 'Matched to this episode', 'Strong temporal and semantic fit with the anchored job.'),
         ('uncertain', 'Needs advisor judgement', 'Plausibly related, but Rina found insufficient evidence to assign confidently.'),
@@ -230,7 +554,10 @@
 <script>
 (function () {
     const pending = Array.from(
-        document.querySelectorAll(".historical-attribution-progress[data-status-url]")
+        document.querySelectorAll(
+            ".historical-attribution-progress[data-status-url], " +
+            ".historical-reconciliation-progress[data-status-url]"
+        )
     );
     if (!pending.length) return;
 

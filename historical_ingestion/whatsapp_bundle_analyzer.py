@@ -222,6 +222,135 @@ until the advisor approves it.
 """.strip()
 
 
+CASE_ATTRIBUTION_GROUP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "classification": {
+            "type": "string",
+            "enum": ["matched", "uncertain", "other_episode", "unassigned"],
+        },
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "occurred_at": {"type": ["string", "null"]},
+        "evidence_role": {
+            "type": "string",
+            "enum": [
+                "identity",
+                "reported_concern",
+                "observation",
+                "recommendation",
+                "authorization",
+                "completed_work",
+                "outcome",
+                "financial",
+                "context",
+            ],
+        },
+        "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"},
+        },
+        "source_excerpt": {"type": "string"},
+        "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+        },
+        "match_reason": {"type": "string"},
+    },
+    "required": [
+        "classification",
+        "title",
+        "summary",
+        "occurred_at",
+        "evidence_role",
+        "source_refs",
+        "source_excerpt",
+        "confidence",
+        "match_reason",
+    ],
+}
+
+
+CASE_ATTRIBUTION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "episode_summary": {"type": "string"},
+        "match_overview": {"type": "string"},
+        "evidence_groups": {
+            "type": "array",
+            "items": CASE_ATTRIBUTION_GROUP_SCHEMA,
+        },
+        "advisor_attention": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": [
+        "episode_summary",
+        "match_overview",
+        "evidence_groups",
+        "advisor_attention",
+    ],
+}
+
+
+CASE_ATTRIBUTION_INSTRUCTIONS = """
+You are A.J. Rina performing Historical Case Attribution for an AJEBO FIX
+PROFESSIONAL ADVISOR.
+
+You receive:
+1. one advisor-reviewed historical service episode anchor; and
+2. one already-extracted WhatsApp evidence corpus for the SAME vehicle.
+
+Your task is NOT to re-diagnose the vehicle and NOT to create durable vehicle
+history. Your task is to decide which parts of the WhatsApp corpus belong to the
+specific anchored service episode.
+
+CLASSIFY evidence contextually:
+- matched: strong temporal and semantic evidence that the item belongs to this
+  episode;
+- uncertain: plausibly belongs to this episode, but evidence is insufficient;
+- other_episode: clearly concerns a different service/repair episode or materially
+  different time period;
+- unassigned: vehicle-related context that cannot responsibly be tied to this or
+  another specific episode.
+
+Important rules:
+- same vehicle identity alone is NEVER enough to mark evidence as matched;
+- date proximity alone is not enough when the subject matter conflicts;
+- subject similarity alone is not enough when chronology points to a different job;
+- use job/SOW references, dates, symptoms, parts, measurements, authorisations,
+  amounts, follow-up outcomes and conversation continuity together;
+- do not force ambiguous evidence into the anchor episode;
+- preserve contradictions, later corrections and repeated/recurrent concerns;
+- financial/payment evidence may support episode identity but does not prove
+  mechanical completion;
+- a parts list or purchase does not prove installation;
+- do not infer diagnosis from a DTC, warning light, sound, image or message alone;
+- occurred_at must be null unless the cited source establishes the date/time;
+- every evidence group must retain exact compact source references present in the
+  corpus, such as CHAT m000123, IMAGE evidence:45, AUDIO evidence:46,
+  VIDEO evidence:47 or DOCUMENT evidence:48;
+- do not invent source references;
+- avoid assigning the same source reference to multiple classifications in one
+  result unless a genuine contradiction requires advisor attention;
+- source_excerpt must be short and source-supported;
+- confidence is attribution confidence, NOT extraction confidence, diagnosis
+  confidence or mechanical severity.
+
+The anchor source has already been advisor-reviewed. Use it as the target episode
+definition; do not silently rewrite its facts.
+
+Return a concise professional episode summary, an overview of the match, grouped
+evidence classifications, and any advisor-attention items. Nothing from this pass
+becomes durable vehicle-health truth automatically.
+""".strip()
+
+
 MEDIA_OBSERVATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -431,6 +560,41 @@ class WhatsAppBundleAdvisorAnalyzer(HistoricalAdvisorAnalyzer):
                 "Do not infer diagnosis, installation or outcome beyond the evidence."
             ),
             content=content,
+        )
+
+    def start_case_attribution_background(
+        self,
+        *,
+        corpus: str,
+        episode_anchor: dict[str, Any],
+        trusted_vehicle_context: dict[str, Any],
+    ) -> HistoricalBackgroundResponse:
+        return self._start_background(
+            instructions=CASE_ATTRIBUTION_INSTRUCTIONS,
+            input_content=[
+                {
+                    "type": "input_text",
+                    "text": (
+                        "Trusted Aura vehicle context (for disambiguation only):\n"
+                        + json.dumps(
+                            trusted_vehicle_context,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        + "\n\nAdvisor-reviewed historical episode anchor:\n"
+                        + json.dumps(
+                            episode_anchor,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        + "\n\nAlready-extracted WhatsApp evidence corpus:\n"
+                        + corpus
+                    ),
+                }
+            ],
+            schema_name="aura_historical_case_attribution",
+            schema=CASE_ATTRIBUTION_SCHEMA,
+            stage="historical_case_attribution",
         )
 
     def start_bundle_understanding_background(

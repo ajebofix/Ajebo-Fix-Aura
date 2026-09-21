@@ -1117,7 +1117,7 @@ def save_episode_reconciliation_review(
         candidate_id = str(row.get("candidate_id") or "").strip()
         decision = request.form.get(
             f"decision_{candidate_id}",
-            "unsure",
+            "",
         ).strip()
         kind = request.form.get(
             f"kind_{candidate_id}",

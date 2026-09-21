@@ -71,6 +71,8 @@ jobs:
           python -m py_compile migrations/versions/c62f1a4e8d30_add_vehicle_evidence_domain.py
           python -m py_compile migrations/versions/a7e2c4f9b310_add_whatsapp_case_bundle_evidence.py
           python -m py_compile migrations/versions/b8f3d2a6c410_add_historical_source_type.py
+          python -m py_compile migrations/versions/c9e4a7b2d510_add_historical_case_attribution.py
+          python -m py_compile migrations/versions/d0f5b8c3e620_add_historical_reconciliation_extraction.py
           python -m py_compile scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py
 
       - name: Run evidence model contract tests
@@ -78,7 +80,7 @@ jobs:
 
       - name: Lint evidence schema sources
         run: |
-          ruff check evidence tests/test_evidence_models.py scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py migrations/versions/c62f1a4e8d30_add_vehicle_evidence_domain.py migrations/versions/a7e2c4f9b310_add_whatsapp_case_bundle_evidence.py migrations/versions/b8f3d2a6c410_add_historical_source_type.py
+          ruff check evidence tests/test_evidence_models.py scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py migrations/versions/c62f1a4e8d30_add_vehicle_evidence_domain.py migrations/versions/a7e2c4f9b310_add_whatsapp_case_bundle_evidence.py migrations/versions/b8f3d2a6c410_add_historical_source_type.py migrations/versions/c9e4a7b2d510_add_historical_case_attribution.py migrations/versions/d0f5b8c3e620_add_historical_reconciliation_extraction.py
           bandit -q -r evidence scripts/verify_evidence_schema_postgres.py scripts/verify_alembic_head.py
 
       - name: Upgrade fresh PostgreSQL database to current repository head

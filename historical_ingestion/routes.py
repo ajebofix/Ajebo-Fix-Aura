@@ -35,6 +35,7 @@ from historical_ingestion.service import (
     HistoricalIngestionError,
     decrypt_extraction_payload,
     has_completed_structured_extraction,
+    historical_source_summaries,
     ingest_pdf_document_background,
     latest_background_extraction,
     latest_structured_extraction,
@@ -156,6 +157,33 @@ def _reviewed_candidate(source: dict, candidate_id: str) -> dict:
     )
     row["reviewed_by_advisor"] = True
     return row
+
+
+@historical_ingestion_bp.get(
+    "/admin/cars/<int:car_id>/historical-records"
+)
+@login_required
+@advisor_required
+def source_library(car_id: int):
+    car = Car.query.get_or_404(car_id)
+    sources = historical_source_summaries(car.id)
+    counts = {
+        "all": len(sources),
+        "analyzing": sum(item.state == "analyzing" for item in sources),
+        "ready_for_review": sum(
+            item.state == "ready_for_review" for item in sources
+        ),
+        "finalized": sum(item.state == "finalized" for item in sources),
+        "attention": sum(
+            item.state in {"analysis_failed", "stored"} for item in sources
+        ),
+    }
+    return render_template(
+        "historical_ingestion/library.html",
+        car=car,
+        sources=sources,
+        counts=counts,
+    )
 
 
 @historical_ingestion_bp.route(

@@ -185,6 +185,28 @@
             </span>
         </div>
 
+        {% if durable_episode_work %}
+        <div class="card" style="margin:14px 0; border:1px solid rgba(34, 197, 94, 0.22);">
+            <h3 style="margin-top:0;">Already in durable history — no confirmation needed</h3>
+            <p class="muted">
+                These completed-work records are already preserved for this episode, so
+                Rina intentionally leaves them out of the reconciliation questions to
+                avoid creating duplicates.
+            </p>
+            {% for item in durable_episode_work %}
+            <div style="padding:10px 0; border-top:1px solid rgba(15, 23, 42, 0.08);">
+                <strong>{{ item.title }}</strong>
+                <div class="muted" style="margin-top:3px;">
+                    {% if item.component_name %}{{ item.component_name }}{% endif %}
+                    {% if item.component_location %} · {{ item.component_location }}{% endif %}
+                    {% if item.completed_at %} · {{ item.completed_at.strftime('%d %b %Y, %H:%M') }}{% endif %}
+                    {% if item.verification_status %} · {{ item.verification_status|replace('_', ' ')|title }}{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
         {% if not reconciliation %}
         <div class="alert alert-warning">
             <strong>Rina caught a documentation gap.</strong>

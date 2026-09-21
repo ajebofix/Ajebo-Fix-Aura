@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}Historical Service Episode{% endblock %}
+{% block page_title %}Historical Service Episode{% endblock %}
+{% block page_subtitle %}
+{{ car.decoded_display_name }} — episode-aware attribution over preserved historical sources.
+{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>{{ episode.title }}</h2>
+            <p class="muted">
+                Episode #{{ episode.id }}
+                {% if episode.job_reference %} · {{ episode.job_reference }}{% endif %}
+                {% if episode.episode_date %}
+                    · {{ episode.episode_date.strftime('%d %b %Y') }}
+                {% endif %}
+            </p>
+        </div>
+        <span class="badge success">Anchored</span>
+    </div>
+
+    <p class="muted">
+        Anchor: Evidence #{{ episode.anchor_evidence_id }} ·
+        Reviewed extraction #{{ episode.anchor_extraction_id }}.
+        The anchor remains the advisor-reviewed definition of this episode.
+    </p>
+
+    <a
+        class="btn btn-secondary btn-block"
+        href="{{ url_for(
+            'historical_ingestion.review_document',
+            car_id=car.id,
+            evidence_id=episode.anchor_evidence_id
+        ) }}"
+        style="margin-top:12px;"
+    >
+        Open anchor source
+    </a>
+</section>
+
+<section class="card">
+    <h2>WhatsApp case attribution</h2>
+    <p class="muted">
+        Rina reuses the stored transcript and existing image/audio/video/PDF extractions.
+        This pass does not re-upload the ZIP or re-run media perception. Attribution
+        confidence answers whether evidence belongs to this episode; it is separate from
+        extraction confidence and mechanical diagnosis.
+    </p>
+
+    {% if not attribution_views %}
+    <div class="alert alert-info" style="margin-top:14px;">
+        No active WhatsApp corpus is available for this vehicle.
+    </div>
+    {% endif %}
+</section>
+
+{% for view in attribution_views %}
+{% set source = view.source %}
+{% set analysis = view.analysis %}
+{% set payload = view.payload %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h3>WhatsApp corpus · Evidence #{{ source.id }}</h3>
+            <p class="muted">
+                Uploaded {{ source.created_at.strftime('%d %b %Y, %H:%M') if source.created_at else '—' }}
+            </p>
+        </div>
+        <span class="badge
+            {% if analysis and analysis.status == 'completed' %}success
+            {% elif analysis and analysis.status == 'failed' %}warning
+            {% endif %}
+        ">
+            {% if not analysis %}
+                Not attributed
+            {% elif analysis.status == 'processing' %}
+                Separating evidence
+            {% elif analysis.status == 'completed' %}
+                Attribution ready
+            {% else %}
+                Needs attention
+            {% endif %}
+        </span>
+    </div>
+
+    {% if not analysis or analysis.status == 'failed' %}
+    {% if analysis and analysis.status == 'failed' %}
+    <div class="alert alert-warning" style="margin-top:12px;">
+        The last attribution attempt failed safely. The original source corpus and
+        completed media extraction are unchanged.
+    </div>
+    {% endif %}
+    <form
+        method="POST"
+        action="{{ url_for(
+            'historical_ingestion.start_episode_attribution',
+            car_id=car.id,
+            episode_id=episode.id,
+            corpus_evidence_id=source.id
+        ) }}"
+        style="margin-top:12px;"
+    >
+        <button type="submit" class="btn btn-primary btn-block">
+            {{ 'Retry case attribution' if analysis else 'Match this WhatsApp corpus to the episode' }}
+        </button>
+    </form>
+
+    {% elif analysis.status == 'processing' %}
+    <div
+        class="alert alert-info historical-attribution-progress"
+        style="margin-top:12px;"
+        data-status-url="{{ url_for(
+            'historical_ingestion.episode_attribution_status',
+            car_id=car.id,
+            episode_id=episode.id,
+            extraction_id=analysis.id
+        ) }}"
+    >
+        <strong>Rina is separating this episode from the wider WhatsApp history.</strong>
+        You can leave this page; Aura continues the saved background analysis.
+    </div>
+
+    {% elif analysis.status == 'completed' %}
+    <div class="alert alert-success" style="margin-top:12px;">
+        <strong>Episode-specific attribution is ready.</strong>
+        This is a candidate-only evidence map. It has not created or changed durable
+        vehicle-health history.
+    </div>
+
+    <h3>Rina episode summary</h3>
+    <p>{{ payload.episode_summary or "No episode summary returned." }}</p>
+
+    {% if payload.match_overview %}
+    <p class="muted">{{ payload.match_overview }}</p>
+    {% endif %}
+
+    {% set counts = payload.source_ref_counts or {} %}
+    <div class="dashboard-grid" style="margin-top:14px;">
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.get('matched', 0) }}</strong>
+            <div class="muted">Matched source refs</div>
+        </div>
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.get('uncertain', 0) }}</strong>
+            <div class="muted">Uncertain source refs</div>
+        </div>
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.get('other_episode', 0) }}</strong>
+            <div class="muted">Likely other episode</div>
+        </div>
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.get('unassigned', 0) }}</strong>
+            <div class="muted">Unassigned context</div>
+        </div>
+    </div>
+
+    {% for classification, heading, description in [
+        ('matched', 'Matched to this episode', 'Strong temporal and semantic fit with the anchored job.'),
+        ('uncertain', 'Needs advisor judgement', 'Plausibly related, but Rina found insufficient evidence to assign confidently.'),
+        ('other_episode', 'Likely another service episode', 'Vehicle evidence that appears to belong to a different job or time period.'),
+        ('unassigned', 'Unassigned vehicle context', 'Relevant vehicle history that should not be forced into this episode.')
+    ] %}
+        {% set groups = (payload.evidence_groups or [])|selectattr('classification', 'equalto', classification)|list %}
+        {% if groups %}
+        <h3 style="margin-top:20px;">{{ heading }}</h3>
+        <p class="muted">{{ description }}</p>
+
+        {% for group in groups %}
+        <div class="card" style="margin-top:10px;">
+            <div class="section-head">
+                <div>
+                    <strong>{{ group.title }}</strong>
+                    <div class="muted">
+                        {{ group.evidence_role|replace('_',' ')|title }}
+                        {% if group.occurred_at %} · {{ group.occurred_at }}{% endif %}
+                    </div>
+                </div>
+                <span class="badge">
+                    {{ ((group.confidence or 0) * 100)|round|int }}% case match
+                </span>
+            </div>
+
+            <p>{{ group.summary }}</p>
+
+            {% if group.match_reason %}
+            <p class="muted">
+                <strong>Why Rina placed it here:</strong> {{ group.match_reason }}
+            </p>
+            {% endif %}
+
+            {% if group.source_refs %}
+            <p class="muted">
+                <strong>Sources:</strong> {{ group.source_refs|join(', ') }}
+            </p>
+            {% endif %}
+
+            {% if group.source_excerpt %}
+            <p class="muted">
+                <strong>Source excerpt:</strong> {{ group.source_excerpt }}
+            </p>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+    {% endfor %}
+
+    {% if payload.advisor_attention %}
+    <h3 style="margin-top:20px;">Advisor attention</h3>
+    <ul class="clean-list">
+        {% for item in payload.advisor_attention %}
+        <li>{{ item }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+</section>
+{% endfor %}
+
+<section class="card">
+    <a
+        class="btn btn-secondary btn-block"
+        href="{{ url_for('historical_ingestion.source_library', car_id=car.id) }}"
+    >
+        Back to historical sources
+    </a>
+</section>
+
+<script>
+(function () {
+    const pending = Array.from(
+        document.querySelectorAll(".historical-attribution-progress[data-status-url]")
+    );
+    if (!pending.length) return;
+
+    let stopped = false;
+
+    async function poll() {
+        if (stopped) return;
+        let shouldReload = false;
+
+        for (const node of pending) {
+            try {
+                const response = await fetch(node.dataset.statusUrl, {
+                    credentials: "same-origin",
+                    headers: {"Accept": "application/json"}
+                });
+                if (!response.ok) continue;
+                const data = await response.json();
+                if (data.message) {
+                    const strong = node.querySelector("strong");
+                    if (strong) strong.textContent = data.message;
+                }
+                if (data.status === "completed" || data.status === "failed") {
+                    shouldReload = true;
+                }
+            } catch (_error) {
+                // The server-side runner remains authoritative; retry quietly.
+            }
+        }
+
+        if (shouldReload) {
+            stopped = true;
+            window.location.reload();
+            return;
+        }
+        window.setTimeout(poll, 2500);
+    }
+
+    window.setTimeout(poll, 1200);
+})();
+</script>
+{% endblock %}

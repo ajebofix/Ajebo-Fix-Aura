@@ -205,6 +205,7 @@ def create_app():
 
     from models import User
     from profiles.models import ClientProfile, ProfileAuditEvent  # noqa: F401
+    from historical_ingestion.models import HistoricalServiceEpisode  # noqa: F401
 
     @login_manager.user_loader
     def load_user(user_id):

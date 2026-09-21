@@ -7,7 +7,7 @@
 <section class="card">
     <div class="section-head">
         <div>
-            <h2>{{ 'WhatsApp case bundle' if evidence.evidence_type == 'archive' else 'Source document' }}</h2>
+            <h2>{{ 'WhatsApp case bundle' if evidence.historical_source_type == 'whatsapp_conversation' else 'Source document' }}</h2>
             <p class="muted">
                 Evidence #{{ evidence.id }} ·
                 {% if evidence.historical_source_type == 'whatsapp_conversation' %}
@@ -23,47 +23,123 @@
                 {{ evidence.visibility|title }}
             </p>
         </div>
-        <span class="badge {{ 'success' if evidence.review_status == 'accepted' else 'warning' }}">
-            {{ evidence.review_status|replace('_',' ')|title }}
+        <span class="badge {{ 'success' if analysis_reviewed else 'warning' }}">
+            {% if analysis_reviewed %}
+                Reviewed / Finalised
+            {% elif analysis_available %}
+                Ready for Review
+            {% elif analysis_in_progress %}
+                Analysing
+            {% elif analysis_failed %}
+                Needs Attention
+            {% else %}
+                Stored
+            {% endif %}
         </span>
     </div>
 
+    {% if analysis_in_progress %}
+    <div class="alert alert-info" style="margin-top:16px;">
+        <strong>Rina is continuing this analysis on the server.</strong>
+        You can refresh, sign out, close the browser or return on another device.
+        The saved analysis will continue and reopen from its current state.
+    </div>
+    {% elif analysis_available %}
+    <div class="alert alert-success" style="margin-top:16px;">
+        {% if analysis_reviewed %}
+        <strong>This advisor review is saved.</strong>
+        The analysed source and your reviewed decisions can be reopened at any time.
+        {% else %}
+        <strong>Rina's analysis is saved and ready.</strong>
+        Continue the advisor review below; you do not need to analyse the source again.
+        {% endif %}
+    </div>
+
+    <details style="margin-top:14px;">
+        <summary><strong>Run Rina again from the original source</strong></summary>
+        <p class="muted" style="margin-top:8px;">
+            Use this only when you deliberately want a fresh extraction. Your existing
+            completed analysis remains available if the new run fails.
+        </p>
+        <form
+            id="historical-reanalysis-form"
+            method="POST"
+            action="{{ url_for('historical_ingestion.reanalyze_document', car_id=car.id, evidence_id=evidence.id) }}"
+        >
+            <button
+                id="historical-reanalysis-button"
+                type="submit"
+                class="btn btn-secondary btn-block"
+            >
+                Re-analyse original source
+            </button>
+        </form>
+    </details>
+    {% else %}
+    <div class="alert {{ 'alert-warning' if analysis_failed else 'alert-info' }}" style="margin-top:16px;">
+        {% if analysis_failed %}
+        <strong>The last analysis did not finish.</strong>
+        The original private source is still stored safely. Retry from the same source;
+        no re-upload is required.
+        {% else %}
+        <strong>This source is stored but has not produced a completed extraction yet.</strong>
+        Start Rina from the saved source; no re-upload is required.
+        {% endif %}
+    </div>
     <form
         id="historical-reanalysis-form"
         method="POST"
         action="{{ url_for('historical_ingestion.reanalyze_document', car_id=car.id, evidence_id=evidence.id) }}"
-        style="margin-top:16px;"
+        style="margin-top:14px;"
     >
         <button
             id="historical-reanalysis-button"
             type="submit"
-            class="btn btn-secondary btn-block"
-            {% if analysis_in_progress %}disabled{% endif %}
+            class="btn btn-primary btn-block"
         >
-            {{ (
-                'Rina is analysing this case bundle…'
-                if evidence.evidence_type == 'archive'
-                else 'Rina is analysing this document…'
-            ) if analysis_in_progress else 'Re-analyze with advisor-grade Rina' }}
+            {{ 'Retry advisor-grade analysis' if analysis_failed else 'Analyse saved source with Rina' }}
         </button>
     </form>
-    <p class="muted" style="margin-top:8px;">
-        {% if evidence.evidence_type == 'archive' %}
-        Uses the original private WhatsApp ZIP and its linked media evidence. You do not
-        need to upload the export again.
+    {% endif %}
+
+    <p class="muted" style="margin-top:10px;">
+        {% if evidence.historical_source_type == 'whatsapp_conversation' %}
+        Aura retains the original private WhatsApp ZIP and its linked media evidence.
         {% else %}
-        Uses the original private PDF. You do not need to upload the file again.
+        Aura retains the original private PDF.
         {% endif %}
+        Refreshing or signing out does not remove the stored source or completed analysis.
     </p>
+
+    <a
+        href="{{ url_for('historical_ingestion.source_library', car_id=car.id) }}"
+        class="btn btn-secondary btn-block"
+        style="margin-top:12px;"
+    >
+        View all historical sources
+    </a>
 </section>
 
 {% if not extraction or extraction.status != 'completed' %}
 <section class="card">
-    <h2>Structured extraction unavailable</h2>
+    {% if analysis_in_progress %}
+    <h2>Analysis in progress</h2>
     <p class="muted">
-        The source remains stored privately, but no candidate facts are available
-        to review. No vehicle history was changed.
+        Rina is still building the advisor-grade extraction. This page can be left safely;
+        the server continues the job and the result will be available here when complete.
     </p>
+    {% elif analysis_failed %}
+    <h2>Analysis needs attention</h2>
+    <p class="muted">
+        No completed candidate set exists for this source yet. The private source is still
+        available, and retrying does not require another upload.
+    </p>
+    {% else %}
+    <h2>Analysis not yet available</h2>
+    <p class="muted">
+        The source is stored privately, but no completed candidate set is available yet.
+    </p>
+    {% endif %}
 </section>
 {% else %}
 
@@ -71,12 +147,12 @@
     <h2>Rina context summary</h2>
     <p>{{ payload.rina_summary or "No summary returned." }}</p>
 
-    {% if evidence.evidence_type == 'archive' and payload.case_focus %}
+    {% if evidence.historical_source_type == 'whatsapp_conversation' and payload.case_focus %}
     <h3>Case focus</h3>
     <p>{{ payload.case_focus }}</p>
     {% endif %}
 
-    {% if evidence.evidence_type == 'archive' and payload.priority_threads %}
+    {% if evidence.historical_source_type == 'whatsapp_conversation' and payload.priority_threads %}
     <h3>Priority threads</h3>
     <div class="dashboard-grid">
         {% for thread in payload.priority_threads %}
@@ -97,7 +173,7 @@
     </div>
     {% endif %}
 
-    {% if evidence.evidence_type == 'archive' and payload.supporting_context %}
+    {% if evidence.historical_source_type == 'whatsapp_conversation' and payload.supporting_context %}
     <details style="margin-top:16px;">
         <summary><strong>Supporting context Rina kept</strong></summary>
         <ul class="clean-list" style="margin-top:10px;">
@@ -114,7 +190,7 @@
     </details>
     {% endif %}
 
-    {% if evidence.evidence_type == 'archive' and payload.low_relevance_context %}
+    {% if evidence.historical_source_type == 'whatsapp_conversation' and payload.low_relevance_context %}
     <details style="margin-top:12px;">
         <summary><strong>Low-relevance conversation Rina deprioritized</strong></summary>
         <p class="muted" style="margin-top:8px;">
@@ -151,6 +227,10 @@
     method="POST"
     action="{{ url_for('historical_ingestion.save_review', car_id=car.id, evidence_id=evidence.id) }}"
 >
+    <fieldset
+        {% if analysis_reviewed %}disabled{% endif %}
+        style="border:0;padding:0;margin:0;min-width:0;"
+    >
     {% for item in payload.candidates or [] %}
     <section class="card">
         <div class="section-head">
@@ -343,7 +423,7 @@
         {% if item.source_verified is defined %}
         <p class="muted">
             <strong>Source check:</strong>
-            {% if evidence.evidence_type == 'archive' %}
+            {% if evidence.historical_source_type == 'whatsapp_conversation' %}
                 {{ 'Matched against the reconstructed case-bundle corpus' if item.source_verified else 'Needs manual source verification in the WhatsApp bundle' }}
             {% else %}
                 {{ 'Matched against extracted PDF text' if item.source_verified else 'Needs manual PDF verification' }}
@@ -373,10 +453,19 @@
             rows="4"
         >{{ payload.advisor_review_note or '' }}</textarea>
 
+        {% if analysis_reviewed %}
+        <p class="muted">
+            This advisor review is finalised and preserved as a read-only record.
+            A future correction should be recorded as an addendum rather than
+            overwriting this review.
+        </p>
+        {% else %}
         <button type="submit" class="btn btn-primary btn-block">
             Save advisor review
         </button>
+        {% endif %}
     </section>
+    </fieldset>
 </form>
 
 {% if has_review %}

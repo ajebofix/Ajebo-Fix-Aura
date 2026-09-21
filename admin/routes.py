@@ -72,6 +72,7 @@ from services.alert_service import AlertService
 from services.alert_history import AlertHistoryService, alert_time
 from services.client_onboarding import ClientOnboardingService
 from security.access import require_vehicle_access
+from historical_ingestion.service import historical_source_summaries
 import uuid
 
 
@@ -565,19 +566,7 @@ def admin_view_vehicle(car_id):
             .all()
         )
 
-        from evidence.models import VehicleEvidence
-
-        historical_documents = (
-            VehicleEvidence.query.filter(
-                VehicleEvidence.car_id == car.id,
-                VehicleEvidence.evidence_type == "document",
-                VehicleEvidence.storage_state == "available",
-                VehicleEvidence.deleted_at.is_(None),
-            )
-            .order_by(VehicleEvidence.created_at.desc(), VehicleEvidence.id.desc())
-            .limit(5)
-            .all()
-        )
+        historical_sources = historical_source_summaries(car.id, limit=5)
 
         has_active_consultation = any(
             getattr(c, "status", None) == "in_progress" for c in consultations
@@ -595,7 +584,7 @@ def admin_view_vehicle(car_id):
             assessments=assessments,
             conversation_records=conversation_records,
             treatment_plans=treatment_plans,
-            historical_documents=historical_documents,
+            historical_sources=historical_sources,
             CARE_PLAN_LABELS=CARE_PLAN_LABELS,
             has_feature=has_feature,
             FEATURE_EMERGENCY_REVIEW=FEATURE_EMERGENCY_REVIEW,

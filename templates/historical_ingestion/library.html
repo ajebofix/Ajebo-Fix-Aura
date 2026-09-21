@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Historical Source Library{% endblock %}
+{% block page_title %}Historical Source Library{% endblock %}
+{% block page_subtitle %}
+{{ car.decoded_display_name }} — uploaded sources, analysis state and advisor review remain available across sessions.
+{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>Vehicle source record</h2>
+            <p class="muted">
+                Leaving this page, refreshing, signing out or switching devices does not
+                erase stored sources, completed analysis or completed advisor review.
+            </p>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.all }}</strong>
+            <div class="muted">All sources</div>
+        </div>
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.analyzing }}</strong>
+            <div class="muted">Analysing</div>
+        </div>
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.ready_for_review }}</strong>
+            <div class="muted">Ready for review</div>
+        </div>
+        <div class="card" style="margin:0;">
+            <strong>{{ counts.finalized }}</strong>
+            <div class="muted">Reviewed / finalised</div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <div>
+            <h2>Historical sources</h2>
+            <p class="muted">
+                WhatsApp media, PDFs and other files extracted from a conversation stay
+                attached to their parent case bundle; they are not shown here as separate
+                historical documents.
+            </p>
+        </div>
+        <a
+            class="btn btn-primary"
+            href="{{ url_for('historical_ingestion.import_document', car_id=car.id) }}"
+        >
+            Import source
+        </a>
+    </div>
+
+    {% if not sources %}
+    <p class="muted">No historical sources have been imported for this vehicle yet.</p>
+    {% else %}
+        {% for item in sources %}
+        {% set source = item.evidence %}
+        <div class="timeline-item">
+            <div style="min-width:0;">
+                <div class="section-head" style="margin-bottom:4px;">
+                    <strong>
+                        {% if source.historical_source_type == 'whatsapp_conversation' %}
+                            WhatsApp case bundle
+                        {% elif source.historical_source_type == 'standalone_document' %}
+                            Standalone document
+                        {% else %}
+                            {{ source.historical_source_type|replace('_',' ')|title }}
+                        {% endif %}
+                    </strong>
+                    <span class="badge
+                        {% if item.state == 'finalized' %}success
+                        {% elif item.state in ['analysis_failed', 'stored'] %}warning
+                        {% endif %}
+                    ">
+                        {{ item.state_label }}
+                    </span>
+                </div>
+                <div class="muted">
+                    Evidence #{{ source.id }} ·
+                    {{ source.purpose|replace('_',' ')|title }} ·
+                    Uploaded {{ source.created_at.strftime('%d %b %Y, %H:%M') if source.created_at else '—' }}
+                </div>
+                {% if item.state == 'analyzing' %}
+                <div class="muted" style="margin-top:4px;">
+                    Saved progress: {{ item.analysis_phase|replace('_',' ')|title }}.
+                    Rina continues on the server.
+                </div>
+                {% elif item.state == 'finalized' %}
+                <div class="muted" style="margin-top:4px;">
+                    Advisor review is saved and can be reopened at any time.
+                </div>
+                {% elif item.state == 'ready_for_review' %}
+                <div class="muted" style="margin-top:4px;">
+                    Rina's extraction is complete. Advisor decisions are still required.
+                </div>
+                {% elif item.state == 'analysis_failed' %}
+                <div class="muted" style="margin-top:4px;">
+                    The original private source is still stored. Open it to retry analysis.
+                </div>
+                {% endif %}
+            </div>
+
+            <a
+                class="btn btn-secondary"
+                href="{{ url_for(
+                    'historical_ingestion.review_document',
+                    car_id=car.id,
+                    evidence_id=source.id
+                ) }}"
+            >
+                {{ item.action_label }}
+            </a>
+        </div>
+        {% endfor %}
+    {% endif %}
+</section>
+
+<section class="card">
+    <a
+        class="btn btn-secondary btn-block"
+        href="{{ url_for('admin.admin_view_vehicle', car_id=car.id) }}"
+    >
+        Back to vehicle
+    </a>
+</section>
+{% endblock %}

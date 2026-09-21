@@ -15,6 +15,7 @@ from historical_ingestion.advisor_analyzer import HistoricalBackgroundResponse
 from historical_ingestion.service import (
     HistoricalIngestionAccessError,
     decrypt_extraction_payload,
+    historical_source_summaries,
 )
 from historical_ingestion.whatsapp_bundle import (
     WhatsAppBundleValidationError,
@@ -726,3 +727,52 @@ def test_whatsapp_audio_is_normalized_to_wav_before_transcription(
                 break
 
         assert analyzer.audio >= 1
+
+
+def test_historical_source_library_keeps_bundle_children_under_parent(app):
+    with app.app_context():
+        owner = _user(suffix=20)
+        advisor = _user(suffix=21, role="admin")
+        car = _owned_car(owner, suffix=20)
+        storage = RecordingStorageProvider()
+        analyzer = FakeBundleAnalyzer()
+
+        started = ingest_whatsapp_bundle(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(_zip_bytes()),
+            purpose="service_document",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+        )
+        state = advance_whatsapp_bundle_analysis(
+            extraction_id=started.extraction_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            analyzer=analyzer,
+        )
+        assert state.phase == "preprocessing"
+        assert EvidenceBundleItem.query.filter_by(
+            bundle_evidence_id=started.evidence_id
+        ).count() > 0
+
+        summaries = historical_source_summaries(car.id)
+        assert [item.evidence.id for item in summaries] == [started.evidence_id]
+        assert summaries[0].state == "analyzing"
+        assert summaries[0].action_label == "View progress"
+
+        root = db.session.get(VehicleEvidence, started.evidence_id)
+        analysis = db.session.get(EvidenceExtraction, started.extraction_id)
+        root.review_status = "accepted"
+        analysis.status = "completed"
+        analysis.review_status = "accepted"
+        analysis.provenance = {
+            **(analysis.provenance or {}),
+            "background_stage": "completed",
+        }
+        db.session.commit()
+
+        summaries = historical_source_summaries(car.id)
+        assert len(summaries) == 1
+        assert summaries[0].state == "finalized"
+        assert summaries[0].action_label == "Open finalised review"

@@ -91,6 +91,15 @@ def _historical_upload_error(message: str, *, status: int = 400):
     return redirect(request.url)
 
 
+def _canonical_historical_source(evidence: VehicleEvidence) -> VehicleEvidence:
+    """Return a bundle root when a stale URL points at one of its child files."""
+
+    parent_link = next(iter(evidence.bundle_parent_items or []), None)
+    if parent_link is not None and parent_link.bundle is not None:
+        return parent_link.bundle
+    return evidence
+
+
 def _reviewed_candidate(source: dict, candidate_id: str) -> dict:
     row = deepcopy(source)
     row["candidate_id"] = candidate_id
@@ -310,6 +319,7 @@ def reanalyze_document(car_id: int, evidence_id: int):
         id=evidence_id,
         car_id=car.id,
     ).first_or_404()
+    evidence = _canonical_historical_source(evidence)
 
     try:
         if evidence.evidence_type == "archive":
@@ -384,6 +394,7 @@ def analysis_status(car_id: int, evidence_id: int):
         id=evidence_id,
         car_id=car.id,
     ).first_or_404()
+    evidence = _canonical_historical_source(evidence)
     analysis = (
         latest_whatsapp_bundle_extraction(evidence.id)
         if evidence.evidence_type == "archive"
@@ -483,6 +494,7 @@ def review_document(car_id: int, evidence_id: int):
         id=evidence_id,
         car_id=car.id,
     ).first_or_404()
+    evidence = _canonical_historical_source(evidence)
     extraction = latest_structured_extraction(evidence.id)
     background_analysis = (
         latest_whatsapp_bundle_extraction(evidence.id)
@@ -491,6 +503,19 @@ def review_document(car_id: int, evidence_id: int):
     )
     analysis_in_progress = bool(
         background_analysis and background_analysis.status == "processing"
+    )
+    analysis_available = bool(extraction and extraction.status == "completed")
+    analysis_reviewed = bool(
+        analysis_available
+        and (
+            evidence.review_status == "accepted"
+            or extraction.review_status in {"accepted", "corrected"}
+        )
+    )
+    analysis_failed = bool(
+        background_analysis
+        and background_analysis.status == "failed"
+        and not analysis_available
     )
 
     payload = {}
@@ -512,8 +537,13 @@ def review_document(car_id: int, evidence_id: int):
         has_review=bool(reviewed_payload),
         background_analysis=background_analysis,
         analysis_in_progress=analysis_in_progress,
+        analysis_available=analysis_available,
+        analysis_reviewed=analysis_reviewed,
+        analysis_failed=analysis_failed,
         analysis_kind=(
-            "whatsapp_bundle" if evidence.evidence_type == "archive" else "pdf"
+            "whatsapp_bundle"
+            if evidence.historical_source_type == "whatsapp_conversation"
+            else "pdf"
         ),
     )
 
@@ -529,6 +559,7 @@ def save_review(car_id: int, evidence_id: int):
         id=evidence_id,
         car_id=car.id,
     ).first_or_404()
+    evidence = _canonical_historical_source(evidence)
     extraction = latest_structured_extraction(evidence.id)
 
     if extraction is None or extraction.status != "completed":
@@ -605,6 +636,7 @@ def apply_document(car_id: int, evidence_id: int):
         id=evidence_id,
         car_id=car.id,
     ).first_or_404()
+    evidence = _canonical_historical_source(evidence)
     extraction = latest_structured_extraction(evidence.id)
 
     if extraction is None:

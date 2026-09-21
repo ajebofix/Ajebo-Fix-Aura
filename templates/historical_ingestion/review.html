@@ -24,7 +24,9 @@
             </p>
         </div>
         <span class="badge {{ 'success' if analysis_reviewed else 'warning' }}">
-            {% if analysis_reviewed %}
+            {% if evidence.review_status == 'superseded' %}
+                Superseded
+            {% elif analysis_reviewed %}
                 Reviewed / Finalised
             {% elif analysis_available %}
                 Ready for Review
@@ -37,6 +39,60 @@
             {% endif %}
         </span>
     </div>
+
+    {% if evidence.review_status == 'superseded' %}
+    <div class="alert alert-info" style="margin-top:16px;">
+        <strong>This source is archived as superseded.</strong>
+        Aura keeps the original source and analysis for audit, but it is excluded
+        from the active historical working set.
+        {% if evidence.review_reason_code and evidence.review_reason_code.startswith('superseded_by_evidence:') %}
+            Active replacement: Evidence #{{ evidence.review_reason_code.split(':', 1)[1] }}.
+        {% endif %}
+    </div>
+    {% elif evidence.historical_source_type == 'standalone_document'
+        and evidence.review_status == 'pending_review' %}
+    <details style="margin-top:14px;">
+        <summary><strong>Source management</strong></summary>
+        <p class="muted" style="margin-top:8px;">
+            Use supersession only when this upload is an obsolete/re-evaluated version
+            of the same historical job. Aura preserves it for audit instead of deleting it.
+        </p>
+        {% if replacement_sources %}
+        <form
+            method="POST"
+            action="{{ url_for(
+                'historical_ingestion.supersede_source',
+                car_id=car.id,
+                evidence_id=evidence.id
+            ) }}"
+        >
+            <label for="replacement_evidence_id"><strong>Finalised replacement source</strong></label>
+            <select
+                id="replacement_evidence_id"
+                name="replacement_evidence_id"
+                class="input"
+                required
+            >
+                <option value="" selected disabled>Select finalised source</option>
+                {% for replacement in replacement_sources %}
+                <option value="{{ replacement.id }}">
+                    Evidence #{{ replacement.id }} ·
+                    {{ replacement.safe_display_name }} ·
+                    {{ replacement.reviewed_at.strftime('%d %b %Y, %H:%M') if replacement.reviewed_at else 'reviewed' }}
+                </option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-block" style="margin-top:10px;">
+                Mark this source as superseded
+            </button>
+        </form>
+        {% else %}
+        <p class="muted">
+            No reviewed/finalised standalone source is available as a replacement yet.
+        </p>
+        {% endif %}
+    </details>
+    {% endif %}
 
     {% if analysis_in_progress %}
     <div class="alert alert-info" style="margin-top:16px;">
@@ -55,6 +111,7 @@
         {% endif %}
     </div>
 
+    {% if evidence.review_status != 'superseded' %}
     <details style="margin-top:14px;">
         <summary><strong>Run Rina again from the original source</strong></summary>
         <p class="muted" style="margin-top:8px;">
@@ -75,6 +132,7 @@
             </button>
         </form>
     </details>
+    {% endif %}
     {% else %}
     <div class="alert {{ 'alert-warning' if analysis_failed else 'alert-info' }}" style="margin-top:16px;">
         {% if analysis_failed %}

@@ -333,6 +333,20 @@ def reanalyze_document(car_id: int, evidence_id: int):
     ).first_or_404()
     evidence = _canonical_historical_source(evidence)
 
+    if evidence.review_status == "superseded":
+        flash(
+            "This source is archived as superseded. Re-analysis is disabled; "
+            "open the active replacement source instead.",
+            "info",
+        )
+        return redirect(
+            url_for(
+                "historical_ingestion.review_document",
+                car_id=car.id,
+                evidence_id=evidence.id,
+            )
+        )
+
     try:
         if evidence.evidence_type == "archive":
             result = restart_whatsapp_bundle_analysis(

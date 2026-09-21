@@ -150,7 +150,7 @@ def _known_attribution_refs(payload: dict[str, Any]) -> set[str]:
     return refs
 
 
-def _durable_work_for_episode(
+def durable_work_for_episode(
     episode: HistoricalServiceEpisode,
 ) -> list[dict[str, Any]]:
     plan = TreatmentPlan.query.filter_by(
@@ -176,6 +176,8 @@ def _durable_work_for_episode(
                 "component_name": getattr(detail, "component_name", None),
                 "component_location": getattr(detail, "component_location", None),
                 "component_condition": getattr(detail, "component_condition", None),
+                "verification_status": getattr(detail, "verification_status", None),
+                "source_evidence_id": getattr(detail, "source_evidence_id", None),
             }
         )
     return rows
@@ -342,7 +344,7 @@ def start_episode_reconciliation(
 
     analyzer = analyzer or WhatsAppBundleAdvisorAnalyzer()
     anchor = episode_anchor_context(episode)
-    durable = _durable_work_for_episode(episode)
+    durable = durable_work_for_episode(episode)
 
     analysis = EvidenceExtraction(
         evidence_id=attribution.evidence_id,

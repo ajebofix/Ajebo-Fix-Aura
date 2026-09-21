@@ -721,3 +721,4 @@ def test_advisor_reconciliation_applies_only_confirmed_work(app):
         assert TreatmentAction.query.filter_by(
             treatment_plan_id=plan.id
         ).count() == 1
+

@@ -227,6 +227,10 @@
     method="POST"
     action="{{ url_for('historical_ingestion.save_review', car_id=car.id, evidence_id=evidence.id) }}"
 >
+    <fieldset
+        {% if analysis_reviewed %}disabled{% endif %}
+        style="border:0;padding:0;margin:0;min-width:0;"
+    >
     {% for item in payload.candidates or [] %}
     <section class="card">
         <div class="section-head">
@@ -449,10 +453,19 @@
             rows="4"
         >{{ payload.advisor_review_note or '' }}</textarea>
 
+        {% if analysis_reviewed %}
+        <p class="muted">
+            This advisor review is finalised and preserved as a read-only record.
+            A future correction should be recorded as an addendum rather than
+            overwriting this review.
+        </p>
+        {% else %}
         <button type="submit" class="btn btn-primary btn-block">
             Save advisor review
         </button>
+        {% endif %}
     </section>
+    </fieldset>
 </form>
 
 {% if has_review %}

@@ -1622,6 +1622,116 @@ def reanalyze_stored_document(
     )
 
 
+@dataclass(frozen=True)
+class HistoricalSourceSummary:
+    evidence: VehicleEvidence
+    state: str
+    state_label: str
+    action_label: str
+    analysis_status: str
+    analysis_phase: str
+    has_completed_analysis: bool
+    has_reviewed_analysis: bool
+
+
+def _latest_structured_row(evidence_id: int) -> EvidenceExtraction | None:
+    return (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence_id,
+            extraction_type="structured_fields",
+        )
+        .order_by(EvidenceExtraction.created_at.desc(), EvidenceExtraction.id.desc())
+        .first()
+    )
+
+
+def historical_source_summaries(
+    car_id: int,
+    *,
+    limit: int | None = None,
+) -> list[HistoricalSourceSummary]:
+    """Return only top-level historical sources, never bundle child evidence.
+
+    A WhatsApp ZIP may materialize dozens of child evidence rows. Those child
+    rows belong to the parent case bundle and must not appear as independent
+    advisor documents.
+    """
+
+    query = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == car_id,
+            VehicleEvidence.historical_source_type.isnot(None),
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+            ~VehicleEvidence.bundle_parent_items.any(),
+        )
+        .order_by(VehicleEvidence.created_at.desc(), VehicleEvidence.id.desc())
+    )
+    if limit is not None:
+        query = query.limit(max(1, int(limit)))
+
+    summaries: list[HistoricalSourceSummary] = []
+    for evidence in query.all():
+        latest = _latest_structured_row(evidence.id)
+        completed = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=evidence.id,
+                extraction_type="structured_fields",
+                status="completed",
+            )
+            .order_by(EvidenceExtraction.created_at.desc(), EvidenceExtraction.id.desc())
+            .first()
+        )
+
+        reviewed = bool(
+            completed
+            and (
+                evidence.review_status == "accepted"
+                or completed.review_status in {"accepted", "corrected"}
+            )
+        )
+
+        if latest is not None and latest.status == "processing":
+            state = "analyzing"
+            label = "Analysing"
+            action = "View progress"
+        elif reviewed:
+            state = "finalized"
+            label = "Reviewed / finalised"
+            action = "Open finalised review"
+        elif completed is not None:
+            state = "ready_for_review"
+            label = "Ready for advisor review"
+            action = "Resume advisor review"
+        elif latest is not None and latest.status == "failed":
+            state = "analysis_failed"
+            label = "Analysis needs attention"
+            action = "Open source"
+        else:
+            state = "stored"
+            label = "Stored"
+            action = "Open source"
+
+        summaries.append(
+            HistoricalSourceSummary(
+                evidence=evidence,
+                state=state,
+                state_label=label,
+                action_label=action,
+                analysis_status=(latest.status if latest is not None else "idle"),
+                analysis_phase=str(
+                    (latest.provenance or {}).get("background_stage") or "idle"
+                )
+                if latest is not None
+                else "idle",
+                has_completed_analysis=completed is not None,
+                has_reviewed_analysis=reviewed,
+            )
+        )
+
+    return summaries
+
+
 def latest_structured_extraction(evidence_id: int) -> EvidenceExtraction | None:
     """Return the newest usable structured extraction.
 

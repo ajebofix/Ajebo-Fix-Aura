@@ -49,16 +49,32 @@
         </div>
     </div>
 
-    {% if not episodes %}
+    {% if not episode_views %}
     <p class="muted">
         No historical service episodes yet. Open a reviewed/finalised standalone document
         and create an episode from it.
     </p>
     {% else %}
-        {% for episode in episodes %}
+        {% for view in episode_views %}
+        {% set episode = view.episode %}
         <div class="timeline-item">
             <div style="min-width:0;">
-                <strong>{{ episode.title }}</strong>
+                <div class="section-head" style="margin-bottom:4px;">
+                    <strong>{{ episode.title }}</strong>
+                    {% if view.reconciliation_state == 'reconciliation_needed' %}
+                    <span class="badge warning">Reconciliation needed</span>
+                    {% elif view.reconciliation_state == 'preparing' %}
+                    <span class="badge">Rina preparing review</span>
+                    {% elif view.reconciliation_state == 'advisor_review' %}
+                    <span class="badge warning">Advisor review needed</span>
+                    {% elif view.reconciliation_state == 'ready_to_apply' %}
+                    <span class="badge warning">Confirmed work ready to apply</span>
+                    {% elif view.reconciliation_state == 'needs_attention' %}
+                    <span class="badge warning">Reconciliation needs attention</span>
+                    {% elif view.reconciliation_state == 'reconciled' %}
+                    <span class="badge success">Reconciled</span>
+                    {% endif %}
+                </div>
                 <div class="muted" style="margin-top:4px;">
                     Episode #{{ episode.id }}
                     {% if episode.job_reference %} · {{ episode.job_reference }}{% endif %}
@@ -67,6 +83,17 @@
                     {% endif %}
                     · Anchor Evidence #{{ episode.anchor_evidence_id }}
                 </div>
+                {% if view.reconciliation_state in [
+                    'reconciliation_needed',
+                    'advisor_review',
+                    'ready_to_apply',
+                    'needs_attention'
+                ] %}
+                <div class="muted" style="margin-top:6px;">
+                    Rina found historical work that needs an advisor decision before
+                    Aura can preserve it as completed work.
+                </div>
+                {% endif %}
             </div>
             <a
                 class="btn btn-secondary"
@@ -76,7 +103,16 @@
                     episode_id=episode.id
                 ) }}"
             >
-                Open episode
+                {% if view.reconciliation_state in [
+                    'reconciliation_needed',
+                    'advisor_review',
+                    'ready_to_apply',
+                    'needs_attention'
+                ] %}
+                    Review reconciliation
+                {% else %}
+                    Open episode
+                {% endif %}
             </a>
         </div>
         {% endfor %}

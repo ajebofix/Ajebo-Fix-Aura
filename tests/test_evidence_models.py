@@ -164,6 +164,7 @@ def test_initial_vocabularies_match_wave_1_4_architecture():
         "archive_manifest",
         "transcription",
         "structured_fields",
+        "historical_case_attribution",
     }
     assert set(EXTRACTION_STATUSES) == {"pending", "processing", "completed", "failed"}
     assert set(EXTRACTION_REVIEW_STATUSES) == {

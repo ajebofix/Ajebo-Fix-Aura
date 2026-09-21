@@ -20,7 +20,7 @@
     <div class="dashboard-grid">
         <div class="card" style="margin:0;">
             <strong>{{ counts.all }}</strong>
-            <div class="muted">All sources</div>
+            <div class="muted">Active sources</div>
         </div>
         <div class="card" style="margin:0;">
             <strong>{{ counts.analyzing }}</strong>
@@ -44,8 +44,22 @@
             <p class="muted">
                 WhatsApp media, PDFs and other files extracted from a conversation stay
                 attached to their parent case bundle; they are not shown here as separate
-                historical documents.
+                historical documents. Superseded standalone sources are preserved for
+                audit but hidden from the working list by default.
             </p>
+            {% if superseded_count %}
+            <p class="muted" style="margin-top:8px;">
+                {{ superseded_count }} superseded source{{ '' if superseded_count == 1 else 's' }}
+                {{ 'shown' if show_superseded else 'hidden' }}.
+                <a href="{{ url_for(
+                    'historical_ingestion.source_library',
+                    car_id=car.id,
+                    show_superseded=0 if show_superseded else 1
+                ) }}">
+                    {{ 'Hide archived sources' if show_superseded else 'Show archived sources' }}
+                </a>
+            </p>
+            {% endif %}
         </div>
         <a
             class="btn btn-primary"
@@ -75,6 +89,7 @@
                     <span class="badge
                         {% if item.state == 'finalized' %}success
                         {% elif item.state in ['analysis_failed', 'stored'] %}warning
+                        {% elif item.state == 'superseded' %}muted
                         {% endif %}
                     ">
                         {{ item.state_label }}
@@ -101,6 +116,14 @@
                 {% elif item.state == 'analysis_failed' %}
                 <div class="muted" style="margin-top:4px;">
                     The original private source is still stored. Open it to retry analysis.
+                </div>
+                {% elif item.state == 'superseded' %}
+                <div class="muted" style="margin-top:4px;">
+                    Preserved for audit only; this source no longer appears in Aura's active
+                    historical working set.
+                    {% if source.review_reason_code and source.review_reason_code.startswith('superseded_by_evidence:') %}
+                        Replacement: Evidence #{{ source.review_reason_code.split(':', 1)[1] }}.
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

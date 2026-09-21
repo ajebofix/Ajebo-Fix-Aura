@@ -15,6 +15,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from werkzeug.exceptions import NotFound
 
 from admin.utils import advisor_required
 from evidence.models import (

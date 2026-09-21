@@ -264,11 +264,12 @@
         {% endfor %}
 
         {% else %}
-        {% if recon_payload.advisor_notice %}
         <div class="alert alert-warning">
-            <strong>Rina's notice:</strong> {{ recon_payload.advisor_notice }}
+            <strong>Answer one clear question for each item.</strong>
+            Choose <strong>Yes</strong> only for work you personally know was completed.
+            Choose <strong>No</strong> if it was not done, or <strong>I can't confirm</strong>
+            if you do not know.
         </div>
-        {% endif %}
         {% if recon_payload.summary %}
         <p>{{ recon_payload.summary }}</p>
         {% endif %}
@@ -285,24 +286,20 @@
             {% for candidate in recon_payload.candidates or [] %}
             <div class="card" style="margin-top:12px;">
                 <div>
-                    <div class="muted" style="margin-bottom:6px;">
-                        {{ candidate.evidence_state|replace('_', ' ')|title }}
-                        · {{ ((candidate.confidence or 0) * 100)|round|int }}% reconciliation relevance
-                    </div>
+                    <div class="muted" style="margin-bottom:6px;">Rina needs your confirmation</div>
+                    <strong style="display:block; font-size:1.05rem; margin-bottom:6px;">
+                        {{ candidate.component_name or candidate.title }}
+                    </strong>
 
                     <h3 style="margin:0 0 8px 0;">
                         {% if candidate.kind == 'component_replacement' %}
-                            Was the {{ candidate.component_name or candidate.title }} actually replaced during this job?
+                            Was this component replaced during this job?
                         {% elif candidate.kind == 'service' %}
-                            Was the {{ candidate.title }} actually carried out during this job?
+                            Was this service completed during this job?
                         {% else %}
-                            Was this work actually completed during this job: {{ candidate.title }}?
+                            Was this work completed during this job?
                         {% endif %}
                     </h3>
-
-                    <p class="muted" style="margin-bottom:12px;">
-                        Choose the answer you personally know to be true. Aura will not infer completion for you.
-                    </p>
 
                     <div
                         class="reconciliation-decision-group"
@@ -357,8 +354,12 @@
 
                     <details style="margin-top:12px;">
                         <summary><strong>Why Rina is asking</strong></summary>
+                        <p class="muted" style="margin-top:10px;">
+                            Evidence state: {{ candidate.evidence_state|replace('_', ' ')|title }}
+                            · {{ ((candidate.confidence or 0) * 100)|round|int }}% reconciliation relevance
+                        </p>
                         {% if candidate.evidence_basis %}
-                        <p style="margin-top:10px;">{{ candidate.evidence_basis }}</p>
+                        <p>{{ candidate.evidence_basis }}</p>
                         {% endif %}
                         {% if candidate.reconciliation_reason %}
                         <p class="muted">{{ candidate.reconciliation_reason }}</p>

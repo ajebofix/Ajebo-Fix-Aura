@@ -18,7 +18,6 @@ from flask import current_app
 from evidence.models import EvidenceExtraction
 from extensions import db
 from historical_ingestion.case_attribution import (
-    HistoricalCaseAttributionError,
     attribution_payload,
     episode_anchor_context,
 )

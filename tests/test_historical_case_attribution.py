@@ -18,6 +18,7 @@ from historical_ingestion.case_attribution import (
 from historical_ingestion.reconciliation import (
     advance_episode_reconciliation,
     apply_reconciliation,
+    durable_work_for_episode,
     reconciliation_payload,
     reconciliation_signal,
     save_reconciliation_review,
@@ -721,3 +722,13 @@ def test_advisor_reconciliation_applies_only_confirmed_work(app):
         assert TreatmentAction.query.filter_by(
             treatment_plan_id=plan.id
         ).count() == 1
+
+        episode_row = db.session.get(
+            __import__("historical_ingestion.models", fromlist=["HistoricalServiceEpisode"]).HistoricalServiceEpisode,
+            episode.episode_id,
+        )
+        recorded = durable_work_for_episode(episode_row)
+        assert any(
+            item["title"] == "Rear AIRMATIC intervention"
+            for item in recorded
+        )

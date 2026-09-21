@@ -41,6 +41,7 @@ from historical_ingestion.reconciliation import (
     HistoricalReconciliationError,
     applied_reconciliation_plan,
     apply_reconciliation,
+    durable_work_for_episode,
     latest_reconciliation,
     reconciliation_payload,
     reconciliation_signal,
@@ -787,6 +788,7 @@ def episode_detail(car_id: int, episode_id: int):
         car=car,
         episode=episode,
         attribution_views=attribution_views,
+        durable_episode_work=durable_work_for_episode(episode),
     )
 
 

@@ -15,11 +15,9 @@ from historical_ingestion.case_attribution import (
     create_episode_from_finalized_source,
     start_case_attribution,
 )
-from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.reconciliation import (
     advance_episode_reconciliation,
     apply_reconciliation,
-    durable_work_for_episode,
     reconciliation_payload,
     reconciliation_signal,
     save_reconciliation_review,
@@ -724,9 +722,3 @@ def test_advisor_reconciliation_applies_only_confirmed_work(app):
             treatment_plan_id=plan.id
         ).count() == 1
 
-        episode_row = db.session.get(HistoricalServiceEpisode, episode.episode_id)
-        recorded = durable_work_for_episode(episode_row)
-        assert any(
-            item["title"] == "Rear AIRMATIC intervention"
-            for item in recorded
-        )

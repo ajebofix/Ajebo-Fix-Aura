@@ -178,6 +178,45 @@
     </a>
 </section>
 
+{% if evidence.historical_source_type == 'standalone_document'
+    and analysis_reviewed
+    and evidence.review_status != 'superseded' %}
+<section class="card">
+    <h2>Historical service episode</h2>
+    <p class="muted">
+        Use this finalised standalone record as a job anchor. Once anchored, Rina can
+        search the already-extracted WhatsApp corpus for evidence that belongs to this
+        specific historical episode without re-running the raw ZIP or media analysis.
+    </p>
+
+    {% if historical_episode %}
+    <a
+        class="btn btn-primary btn-block"
+        href="{{ url_for(
+            'historical_ingestion.episode_detail',
+            car_id=car.id,
+            episode_id=historical_episode.id
+        ) }}"
+    >
+        Open historical service episode
+    </a>
+    {% else %}
+    <form
+        method="POST"
+        action="{{ url_for(
+            'historical_ingestion.create_historical_episode',
+            car_id=car.id,
+            evidence_id=evidence.id
+        ) }}"
+    >
+        <button type="submit" class="btn btn-primary btn-block">
+            Create service episode from this finalised source
+        </button>
+    </form>
+    {% endif %}
+</section>
+{% endif %}
+
 {% if not extraction or extraction.status != 'completed' %}
 <section class="card">
     {% if analysis_in_progress %}

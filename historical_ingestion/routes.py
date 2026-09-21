@@ -218,6 +218,62 @@ def source_library(car_id: int):
             item.state in {"analysis_failed", "stored"} for item in active_sources
         ),
     }
+    whatsapp_sources = [
+        item.evidence
+        for item in active_sources
+        if item.evidence.historical_source_type == "whatsapp_conversation"
+        and item.evidence.evidence_type == "archive"
+    ]
+    episode_views = []
+    state_priority = {
+        "none": 0,
+        "reconciled": 1,
+        "preparing": 2,
+        "advisor_review": 3,
+        "ready_to_apply": 4,
+        "needs_attention": 5,
+        "reconciliation_needed": 6,
+    }
+    for episode in episodes_for_car(car.id):
+        reconciliation_state = "none"
+        for source in whatsapp_sources:
+            analysis = latest_case_attribution(
+                episode_id=episode.id,
+                corpus_evidence_id=source.id,
+            )
+            if analysis is None or analysis.status != "completed":
+                continue
+            payload = attribution_payload(analysis)
+            if not reconciliation_signal(payload):
+                continue
+
+            reconciliation = latest_reconciliation(
+                episode_id=episode.id,
+                attribution_extraction_id=analysis.id,
+            )
+            candidate_state = "reconciliation_needed"
+            if reconciliation is not None:
+                if reconciliation.status == "processing":
+                    candidate_state = "preparing"
+                elif reconciliation.status == "failed":
+                    candidate_state = "needs_attention"
+                elif applied_reconciliation_plan(reconciliation.id) is not None:
+                    candidate_state = "reconciled"
+                elif reconciliation.review_status in {"accepted", "corrected"}:
+                    candidate_state = "ready_to_apply"
+                elif reconciliation.status == "completed":
+                    candidate_state = "advisor_review"
+
+            if state_priority[candidate_state] > state_priority[reconciliation_state]:
+                reconciliation_state = candidate_state
+
+        episode_views.append(
+            {
+                "episode": episode,
+                "reconciliation_state": reconciliation_state,
+            }
+        )
+
     return render_template(
         "historical_ingestion/library.html",
         car=car,
@@ -225,7 +281,7 @@ def source_library(car_id: int):
         counts=counts,
         superseded_count=superseded_count,
         show_superseded=show_superseded,
-        episodes=episodes_for_car(car.id),
+        episode_views=episode_views,
     )
 
 

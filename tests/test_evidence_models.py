@@ -165,6 +165,7 @@ def test_initial_vocabularies_match_wave_1_4_architecture():
         "transcription",
         "structured_fields",
         "historical_case_attribution",
+        "historical_reconciliation",
     }
     assert set(EXTRACTION_STATUSES) == {"pending", "processing", "completed", "failed"}
     assert set(EXTRACTION_REVIEW_STATUSES) == {

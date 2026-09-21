@@ -264,11 +264,12 @@
         {% endfor %}
 
         {% else %}
-        {% if recon_payload.advisor_notice %}
         <div class="alert alert-warning">
-            <strong>Rina's notice:</strong> {{ recon_payload.advisor_notice }}
+            <strong>Answer one clear question for each item.</strong>
+            Choose <strong>Yes</strong> only for work you personally know was completed.
+            Choose <strong>No</strong> if it was not done, or <strong>I can't confirm</strong>
+            if you do not know.
         </div>
-        {% endif %}
         {% if recon_payload.summary %}
         <p>{{ recon_payload.summary }}</p>
         {% endif %}
@@ -284,48 +285,42 @@
         >
             {% for candidate in recon_payload.candidates or [] %}
             <div class="card" style="margin-top:12px;">
-                <div class="section-head">
-                    <div>
-                        <strong>{{ candidate.title }}</strong>
-                        <div class="muted">
-                            {{ candidate.evidence_state|replace('_', ' ')|title }}
-                            · {{ ((candidate.confidence or 0) * 100)|round|int }}% reconciliation relevance
-                        </div>
-                    </div>
-                </div>
+                <div>
+                    <div class="muted" style="margin-bottom:6px;">Rina needs your confirmation</div>
+                    <strong style="display:block; font-size:1.05rem; margin-bottom:6px;">
+                        {{ candidate.component_name or candidate.title }}
+                    </strong>
 
-                {% if candidate.evidence_basis %}
-                <p>{{ candidate.evidence_basis }}</p>
-                {% endif %}
-                {% if candidate.reconciliation_reason %}
-                <p class="muted">
-                    <strong>Why Rina is asking:</strong>
-                    {{ candidate.reconciliation_reason }}
-                </p>
-                {% endif %}
-                {% if candidate.source_refs %}
-                <p class="muted">
-                    <strong>Sources:</strong> {{ candidate.source_refs|join(', ') }}
-                </p>
-                {% endif %}
+                    <h3 style="margin:0 0 8px 0;">
+                        {% if candidate.kind == 'component_replacement' %}
+                            Was this component replaced during this job?
+                        {% elif candidate.kind == 'service' %}
+                            Was this service completed during this job?
+                        {% else %}
+                            Was this work completed during this job?
+                        {% endif %}
+                    </h3>
 
-                <div style="margin-top:14px;">
-                    <strong>What actually happened?</strong>
-                    <div style="display:grid; gap:8px; margin-top:8px;">
+                    <div
+                        class="reconciliation-decision-group"
+                        data-candidate-id="{{ candidate.candidate_id }}"
+                        style="display:grid; gap:8px;"
+                    >
                         <label class="card" style="margin:0; padding:12px;">
                             <input
                                 type="radio"
                                 name="decision_{{ candidate.candidate_id }}"
                                 value="confirmed"
-                                {% if candidate.advisor_decision == 'confirmed' %}checked{% endif %}
+                                required
+                                {% if reconciliation.review_status in ['accepted', 'corrected'] and candidate.advisor_decision == 'confirmed' %}checked{% endif %}
                             >
                             <strong>
                                 {% if candidate.kind == 'component_replacement' %}
-                                    Confirm replaced
+                                    Yes — it was replaced
                                 {% elif candidate.kind == 'service' %}
-                                    Confirm service done
+                                    Yes — the service was completed
                                 {% else %}
-                                    Confirm completed
+                                    Yes — the work was completed
                                 {% endif %}
                             </strong>
                         </label>
@@ -334,22 +329,55 @@
                                 type="radio"
                                 name="decision_{{ candidate.candidate_id }}"
                                 value="not_done"
-                                {% if candidate.advisor_decision == 'not_done' %}checked{% endif %}
+                                required
+                                {% if reconciliation.review_status in ['accepted', 'corrected'] and candidate.advisor_decision == 'not_done' %}checked{% endif %}
                             >
-                            <strong>Not done</strong>
+                            <strong>
+                                {% if candidate.kind == 'component_replacement' %}
+                                    No — it was not replaced
+                                {% else %}
+                                    No — it was not done
+                                {% endif %}
+                            </strong>
                         </label>
                         <label class="card" style="margin:0; padding:12px;">
                             <input
                                 type="radio"
                                 name="decision_{{ candidate.candidate_id }}"
                                 value="unsure"
-                                {% if candidate.advisor_decision not in ['confirmed', 'not_done'] %}checked{% endif %}
+                                required
+                                {% if reconciliation.review_status in ['accepted', 'corrected'] and candidate.advisor_decision == 'unsure' %}checked{% endif %}
                             >
-                            <strong>Still unsure</strong>
+                            <strong>I can't confirm</strong>
                         </label>
                     </div>
+
+                    <details style="margin-top:12px;">
+                        <summary><strong>Why Rina is asking</strong></summary>
+                        <p class="muted" style="margin-top:10px;">
+                            Evidence state: {{ candidate.evidence_state|replace('_', ' ')|title }}
+                            · {{ ((candidate.confidence or 0) * 100)|round|int }}% reconciliation relevance
+                        </p>
+                        {% if candidate.evidence_basis %}
+                        <p>{{ candidate.evidence_basis }}</p>
+                        {% endif %}
+                        {% if candidate.reconciliation_reason %}
+                        <p class="muted">{{ candidate.reconciliation_reason }}</p>
+                        {% endif %}
+                        {% if candidate.source_refs %}
+                        <p class="muted">
+                            <strong>Sources:</strong> {{ candidate.source_refs|join(', ') }}
+                        </p>
+                        {% endif %}
+                    </details>
                 </div>
 
+                <div
+                    class="reconciliation-confirmed-details"
+                    data-details-for="{{ candidate.candidate_id }}"
+                    {% if not (reconciliation.review_status in ['accepted', 'corrected'] and candidate.advisor_decision == 'confirmed') %}hidden{% endif %}
+                    style="margin-top:14px;"
+                >
                 <label style="display:block; margin-top:14px;">
                     <strong>Record as</strong>
                     <select
@@ -435,6 +463,7 @@
                         placeholder="Anything you personally remember that helps reconcile this item."
                     >{{ candidate.advisor_note or '' }}</textarea>
                 </label>
+                </div>
             </div>
             {% endfor %}
 
@@ -553,6 +582,22 @@
 
 <script>
 (function () {
+    function syncReconciliationDetails(group) {
+        const candidateId = group.dataset.candidateId;
+        if (!candidateId) return;
+        const details = document.querySelector(
+            '.reconciliation-confirmed-details[data-details-for="' + candidateId + '"]'
+        );
+        if (!details) return;
+        const selected = group.querySelector('input[type="radio"]:checked');
+        details.hidden = !selected || selected.value !== "confirmed";
+    }
+
+    document.querySelectorAll(".reconciliation-decision-group").forEach((group) => {
+        syncReconciliationDetails(group);
+        group.addEventListener("change", () => syncReconciliationDetails(group));
+    });
+
     const pending = Array.from(
         document.querySelectorAll(
             ".historical-attribution-progress[data-status-url], " +

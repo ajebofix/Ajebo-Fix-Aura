@@ -19,6 +19,7 @@ from flask_login import current_user, login_required
 from admin.utils import advisor_required
 from evidence.models import (
     SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES,
+    EvidenceExtraction,
     VehicleEvidence,
 )
 from extensions import db
@@ -26,6 +27,15 @@ from historical_ingestion.application import (
     HistoricalApplicationError,
     apply_reviewed_historical_treatment,
 )
+from historical_ingestion.case_attribution import (
+    HistoricalCaseAttributionError,
+    attribution_payload,
+    create_episode_from_finalized_source,
+    episodes_for_car,
+    latest_case_attribution,
+    start_case_attribution,
+)
+from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.background_runner import (
     advance_historical_analysis_once,
 )
@@ -204,6 +214,7 @@ def source_library(car_id: int):
         counts=counts,
         superseded_count=superseded_count,
         show_superseded=show_superseded,
+        episodes=episodes_for_car(car.id),
     )
 
 
@@ -565,6 +576,9 @@ def review_document(car_id: int, evidence_id: int):
         )
         else []
     )
+    historical_episode = HistoricalServiceEpisode.query.filter_by(
+        anchor_evidence_id=evidence.id
+    ).first()
 
     return render_template(
         "historical_ingestion/review.html",
@@ -579,11 +593,246 @@ def review_document(car_id: int, evidence_id: int):
         analysis_reviewed=analysis_reviewed,
         analysis_failed=analysis_failed,
         replacement_sources=replacement_sources,
+        historical_episode=historical_episode,
         analysis_kind=(
             "whatsapp_bundle"
             if evidence.historical_source_type == "whatsapp_conversation"
             else "pdf"
         ),
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/create-episode"
+)
+@login_required
+@advisor_required
+def create_historical_episode(car_id: int, evidence_id: int):
+    car = Car.query.get_or_404(car_id)
+    try:
+        result = create_episode_from_finalized_source(
+            car_id=car.id,
+            evidence_id=evidence_id,
+            actor_user_id=current_user.id,
+        )
+        db.session.commit()
+    except HistoricalCaseAttributionError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.review_document",
+                car_id=car.id,
+                evidence_id=evidence_id,
+            )
+        )
+
+    flash(
+        (
+            "Historical service episode created from the finalised source."
+            if result.created
+            else "This finalised source already anchors a historical service episode."
+        ),
+        "success" if result.created else "info",
+    )
+    return redirect(
+        url_for(
+            "historical_ingestion.episode_detail",
+            car_id=car.id,
+            episode_id=result.episode_id,
+        )
+    )
+
+
+@historical_ingestion_bp.get(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>"
+)
+@login_required
+@advisor_required
+def episode_detail(car_id: int, episode_id: int):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+
+    active_sources = historical_source_summaries(car.id)
+    whatsapp_sources = [
+        item.evidence
+        for item in active_sources
+        if item.evidence.historical_source_type == "whatsapp_conversation"
+        and item.evidence.evidence_type == "archive"
+    ]
+
+    attribution_views = []
+    for source in whatsapp_sources:
+        analysis = latest_case_attribution(
+            episode_id=episode.id,
+            corpus_evidence_id=source.id,
+        )
+        payload = (
+            attribution_payload(analysis)
+            if analysis is not None and analysis.status == "completed"
+            else {}
+        )
+        attribution_views.append(
+            {
+                "source": source,
+                "analysis": analysis,
+                "payload": payload,
+            }
+        )
+
+    return render_template(
+        "historical_ingestion/episode.html",
+        car=car,
+        episode=episode,
+        attribution_views=attribution_views,
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>/"
+    "attribute/<int:corpus_evidence_id>"
+)
+@login_required
+@advisor_required
+def start_episode_attribution(
+    car_id: int,
+    episode_id: int,
+    corpus_evidence_id: int,
+):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+
+    try:
+        result = start_case_attribution(
+            episode_id=episode.id,
+            corpus_evidence_id=corpus_evidence_id,
+            actor_user_id=current_user.id,
+        )
+    except HistoricalCaseAttributionError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.episode_detail",
+                car_id=car.id,
+                episode_id=episode.id,
+            )
+        )
+
+    flash(
+        (
+            "Rina is separating this historical episode from the stored WhatsApp corpus."
+            if result.status == "processing" and not result.reused_existing
+            else "Aura reopened the existing case-attribution result."
+        ),
+        "success" if not result.reused_existing else "info",
+    )
+    return redirect(
+        url_for(
+            "historical_ingestion.episode_detail",
+            car_id=car.id,
+            episode_id=episode.id,
+        )
+    )
+
+
+@historical_ingestion_bp.get(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>/"
+    "attributions/<int:extraction_id>/status"
+)
+@login_required
+@advisor_required
+def episode_attribution_status(
+    car_id: int,
+    episode_id: int,
+    extraction_id: int,
+):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+    analysis = db.session.get(EvidenceExtraction, extraction_id)
+    if analysis is None:
+        return jsonify(
+            {
+                "status": "missing",
+                "phase": "missing",
+                "message": "Historical case attribution was not found.",
+                "review_ready": False,
+            }
+        ), 404
+
+    provenance = analysis.provenance or {}
+    if (
+        analysis.extraction_type != "historical_case_attribution"
+        or int(provenance.get("episode_id") or 0) != episode.id
+        or analysis.evidence is None
+        or analysis.evidence.car_id != car.id
+    ):
+        return jsonify(
+            {
+                "status": "invalid",
+                "phase": "invalid",
+                "message": "Historical case attribution does not belong to this episode.",
+                "review_ready": False,
+            }
+        ), 404
+
+    if analysis.status == "processing":
+        try:
+            state = advance_historical_analysis_once(
+                current_app._get_current_object(),
+                analysis.id,
+            )
+        except HistoricalIngestionError as exc:
+            db.session.rollback()
+            current_app.logger.warning(
+                "historical_case_attribution_status_failed episode_id=%s extraction_id=%s detail=%s",
+                episode.id,
+                analysis.id,
+                str(exc)[:500],
+            )
+            state = None
+
+        if state is not None:
+            return jsonify(
+                {
+                    "status": state.status,
+                    "phase": state.phase,
+                    "message": state.message,
+                    "review_ready": state.review_ready,
+                }
+            )
+
+        db.session.expire_all()
+        analysis = db.session.get(EvidenceExtraction, extraction_id) or analysis
+
+    return jsonify(
+        {
+            "status": analysis.status,
+            "phase": str(
+                (analysis.provenance or {}).get("background_stage")
+                or analysis.status
+            ),
+            "message": (
+                "Historical case attribution is ready for advisor review."
+                if analysis.status == "completed"
+                else "Rina is still separating this episode from the WhatsApp history."
+                if analysis.status == "processing"
+                else "Historical case attribution failed safely. No vehicle history changed."
+            ),
+            "review_ready": analysis.status == "completed",
+        }
     )
 
 

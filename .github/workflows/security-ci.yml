@@ -257,6 +257,9 @@ jobs:
       - name: Test WhatsApp multimodal case bundle ingestion
         run: pytest -q --tb=short tests/test_whatsapp_bundle_ingestion.py
 
+      - name: Test historical case attribution
+        run: pytest -q --tb=short tests/test_historical_case_attribution.py
+
       - name: Test canonical event emission
         run: pytest -q --tb=short tests/test_event_emission.py
 

@@ -40,6 +40,52 @@
 <section class="card">
     <div class="section-head">
         <div>
+            <h2>Historical service episodes</h2>
+            <p class="muted">
+                Episodes are advisor-reviewed job anchors. Rina can reuse the same stored
+                WhatsApp corpus against each episode without re-uploading or re-analysing
+                its media.
+            </p>
+        </div>
+    </div>
+
+    {% if not episodes %}
+    <p class="muted">
+        No historical service episodes yet. Open a reviewed/finalised standalone document
+        and create an episode from it.
+    </p>
+    {% else %}
+        {% for episode in episodes %}
+        <div class="timeline-item">
+            <div style="min-width:0;">
+                <strong>{{ episode.title }}</strong>
+                <div class="muted" style="margin-top:4px;">
+                    Episode #{{ episode.id }}
+                    {% if episode.job_reference %} · {{ episode.job_reference }}{% endif %}
+                    {% if episode.episode_date %}
+                        · {{ episode.episode_date.strftime('%d %b %Y') }}
+                    {% endif %}
+                    · Anchor Evidence #{{ episode.anchor_evidence_id }}
+                </div>
+            </div>
+            <a
+                class="btn btn-secondary"
+                href="{{ url_for(
+                    'historical_ingestion.episode_detail',
+                    car_id=car.id,
+                    episode_id=episode.id
+                ) }}"
+            >
+                Open episode
+            </a>
+        </div>
+        {% endfor %}
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <div>
             <h2>Historical sources</h2>
             <p class="muted">
                 WhatsApp media, PDFs and other files extracted from a conversation stay

@@ -71,6 +71,7 @@ EXTRACTION_TYPES = (
     "archive_manifest",
     "transcription",
     "structured_fields",
+    "historical_case_attribution",
 )
 EXTRACTION_STATUSES = ("pending", "processing", "completed", "failed")
 EXTRACTION_REVIEW_STATUSES = ("unreviewed", "accepted", "rejected", "corrected")

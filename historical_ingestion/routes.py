@@ -33,6 +33,7 @@ from historical_ingestion.service import (
     HistoricalDocumentValidationError,
     HistoricalIngestionConfigurationError,
     HistoricalIngestionError,
+    HistoricalSourceSupersessionError,
     decrypt_extraction_payload,
     has_completed_structured_extraction,
     historical_source_summaries,
@@ -41,6 +42,8 @@ from historical_ingestion.service import (
     latest_structured_extraction,
     reanalyze_stored_document_background,
     save_advisor_review,
+    supersede_historical_source,
+    supersession_replacement_candidates,
 )
 from historical_ingestion.whatsapp_bundle import (
     WhatsAppBundleValidationError,
@@ -175,16 +178,23 @@ def _reviewed_candidate(source: dict, candidate_id: str) -> dict:
 @advisor_required
 def source_library(car_id: int):
     car = Car.query.get_or_404(car_id)
-    sources = historical_source_summaries(car.id)
+    show_superseded = request.args.get("show_superseded", "").strip() == "1"
+    active_sources = historical_source_summaries(car.id)
+    all_sources = historical_source_summaries(
+        car.id,
+        include_superseded=True,
+    )
+    superseded_count = sum(item.state == "superseded" for item in all_sources)
+    sources = all_sources if show_superseded else active_sources
     counts = {
-        "all": len(sources),
-        "analyzing": sum(item.state == "analyzing" for item in sources),
+        "all": len(active_sources),
+        "analyzing": sum(item.state == "analyzing" for item in active_sources),
         "ready_for_review": sum(
-            item.state == "ready_for_review" for item in sources
+            item.state == "ready_for_review" for item in active_sources
         ),
-        "finalized": sum(item.state == "finalized" for item in sources),
+        "finalized": sum(item.state == "finalized" for item in active_sources),
         "attention": sum(
-            item.state in {"analysis_failed", "stored"} for item in sources
+            item.state in {"analysis_failed", "stored"} for item in active_sources
         ),
     }
     return render_template(
@@ -192,6 +202,8 @@ def source_library(car_id: int):
         car=car,
         sources=sources,
         counts=counts,
+        superseded_count=superseded_count,
+        show_superseded=show_superseded,
     )
 
 
@@ -528,6 +540,18 @@ def review_document(car_id: int, evidence_id: int):
                 reviewed=True,
             )
 
+    replacement_sources = (
+        supersession_replacement_candidates(
+            car.id,
+            exclude_evidence_id=evidence.id,
+        )
+        if (
+            evidence.historical_source_type == "standalone_document"
+            and evidence.review_status == "pending_review"
+        )
+        else []
+    )
+
     return render_template(
         "historical_ingestion/review.html",
         car=car,
@@ -540,11 +564,66 @@ def review_document(car_id: int, evidence_id: int):
         analysis_available=analysis_available,
         analysis_reviewed=analysis_reviewed,
         analysis_failed=analysis_failed,
+        replacement_sources=replacement_sources,
         analysis_kind=(
             "whatsapp_bundle"
             if evidence.historical_source_type == "whatsapp_conversation"
             else "pdf"
         ),
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-records/<int:evidence_id>/supersede"
+)
+@login_required
+@advisor_required
+def supersede_source(car_id: int, evidence_id: int):
+    car = Car.query.get_or_404(car_id)
+    source = VehicleEvidence.query.filter_by(
+        id=evidence_id,
+        car_id=car.id,
+    ).first_or_404()
+    source = _canonical_historical_source(source)
+
+    replacement_raw = request.form.get("replacement_evidence_id", "").strip()
+    try:
+        replacement_evidence_id = int(replacement_raw)
+    except (TypeError, ValueError):
+        flash("Choose the finalised source that replaces this record.", "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.review_document",
+                car_id=car.id,
+                evidence_id=source.id,
+            )
+        )
+
+    try:
+        supersede_historical_source(
+            evidence_id=source.id,
+            replacement_evidence_id=replacement_evidence_id,
+            actor_user_id=current_user.id,
+        )
+        db.session.commit()
+    except HistoricalSourceSupersessionError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.review_document",
+                car_id=car.id,
+                evidence_id=source.id,
+            )
+        )
+
+    flash(
+        f"Evidence #{source.id} was archived as superseded. "
+        f"Evidence #{replacement_evidence_id} remains the active source.",
+        "success",
+    )
+    return redirect(
+        url_for("historical_ingestion.source_library", car_id=car.id)
     )
 
 

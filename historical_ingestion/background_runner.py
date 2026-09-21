@@ -23,6 +23,10 @@ from extensions import db
 from historical_ingestion.service import (
     advance_historical_background_analysis,
 )
+from historical_ingestion.case_attribution import (
+    PIPELINE as CASE_ATTRIBUTION_PIPELINE,
+    advance_case_attribution,
+)
 from historical_ingestion.whatsapp_bundle import (
     PIPELINE as WHATSAPP_PIPELINE,
     advance_whatsapp_bundle_analysis,
@@ -30,7 +34,11 @@ from historical_ingestion.whatsapp_bundle import (
 
 
 PDF_PIPELINE = "advisor_grade_background_v3"
-_SUPPORTED_PIPELINES = {WHATSAPP_PIPELINE, PDF_PIPELINE}
+_SUPPORTED_PIPELINES = {
+    WHATSAPP_PIPELINE,
+    PDF_PIPELINE,
+    CASE_ATTRIBUTION_PIPELINE,
+}
 
 _RUNNER_START_LOCK = threading.Lock()
 _RUNNER_STARTED_PIDS: set[int] = set()
@@ -133,6 +141,12 @@ def advance_historical_analysis_once(app, extraction_id: int):
                 storage_config=app.config,
             )
 
+        if pipeline == CASE_ATTRIBUTION_PIPELINE:
+            return advance_case_attribution(
+                extraction_id=analysis.id,
+                actor_user_id=actor_user_id,
+            )
+
         return advance_historical_background_analysis(
             extraction_id=analysis.id,
             actor_user_id=actor_user_id,
@@ -142,9 +156,11 @@ def advance_historical_analysis_once(app, extraction_id: int):
 
 def _processing_extraction_ids() -> list[int]:
     rows = (
-        EvidenceExtraction.query.filter_by(
-            extraction_type="structured_fields",
-            status="processing",
+        EvidenceExtraction.query.filter(
+            EvidenceExtraction.extraction_type.in_(
+                {"structured_fields", "historical_case_attribution"}
+            ),
+            EvidenceExtraction.status == "processing",
         )
         .order_by(EvidenceExtraction.id.asc())
         .limit(30)

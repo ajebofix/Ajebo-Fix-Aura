@@ -13,6 +13,7 @@ from historical_ingestion.application import apply_reviewed_historical_treatment
 from historical_ingestion.routes import _validate_historical_source_upload
 from historical_ingestion.service import (
     HistoricalIngestionAccessError,
+    HistoricalSourceSupersessionError,
     advance_historical_background_analysis,
     decrypt_extraction_payload,
     ingest_pdf_document,
@@ -22,6 +23,8 @@ from historical_ingestion.service import (
     reanalyze_stored_document,
     reanalyze_stored_document_background,
     save_advisor_review,
+    historical_source_summaries,
+    supersede_historical_source,
 )
 from models import Car, CarOwnership, TreatmentPlan, User
 from historical_ingestion.advisor_analyzer import (
@@ -878,3 +881,134 @@ def test_historical_source_type_rejects_mismatched_file_formats():
         filename="instagram.zip",
         content_type="application/zip",
     ) == "Select a supported historical source type."
+
+
+def test_superseded_historical_source_is_preserved_but_hidden_from_working_list(app):
+    with app.app_context():
+        owner = _user(suffix=40)
+        advisor = _user(suffix=41, role="admin")
+        car = _owned_car(owner, suffix=40)
+        provider = FakeHistoricalProvider()
+        storage = RecordingStorageProvider()
+
+        obsolete = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(_pdf_bytes("OLD JOB VERSION\nAlternator authorised")),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=provider,
+        )
+        replacement = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(_pdf_bytes("FINAL JOB VERSION\nAlternator authorised")),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=provider,
+        )
+
+        replacement_extraction = db.session.get(
+            EvidenceExtraction,
+            replacement.structured_extraction_id,
+        )
+        replacement_payload = decrypt_extraction_payload(replacement_extraction)
+        save_advisor_review(
+            extraction=replacement_extraction,
+            actor_user_id=advisor.id,
+            reviewed_payload=replacement_payload,
+        )
+        db.session.commit()
+
+        supersede_historical_source(
+            evidence_id=obsolete.evidence_id,
+            replacement_evidence_id=replacement.evidence_id,
+            actor_user_id=advisor.id,
+        )
+        db.session.commit()
+
+        obsolete_row = db.session.get(VehicleEvidence, obsolete.evidence_id)
+        assert obsolete_row.review_status == "superseded"
+        assert obsolete_row.review_reason_code == (
+            f"superseded_by_evidence:{replacement.evidence_id}"
+        )
+        assert obsolete_row.deleted_at is None
+        assert obsolete_row.storage_state == "available"
+        assert EvidenceExtraction.query.filter_by(
+            evidence_id=obsolete.evidence_id
+        ).count() > 0
+
+        active = historical_source_summaries(car.id)
+        archived = historical_source_summaries(car.id, include_superseded=True)
+
+        assert [item.evidence.id for item in active] == [replacement.evidence_id]
+        assert {item.evidence.id for item in archived} == {
+            obsolete.evidence_id,
+            replacement.evidence_id,
+        }
+        superseded = next(
+            item for item in archived if item.evidence.id == obsolete.evidence_id
+        )
+        assert superseded.state == "superseded"
+        assert superseded.state_label == "Superseded"
+
+
+def test_supersession_requires_same_vehicle_finalised_replacement(app):
+    with app.app_context():
+        owner = _user(suffix=42)
+        other_owner = _user(suffix=43)
+        advisor = _user(suffix=44, role="admin")
+        car = _owned_car(owner, suffix=42)
+        other_car = _owned_car(other_owner, suffix=43)
+        provider = FakeHistoricalProvider()
+        storage = RecordingStorageProvider()
+
+        obsolete = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(_pdf_bytes("OLD SOURCE\nAlternator authorised")),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=provider,
+        )
+        other = ingest_pdf_document(
+            user_id=advisor.id,
+            car_id=other_car.id,
+            file_stream=BytesIO(_pdf_bytes("OTHER VEHICLE FINAL\nAlternator authorised")),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=provider,
+        )
+
+        other_extraction = db.session.get(
+            EvidenceExtraction,
+            other.structured_extraction_id,
+        )
+        save_advisor_review(
+            extraction=other_extraction,
+            actor_user_id=advisor.id,
+            reviewed_payload=decrypt_extraction_payload(other_extraction),
+        )
+        db.session.commit()
+
+        with pytest.raises(
+            HistoricalSourceSupersessionError,
+            match="same vehicle",
+        ):
+            supersede_historical_source(
+                evidence_id=obsolete.evidence_id,
+                replacement_evidence_id=other.evidence_id,
+                actor_user_id=advisor.id,
+            )

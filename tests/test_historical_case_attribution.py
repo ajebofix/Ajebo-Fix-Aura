@@ -24,7 +24,7 @@ from historical_ingestion.reconciliation import (
     save_reconciliation_review,
     start_episode_reconciliation,
 )
-from historical_ingestion.service import _payload_cipher
+from historical_ingestion.service import _payload_cipher, historical_source_summaries
 from models import Car, CarOwnership, TreatmentPlan, User
 from treatment.models import TreatmentAction, TreatmentActionCompletionDetail
 
@@ -723,10 +723,7 @@ def test_advisor_reconciliation_applies_only_confirmed_work(app):
             treatment_plan_id=plan.id
         ).count() == 1
 
-        source_summaries = __import__(
-            "historical_ingestion.service",
-            fromlist=["historical_source_summaries"],
-        ).historical_source_summaries(car.id)
+        source_summaries = historical_source_summaries(car.id)
         episode_views = historical_episode_status_views(
             car_id=car.id,
             source_summaries=source_summaries,

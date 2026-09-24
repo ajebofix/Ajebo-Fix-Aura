@@ -72,6 +72,7 @@ from services.alert_service import AlertService
 from services.alert_history import AlertHistoryService, alert_time
 from services.client_onboarding import ClientOnboardingService
 from security.access import require_vehicle_access
+from historical_ingestion.episode_status import historical_episode_status_views
 from historical_ingestion.service import historical_source_summaries
 import uuid
 
@@ -567,6 +568,11 @@ def admin_view_vehicle(car_id):
         )
 
         historical_sources = historical_source_summaries(car.id, limit=5)
+        historical_episode_views = historical_episode_status_views(
+            car_id=car.id,
+            source_summaries=historical_source_summaries(car.id),
+            limit=3,
+        )
 
         has_active_consultation = any(
             getattr(c, "status", None) == "in_progress" for c in consultations
@@ -585,6 +591,7 @@ def admin_view_vehicle(car_id):
             conversation_records=conversation_records,
             treatment_plans=treatment_plans,
             historical_sources=historical_sources,
+            historical_episode_views=historical_episode_views,
             CARE_PLAN_LABELS=CARE_PLAN_LABELS,
             has_feature=has_feature,
             FEATURE_EMERGENCY_REVIEW=FEATURE_EMERGENCY_REVIEW,

@@ -46,6 +46,17 @@ def rina_orchestration_enabled() -> bool:
     return True if configured is None else configured
 
 
+def rina_advisor_360_enabled() -> bool:
+    """Gate the privileged longitudinal Advisor 360 provider context.
+
+    This rollout defaults OFF so additive deployment does not change the current
+    real-client pilot until Ajebo Fix explicitly enables it.
+    """
+
+    configured = _optional_env_bool("RINA_ADVISOR_360_ENABLED")
+    return False if configured is None else configured
+
+
 def rina_openai_provider_enabled() -> bool:
     """Gate outbound OpenAI calls without requiring a new deployment secret.
 

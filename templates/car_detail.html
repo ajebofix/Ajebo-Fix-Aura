@@ -5,7 +5,7 @@
 {% block title %}Vehicle Profile Health Record{% endblock %}
 
 {% block page_title %}
-{{ car.decoded_display_name }} {{ car.year }}
+{{ car.rina_display_name }}
 {% endblock %}
 
 {% block page_subtitle %}
@@ -13,6 +13,7 @@ Vehicle Health Record
 {% endblock %}
 
 {% block content %}
+<p><a class="btn btn-primary" href="#rina-chat-shell">Discuss this vehicle with Rina</a></p>
 
 <!-- ========================= -->
 <!-- HERO HEADER -->
@@ -24,7 +25,7 @@ Vehicle Health Record
 
         <h1 class="page-heading">
 
-            {{ car.decoded_display_name }} {{ car.year }}
+            {{ car.rina_display_name }}
 
             {% if is_admin_view %}
             <span class="pill">ADVISOR</span>

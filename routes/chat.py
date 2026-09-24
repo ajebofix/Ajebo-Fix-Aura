@@ -11,11 +11,30 @@ from __future__ import annotations
 import re
 import uuid
 
-from flask import Blueprint, current_app, jsonify, request, session
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    jsonify,
+    render_template,
+    request,
+    session,
+)
 from flask_login import current_user, login_required
+from sqlalchemy import or_
 
 from extensions import db
-from models import Car, CarDriver, CarOwnership
+from models import (
+    AdvisorNote,
+    Car,
+    CarDriver,
+    CarOwnership,
+    Consultation,
+    TreatmentPlan,
+    User,
+    VehicleAssessment,
+)
+from services.rina_audit import record_rina_audit
 from services.rina_authority import (
     RinaAuthorityError,
     resolve_rina_authority,
@@ -35,7 +54,7 @@ from services.rina_memory_service import (
     save_rina_chat_turn,
 )
 from services.rina_orchestrator import orchestrate_rina
-
+from services.rina_speaker import account_help, describe_speaker, speaker_identity
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -100,9 +119,9 @@ def _bind_rina_vehicle(*, car_id: int, conversation_id: str | None = None) -> st
     if previous_car_id != car_id:
         conversation_id = None
 
-    resolved_conversation_id = (
-        (conversation_id or "").strip()[:64] or _new_conversation_id()
-    )
+    resolved_conversation_id = (conversation_id or "").strip()[
+        :64
+    ] or _new_conversation_id()
     session[_SESSION_CAR_KEY] = car_id
     session[_SESSION_CONVERSATION_KEY] = resolved_conversation_id
     return resolved_conversation_id
@@ -112,7 +131,7 @@ def _vehicle_choice(car: Car) -> dict[str, object]:
     authority = resolve_rina_authority(user_id=current_user.id, car_id=car.id)
     return {
         "car_id": car.id,
-        "label": f"{car.decoded_display_name} {car.year}",
+        "label": car.rina_display_name,
         "authority": authority.authority,
     }
 
@@ -166,13 +185,15 @@ def chat_context():
 
     page_car_id = _coerce_car_id(request.args.get("car_id"))
     active_car_id = _validated_session_car_id()
-    choices = _authorized_vehicle_choices(explicit_car_id=page_car_id)
+    choices = _authorized_vehicle_choices(explicit_car_id=page_car_id or active_car_id)
     choice_ids = {int(item["car_id"]) for item in choices}
 
     return (
         jsonify(
             {
                 "vehicles": choices,
+                "speaker": speaker_identity(current_user.id),
+                "account_welcome": describe_speaker(speaker_identity(current_user.id)),
                 "active_car_id": (
                     active_car_id if active_car_id in choice_ids else None
                 ),
@@ -214,7 +235,7 @@ def select_chat_vehicle():
                 "car_id": car_id,
                 "conversation_id": conversation_id,
                 "authority": authority.authority,
-                "label": f"{car.decoded_display_name} {car.year}",
+                "label": car.rina_display_name,
             }
         ),
         200,
@@ -391,4 +412,111 @@ def chat_history():
             }
         ),
         200,
+    )
+
+
+@chat_bp.get("/chat/workspace")
+@login_required
+def rina_workspace():
+    """An explicit, authenticated entry point for account help and vehicle review."""
+    if not current_user.is_active:
+        abort(403)
+    car_id = _coerce_car_id(request.args.get("car_id"))
+    car = None
+    if car_id is not None:
+        try:
+            resolve_rina_authority(user_id=current_user.id, car_id=car_id)
+        except RinaAuthorityError:
+            abort(403)
+        car = db.session.get(Car, car_id)
+
+    query = str(request.args.get("q") or "").strip()[:120]
+    matches = []
+    professional = current_user.role in {"admin", "advisor"}
+    if professional and len(query) >= 2:
+        # Search is explicit and bounded; dedicated advisors see only linked vehicles.
+        pattern = (
+            "%"
+            + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            + "%"
+        )
+        search = Car.query.outerjoin(
+            CarOwnership, CarOwnership.car_id == Car.id
+        ).outerjoin(User, User.id == CarOwnership.user_id)
+        search = search.filter(
+            or_(
+                Car.brand.ilike(pattern, escape="\\"),
+                Car.model.ilike(pattern, escape="\\"),
+                Car.vin.ilike(pattern, escape="\\"),
+                db.and_(
+                    CarOwnership.is_active.is_(True),
+                    or_(
+                        CarOwnership.plate_number.ilike(pattern, escape="\\"),
+                        User.name.ilike(pattern, escape="\\"),
+                    ),
+                ),
+            )
+        )
+        if current_user.role == "advisor":
+            search = search.filter(
+                or_(
+                    *[
+                        Car.id.in_(
+                            db.session.query(model.car_id).filter(
+                                model.advisor_id == current_user.id
+                            )
+                        )
+                        for model in (
+                            Consultation,
+                            VehicleAssessment,
+                            TreatmentPlan,
+                            AdvisorNote,
+                        )
+                    ]
+                )
+            )
+        for candidate in search.distinct().order_by(Car.id).limit(20).all():
+            try:
+                resolve_rina_authority(user_id=current_user.id, car_id=candidate.id)
+            except RinaAuthorityError:
+                continue
+            matches.append(candidate)
+    return render_template(
+        "chat/workspace.html",
+        car=car,
+        query=query,
+        matches=matches,
+        professional=professional,
+    )
+
+
+@chat_bp.post("/chat/account")
+@login_required
+def chat_account():
+    """Account-only help never restores a vehicle binding or reads vehicle memory."""
+    try:
+        identity = speaker_identity(current_user.id)
+    except RinaAuthorityError:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()[:2000]
+    reply = account_help(identity, message)
+    record_rina_audit(
+        request_id=_new_conversation_id(),
+        user_id=current_user.id,
+        car_id=None,
+        authority=None,
+        state="answered",
+        outcome="account_help",
+        action_family="account_help",
+        provider_status="not_called",
+        metadata={"channel": "in_app", "provider_attempted": False},
+    )
+    return jsonify(
+        reply=reply,
+        state="answered",
+        car_id=None,
+        authority=None,
+        intent="general",
+        conversation_id=None,
     )

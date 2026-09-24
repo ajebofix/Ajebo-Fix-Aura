@@ -21,7 +21,7 @@
         <div>
 
             <h3 class="rina-title">
-                Private Consultation — A.J. Rina
+                {% if current_user.role in ["admin", "advisor"] %}Advisor Workspace — A.J. Rina{% else %}Private Consultation — A.J. Rina{% endif %}
             </h3>
 
             <p class="rina-subtitle">
@@ -80,6 +80,7 @@
         <input
             type="text"
             id="rina-input"
+            aria-label="Message to Rina"
             class="rina-input"
             placeholder="Choose a vehicle to start..."
             autocomplete="off"
@@ -129,6 +130,7 @@
     let selectedCarId = null;
     let selectedAuthority = null;
     let loading = false;
+    let accountWelcome = null;
 
     function authorityPresentation(authority) {
         if (authority === "driver") {
@@ -155,8 +157,8 @@
         if (authority === "administrator") {
             return {
                 label: "Administrator",
-                copy: "Governance access remains distinct from vehicle ownership and professional clinical authority.",
-                welcome: "Welcome. I recognise administrator authority for this vehicle context. I’ll keep governance access separate from ownership and clinical conclusions."
+                copy: "You have Administrator access to the Advisor Console. Vehicle ownership and advisor assignments are shown only when recorded.",
+                welcome: "Welcome. You’re reviewing this vehicle through your Administrator access to the Advisor Console. I can help interpret its available records and prepare questions or a client explanation for your review."
             };
         }
         return {
@@ -211,14 +213,15 @@
     function showWelcome() {
         messagesEl.replaceChildren();
         const presentation = authorityPresentation(selectedAuthority);
-        appendMessage("assistant", presentation.welcome);
+        appendMessage("assistant", selectedCarId ? presentation.welcome : (accountWelcome ? `${accountWelcome} Ask about your account or how to use Aura. Select a vehicle to discuss its records.` : presentation.welcome));
     }
 
     function setChatEnabled(enabled) {
-        inputEl.disabled = !enabled;
+        inputEl.disabled = !enabled || loading;
+        vehicleSelectEl.disabled = loading;
         sendEl.disabled = !enabled || loading;
         inputEl.placeholder = enabled
-            ? "Ask about this vehicle’s recorded condition or next steps..."
+            ? (selectedCarId ? "Ask about this vehicle’s recorded condition or next steps..." : "Ask about your account or how to use Aura...")
             : "Choose a vehicle to start...";
     }
 
@@ -256,7 +259,7 @@
 
         const placeholder = document.createElement("option");
         placeholder.value = "";
-        placeholder.textContent = "Choose a vehicle";
+        placeholder.textContent = "Account help — no vehicle selected";
         vehicleSelectEl.appendChild(placeholder);
 
         for (const vehicle of vehicles || []) {
@@ -282,6 +285,7 @@
     }
 
     async function selectVehicle(carId, { quiet = false } = {}) {
+        if (loading) return;
         const numericCarId = Number(carId);
         if (!Number.isInteger(numericCarId) || numericCarId <= 0) {
             selectedCarId = null;
@@ -293,6 +297,9 @@
             return;
         }
 
+        loading = true;
+        setChatEnabled(false);
+        messagesEl.replaceChildren();
         try {
             const data = await fetchJson("/chat/select-vehicle", {
                 method: "POST",
@@ -322,6 +329,9 @@
                     : "Rina could not bind that vehicle safely."
             );
             showWelcome();
+        } finally {
+            loading = false;
+            setChatEnabled(Boolean(selectedCarId || accountWelcome));
         }
     }
 
@@ -330,6 +340,7 @@
 
         try {
             const data = await fetchJson(`/chat/context${query}`);
+            accountWelcome = data.account_welcome || null;
             const preferredCarId = data.page_car_id || data.active_car_id || null;
             populateVehicleChoices(data.vehicles, preferredCarId);
 
@@ -339,6 +350,7 @@
             }
 
             if (data.active_car_id) {
+                loading = true;
                 selectedCarId = Number(data.active_car_id);
                 selectedAuthority = selectedOptionAuthority();
                 vehicleSelectEl.value = String(selectedCarId);
@@ -348,15 +360,19 @@
                 updateAuthorityBanner();
                 setChatEnabled(true);
                 await loadHistory();
+                loading = false;
+                setChatEnabled(Boolean(selectedCarId || accountWelcome));
                 return;
             }
 
             selectedCarId = null;
             selectedAuthority = null;
             updateAuthorityBanner();
-            setChatEnabled(false);
+            setChatEnabled(Boolean(accountWelcome));
+            vehicleStatusEl.textContent = "Account help. No vehicle records are loaded.";
             showWelcome();
         } catch (_) {
+            loading = false;
             selectedCarId = null;
             selectedAuthority = null;
             updateAuthorityBanner();
@@ -439,7 +455,7 @@
     }
 
     async function sendToRina() {
-        if (loading || !selectedCarId) return;
+        if (loading || (!selectedCarId && !accountWelcome)) return;
 
         const text = inputEl.value.trim();
         if (!text) return;
@@ -451,7 +467,7 @@
         const loadingNode = appendLoading();
 
         try {
-            const data = await fetchJson("/chat", {
+            const data = await fetchJson(selectedCarId ? "/chat" : "/chat/account", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -492,8 +508,8 @@
             }
         } finally {
             loading = false;
-            setChatEnabled(Boolean(selectedCarId));
-            if (selectedCarId) inputEl.focus();
+            setChatEnabled(Boolean(selectedCarId || accountWelcome));
+            if (selectedCarId || accountWelcome) inputEl.focus();
             messagesEl.scrollTop = messagesEl.scrollHeight;
         }
     }
@@ -519,8 +535,8 @@
                 selectedCarId = null;
                 selectedAuthority = null;
                 updateAuthorityBanner();
-                setChatEnabled(false);
-                vehicleStatusEl.textContent = "Choose a vehicle before asking Rina.";
+                setChatEnabled(Boolean(accountWelcome));
+                vehicleStatusEl.textContent = "Account help. No vehicle records are loaded.";
                 showWelcome();
                 return;
             }

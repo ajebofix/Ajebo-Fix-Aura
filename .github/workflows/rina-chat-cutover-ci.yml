@@ -18,6 +18,9 @@ on:
       - "services/rina_memory_service.py"
       - "services/rina_authority.py"
       - "tests/test_rina_chat_cutover.py"
+      - "tests/test_rina_workspace.py"
+      - "services/rina_speaker.py"
+      - "templates/chat/workspace.html"
       - "tests/test_rina_orchestrator.py"
       - "scripts/verify_rina_chat_cutover_postgres.py"
       - ".github/workflows/rina-chat-cutover-ci.yml"
@@ -64,6 +67,8 @@ jobs:
           services/rina_material_summary.py
           services/rina_runtime_flags.py
           tests/test_rina_chat_cutover.py
+          tests/test_rina_workspace.py
+          services/rina_speaker.py
           tests/test_rina_orchestrator.py
           scripts/verify_rina_chat_cutover_postgres.py
 
@@ -75,6 +80,7 @@ jobs:
           tests/test_rina_orchestrator.py
           tests/test_rina_openai_provider.py
           tests/test_rina_chat_cutover.py
+          tests/test_rina_workspace.py
 
       - name: Ruff chat cutover sources
         run: >-
@@ -84,12 +90,15 @@ jobs:
           services/rina_material_summary.py
           services/rina_runtime_flags.py
           tests/test_rina_chat_cutover.py
+          tests/test_rina_workspace.py
+          services/rina_speaker.py
           tests/test_rina_orchestrator.py
           scripts/verify_rina_chat_cutover_postgres.py
 
       - name: Bandit chat cutover server boundary
         run: >-
           bandit -q -r
+          services/rina_speaker.py
           routes/chat.py
           dashboard/routes.py
           services/rina_material_summary.py

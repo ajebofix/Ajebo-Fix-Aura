@@ -371,6 +371,7 @@ def create_app():
                 "client_invitations",
                 "evidence_bundle_items",
                 "treatment_action_completion_details",
+                "treatment_action_addenda",
             }
             missing_tables = required_tables - tables
             treatment_plan_columns = (

@@ -92,7 +92,7 @@ jobs:
               "vehicle_evidence", "evidence_links", "evidence_extractions",
               "evidence_bundle_items", "user_sessions", "client_profiles", "profile_audit_events",
               "client_invitations", "treatment_action_completion_details",
-              "alembic_version",
+              "treatment_action_addenda", "alembic_version",
           }
           missing = required - tables
           if missing:

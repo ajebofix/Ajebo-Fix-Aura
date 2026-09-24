@@ -18,6 +18,7 @@ on:
       - "services/treatment_evidence_linking.py"
       - "services/treatment_event_emission.py"
       - "services/treatment_action_routes.py"
+      - "services/treatment_action_addenda.py"
       - "scripts/verify_treatment_actions_outcomes_postgres.py"
       - "evidence/models.py"
       - "admin/progression_routes.py"
@@ -27,6 +28,7 @@ on:
       - "tests/test_treatment_action_lifecycle.py"
       - "tests/test_treatment_outcome_recording.py"
       - "tests/test_treatment_action_routes.py"
+      - "tests/test_treatment_action_addenda.py"
       - "tests/test_evidence_models.py"
       - "models.py"
       - "security/access.py"
@@ -94,6 +96,7 @@ jobs:
           services/treatment_evidence_linking.py
           services/treatment_event_emission.py
           services/treatment_action_routes.py
+          services/treatment_action_addenda.py
           scripts/verify_treatment_actions_outcomes_postgres.py
           tests/test_treatment_action_lifecycle.py
           tests/test_treatment_outcome_recording.py
@@ -228,6 +231,7 @@ jobs:
           tests/test_treatment_action_lifecycle.py
           tests/test_treatment_outcome_recording.py
           tests/test_treatment_action_routes.py
+          tests/test_treatment_action_addenda.py
           tests/test_evidence_models.py
 
       - name: Bandit Wave 2.3C service and verifier slice
@@ -238,4 +242,5 @@ jobs:
           services/treatment_evidence_linking.py
           services/treatment_event_emission.py
           services/treatment_action_routes.py
+          services/treatment_action_addenda.py
           scripts/verify_treatment_actions_outcomes_postgres.py

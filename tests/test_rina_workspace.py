@@ -73,6 +73,8 @@ def test_account_help_does_not_read_vehicle_or_provider_even_with_stale_binding(
     assert response.json["car_id"] is None
     assert ChatMessage.query.count() == 0
     audit = RinaAIAuditEvent.query.one()
+    assert audit.outcome == "answered"
+    assert audit.action_family == "account_help"
     assert audit.car_id is None
     assert audit.provider_status == "not_called"
     assert admin.name not in json.dumps(audit.to_safe_dict())
@@ -100,7 +102,7 @@ def test_identity_answer_is_verified_audited_and_vehicle_scoped(
     assert "its owner" not in response.json["reply"]
     assert provider.calls == []
     assert ChatMessage.query.count() == 2
-    assert RinaAIAuditEvent.query.one().outcome == "identity_answered"
+    assert RinaAIAuditEvent.query.one().outcome == "answered"
     assert client.get("/chat/history", query_string={"car_id": car.id}).json["messages"]
     _post_json(client, "/auth/logout", {})
     owner_client = client

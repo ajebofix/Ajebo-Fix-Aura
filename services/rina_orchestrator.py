@@ -259,7 +259,7 @@ def orchestrate_rina(
         _audit_response(
             response=response,
             user_id=user_id,
-            outcome="identity_answered",
+            outcome="answered",
             provider=None,
             provider_model=None,
             provider_request_id=None,

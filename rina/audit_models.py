@@ -10,6 +10,26 @@ from extensions import db
 class RinaAIAuditEvent(db.Model):
     __tablename__ = "rina_ai_audit_events"
 
+    # Match the PostgreSQL migration in metadata-created test databases too.
+    __table_args__ = (
+        db.CheckConstraint(
+            "authority IS NULL OR authority IN ('owner', 'driver', 'advisor', 'administrator')",
+            name="ck_rina_ai_audit_events_authority",
+        ),
+        db.CheckConstraint(
+            "state IN ('answered', 'abstained', 'vehicle_required', 'authority_denied', 'escalation_required', 'provider_unavailable')",
+            name="ck_rina_ai_audit_events_state",
+        ),
+        db.CheckConstraint(
+            "outcome IN ('answered', 'abstained', 'vehicle_required', 'authority_denied', 'escalation_required', 'provider_failed', 'feature_disabled')",
+            name="ck_rina_ai_audit_events_outcome",
+        ),
+        db.CheckConstraint(
+            "provider_status IN ('not_called', 'ok', 'unavailable', 'rejected', 'disabled')",
+            name="ck_rina_ai_audit_events_provider_status",
+        ),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     request_id = db.Column(db.String(64), nullable=False, unique=True, index=True)
 

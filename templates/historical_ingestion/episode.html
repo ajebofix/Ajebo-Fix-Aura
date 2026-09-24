@@ -212,7 +212,11 @@
                         <div style="margin-top:2px;">
                             {{ addendum.category|replace('_', ' ')|title }}
                             {% if addendum.created_at %} · {{ addendum.created_at[:16]|replace('T', ' ') }}{% endif %}
+                            · {{ addendum.created_by_name }}
                             · {{ addendum.visibility|title }}
+                        </div>
+                        <div style="margin-top:2px;">
+                            Reason: {{ addendum.reason }}
                         </div>
                     </div>
                     {% endfor %}

@@ -15,6 +15,7 @@ from historical_ingestion.case_attribution import (
     create_episode_from_finalized_source,
     start_case_attribution,
 )
+from historical_ingestion.episode_status import historical_episode_status_views
 from historical_ingestion.reconciliation import (
     advance_episode_reconciliation,
     apply_reconciliation,
@@ -721,4 +722,17 @@ def test_advisor_reconciliation_applies_only_confirmed_work(app):
         assert TreatmentAction.query.filter_by(
             treatment_plan_id=plan.id
         ).count() == 1
+
+        source_summaries = __import__(
+            "historical_ingestion.service",
+            fromlist=["historical_source_summaries"],
+        ).historical_source_summaries(car.id)
+        episode_views = historical_episode_status_views(
+            car_id=car.id,
+            source_summaries=source_summaries,
+        )
+        episode_view = next(
+            row for row in episode_views if row["episode"].id == episode.episode_id
+        )
+        assert episode_view["state"] == "reconciled"
 

@@ -159,8 +159,7 @@ def main() -> None:
     context_data = context.get_json()
     require(context_data["active_car_id"] is None, "Rina context auto-selected a car")
     require(
-        {item["car_id"] for item in context_data["vehicles"]}
-        == {first_id, second_id},
+        {item["car_id"] for item in context_data["vehicles"]} == {first_id, second_id},
         "Rina vehicle choices are incomplete or over-broad",
     )
 
@@ -173,7 +172,9 @@ def main() -> None:
 
     selection = post_json(client, "/chat/select-vehicle", {"car_id": first_id})
     require(selection.status_code == 200, "explicit Rina vehicle selection failed")
-    require(selection.get_json()["authority"] == "owner", "owner authority was not resolved")
+    require(
+        selection.get_json()["authority"] == "owner", "owner authority was not resolved"
+    )
 
     free_text_switch = post_json(
         client,
@@ -187,7 +188,9 @@ def main() -> None:
     )
     require(free_text_switch.status_code == 200, "scoped chat request failed")
     response_data = free_text_switch.get_json()
-    require(response_data["state"] == "answered", "fake provider response did not answer")
+    require(
+        response_data["state"] == "answered", "fake provider response did not answer"
+    )
     require(response_data["car_id"] == first_id, "free text switched the Rina vehicle")
     require(response_data["authority"] == "owner", "authority drifted during chat")
     require(len(provider.calls) == 1, "fake provider call count is incorrect")
@@ -218,7 +221,8 @@ def main() -> None:
             "first vehicle did not receive exactly two complete chat turns",
         )
         require(
-            ChatMessage.query.filter_by(user_id=owner_id, car_id=second_id).count() == 0,
+            ChatMessage.query.filter_by(user_id=owner_id, car_id=second_id).count()
+            == 0,
             "second vehicle received chat data without being selected",
         )
         require(
@@ -236,10 +240,103 @@ def main() -> None:
             == "A consultation booking request was raised through A.J. Rina.",
             "booking material summary is not the rules-derived client-safe form",
         )
-        require(records[0].concern is None, "raw chat text leaked into material summary")
-        require(records[0].emotional_state is None, "chat cutover inferred emotional state")
+        require(
+            records[0].concern is None, "raw chat text leaked into material summary"
+        )
+        require(
+            records[0].emotional_state is None, "chat cutover inferred emotional state"
+        )
 
-    print("Wave 1.3 PostgreSQL Rina chat cutover verified.")
+    # These paths must run against the migrated PostgreSQL schema: metadata-only
+    # SQLite tables previously omitted its audit outcome CHECK constraint.
+    with app.app_context():
+        admin = User(
+            name="PostgreSQL Rina Administrator",
+            email="postgres-rina-admin@example.com",
+            phone_number="+2348119000992",
+            role="admin",
+            is_active=True,
+            email_verified_at=datetime(2026, 9, 24),
+        )
+        admin.set_password(PASSWORD)
+        db.session.add(admin)
+        db.session.commit()
+        admin_id = admin.id
+
+    admin_client = app.test_client()
+    admin_client.get("/auth/login")
+    login = admin_client.post(
+        "/auth/login",
+        data={
+            "csrf_token": csrf_token(admin_client),
+            "email": "postgres-rina-admin@example.com",
+            "password": PASSWORD,
+        },
+    )
+    require(login.status_code == 302, "administrator login failed")
+    provider_calls_before = len(provider.calls)
+    for message in ("Hi", "Do you know who I am?"):
+        account = post_json(admin_client, "/chat/account", {"message": message})
+        require(
+            account.status_code == 200,
+            "account help failed against PostgreSQL audit constraints",
+        )
+        require(account.get_json()["car_id"] is None, "account help bound a vehicle")
+        require(
+            "PostgreSQL Rina Administrator" in account.get_json()["reply"],
+            "account identity missing",
+        )
+
+    identity = post_json(
+        admin_client,
+        "/chat",
+        {
+            "car_id": first_id,
+            "message": "Do you know who I am?",
+        },
+    )
+    require(
+        identity.status_code == 200,
+        "vehicle identity failed against PostgreSQL audit constraints",
+    )
+    require(
+        identity.get_json()["state"] == "answered", "vehicle identity did not answer"
+    )
+    require(
+        "administrator" in identity.get_json()["reply"], "administrator role missing"
+    )
+    require(
+        "selected vehicle" in identity.get_json()["reply"],
+        "administrator mistaken for owner",
+    )
+    require(
+        len(provider.calls) == provider_calls_before,
+        "identity/account help called the provider",
+    )
+    with app.app_context():
+        audits = RinaAIAuditEvent.query.filter_by(user_id=admin_id).all()
+        require(
+            len(audits) == 3,
+            "account and identity responses were not committed to audit",
+        )
+        require(
+            all(row.outcome == "answered" for row in audits),
+            "invalid successful audit outcome",
+        )
+        account_audits = [row for row in audits if row.action_family == "account_help"]
+        require(len(account_audits) == 2, "account-help action classification missing")
+        require(
+            all(row.car_id is None for row in account_audits),
+            "account-help audit gained vehicle scope",
+        )
+        require(
+            ChatMessage.query.filter_by(user_id=admin_id).count() == 2,
+            "vehicle identity turn was not committed atomically",
+        )
+
+    print(
+        "Wave 1.3 PostgreSQL Rina chat cutover and account/identity audit constraints verified."
+    )
 
 
 if __name__ == "__main__":

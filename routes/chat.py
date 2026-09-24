@@ -507,7 +507,7 @@ def chat_account():
         car_id=None,
         authority=None,
         state="answered",
-        outcome="account_help",
+        outcome="answered",
         action_family="account_help",
         provider_status="not_called",
         metadata={"channel": "in_app", "provider_attempted": False},

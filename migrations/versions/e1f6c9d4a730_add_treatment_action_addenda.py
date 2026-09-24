@@ -84,6 +84,15 @@ def upgrade():
 
 
 def downgrade():
+    bind = op.get_bind()
+    addendum_count = bind.execute(
+        sa.text("SELECT count(*) FROM treatment_action_addenda")
+    ).scalar_one()
+    if addendum_count:
+        raise RuntimeError(
+            "Refusing to downgrade while published Treatment Action addenda exist."
+        )
+
     op.drop_index(
         "ix_treatment_action_addenda_action_created",
         table_name="treatment_action_addenda",

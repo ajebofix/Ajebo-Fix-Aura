@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import uuid
 
 from flask import (
     Blueprint,
@@ -74,6 +75,10 @@ from historical_ingestion.whatsapp_bundle import (
     restart_whatsapp_bundle_analysis,
 )
 from models import Car
+from services.treatment_action_addenda import (
+    TreatmentActionAddendumError,
+    add_treatment_action_addendum,
+)
 
 
 historical_ingestion_bp = Blueprint("historical_ingestion", __name__)

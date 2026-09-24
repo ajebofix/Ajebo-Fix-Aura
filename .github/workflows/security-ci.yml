@@ -263,11 +263,14 @@ jobs:
       - name: Test immutable treatment action addenda
         run: pytest -q --tb=short tests/test_treatment_action_addenda.py
 
+      - name: Test Rina Advisor 360 longitudinal context
+        run: pytest -q --tb=short tests/test_rina_advisor_360.py
+
       - name: Test canonical event emission
         run: pytest -q --tb=short tests/test_event_emission.py
 
       - name: Run Ruff on security changes
-        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles onboarding historical_ingestion security treatment services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py services/rina_provider_context.py services/treatment_action_addenda.py evidence/review.py scripts tests
+        run: ruff check --output-format=concise app.py auth/routes.py driver/routes.py events/routes.py ownership/routes.py profiles onboarding historical_ingestion security treatment services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py services/rina_provider_context.py services/rina_advisor_360.py services/treatment_action_addenda.py evidence/review.py scripts tests
 
       - name: Run Bandit on security changes
         id: bandit_tests
@@ -276,7 +279,7 @@ jobs:
           set +e
           bandit -q -r app.py auth driver events ownership profiles onboarding historical_ingestion security scripts -x ./tests 2>&1 | tee bandit-output.txt
           status=${PIPESTATUS[0]}
-          bandit -q services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py services/rina_provider_context.py services/treatment_action_addenda.py evidence/review.py 2>&1 | tee -a bandit-output.txt
+          bandit -q services/client_onboarding.py services/email_delivery.py services/owner_driver_management.py services/event_emission.py services/rina_provider_context.py services/rina_advisor_360.py services/treatment_action_addenda.py evidence/review.py 2>&1 | tee -a bandit-output.txt
           service_status=${PIPESTATUS[0]}
           if [ "$service_status" -ne 0 ]; then
             status="$service_status"

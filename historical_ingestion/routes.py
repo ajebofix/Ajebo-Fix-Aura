@@ -788,12 +788,75 @@ def episode_detail(car_id: int, episode_id: int):
             }
         )
 
+    durable_episode_work = durable_work_for_episode(episode)
+    addendum_keys = {
+        int(item["treatment_action_id"]): uuid.uuid4().hex
+        for item in durable_episode_work
+        if item.get("treatment_action_id") is not None
+    }
+
     return render_template(
         "historical_ingestion/episode.html",
         car=car,
         episode=episode,
         attribution_views=attribution_views,
-        durable_episode_work=durable_work_for_episode(episode),
+        durable_episode_work=durable_episode_work,
+        addendum_keys=addendum_keys,
+    )
+
+
+@historical_ingestion_bp.post(
+    "/admin/cars/<int:car_id>/historical-episodes/<int:episode_id>/"
+    "treatment-actions/<int:treatment_action_id>/addenda"
+)
+@login_required
+@advisor_required
+def add_episode_treatment_action_addendum(
+    car_id: int,
+    episode_id: int,
+    treatment_action_id: int,
+):
+    car = Car.query.get_or_404(car_id)
+    episode = HistoricalServiceEpisode.query.filter_by(
+        id=episode_id,
+        car_id=car.id,
+        status="active",
+    ).first_or_404()
+
+    allowed_action_ids = {
+        int(item["treatment_action_id"])
+        for item in durable_work_for_episode(episode)
+        if item.get("treatment_action_id") is not None
+    }
+    if treatment_action_id not in allowed_action_ids:
+        raise NotFound()
+
+    try:
+        add_treatment_action_addendum(
+            treatment_action_id=treatment_action_id,
+            actor_user_id=current_user.id,
+            category=request.form.get("category", "additional_information"),
+            reason=request.form.get("reason", ""),
+            visibility=request.form.get("visibility", "advisor"),
+            detail_text=request.form.get("detail_text", ""),
+            idempotency_key=request.form.get("idempotency_key", ""),
+        )
+        db.session.commit()
+    except TreatmentActionAddendumError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    else:
+        flash(
+            "Detail added as an immutable addendum. The original completed-work record was not changed.",
+            "success",
+        )
+
+    return redirect(
+        url_for(
+            "historical_ingestion.episode_detail",
+            car_id=car.id,
+            episode_id=episode.id,
+        )
     )
 
 

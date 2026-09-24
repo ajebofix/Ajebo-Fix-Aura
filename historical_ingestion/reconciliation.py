@@ -191,6 +191,11 @@ def durable_work_for_episode(
                             else None
                         ),
                         "created_by_user_id": addendum.created_by_user_id,
+                        "created_by_name": (
+                            (addendum.created_by.name or addendum.created_by.email)
+                            if addendum.created_by is not None
+                            else "Advisor"
+                        ),
                     }
                     for addendum in (getattr(action, "addenda", []) or [])
                 ],

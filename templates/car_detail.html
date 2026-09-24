@@ -69,12 +69,70 @@ Vehicle Health Record
         </a>
     </div>
 
+    {% if historical_episode_views %}
+    <div style="margin-top:18px;">
+        <h3>Recent historical service episodes</h3>
+        <p class="muted">
+            Episode status is separate from source-review status. A reusable source may
+            still be awaiting full review even after one service episode has been reconciled.
+        </p>
+        {% for view in historical_episode_views %}
+        {% set episode = view.episode %}
+        <div class="timeline-item">
+            <div>
+                <strong>
+                    {{ episode.title }}
+                    {% if episode.job_reference %} · {{ episode.job_reference }}{% endif %}
+                </strong>
+                <div class="muted">
+                    Episode #{{ episode.id }}
+                    {% if episode.episode_date %}
+                        · {{ episode.episode_date.strftime('%d %b %Y') }}
+                    {% endif %}
+                    ·
+                    {% if view.state == 'reconciled' %}
+                        Reconciled
+                    {% elif view.state == 'ready_to_apply' %}
+                        Confirmed work ready to apply
+                    {% elif view.state == 'advisor_review' %}
+                        Advisor reconciliation review
+                    {% elif view.state == 'preparing' %}
+                        Rina preparing reconciliation
+                    {% elif view.state == 'needs_attention' %}
+                        Reconciliation needs attention
+                    {% elif view.state == 'reconciliation_needed' %}
+                        Reconciliation needed
+                    {% else %}
+                        Anchored
+                    {% endif %}
+                </div>
+            </div>
+            <a
+                href="{{ url_for(
+                    'historical_ingestion.episode_detail',
+                    car_id=car.id,
+                    episode_id=episode.id
+                ) }}"
+                class="btn btn-secondary"
+            >
+                {% if view.state == 'reconciled' %}
+                    Open reconciled episode
+                {% else %}
+                    Open episode
+                {% endif %}
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if historical_sources %}
     <div style="margin-top:18px;">
         <h3>Recent historical sources</h3>
         <p class="muted">
-            Analysis and advisor review are saved to Aura. You can leave, sign out,
-            or return later without re-uploading or re-analysing a completed source.
+            These labels describe the source itself, not whether a service episode built
+            from that source has been reconciled. Analysis and advisor review are saved
+            to Aura, so you can return without re-uploading or re-analysing it.
         </p>
         {% for item in historical_sources %}
         {% set source = item.evidence %}

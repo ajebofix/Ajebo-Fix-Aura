@@ -194,14 +194,97 @@
                 avoid creating duplicates.
             </p>
             {% for item in durable_episode_work %}
-            <div style="padding:10px 0; border-top:1px solid rgba(15, 23, 42, 0.08);">
+            <div style="padding:12px 0; border-top:1px solid rgba(15, 23, 42, 0.08);">
                 <strong>{{ item.title }}</strong>
                 <div class="muted" style="margin-top:3px;">
                     {% if item.component_name %}{{ item.component_name }}{% endif %}
                     {% if item.component_location %} · {{ item.component_location }}{% endif %}
-                    {% if item.completed_at %} · {{ item.completed_at.strftime('%d %b %Y, %H:%M') }}{% endif %}
+                    {% if item.completed_at %} · {{ item.completed_at[:16]|replace('T', ' ') }}{% endif %}
                     {% if item.verification_status %} · {{ item.verification_status|replace('_', ' ')|title }}{% endif %}
                 </div>
+
+                {% if item.addenda %}
+                <div style="margin-top:10px;">
+                    <strong>Later addenda</strong>
+                    {% for addendum in item.addenda %}
+                    <div class="muted" style="margin-top:6px; padding-left:10px; border-left:2px solid rgba(37, 99, 235, 0.24);">
+                        {{ addendum.detail_text }}
+                        <div style="margin-top:2px;">
+                            {{ addendum.category|replace('_', ' ')|title }}
+                            {% if addendum.created_at %} · {{ addendum.created_at[:16]|replace('T', ' ') }}{% endif %}
+                            · {{ addendum.visibility|title }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <details style="margin-top:10px;">
+                    <summary><strong>Add detail to this existing record</strong></summary>
+                    <p class="muted" style="margin-top:8px;">
+                        This creates a dated, attributed addendum. It does not edit the
+                        original completed-work record or create another Treatment Action.
+                    </p>
+                    <form
+                        method="POST"
+                        action="{{ url_for(
+                            'historical_ingestion.add_episode_treatment_action_addendum',
+                            car_id=car.id,
+                            episode_id=episode.id,
+                            treatment_action_id=item.treatment_action_id
+                        ) }}"
+                    >
+                        <input
+                            type="hidden"
+                            name="idempotency_key"
+                            value="{{ addendum_keys.get(item.treatment_action_id, '') }}"
+                        >
+
+                        <label style="display:block; margin-top:10px;">
+                            <strong>What additional detail did you establish?</strong>
+                            <textarea
+                                name="detail_text"
+                                rows="3"
+                                required
+                                style="width:100%; margin-top:6px;"
+                                placeholder="e.g. The panel beater reconstructed and welded the broken left-rear mounting stud/plate."
+                            ></textarea>
+                        </label>
+
+                        <label style="display:block; margin-top:10px;">
+                            <strong>Why is this being added?</strong>
+                            <input
+                                type="text"
+                                name="reason"
+                                maxlength="240"
+                                required
+                                value="Additional historical detail established after the original record"
+                                style="width:100%; margin-top:6px;"
+                            >
+                        </label>
+
+                        <label style="display:block; margin-top:10px;">
+                            <strong>Addendum type</strong>
+                            <select name="category" required style="width:100%; margin-top:6px;">
+                                <option value="additional_information" selected>Additional information</option>
+                                <option value="clarification">Clarification</option>
+                                <option value="correction">Correction</option>
+                            </select>
+                        </label>
+
+                        <label style="display:block; margin-top:10px;">
+                            <strong>Visibility</strong>
+                            <select name="visibility" required style="width:100%; margin-top:6px;">
+                                <option value="advisor" selected>Advisor-only</option>
+                                <option value="client">Client-visible</option>
+                            </select>
+                        </label>
+
+                        <button type="submit" class="btn btn-secondary btn-block" style="margin-top:12px;">
+                            Record immutable addendum
+                        </button>
+                    </form>
+                </details>
             </div>
             {% endfor %}
         </div>

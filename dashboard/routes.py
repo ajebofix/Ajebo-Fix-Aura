@@ -173,8 +173,8 @@ def aura_home():
     elif mode in {"advisor", "administrator"}:
         empty_title = "Professional vehicle scope"
         empty_message = (
-            "Open the Advisor Console and choose an authorised client vehicle. "
-            "Aura will not expose a broad fleet here or guess professional scope."
+            "Open Ask Rina to find an authorised client vehicle, "
+            "or use account help below."
         )
     else:
         empty_title = "Welcome to Aura"

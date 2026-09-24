@@ -41,7 +41,7 @@ from services.rina_runtime_flags import (
     rina_openai_provider_enabled,
     rina_orchestration_enabled,
 )
-
+from services.rina_speaker import describe_speaker, identity_question
 
 _PROVIDER_STATUS_DISABLED: Final = "disabled"
 _DEFAULT_MEMORY_POLICY: Final = "vehicle_scoped_minimized_v1"
@@ -236,6 +236,40 @@ def orchestrate_rina(
         )
         return response
 
+    if identity_question(clean_message):
+        response = RinaResponse(
+            request_id=resolved_request_id,
+            car_id=context.car_id,
+            authority=context.authority,
+            state=RINA_STATE_ANSWERED,
+            message=describe_speaker(
+                {
+                    "display_name": context.speaker_display_name,
+                    "account_role": context.global_role,
+                },
+                vehicle_name=context.vehicle.display_name,
+                relationships=context.relationships,
+            ),
+            uncertainty=None,
+            escalation=None,
+            actions=(),
+            evidence_refs=(),
+            provider_status=PROVIDER_STATUS_NOT_CALLED,
+        )
+        _audit_response(
+            response=response,
+            user_id=user_id,
+            outcome="identity_answered",
+            provider=None,
+            provider_model=None,
+            provider_request_id=None,
+            channel=channel,
+            context_version=context.context_version,
+            provider_attempted=False,
+            commit=audit_commit,
+        )
+        return response
+
     if not rina_orchestration_enabled():
         response = RinaResponse(
             request_id=resolved_request_id,
@@ -284,9 +318,7 @@ def orchestrate_rina(
     memory = load_rina_memory_bundle(
         user_id=user_id,
         car_id=context.car_id,
-        conversation_id=(
-            rina_request.conversation_id if conversation_id else None
-        ),
+        conversation_id=(rina_request.conversation_id if conversation_id else None),
     )
     provider_context = build_rina_provider_context(
         rina_request=rina_request,

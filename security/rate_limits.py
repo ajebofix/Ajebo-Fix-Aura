@@ -98,6 +98,7 @@ def register_rate_limits(app: Flask) -> None:
         "evidence_review.review_vehicle_evidence": "30 per hour",
         "evidence_review.link_vehicle_evidence_to_concern": "30 per hour",
         "chat.chat": "30 per minute; 300 per day",
+        "chat.chat_account": "30 per minute; 300 per day",
         "cars.book_consultation": "5 per hour",
         "cars.request_priority_scheduling": "3 per hour",
         "cars.request_emergency_review": "3 per hour",

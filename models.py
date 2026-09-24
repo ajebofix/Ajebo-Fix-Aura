@@ -247,6 +247,12 @@ class Car(db.Model):
         return ownership.user if ownership else None
 
     @property
+    def rina_display_name(self):
+        label = self.decoded_display_name.strip()
+        year = str(self.year or "").strip()
+        return label if not year or label.endswith(year) else f"{label} {year}"
+
+    @property
     def decoded_display_name(self):
         profile = self.vehicle_profile
 

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Aura | Ask Rina{% endblock %}
+{% block page_title %}Ask A.J. Rina{% endblock %}
+{% block page_subtitle %}Account help and recorded vehicle care, in one workspace.{% endblock %}
+{% block content %}
+{% if professional %}
+<section class="card">
+    <h2>Choose a vehicle to review</h2>
+    <form method="GET" action="{{ url_for('chat.rina_workspace') }}">
+        <label for="rina-search">Search by client name, VIN, plate, make or model</label>
+        <div class="button-grid">
+            <input class="input" id="rina-search" name="q" value="{{ query }}" minlength="2" maxlength="120" required>
+            <button class="btn btn-primary" type="submit">Search vehicles</button>
+        </div>
+    </form>
+    {% if query %}
+        {% for vehicle in matches %}
+        <p><a class="btn btn-secondary" href="{{ url_for('chat.rina_workspace', car_id=vehicle.id) }}#rina-chat-shell">Discuss {{ vehicle.rina_display_name }} · {{ vehicle.vin[-6:] }}</a></p>
+        {% else %}<p>No authorised vehicles match this search. Use at least two characters.</p>{% endfor %}
+        {% if matches|length == 20 %}<p>Showing up to 20 vehicles. Refine your search if needed.</p>{% endif %}
+    {% endif %}
+</section>
+{% endif %}
+{% include "components/rina_chat.html" %}
+{% endblock %}

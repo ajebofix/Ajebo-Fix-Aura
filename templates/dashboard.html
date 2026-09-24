@@ -9,7 +9,9 @@
 {% block page_subtitle %}
 {% if dashboard_mode == 'driver' %}
 Your assigned vehicle context and daily operating responsibilities.
-{% elif dashboard_mode in ['advisor', 'administrator'] %}
+{% elif dashboard_mode == 'advisor' %}
+    <a href="{{ url_for('chat.rina_workspace') }}" class="btn btn-dark btn-block">Open Advisor Workspace</a>
+    {% elif dashboard_mode == 'administrator' %}
 Professional automotive health operations and governed vehicle access.
 {% else %}
 Your vehicle is under professional care.
@@ -254,7 +256,9 @@ Your vehicle is under professional care.
     >
         Open Driver Portal
     </a>
-    {% elif dashboard_mode in ['advisor', 'administrator'] %}
+    {% elif dashboard_mode == 'advisor' %}
+    <a href="{{ url_for('chat.rina_workspace') }}" class="btn btn-dark btn-block">Open Advisor Workspace</a>
+    {% elif dashboard_mode == 'administrator' %}
     <a
         href="/admin/dashboard"
         class="btn btn-dark btn-block"
@@ -291,9 +295,10 @@ Your vehicle is under professional care.
     </div>
 
     <p class="subtext">
-        Rina responds only inside the vehicle and authority scope Aura can prove for this account.
+        Ask about your account, or choose an authorised vehicle to discuss its recorded care.
     </p>
 
+    <p><a class="btn btn-primary" href="{{ url_for('chat.rina_workspace') }}">Open Ask Rina</a></p>
     {% include "components/rina_chat.html" %}
 
 </div>

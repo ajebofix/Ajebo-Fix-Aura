@@ -11,11 +11,13 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
+from extensions import db
 from models import (
     Car,
     CarFault,
     Consultation,
     TreatmentPlan,
+    User,
     VehicleAssessment,
     VehicleProfile,
 )
@@ -30,7 +32,6 @@ from services.rina_authority import (
     RinaAuthorityContext,
     resolve_rina_authority,
 )
-
 
 CONTEXT_VERSION = 1
 
@@ -84,6 +85,7 @@ class RinaResolvedContext:
     progression: RinaProgressionPointer | None
     allowed_actions: tuple[str, ...]
     denied_actions: tuple[str, ...]
+    speaker_display_name: str | None = None
 
     def to_safe_dict(self) -> dict[str, Any]:
         """Return the trusted context envelope without raw private record text."""
@@ -109,7 +111,7 @@ def _vehicle_identity(car: Car) -> RinaVehicleIdentityContext:
     profile = VehicleProfile.query.filter_by(car_id=car.id).first()
     return RinaVehicleIdentityContext(
         car_id=car.id,
-        display_name=car.decoded_display_name,
+        display_name=car.rina_display_name,
         vin=car.vin,
         current_mileage=car.current_mileage,
         identity_source=car.vehicle_identity_source or "unknown",
@@ -240,8 +242,7 @@ def resolve_rina_vehicle_context(
 
     internal_visibility = (
         "advisor"
-        if authority_context.authority
-        in {AUTHORITY_ADVISOR, AUTHORITY_ADMINISTRATOR}
+        if authority_context.authority in {AUTHORITY_ADVISOR, AUTHORITY_ADMINISTRATOR}
         else "client"
     )
 
@@ -252,6 +253,8 @@ def resolve_rina_vehicle_context(
         car_id=car.id,
         authority=authority_context.authority,
         global_role=authority_context.global_role,
+        speaker_display_name=(db.session.get(User, user_id).name or "").strip()[:120]
+        or None,
         relationships=authority_context.relationships,
         visibility_scope=_visibility_scope(authority_context.authority),
         vehicle=_vehicle_identity(car),

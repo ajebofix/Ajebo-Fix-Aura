@@ -212,6 +212,92 @@ class TreatmentActionCompletionDetail(db.Model):
     )
 
 
+TREATMENT_ACTION_ADDENDUM_CATEGORIES = (
+    "clarification",
+    "correction",
+    "additional_information",
+)
+TREATMENT_ACTION_ADDENDUM_VISIBILITIES = ("client", "advisor")
+
+
+class TreatmentActionAddendum(db.Model):
+    """Immutable later detail attached to an existing durable Treatment Action."""
+
+    __tablename__ = "treatment_action_addenda"
+
+    id = db.Column(db.Integer, primary_key=True)
+    treatment_action_id = db.Column(
+        db.Integer,
+        db.ForeignKey("treatment_actions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    created_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    category = db.Column(db.String(40), nullable=False)
+    reason = db.Column(db.String(240), nullable=False)
+    visibility = db.Column(db.String(20), nullable=False)
+    detail_text = db.Column(db.Text, nullable=False)
+    idempotency_key = db.Column(db.String(128), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    action = db.relationship(
+        "TreatmentAction",
+        backref=db.backref(
+            "addenda",
+            order_by="TreatmentActionAddendum.created_at, TreatmentActionAddendum.id",
+        ),
+    )
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "category IN ('clarification', 'correction', 'additional_information')",
+            name="ck_treatment_action_addenda_category",
+        ),
+        db.CheckConstraint(
+            "visibility IN ('client', 'advisor')",
+            name="ck_treatment_action_addenda_visibility",
+        ),
+        db.CheckConstraint(
+            "length(trim(reason)) > 0",
+            name="ck_treatment_action_addenda_reason_nonblank",
+        ),
+        db.CheckConstraint(
+            "length(trim(detail_text)) > 0",
+            name="ck_treatment_action_addenda_detail_nonblank",
+        ),
+        db.CheckConstraint(
+            "length(trim(idempotency_key)) > 0",
+            name="ck_treatment_action_addenda_key_nonblank",
+        ),
+        db.Index(
+            "ix_treatment_action_addenda_action_created",
+            "treatment_action_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+
+@event.listens_for(TreatmentActionAddendum, "before_update")
+def _prevent_treatment_action_addendum_update(_mapper, _connection, _target) -> None:
+    raise ValueError(
+        "Published Treatment Action addenda are immutable; record another addendum instead"
+    )
+
+
+@event.listens_for(TreatmentActionAddendum, "before_delete")
+def _prevent_treatment_action_addendum_delete(_mapper, _connection, _target) -> None:
+    raise ValueError(
+        "Published Treatment Action addenda cannot be deleted; preserve the audit record"
+    )
+
+
 class TreatmentOutcome(db.Model):
     """One additive advisor-reviewed observation about treatment outcome."""
 

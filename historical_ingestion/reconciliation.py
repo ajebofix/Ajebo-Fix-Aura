@@ -178,6 +178,22 @@ def durable_work_for_episode(
                 "component_condition": getattr(detail, "component_condition", None),
                 "verification_status": getattr(detail, "verification_status", None),
                 "source_evidence_id": getattr(detail, "source_evidence_id", None),
+                "addenda": [
+                    {
+                        "id": addendum.id,
+                        "category": addendum.category,
+                        "reason": addendum.reason,
+                        "visibility": addendum.visibility,
+                        "detail_text": addendum.detail_text,
+                        "created_at": (
+                            addendum.created_at.isoformat()
+                            if addendum.created_at is not None
+                            else None
+                        ),
+                        "created_by_user_id": addendum.created_by_user_id,
+                    }
+                    for addendum in (getattr(action, "addenda", []) or [])
+                ],
             }
         )
     return rows

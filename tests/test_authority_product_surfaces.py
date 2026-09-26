@@ -192,3 +192,19 @@ def test_dashboard_selection_reauthorizes_owner_or_driver_scope():
     assert "AUTHORITY_OWNER" in source
     assert "AUTHORITY_DRIVER" in source
     assert "Select professional vehicle scope from the advisor workflow." in source
+
+def test_rina_chat_renders_assistant_markdown_without_raw_html():
+    source = _source("templates/components/rina_chat.html")
+
+    assert "function renderAssistantMarkdown" in source
+    assert "function appendInlineMarkdown" in source
+    assert 'role === "assistant"' in source
+    assert 'document.createElement("ol")' not in source  # list type stays data-driven
+    assert 'document.createElement(type)' in source
+    assert "document.createTextNode" in source
+    assert "strong.textContent = match[1]" in source
+    assert "body.textContent = String(text || \"\")" in source
+    assert "innerHTML" not in source
+    assert "/^(#{1,4})\\s+(.+)$/" in source
+    assert "/^(\\d+)\\.\\s+(.+)$/" in source
+

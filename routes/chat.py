@@ -375,13 +375,15 @@ def select_chat_vehicle():
         return jsonify({"error": "Vehicle not found."}), 404
 
     conversation_id = _bind_rina_vehicle(car_id=car_id)
+    choice = _vehicle_choice(car)
     return (
         jsonify(
             {
                 "car_id": car_id,
                 "conversation_id": conversation_id,
                 "authority": authority.authority,
-                "label": car.rina_display_name,
+                "label": choice["label"],
+                "context_label": choice["context_label"],
             }
         ),
         200,

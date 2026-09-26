@@ -411,6 +411,35 @@ def _treatment_context(car_id: int) -> list[dict[str, Any]]:
     return result
 
 
+def _canonical_treatment_action_index(
+    treatment_history: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return the compact action-state authority for longitudinal summaries.
+
+    Historical extraction and reconciliation records remain useful provenance,
+    but only durable Treatment Actions are authoritative for whether an action
+    is currently recorded as recommended, authorised, in progress or completed.
+    """
+
+    index: list[dict[str, Any]] = []
+    for plan in treatment_history:
+        for action in plan.get("actions") or []:
+            completion = action.get("completion_detail") or {}
+            index.append(
+                {
+                    "treatment_action_id": action.get("treatment_action_id"),
+                    "treatment_plan_id": plan.get("treatment_plan_id"),
+                    "title": action.get("title"),
+                    "status": action.get("status"),
+                    "completed_at": action.get("completed_at"),
+                    "verification_status": completion.get("verification_status"),
+                    "record_origin": plan.get("record_origin"),
+                    "precedence": "canonical_treatment_action",
+                }
+            )
+    return index
+
+
 def _evidence_context(car_id: int) -> dict[str, Any]:
     active = VehicleEvidence.query.filter(
         VehicleEvidence.car_id == car_id,
@@ -551,6 +580,7 @@ def build_rina_advisor_360_context(
 
     owner = _safe_owner_context(car)
     owner_user_id = owner.get("owner_user_id") if owner else None
+    treatment_history = _treatment_context(context.car_id)
 
     return {
         "context_version": 1,
@@ -565,7 +595,20 @@ def build_rina_advisor_360_context(
             "active_drivers": _driver_context(context.car_id),
         },
         "historical_episodes": _historical_episodes(context.car_id),
-        "treatment_history": _treatment_context(context.car_id),
+        "treatment_history": treatment_history,
+        "canonical_treatment_action_index": _canonical_treatment_action_index(
+            treatment_history
+        ),
+        "record_precedence": {
+            "action_state_source": "canonical_treatment_action_index",
+            "historical_role": "supporting_provenance",
+            "rule": (
+                "For the same or semantically equivalent intervention, the durable "
+                "Treatment Action status is authoritative. Historical extraction "
+                "or reconciliation records may explain provenance or uncertainty "
+                "but must not be presented as a second action with a competing status."
+            ),
+        },
         "evidence_index": _evidence_context(context.car_id),
         "canonical_events": _event_context(context),
         "audit": {

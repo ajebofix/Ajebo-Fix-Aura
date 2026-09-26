@@ -128,12 +128,123 @@ def _bind_rina_vehicle(*, car_id: int, conversation_id: str | None = None) -> st
 
 
 def _vehicle_choice(car: Car) -> dict[str, object]:
+    """Return an authority-checked, disambiguated vehicle choice."""
+
     authority = resolve_rina_authority(user_id=current_user.id, car_id=car.id)
+    ownership = (
+        CarOwnership.query.filter_by(car_id=car.id, is_active=True)
+        .order_by(CarOwnership.id.desc())
+        .first()
+    )
+    owner = (
+        db.session.get(User, ownership.user_id)
+        if ownership is not None and ownership.user_id
+        else None
+    )
+    client_name = (owner.name or "").strip() if owner is not None else ""
+    plate_number = (
+        (ownership.plate_number or "").strip() if ownership is not None else ""
+    )
+    vin = (car.vin or "").strip().upper()
+    vin_tail = vin[-6:] if vin else ""
+
+    detail_parts = [
+        part
+        for part in (
+            client_name,
+            plate_number,
+            f"VIN …{vin_tail}" if vin_tail else "",
+        )
+        if part
+    ]
+    context_label = " · ".join([car.rina_display_name, *detail_parts])
+
     return {
         "car_id": car.id,
         "label": car.rina_display_name,
         "authority": authority.authority,
+        "client_name": client_name or None,
+        "plate_number": plate_number or None,
+        "vin_tail": vin_tail or None,
+        "context_label": context_label,
     }
+
+
+def _professional_vehicle_search(
+    query: str,
+    *,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    """Search only the professional vehicle scope that Rina can re-authorize."""
+
+    if current_user.role not in {"admin", "advisor"}:
+        return []
+
+    clean_query = " ".join(str(query or "").strip().split())[:120]
+    if len(clean_query) < 2:
+        return []
+
+    pattern = (
+        "%"
+        + clean_query.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+        + "%"
+    )
+
+    search = Car.query.outerjoin(
+        CarOwnership, CarOwnership.car_id == Car.id
+    ).outerjoin(User, User.id == CarOwnership.user_id)
+
+    search = search.filter(
+        or_(
+            Car.brand.ilike(pattern, escape="\\"),
+            Car.model.ilike(pattern, escape="\\"),
+            Car.vin.ilike(pattern, escape="\\"),
+            db.and_(
+                CarOwnership.is_active.is_(True),
+                or_(
+                    CarOwnership.plate_number.ilike(pattern, escape="\\"),
+                    User.name.ilike(pattern, escape="\\"),
+                ),
+            ),
+        )
+    )
+
+    if current_user.role == "advisor":
+        search = search.filter(
+            or_(
+                *[
+                    Car.id.in_(
+                        db.session.query(model.car_id).filter(
+                            model.advisor_id == current_user.id
+                        )
+                    )
+                    for model in (
+                        Consultation,
+                        VehicleAssessment,
+                        TreatmentPlan,
+                        AdvisorNote,
+                    )
+                ]
+            )
+        )
+
+    choices: list[dict[str, object]] = []
+    for candidate in search.distinct().order_by(Car.id).limit(limit).all():
+        try:
+            choices.append(_vehicle_choice(candidate))
+        except RinaAuthorityError:
+            continue
+
+    choices.sort(
+        key=lambda item: (
+            str(item.get("client_name") or "").lower(),
+            str(item["label"]).lower(),
+            int(item["car_id"]),
+        )
+    )
+    return choices
 
 
 def _authorized_vehicle_choices(
@@ -209,6 +320,26 @@ def chat_context():
     )
 
 
+@chat_bp.get("/chat/vehicle-search")
+@login_required
+def chat_vehicle_search():
+    """Bounded professional search for an explicit Rina vehicle context."""
+
+    if current_user.role not in {"admin", "advisor"}:
+        return jsonify({"error": "Professional vehicle search is not available."}), 403
+
+    query = str(request.args.get("q") or "").strip()[:120]
+    return (
+        jsonify(
+            {
+                "query": query,
+                "vehicles": _professional_vehicle_search(query, limit=20),
+            }
+        ),
+        200,
+    )
+
+
 @chat_bp.post("/chat/select-vehicle")
 @login_required
 def select_chat_vehicle():
@@ -216,6 +347,21 @@ def select_chat_vehicle():
 
     data = request.get_json(silent=True) or {}
     car_id = _coerce_car_id(data.get("car_id"))
+
+    if car_id is None and data.get("clear") is True:
+        _clear_rina_binding()
+        return (
+            jsonify(
+                {
+                    "car_id": None,
+                    "conversation_id": None,
+                    "authority": None,
+                    "label": "Advisor overview",
+                }
+            ),
+            200,
+        )
+
     if car_id is None:
         return jsonify({"error": "A valid vehicle is required."}), 400
 
@@ -229,13 +375,15 @@ def select_chat_vehicle():
         return jsonify({"error": "Vehicle not found."}), 404
 
     conversation_id = _bind_rina_vehicle(car_id=car_id)
+    choice = _vehicle_choice(car)
     return (
         jsonify(
             {
                 "car_id": car_id,
                 "conversation_id": conversation_id,
                 "authority": authority.authority,
-                "label": car.rina_display_name,
+                "label": choice["label"],
+                "context_label": choice["context_label"],
             }
         ),
         200,

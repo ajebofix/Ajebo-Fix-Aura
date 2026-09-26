@@ -4,12 +4,14 @@
 {% if car is defined and car and car.id is defined %}
     {% set rina_page_car_id = car.id %}
 {% endif %}
+{% set rina_professional = current_user.role in ["admin", "advisor"] %}
 
 <div
     class="card rina-shell"
     id="rina-chat-shell"
     data-page-car-id="{{ rina_page_car_id or '' }}"
     data-csrf-token="{{ csrf_token() }}"
+    data-professional="{{ 'true' if rina_professional else 'false' }}"
 >
 
     <div class="rina-header">
@@ -45,24 +47,74 @@
 
 
     <div class="rina-context-row" style="margin: 14px 0 12px;">
-        <label for="rina-vehicle-select" class="label">
-            Vehicle for this conversation
+        <label class="label" {% if not rina_professional %}for="rina-vehicle-select"{% endif %}>
+            {% if rina_professional %}Conversation context{% else %}Vehicle for this conversation{% endif %}
         </label>
 
-        <select
-            id="rina-vehicle-select"
-            class="input"
-            aria-describedby="rina-vehicle-status"
-        >
-            <option value="">Choose a vehicle</option>
-        </select>
+        {% if rina_professional %}
+            <div
+                id="rina-current-context"
+                class="profile-notice"
+                style="margin: 0 0 10px;"
+            >
+                <strong>Advisor overview</strong>
+                <span> — no vehicle selected</span>
+            </div>
+
+            <div class="button-grid">
+                <input
+                    id="rina-vehicle-search"
+                    class="input"
+                    type="search"
+                    minlength="2"
+                    maxlength="120"
+                    autocomplete="off"
+                    placeholder="Search client, vehicle, plate or VIN"
+                    aria-describedby="rina-vehicle-status"
+                >
+                <button
+                    id="rina-vehicle-search-button"
+                    class="btn btn-secondary"
+                    type="button"
+                >
+                    Search
+                </button>
+            </div>
+
+            <div
+                id="rina-vehicle-results"
+                style="margin-top: 10px;"
+                aria-live="polite"
+            ></div>
+
+            <button
+                id="rina-clear-context"
+                class="btn btn-secondary"
+                type="button"
+                style="margin-top: 10px; display: none;"
+            >
+                Return to Advisor overview
+            </button>
+        {% else %}
+            <select
+                id="rina-vehicle-select"
+                class="input"
+                aria-describedby="rina-vehicle-status"
+            >
+                <option value="">Choose a vehicle</option>
+            </select>
+        {% endif %}
 
         <p
             id="rina-vehicle-status"
             class="muted"
             style="margin: 7px 0 0;"
         >
-            Rina will only use the vehicle you select here.
+            {% if rina_professional %}
+                Advisor overview is active. Search only when you need one vehicle’s recorded care context.
+            {% else %}
+                Rina will only use the vehicle you select here.
+            {% endif %}
         </p>
     </div>
 
@@ -118,12 +170,18 @@
     const inputEl = document.getElementById("rina-input");
     const sendEl = document.getElementById("rina-send");
     const vehicleSelectEl = document.getElementById("rina-vehicle-select");
+    const vehicleSearchEl = document.getElementById("rina-vehicle-search");
+    const vehicleSearchButtonEl = document.getElementById("rina-vehicle-search-button");
+    const vehicleResultsEl = document.getElementById("rina-vehicle-results");
+    const clearContextEl = document.getElementById("rina-clear-context");
+    const currentContextEl = document.getElementById("rina-current-context");
     const vehicleStatusEl = document.getElementById("rina-vehicle-status");
     const authorityBannerEl = document.getElementById("rina-authority-banner");
     const authorityLabelEl = document.getElementById("rina-authority-label");
     const authorityCopyEl = document.getElementById("rina-authority-copy");
 
     const csrfToken = shell.dataset.csrfToken || "";
+    const isProfessional = shell.dataset.professional === "true";
     const rawPageCarId = shell.dataset.pageCarId || "";
     const pageCarId = /^\d+$/.test(rawPageCarId) ? Number(rawPageCarId) : null;
 
@@ -213,15 +271,31 @@
     function showWelcome() {
         messagesEl.replaceChildren();
         const presentation = authorityPresentation(selectedAuthority);
-        appendMessage("assistant", selectedCarId ? presentation.welcome : (accountWelcome ? `${accountWelcome} Ask about your account or how to use Aura. Select a vehicle to discuss its records.` : presentation.welcome));
+        if (selectedCarId) {
+            appendMessage("assistant", presentation.welcome);
+            return;
+        }
+
+        if (accountWelcome) {
+            const guidance = isProfessional
+                ? " You can ask about your advisor role or Aura workflows here. Search for a client or vehicle when you need recorded care context."
+                : " Ask about your account or how to use Aura. Select a vehicle to discuss its records.";
+            appendMessage("assistant", `${accountWelcome}${guidance}`);
+            return;
+        }
+
+        appendMessage("assistant", presentation.welcome);
     }
 
     function setChatEnabled(enabled) {
         inputEl.disabled = !enabled || loading;
-        vehicleSelectEl.disabled = loading;
+        if (vehicleSelectEl) vehicleSelectEl.disabled = loading;
+        if (vehicleSearchEl) vehicleSearchEl.disabled = loading;
+        if (vehicleSearchButtonEl) vehicleSearchButtonEl.disabled = loading;
+        if (clearContextEl) clearContextEl.disabled = loading;
         sendEl.disabled = !enabled || loading;
         inputEl.placeholder = enabled
-            ? (selectedCarId ? "Ask about this vehicle’s recorded condition or next steps..." : "Ask about your account or how to use Aura...")
+            ? (selectedCarId ? "Ask about this vehicle’s recorded condition or next steps..." : (isProfessional ? "Ask about your advisor role or Aura workflow..." : "Ask about your account or how to use Aura..."))
             : "Choose a vehicle to start...";
     }
 
@@ -255,6 +329,7 @@
     }
 
     function populateVehicleChoices(vehicles, preferredCarId) {
+        if (!vehicleSelectEl) return;
         vehicleSelectEl.replaceChildren();
 
         const placeholder = document.createElement("option");
@@ -280,20 +355,133 @@
     }
 
     function selectedOptionAuthority() {
+        if (!vehicleSelectEl) return null;
         const option = vehicleSelectEl.selectedOptions[0];
         return option ? (option.dataset.authority || null) : null;
+    }
+
+    function setProfessionalContextLabel(text) {
+        if (!currentContextEl) return;
+        currentContextEl.replaceChildren();
+        const strong = document.createElement("strong");
+        strong.textContent = text || "Advisor overview";
+        currentContextEl.appendChild(strong);
+        if (!text) {
+            const suffix = document.createElement("span");
+            suffix.textContent = " — no vehicle selected";
+            currentContextEl.appendChild(suffix);
+        }
+    }
+
+    function renderVehicleSearchResults(vehicles) {
+        if (!vehicleResultsEl) return;
+        vehicleResultsEl.replaceChildren();
+
+        if (!vehicles || vehicles.length === 0) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No authorised vehicles match that search.";
+            vehicleResultsEl.appendChild(empty);
+            return;
+        }
+
+        for (const vehicle of vehicles) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "btn btn-secondary";
+            button.style.display = "block";
+            button.style.width = "100%";
+            button.style.textAlign = "left";
+            button.style.marginBottom = "8px";
+
+            const title = document.createElement("strong");
+            title.textContent = String(vehicle.label || `Vehicle ${vehicle.car_id}`);
+            button.appendChild(title);
+
+            const details = [
+                vehicle.client_name,
+                vehicle.plate_number,
+                vehicle.vin_tail ? `VIN …${vehicle.vin_tail}` : null,
+            ].filter(Boolean);
+
+            if (details.length) {
+                const meta = document.createElement("span");
+                meta.style.display = "block";
+                meta.style.marginTop = "4px";
+                meta.textContent = details.join(" · ");
+                button.appendChild(meta);
+            }
+
+            button.addEventListener("click", () => selectVehicle(Number(vehicle.car_id)));
+            vehicleResultsEl.appendChild(button);
+        }
+    }
+
+    async function performVehicleSearch() {
+        if (!isProfessional || !vehicleSearchEl || loading) return;
+        const query = vehicleSearchEl.value.trim();
+
+        if (query.length < 2) {
+            renderVehicleSearchResults([]);
+            vehicleStatusEl.textContent = "Enter at least two characters to search by client, vehicle, plate or VIN.";
+            return;
+        }
+
+        loading = true;
+        setChatEnabled(Boolean(selectedCarId || accountWelcome));
+        vehicleStatusEl.textContent = "Searching authorised vehicle records...";
+        try {
+            const data = await fetchJson(`/chat/vehicle-search?q=${encodeURIComponent(query)}`);
+            renderVehicleSearchResults(data.vehicles || []);
+            vehicleStatusEl.textContent = data.vehicles?.length
+                ? `Found ${data.vehicles.length} authorised vehicle${data.vehicles.length === 1 ? "" : "s"}.`
+                : "No authorised vehicles match that search.";
+        } catch (error) {
+            renderVehicleSearchResults([]);
+            vehicleStatusEl.textContent = error.status === 403
+                ? "Professional vehicle search is not available to this account."
+                : "Vehicle search is unavailable right now.";
+        } finally {
+            loading = false;
+            setChatEnabled(Boolean(selectedCarId || accountWelcome));
+        }
+    }
+
+    async function clearVehicleContext({ quiet = false } = {}) {
+        if (loading) return;
+        loading = true;
+        setChatEnabled(false);
+        try {
+            await fetchJson("/chat/select-vehicle", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ car_id: null, clear: true }),
+            });
+        } catch (_) {
+            // Clearing local context is still safe; the next request re-authorizes.
+        } finally {
+            selectedCarId = null;
+            selectedAuthority = null;
+            if (vehicleSelectEl) vehicleSelectEl.value = "";
+            if (vehicleResultsEl) vehicleResultsEl.replaceChildren();
+            if (clearContextEl) clearContextEl.style.display = "none";
+            setProfessionalContextLabel(null);
+            updateAuthorityBanner();
+            vehicleStatusEl.textContent = isProfessional
+                ? "Advisor overview is active. Search when you need one vehicle’s recorded care context."
+                : "Account help. No vehicle records are loaded.";
+            loading = false;
+            setChatEnabled(Boolean(accountWelcome));
+            showWelcome();
+            if (!quiet) inputEl.focus();
+        }
     }
 
     async function selectVehicle(carId, { quiet = false } = {}) {
         if (loading) return;
         const numericCarId = Number(carId);
         if (!Number.isInteger(numericCarId) || numericCarId <= 0) {
-            selectedCarId = null;
-            selectedAuthority = null;
-            updateAuthorityBanner();
-            setChatEnabled(false);
-            vehicleStatusEl.textContent = "Choose a vehicle before asking Rina.";
-            showWelcome();
+            await clearVehicleContext({ quiet });
             return;
         }
 
@@ -309,9 +497,11 @@
 
             selectedCarId = Number(data.car_id);
             selectedAuthority = data.authority || selectedOptionAuthority();
-            vehicleSelectEl.value = String(selectedCarId);
+            if (vehicleSelectEl) vehicleSelectEl.value = String(selectedCarId);
+            if (clearContextEl) clearContextEl.style.display = "inline-block";
+            setProfessionalContextLabel(data.context_label || data.label || "Selected vehicle");
             const presentation = authorityPresentation(selectedAuthority);
-            vehicleStatusEl.textContent = `Rina is scoped to ${data.label} as ${presentation.label}.`;
+            vehicleStatusEl.textContent = `Rina is scoped to ${data.context_label || data.label} as ${presentation.label}.`;
             updateAuthorityBanner();
             setChatEnabled(true);
             await loadHistory();
@@ -321,7 +511,9 @@
             selectedCarId = null;
             selectedAuthority = null;
             updateAuthorityBanner();
-            vehicleSelectEl.value = "";
+            if (vehicleSelectEl) vehicleSelectEl.value = "";
+            if (clearContextEl) clearContextEl.style.display = "none";
+            setProfessionalContextLabel(null);
             setChatEnabled(false);
             vehicleStatusEl.textContent = (
                 error.status === 403
@@ -350,18 +542,7 @@
             }
 
             if (data.active_car_id) {
-                loading = true;
-                selectedCarId = Number(data.active_car_id);
-                selectedAuthority = selectedOptionAuthority();
-                vehicleSelectEl.value = String(selectedCarId);
-                const label = vehicleSelectEl.selectedOptions[0]?.textContent || "the selected vehicle";
-                const presentation = authorityPresentation(selectedAuthority);
-                vehicleStatusEl.textContent = `Rina is scoped to ${label} as ${presentation.label}.`;
-                updateAuthorityBanner();
-                setChatEnabled(true);
-                await loadHistory();
-                loading = false;
-                setChatEnabled(Boolean(selectedCarId || accountWelcome));
+                await selectVehicle(data.active_car_id, { quiet: true });
                 return;
             }
 
@@ -369,7 +550,9 @@
             selectedAuthority = null;
             updateAuthorityBanner();
             setChatEnabled(Boolean(accountWelcome));
-            vehicleStatusEl.textContent = "Account help. No vehicle records are loaded.";
+            vehicleStatusEl.textContent = isProfessional
+                ? "Advisor overview is active. Search when you need one vehicle’s recorded care context."
+                : "Account help. No vehicle records are loaded.";
             showWelcome();
         } catch (_) {
             loading = false;
@@ -408,7 +591,7 @@
                 selectedCarId = null;
                 selectedAuthority = null;
                 updateAuthorityBanner();
-                vehicleSelectEl.value = "";
+                if (vehicleSelectEl) vehicleSelectEl.value = "";
                 setChatEnabled(false);
                 vehicleStatusEl.textContent = "Vehicle access changed. Choose an available vehicle.";
             }
@@ -497,7 +680,7 @@
                 selectedCarId = null;
                 selectedAuthority = null;
                 updateAuthorityBanner();
-                vehicleSelectEl.value = "";
+                if (vehicleSelectEl) vehicleSelectEl.value = "";
                 vehicleStatusEl.textContent = "Vehicle access changed. Choose an available vehicle.";
                 appendMessage("assistant", "I can’t use that vehicle context for this account.");
             } else {
@@ -529,19 +712,33 @@
     }
 
     function init() {
-        vehicleSelectEl.addEventListener("change", () => {
-            const value = vehicleSelectEl.value;
-            if (!value) {
-                selectedCarId = null;
-                selectedAuthority = null;
-                updateAuthorityBanner();
-                setChatEnabled(Boolean(accountWelcome));
-                vehicleStatusEl.textContent = "Account help. No vehicle records are loaded.";
-                showWelcome();
-                return;
-            }
-            selectVehicle(Number(value));
-        });
+        if (vehicleSelectEl) {
+            vehicleSelectEl.addEventListener("change", () => {
+                const value = vehicleSelectEl.value;
+                if (!value) {
+                    clearVehicleContext();
+                    return;
+                }
+                selectVehicle(Number(value));
+            });
+        }
+
+        if (vehicleSearchButtonEl) {
+            vehicleSearchButtonEl.addEventListener("click", performVehicleSearch);
+        }
+
+        if (vehicleSearchEl) {
+            vehicleSearchEl.addEventListener("keydown", event => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    performVehicleSearch();
+                }
+            });
+        }
+
+        if (clearContextEl) {
+            clearContextEl.addEventListener("click", () => clearVehicleContext());
+        }
 
         sendEl.addEventListener("click", sendToRina);
         inputEl.addEventListener("keydown", event => {

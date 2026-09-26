@@ -1,21 +1,40 @@
 # Rina advisor workspace and verified identity
 
-The previous professional dashboard displayed an empty Rina vehicle selector, while chat required a selected vehicle. Provider context carried effective authority but omitted the signed-in display name, and the administrator/advisor wording did not explain the existing Advisor Console access model.
+Aura's professional Rina surface separates two valid contexts:
+
+1. **Advisor overview** — no vehicle is selected and no vehicle record is loaded.
+2. **Explicit vehicle context** — one vehicle is selected, authority is rechecked and only that vehicle's permitted record is available to Rina.
+
+This keeps administrator/advisor account help useful without forcing a vehicle selection, while preserving the authority-first rule that vehicle records are never inferred from free text.
 
 ## Behaviour
 
-- Ask Rina is available from navigation, the Advisor Console and the dashboard. Vehicle pages link directly to their Rina panel.
-- `/chat/workspace` offers explicit, bounded search for professional accounts. Administrators retain existing access; dedicated advisor accounts see only vehicles linked by existing consultation, assessment, treatment or advisor-note records. Opening a vehicle rechecks authority.
-- `/chat/account` provides deterministic account identity and basic navigation help. It never restores the selected vehicle, reads vehicle/chat records, calls a model, or saves account-help text into a vehicle history. Requests have metadata-only audit events and the same rate limits as chat. General open-ended AI chat is not part of this endpoint.
-- Vehicle identity questions are answered after vehicle authorization, using the saved display name, actual account role and recorded relationships. They are audited and persisted through the existing scoped chat transaction.
-- The language provider receives a compact speaker object, separate from owner data. Contact details are excluded. Instructions distinguish administrator access to the Advisor Console from ownership and a recorded advisor relationship. Chat text cannot change these facts.
-- Client and advisor chat histories remain separated by user and vehicle. Vehicle changes lock the composer during binding/history loading; account mode clears the visible vehicle conversation.
+- Ask Rina is available from navigation, the Advisor Console and vehicle pages.
+- Administrator/advisor accounts start in **Advisor overview**. They may ask verified account or workflow questions without selecting a vehicle.
+- `/chat/account` remains deterministic, provider-free and vehicle-free. It does not restore a vehicle binding, load vehicle/chat history or save account-help text into a vehicle record.
+- Professional vehicle selection uses bounded server-side search rather than preloading a fleet dropdown. Search accepts client name, VIN, plate, make or model and returns at most 20 authorised results.
+- Duplicate year/make/model vehicles are disambiguated with the active client name, plate number and VIN tail.
+- Administrators retain Aura's existing broad administrator access. Dedicated advisor accounts only discover vehicles linked by persisted consultation, assessment, treatment-plan or advisor-note records.
+- Selecting a result re-runs `resolve_rina_authority`; search results do not themselves grant access.
+- Returning to Advisor overview explicitly clears the short-lived Rina vehicle and conversation binding from the session.
+- Owner/driver accounts keep explicit vehicle selection based on their persisted ownership/driver relationships.
+- Free-text chat still cannot silently switch the selected vehicle. Conversational vehicle resolution remains deferred until it can preserve the same explicit authority and ambiguity controls.
+- Vehicle identity questions use the saved display name, actual account role and recorded vehicle relationships. Administrator access is not presented as ownership.
+- Client and advisor vehicle chat histories remain separated by user and vehicle.
 - Manual and decoded vehicle labels display the year once.
 
-## Validation
+## Validation requirements
 
-91 targeted Python tests passed across the new workspace regressions, existing Rina authority/chat/provider/memory/Advisor 360 suites, assisted onboarding, rate limits and security foundation. A real Chromium run with synthetic accounts verified the mobile console entry, account identity without a vehicle, client-name search, vehicle identity, account-mode isolation from a stale vehicle binding, vehicle switching and desktop rendering. No page JavaScript errors were observed. No live client records were used or modified.
+The release must keep the existing Rina authority, chat-cutover, provider, memory, Advisor 360, CSRF and security suites green. Additional regressions cover:
+
+- administrator search by client name;
+- duplicate vehicle disambiguation;
+- advisor search exclusion for unlinked vehicles;
+- professional-search denial for owner/client accounts;
+- minimum professional search length;
+- vehicle-free greeting and advisor-capability help;
+- explicit clearing of the persisted Rina vehicle/conversation binding.
 
 ## Rollout
 
-No schema migration or new environment variables. `RINA_ADVISOR_360_ENABLED` remains unchanged and OFF by default. This change does not enable the longitudinal-context expansion. Deployment health and the signed-in user journey should be checked after release. Updated routes are generated in `AURA_REGISTERED_ROUTES_2026-09-24.md`.
+No schema migration or new environment variables are required. `RINA_ADVISOR_360_ENABLED` is unchanged. Deployment health and the signed-in Advisor Workspace journey should be checked after release.

@@ -180,7 +180,8 @@ def test_rina_chat_visibly_distinguishes_all_supported_authorities():
 
     assert "Owner financial and approval authority are not available" in source
     assert "selectedAuthority !== \"owner\"" in source
-    assert "Rina is scoped to ${data.label} as ${presentation.label}." in source
+    assert "data.context_label || data.label" in source
+    assert "as ${presentation.label}." in source
 
 
 def test_dashboard_selection_reauthorizes_owner_or_driver_scope():

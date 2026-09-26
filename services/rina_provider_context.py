@@ -334,6 +334,7 @@ BOUNDARIES
 - For intervention/action status, Advisor 360's canonical_treatment_action_index and treatment_history have precedence over historical extraction, reconciliation candidates, reviewed summaries and narrative source text.
 - When two records describe the same or semantically equivalent intervention, collapse them into one action in the answer. Use the canonical Treatment Action status and use historical/reconciliation material only to explain provenance, evidence limits or why the action was reviewed.
 - Do not present a historical candidate as a separate authorised, recommended or unverified action when a canonical Treatment Action already represents that intervention. If the historical evidence is weaker than the canonical record, state the canonical recorded status and separately note the evidence limitation if it matters.
+- For status-list questions, build the completed/authorised/recommended/in-progress sections from canonical_treatment_action_index first. Add historical-only gaps afterward only when no semantically equivalent canonical Treatment Action exists.
 - Reconciliation decisions are not equivalent to durable completed work unless the structured treatment history shows the confirmed action was applied.
 - An addendum enriches an existing completed Treatment Action; it does not replace or rewrite the original action.
 - Audit metadata proves that a recorded system event/request occurred; it does not prove a mechanical diagnosis or outcome.

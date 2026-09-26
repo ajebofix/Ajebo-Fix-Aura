@@ -499,9 +499,9 @@
             selectedAuthority = data.authority || selectedOptionAuthority();
             if (vehicleSelectEl) vehicleSelectEl.value = String(selectedCarId);
             if (clearContextEl) clearContextEl.style.display = "inline-block";
-            setProfessionalContextLabel(data.label || "Selected vehicle");
+            setProfessionalContextLabel(data.context_label || data.label || "Selected vehicle");
             const presentation = authorityPresentation(selectedAuthority);
-            vehicleStatusEl.textContent = `Rina is scoped to ${data.label} as ${presentation.label}.`;
+            vehicleStatusEl.textContent = `Rina is scoped to ${data.context_label || data.label} as ${presentation.label}.`;
             updateAuthorityBanner();
             setChatEnabled(true);
             await loadHistory();

@@ -459,6 +459,18 @@ def test_advisor_360_builds_compact_longitudinal_graph_for_admin(app):
             "additional_information"
         )
 
+        canonical = payload["canonical_treatment_action_index"][0]
+        assert canonical["treatment_action_id"] == action.id
+        assert canonical["status"] == "completed"
+        assert canonical["verification_status"] == "advisor_reconciled"
+        assert canonical["precedence"] == "canonical_treatment_action"
+        assert payload["record_precedence"]["action_state_source"] == (
+            "canonical_treatment_action_index"
+        )
+        assert payload["record_precedence"]["historical_role"] == (
+            "supporting_provenance"
+        )
+
         assert payload["evidence_index"]["active_count"] == 2
         assert payload["canonical_events"][0]["event_type"] == (
             "treatment_action_completed"
@@ -496,6 +508,19 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
         assert payload["advisor_360"]["historical_episodes"][0][
             "job_reference"
         ] == "JOB-2026-002"
+        assert payload["advisor_360"]["canonical_treatment_action_index"][0][
+            "status"
+        ] == "completed"
+        assert payload["reviewed_historical_records"][0]["record_role"] == (
+            "supporting_provenance"
+        )
+        assert payload["reviewed_historical_records"][0][
+            "action_state_precedence"
+        ] == "canonical_treatment_action_index"
+        instructions = provider.request.instructions
+        assert "canonical_treatment_action_index and treatment_history" in instructions
+        assert "collapse them into one action" in instructions
+        assert "do not present a historical candidate as a separate" in instructions.lower()
         serialized = json.dumps(payload)
         assert "Private home address" not in serialized
         assert "Private Contact" not in serialized

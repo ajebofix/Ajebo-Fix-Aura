@@ -240,6 +240,99 @@
         authorityBannerEl.style.display = "block";
     }
 
+    function appendInlineMarkdown(parent, text) {
+        const source = String(text || "");
+        const pattern = /\*\*([^*]+)\*\*/g;
+        let cursor = 0;
+        let match;
+
+        while ((match = pattern.exec(source)) !== null) {
+            if (match.index > cursor) {
+                parent.appendChild(document.createTextNode(source.slice(cursor, match.index)));
+            }
+            const strong = document.createElement("strong");
+            strong.textContent = match[1];
+            parent.appendChild(strong);
+            cursor = pattern.lastIndex;
+        }
+
+        if (cursor < source.length) {
+            parent.appendChild(document.createTextNode(source.slice(cursor)));
+        }
+    }
+
+    function renderAssistantMarkdown(container, text) {
+        const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+        let activeList = null;
+        let activeListType = null;
+
+        function closeList() {
+            activeList = null;
+            activeListType = null;
+        }
+
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+
+            if (!line) {
+                closeList();
+                continue;
+            }
+
+            const heading = line.match(/^(#{1,4})\s+(.+)$/);
+            if (heading) {
+                closeList();
+                const level = Math.min(heading[1].length + 1, 6);
+                const node = document.createElement(`h${level}`);
+                node.style.margin = "14px 0 6px";
+                appendInlineMarkdown(node, heading[2]);
+                container.appendChild(node);
+                continue;
+            }
+
+            const ordered = line.match(/^(\d+)\.\s+(.+)$/);
+            const unordered = line.match(/^[-*]\s+(.+)$/);
+
+            if (
+                unordered
+                && activeList
+                && activeListType === "ol"
+                && /^\*\*Status:\*\*/i.test(unordered[1])
+                && activeList.lastElementChild
+            ) {
+                const status = document.createElement("div");
+                status.style.margin = "3px 0 7px";
+                appendInlineMarkdown(status, unordered[1]);
+                activeList.lastElementChild.appendChild(status);
+                continue;
+            }
+
+            if (ordered || unordered) {
+                const type = ordered ? "ol" : "ul";
+                if (!activeList || activeListType !== type) {
+                    closeList();
+                    activeList = document.createElement(type);
+                    activeList.style.margin = "6px 0 10px 22px";
+                    activeList.style.padding = "0";
+                    container.appendChild(activeList);
+                    activeListType = type;
+                }
+
+                const item = document.createElement("li");
+                item.style.margin = "4px 0";
+                appendInlineMarkdown(item, ordered ? ordered[2] : unordered[1]);
+                activeList.appendChild(item);
+                continue;
+            }
+
+            closeList();
+            const paragraph = document.createElement("p");
+            paragraph.style.margin = "6px 0";
+            appendInlineMarkdown(paragraph, line);
+            container.appendChild(paragraph);
+        }
+    }
+
     function createMessage(role, text) {
         const wrapper = document.createElement("div");
         wrapper.className = `rina-message ${role === "user" ? "user" : "assistant"}`;
@@ -252,8 +345,13 @@
 
         const body = document.createElement("div");
         body.style.marginTop = "6px";
-        body.style.whiteSpace = "pre-line";
-        body.textContent = String(text || "");
+
+        if (role === "assistant") {
+            renderAssistantMarkdown(body, text);
+        } else {
+            body.style.whiteSpace = "pre-line";
+            body.textContent = String(text || "");
+        }
 
         bubble.appendChild(name);
         bubble.appendChild(body);

@@ -228,6 +228,12 @@ def _trusted_context_payload(
     if rina_advisor_360_enabled():
         advisor_360 = build_rina_advisor_360_context(context)
 
+    reviewed_historical_records = _reviewed_historical_records(context)
+    if advisor_360 is not None:
+        for record in reviewed_historical_records:
+            record["record_role"] = "supporting_provenance"
+            record["action_state_precedence"] = "canonical_treatment_action_index"
+
     return {
         "context_version": context.context_version,
         "authority": context.authority,
@@ -273,7 +279,7 @@ def _trusted_context_payload(
         ),
         "progression": progression,
         "reviewed_summaries": summaries,
-        "reviewed_historical_records": _reviewed_historical_records(context),
+        "reviewed_historical_records": reviewed_historical_records,
         "advisor_360": advisor_360,
         "allowed_actions": list(context.allowed_actions),
     }
@@ -325,6 +331,9 @@ BOUNDARIES
 - Human approval remains required for assessment and treatment decisions.
 - Reviewed historical-record context may contain advisor-approved extraction facts. Preserve the recorded state: recommended, authorised and completed are not interchangeable.
 - When Advisor 360 context is present, treat it as a read-only longitudinal care graph. Relate client, vehicle, episode, evidence, reconciliation, Treatment Action, addendum and audit facts by their supplied IDs/provenance; never invent missing links.
+- For intervention/action status, Advisor 360's canonical_treatment_action_index and treatment_history have precedence over historical extraction, reconciliation candidates, reviewed summaries and narrative source text.
+- When two records describe the same or semantically equivalent intervention, collapse them into one action in the answer. Use the canonical Treatment Action status and use historical/reconciliation material only to explain provenance, evidence limits or why the action was reviewed.
+- Do not present a historical candidate as a separate authorised, recommended or unverified action when a canonical Treatment Action already represents that intervention. If the historical evidence is weaker than the canonical record, state the canonical recorded status and separately note the evidence limitation if it matters.
 - Reconciliation decisions are not equivalent to durable completed work unless the structured treatment history shows the confirmed action was applied.
 - An addendum enriches an existing completed Treatment Action; it does not replace or rewrite the original action.
 - Audit metadata proves that a recorded system event/request occurred; it does not prove a mechanical diagnosis or outcome.

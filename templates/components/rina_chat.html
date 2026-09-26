@@ -282,7 +282,7 @@
             const heading = line.match(/^(#{1,4})\s+(.+)$/);
             if (heading) {
                 closeList();
-                const level = Math.min(heading[1].length + 2, 6);
+                const level = Math.min(heading[1].length + 1, 6);
                 const node = document.createElement(`h${level}`);
                 node.style.margin = "14px 0 6px";
                 appendInlineMarkdown(node, heading[2]);
@@ -292,6 +292,21 @@
 
             const ordered = line.match(/^(\d+)\.\s+(.+)$/);
             const unordered = line.match(/^[-*]\s+(.+)$/);
+
+            if (
+                unordered
+                && activeList
+                && activeListType === "ol"
+                && /^\*\*Status:\*\*/i.test(unordered[1])
+                && activeList.lastElementChild
+            ) {
+                const status = document.createElement("div");
+                status.style.margin = "3px 0 7px";
+                appendInlineMarkdown(status, unordered[1]);
+                activeList.lastElementChild.appendChild(status);
+                continue;
+            }
+
             if (ordered || unordered) {
                 const type = ordered ? "ol" : "ul";
                 if (!activeList || activeListType !== type) {

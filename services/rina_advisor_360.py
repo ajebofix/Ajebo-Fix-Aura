@@ -8,6 +8,7 @@ vehicle-scoped, bounded, provenance-aware and read-only.
 from __future__ import annotations
 
 from collections import Counter
+import re
 from typing import Any
 
 from evidence.models import EvidenceExtraction, VehicleEvidence
@@ -411,6 +412,34 @@ def _treatment_context(car_id: int) -> list[dict[str, Any]]:
     return result
 
 
+def _display_treatment_action_title(title: object, status: object) -> str | None:
+    """Clean stale state words for presentation without mutating stored history."""
+
+    clean = _clip(title, limit=255)
+    if not clean:
+        return None
+
+    # Historical reconciliation titles sometimes preserve words that describe
+    # the action's old workflow state. The canonical status now carries that
+    # state explicitly, so repeating it in the display label is confusing.
+    clean = re.sub(
+        r"(?:\s*[-–—:]?\s*\b(?:authori[sz]ed|recommended|completed)\b[.!]?\s*)+$",
+        "",
+        clean,
+        flags=re.IGNORECASE,
+    ).strip(" -–—:")
+
+    if str(status or "").strip().lower() == "completed":
+        clean = re.sub(
+            r"(?:\s*[-–—:]?\s*\bplan\b[.!]?\s*)+$",
+            "",
+            clean,
+            flags=re.IGNORECASE,
+        ).strip(" -–—:")
+
+    return clean or _clip(title, limit=255)
+
+
 def _canonical_treatment_action_index(
     treatment_history: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -430,6 +459,10 @@ def _canonical_treatment_action_index(
                     "treatment_action_id": action.get("treatment_action_id"),
                     "treatment_plan_id": plan.get("treatment_plan_id"),
                     "title": action.get("title"),
+                    "display_title": _display_treatment_action_title(
+                        action.get("title"),
+                        action.get("status"),
+                    ),
                     "status": action.get("status"),
                     "completed_at": action.get("completed_at"),
                     "verification_status": completion.get("verification_status"),

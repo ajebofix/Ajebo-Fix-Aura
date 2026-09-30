@@ -10,7 +10,10 @@ from historical_ingestion.service import _payload_cipher
 from models import Car, CarOwnership, TreatmentPlan, User, VehicleEvent
 from profiles.models import ClientProfile, ProfileAuditEvent
 from rina.audit_models import RinaAIAuditEvent
-from services.rina_advisor_360 import build_rina_advisor_360_context
+from services.rina_advisor_360 import (
+    _display_treatment_action_title,
+    build_rina_advisor_360_context,
+)
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_contracts import RinaRequest
 from services.rina_memory_service import RinaMemoryBundle
@@ -24,6 +27,36 @@ from treatment.models import (
 
 
 PASSWORD = "Password123"
+
+
+def test_display_treatment_action_title_removes_stale_state_words():
+    assert _display_treatment_action_title(
+        "Compressor replacement plan",
+        "completed",
+    ) == "Compressor replacement"
+    assert _display_treatment_action_title(
+        "Bracket reconstruction authorised",
+        "completed",
+    ) == "Bracket reconstruction"
+    assert _display_treatment_action_title(
+        "Hose replacement authorized",
+        "completed",
+    ) == "Hose replacement"
+    assert _display_treatment_action_title(
+        "Fuel top-up completed",
+        "completed",
+    ) == "Fuel top-up"
+    assert _display_treatment_action_title(
+        "Component replacement recommended",
+        "recommended",
+    ) == "Component replacement"
+
+
+def test_display_treatment_action_title_preserves_meaningful_plan_when_not_completed():
+    assert _display_treatment_action_title(
+        "Annual maintenance plan",
+        "recommended",
+    ) == "Annual maintenance plan"
 
 
 def _user(*, suffix: int, role: str = "user") -> User:
@@ -461,6 +494,8 @@ def test_advisor_360_builds_compact_longitudinal_graph_for_admin(app):
 
         canonical = payload["canonical_treatment_action_index"][0]
         assert canonical["treatment_action_id"] == action.id
+        assert canonical["title"] == "Diagnostic scan"
+        assert canonical["display_title"] == "Diagnostic scan"
         assert canonical["status"] == "completed"
         assert canonical["verification_status"] == "advisor_reconciled"
         assert canonical["precedence"] == "canonical_treatment_action"
@@ -521,6 +556,7 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
         assert "canonical_treatment_action_index and treatment_history" in instructions
         assert "collapse them into one action" in instructions
         assert "do not present a historical candidate as a separate" in instructions.lower()
+        assert "use canonical_treatment_action_index.display_title" in instructions
         serialized = json.dumps(payload)
         assert "Private home address" not in serialized
         assert "Private Contact" not in serialized

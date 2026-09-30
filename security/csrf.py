@@ -11,7 +11,8 @@ import hmac
 import secrets
 from collections.abc import Callable
 
-from flask import Flask, abort, request, session
+from flask import Flask, abort, redirect, request, session, url_for
+from flask_login import current_user
 
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 _SESSION_KEY = "_csrf_token"
@@ -59,6 +60,15 @@ def init_csrf(app: Flask, *, exemptions: set[str] | None = None) -> None:
         supplied = _submitted_token()
 
         if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+            # A successful login intentionally clears/rotates the signed session.
+            # If Safari (or a double tap) re-submits the old login form after the
+            # first POST already authenticated the browser, the old form token is
+            # necessarily stale. Do not weaken CSRF for unauthenticated logins;
+            # only recover an already-authenticated duplicate POST by converting
+            # it into a safe GET navigation.
+            if request.endpoint == "auth.login" and current_user.is_authenticated:
+                return redirect(url_for("auth.login"), code=303)
+
             abort(400, description="Invalid or missing CSRF token.")
 
         return None

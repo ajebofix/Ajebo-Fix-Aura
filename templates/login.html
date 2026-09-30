@@ -52,6 +52,7 @@ Your vehicles, history and care — in one place.
             method="POST"
             action="{{ url_for('auth.login') }}"
             class="login-form"
+            id="aura-login-form"
         >
 
             <input
@@ -126,6 +127,7 @@ Your vehicles, history and care — in one place.
             <button
                 type="submit"
                 class="btn btn-primary btn-block login-btn"
+                id="aura-login-submit"
             >
                 Continue
             </button>
@@ -164,6 +166,19 @@ function togglePassword() {
         input.type = "password";
     }
 }
+
+(() => {
+    const form = document.getElementById("aura-login-form");
+    const submit = document.getElementById("aura-login-submit");
+    if (!form || !submit) return;
+
+    form.addEventListener("submit", () => {
+        if (submit.disabled) return;
+        submit.disabled = true;
+        submit.setAttribute("aria-disabled", "true");
+        submit.textContent = "Signing in…";
+    });
+})();
 </script>
 
 {% endblock %}

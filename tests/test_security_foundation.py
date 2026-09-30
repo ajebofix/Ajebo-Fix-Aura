@@ -4,6 +4,7 @@ from flask import session
 from sqlalchemy.exc import OperationalError
 
 from extensions import db
+from models import User
 from tests import test_assessment_download_authorization as assessment_download_tests
 
 
@@ -24,6 +25,64 @@ def test_unsafe_request_without_csrf_token_is_rejected(client):
     )
 
     assert response.status_code == 400
+
+
+def test_authenticated_duplicate_login_post_with_stale_csrf_recovers(app, client):
+    with app.app_context():
+        user = User(
+            name="Duplicate Login Admin",
+            email="duplicate-login@example.com",
+            phone_number="+2348000000999",
+            role="admin",
+            is_active=True,
+        )
+        user.set_password("Password123")
+        db.session.add(user)
+        db.session.commit()
+
+    client.get("/auth/login")
+    with client.session_transaction() as browser_session:
+        original_csrf = str(browser_session["_csrf_token"])
+
+    first = client.post(
+        "/auth/login",
+        data={
+            "identifier": "duplicate-login@example.com",
+            "password": "Password123",
+            "csrf_token": original_csrf,
+        },
+        follow_redirects=False,
+    )
+    assert first.status_code == 302
+    assert first.headers["Location"].endswith("/admin/dashboard")
+
+    # A safe request after login seeds the new authenticated-session token,
+    # making the original login form token stale exactly as in production.
+    already_signed_in = client.get("/auth/login", follow_redirects=False)
+    assert already_signed_in.status_code == 302
+
+    duplicate = client.post(
+        "/auth/login",
+        data={
+            "identifier": "duplicate-login@example.com",
+            "password": "Password123",
+            "csrf_token": original_csrf,
+        },
+        follow_redirects=False,
+    )
+    assert duplicate.status_code == 303
+    assert duplicate.headers["Location"].endswith("/auth/login")
+
+
+def test_login_form_disables_submit_after_first_submission(client):
+    response = client.get("/auth/login")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'id="aura-login-form"' in body
+    assert 'id="aura-login-submit"' in body
+    assert 'submit.disabled = true' in body
+    assert 'submit.textContent = "Signing in…"' in body
 
 
 def test_expected_route_prefixes_are_registered_once(app):

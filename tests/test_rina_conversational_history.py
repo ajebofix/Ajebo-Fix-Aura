@@ -106,13 +106,13 @@ def _historical_reconciliation(*, admin, car):
     return episode, reconciliation
 
 
-def _confirmation_interpretation(*, date="2026-05-18"):
+def _confirmation_interpretation(*, date="2026-05-18", candidate_id="R001"):
     return HistoricalReviewInterpretation(
         payload={
             "intent": "update",
             "changes": [
                 {
-                    "candidate_id": "R001",
+                    "candidate_id": candidate_id,
                     "mark_reviewed": True,
                     "advisor_decision": "confirmed",
                     "occurred_at": date,
@@ -457,7 +457,10 @@ def test_chat_stages_historical_intelligence_episode_when_no_formal_reconciliati
 
     monkeypatch.setattr(
         "routes.chat.interpret_historical_review_turn",
-        lambda **_kwargs: _confirmation_interpretation(date="2026-02-14"),
+        lambda **_kwargs: _confirmation_interpretation(
+            date="2026-02-14",
+            candidate_id="I001",
+        ),
     )
     reviewed = _post_json(
         client,

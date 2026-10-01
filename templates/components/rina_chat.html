@@ -679,6 +679,7 @@
         );
         if (!approved) return;
 
+        let refreshCopilot = false;
         loading = true;
         setChatEnabled(true);
         try {
@@ -701,7 +702,7 @@
                     ? "The advisor-approved historical reconciliation has been applied to durable history. I’ll use the canonical record on the next question."
                     : "There were no confirmed historical actions to apply."
             );
-            await loadHistoricalCopilot();
+            refreshCopilot = true;
         } catch (error) {
             appendMessage(
                 "assistant",
@@ -710,6 +711,10 @@
         } finally {
             loading = false;
             setChatEnabled(Boolean(selectedCarId || accountWelcome));
+        }
+
+        if (refreshCopilot) {
+            await loadHistoricalCopilot();
         }
     }
 

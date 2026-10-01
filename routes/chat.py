@@ -41,6 +41,17 @@ from models import (
     VehicleAssessment,
 )
 from services.rina_advisor_360 import build_rina_historical_copilot_context
+from services.rina_historical_review import (
+    already_applied as historical_review_already_applied,
+    candidate_prompt as historical_candidate_prompt,
+    discover_review_choices,
+    interpret_turn as interpret_historical_review_turn,
+    review_choices_prompt,
+    review_preview as historical_review_preview,
+    summarize_state as summarize_historical_review,
+    update_review_from_interpretation,
+    validate_ready_to_apply as validate_historical_review_ready,
+)
 from services.rina_audit import record_rina_audit
 from services.rina_authority import (
     ACTION_APPLY_ADVISOR_APPROVED_HISTORY,
@@ -67,12 +78,17 @@ from services.rina_memory_service import (
     save_rina_chat_turn,
 )
 from services.rina_orchestrator import orchestrate_rina
+from rina.providers.base import RinaProviderError
 from services.rina_speaker import account_help, describe_speaker, speaker_identity
 
 chat_bp = Blueprint("chat", __name__)
 
 _SESSION_CAR_KEY = "rina_active_car_id"
 _SESSION_CONVERSATION_KEY = "rina_conversation_id"
+_SESSION_HISTORY_REVIEW_EXTRACTION_KEY = "rina_history_review_extraction_id"
+_SESSION_HISTORY_REVIEW_CANDIDATE_KEY = "rina_history_review_candidate_id"
+_SESSION_HISTORY_REVIEW_PHASE_KEY = "rina_history_review_phase"
+_SESSION_HISTORY_REVIEW_CHOICES_KEY = "rina_history_review_choices"
 _BOOKING_PATTERN = re.compile(
     r"\b(book|consult|consultation|appointment|schedule|reserve|assessment)\b",
     re.IGNORECASE,
@@ -97,9 +113,17 @@ def _new_conversation_id() -> str:
     return uuid.uuid4().hex
 
 
+def _clear_historical_review_binding() -> None:
+    session.pop(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY, None)
+    session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
+    session.pop(_SESSION_HISTORY_REVIEW_PHASE_KEY, None)
+    session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
+
+
 def _clear_rina_binding() -> None:
     session.pop(_SESSION_CAR_KEY, None)
     session.pop(_SESSION_CONVERSATION_KEY, None)
+    _clear_historical_review_binding()
 
 
 def _validated_session_car_id() -> int | None:
@@ -131,6 +155,7 @@ def _bind_rina_vehicle(*, car_id: int, conversation_id: str | None = None) -> st
     previous_car_id = _coerce_car_id(session.get(_SESSION_CAR_KEY))
     if previous_car_id != car_id:
         conversation_id = None
+        _clear_historical_review_binding()
 
     resolved_conversation_id = (conversation_id or "").strip()[
         :64

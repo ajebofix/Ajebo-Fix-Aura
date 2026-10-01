@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 
-from evidence.models import EvidenceExtraction, VehicleEvidence
+from evidence.models import EvidenceBundleItem, EvidenceExtraction, VehicleEvidence
 from extensions import db
 from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.service import _payload_cipher
@@ -194,6 +194,65 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
         db.session.add(source_analysis)
         db.session.flush()
 
+        voice_note = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=admin.id,
+            evidence_type="audio",
+            purpose="service_document",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider="test-private",
+            storage_state="available",
+            object_key="advisor360/voice-note.ogg",
+            safe_display_name="PTT-0001.opus",
+            content_type="audio/ogg",
+            byte_size=96,
+            sha256="8" * 64,
+            uploaded_at=datetime(2026, 9, 20, 13, 5, 0),
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        db.session.add(voice_note)
+        db.session.flush()
+        db.session.add(
+            EvidenceBundleItem(
+                bundle_evidence_id=corpus.id,
+                child_evidence_id=voice_note.id,
+                member_index=1,
+                member_kind="audio",
+                member_sha256="8" * 64,
+            )
+        )
+        voice_payload = {
+            "schema_version": 1,
+            "text": (
+                "[AUDIO evidence] Voice note confirms the AIRMATIC compressor "
+                "was discussed and an earlier workshop visit needs review."
+            ),
+        }
+        voice_cipher, voice_version, voice_digest = _payload_cipher(voice_payload)
+        db.session.add(
+            EvidenceExtraction(
+                evidence_id=voice_note.id,
+                extraction_type="transcription",
+                provider="test",
+                provider_model="test-transcriber",
+                status="completed",
+                result_ciphertext=voice_cipher,
+                result_key_version=voice_version,
+                result_sha256=voice_digest,
+                review_status="unreviewed",
+                provenance={
+                    "analysis_pipeline": "whatsapp_bundle_v1",
+                    "semantic_authority": "source_transcription",
+                },
+                completed_at=datetime(2026, 9, 22, 10, 3, 0),
+            )
+        )
+        db.session.flush()
+
         ready_payload = {
             "schema_version": 1,
             "summary": "Rina prepared one advisor-confirmed historical action.",
@@ -251,6 +310,8 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
 
         assert copilot is not None
         assert copilot["candidate_only"] is True
+        assert copilot["top_level_source_count"] == 2
+        assert voice_note.id not in copilot["pending_source_ids"]
         assert copilot["unrecorded_candidate_count"] == 2
         assert copilot["priority_thread_count"] == 1
         assert copilot["source_candidate_backlog"][0]["case_focus"].startswith(
@@ -754,11 +815,81 @@ def test_advisor_360_is_not_available_to_owner(app):
 def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatch):
     with app.app_context():
         _owner, admin, car, _action = _setup_longitudinal_case()
+        corpus = VehicleEvidence.query.filter_by(
+            car_id=car.id,
+            historical_source_type="whatsapp_conversation",
+            evidence_type="archive",
+        ).first()
+        voice_note = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=admin.id,
+            evidence_type="audio",
+            purpose="service_document",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider="test-private",
+            storage_state="available",
+            object_key="advisor360/provider-voice-note.ogg",
+            safe_display_name="PTT-provider.opus",
+            content_type="audio/ogg",
+            byte_size=96,
+            sha256="7" * 64,
+            uploaded_at=datetime(2026, 9, 20, 13, 5, 0),
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        db.session.add(voice_note)
+        db.session.flush()
+        db.session.add(
+            EvidenceBundleItem(
+                bundle_evidence_id=corpus.id,
+                child_evidence_id=voice_note.id,
+                member_index=9,
+                member_kind="audio",
+                member_sha256="7" * 64,
+            )
+        )
+        voice_payload = {
+            "schema_version": 1,
+            "text": "Voice note says the compressor was discussed during the visit.",
+        }
+        voice_cipher, voice_version, voice_digest = _payload_cipher(voice_payload)
+        db.session.add(
+            EvidenceExtraction(
+                evidence_id=voice_note.id,
+                extraction_type="transcription",
+                provider="test",
+                provider_model="test-transcriber",
+                status="completed",
+                result_ciphertext=voice_cipher,
+                result_key_version=voice_version,
+                result_sha256=voice_digest,
+                review_status="unreviewed",
+                completed_at=datetime(2026, 9, 22, 10, 3, 0),
+            )
+        )
+        db.session.commit()
+
         context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
 
         monkeypatch.setenv("RINA_ADVISOR_360_ENABLED", "true")
+        request = RinaRequest(
+            request_id="advisor360-source-request",
+            user_id=context.user_id,
+            car_id=context.car_id,
+            authority=context.authority,
+            channel="in_app",
+            message="What did the voice note say about the compressor?",
+            conversation_id="advisor360-conversation",
+            context_version=context.context_version,
+            memory_policy="vehicle_scoped_minimized_v1",
+            allowed_actions=context.allowed_actions,
+            denied_actions=context.denied_actions,
+        )
         provider = build_rina_provider_context(
-            rina_request=_request(context),
+            rina_request=request,
             context=context,
             memory=_memory(
                 user_id=admin.id,
@@ -770,6 +901,11 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
         assert payload["advisor_360"]["historical_episodes"][0][
             "job_reference"
         ] == "JOB-2026-002"
+        assert payload["advisor_360"]["historical_copilot"]["top_level_source_count"] == 2
+        assert any(
+            "compressor" in str(item.get("content_excerpt") or "").lower()
+            for item in payload["historical_source_retrieval"]
+        )
         assert payload["advisor_360"]["canonical_treatment_action_index"][0][
             "status"
         ] == "completed"
@@ -786,6 +922,8 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
         assert "use canonical_treatment_action_index.display_title" in instructions
         assert "historical_copilot is candidate-only" in instructions
         assert "You may prepare and explain proposed historical records" in instructions
+        assert "historical_source_retrieval contains query-relevant excerpts" in instructions
+        assert "Never report bundle-child counts as the number of historical sources" in instructions
         serialized = json.dumps(payload)
         assert "Private home address" not in serialized
         assert "Private Contact" not in serialized

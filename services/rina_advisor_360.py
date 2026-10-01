@@ -11,7 +11,7 @@ from collections import Counter
 import re
 from typing import Any
 
-from evidence.models import EvidenceExtraction, VehicleEvidence
+from evidence.models import EvidenceBundleItem, EvidenceExtraction, VehicleEvidence
 from extensions import db
 from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.reconciliation import applied_reconciliation_plan
@@ -311,6 +311,102 @@ def _historical_episodes(car_id: int) -> list[dict[str, Any]]:
     return result
 
 
+def _compact_understanding_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    document = payload.get("document") if isinstance(payload.get("document"), dict) else {}
+
+    chronology: list[dict[str, Any]] = []
+    for item in (payload.get("chronology") or [])[:24]:
+        if not isinstance(item, dict):
+            continue
+        chronology.append(
+            {
+                "date": _clip(item.get("date"), limit=40),
+                "event": _clip(item.get("event"), limit=420),
+                "status": _clip(item.get("status"), limit=40),
+                "source_pages": list(item.get("source_pages") or [])[:8],
+            }
+        )
+
+    facts: list[dict[str, Any]] = []
+    for item in (payload.get("facts") or [])[:40]:
+        if not isinstance(item, dict):
+            continue
+        facts.append(
+            {
+                "kind": _clip(item.get("kind"), limit=40),
+                "state": _clip(item.get("state"), limit=40),
+                "title": _clip(item.get("title"), limit=220),
+                "detail": _clip(item.get("detail"), limit=500),
+                "date": _clip(item.get("date"), limit=40),
+                "why_it_matters": _clip(item.get("why_it_matters"), limit=420),
+                "source_pages": list(item.get("source_pages") or [])[:8],
+            }
+        )
+
+    return {
+        "document": {
+            "document_type": _clip(document.get("document_type"), limit=80),
+            "title": _clip(document.get("title"), limit=255),
+            "reference": _clip(document.get("reference"), limit=120),
+            "job_reference": _clip(document.get("job_reference"), limit=120),
+            "sow_reference": _clip(document.get("sow_reference"), limit=120),
+            "document_date": _clip(document.get("document_date"), limit=40),
+            "client_name": _clip(document.get("client_name"), limit=180),
+            "vehicle_description": _clip(
+                document.get("vehicle_description"),
+                limit=220,
+            ),
+            "vin": _clip(document.get("vin"), limit=80),
+            "plate_number": _clip(document.get("plate_number"), limit=40),
+        },
+        "advisor_narrative": _clip(payload.get("advisor_narrative"), limit=1800),
+        "chronology": chronology,
+        "facts": facts,
+        "ambiguities": [
+            _clip(item, limit=500)
+            for item in (payload.get("ambiguities") or [])[:12]
+            if _clip(item, limit=500)
+        ],
+        "advisor_suggestions": [
+            _clip(item, limit=500)
+            for item in (payload.get("advisor_suggestions") or [])[:12]
+            if _clip(item, limit=500)
+        ],
+    }
+
+
+def _bundle_child_content_summary(source_id: int) -> dict[str, Any]:
+    rows = (
+        EvidenceBundleItem.query.filter_by(bundle_evidence_id=source_id)
+        .order_by(EvidenceBundleItem.member_index.asc())
+        .all()
+    )
+    counts = Counter(str(row.member_kind or "unknown") for row in rows)
+    analysed_counts: Counter[str] = Counter()
+    for row in rows:
+        child = row.child
+        if child is None:
+            continue
+        completed_types = {
+            extraction.extraction_type
+            for extraction in child.extractions
+            if extraction.status == "completed"
+        }
+        for extraction_type in completed_types:
+            analysed_counts[extraction_type] += 1
+
+    return {
+        "total_children": len(rows),
+        "child_kind_counts": dict(counts),
+        "completed_extraction_counts": dict(analysed_counts),
+        "note": (
+            "These are child items inside the parent source. Their extracted content "
+            "was used by the whole-source analysis and must not be counted as separate "
+            "historical sources."
+        ),
+    }
+
+
 def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
     """Expose bounded candidate-only source analysis before advisor publication."""
 
@@ -320,6 +416,7 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             VehicleEvidence.historical_source_type.isnot(None),
             VehicleEvidence.storage_state == "available",
             VehicleEvidence.deleted_at.is_(None),
+            ~VehicleEvidence.bundle_parent_items.any(),
         )
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
         .limit(8)
@@ -337,19 +434,38 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             .order_by(EvidenceExtraction.id.desc())
             .first()
         )
-        if extraction is None:
+        understanding = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=source.id,
+                extraction_type="document_understanding",
+                status="completed",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        if extraction is None and understanding is None:
             continue
 
-        try:
-            payload = decrypt_extraction_payload(
-                extraction,
-                reviewed=extraction.review_status in {"accepted", "corrected"},
-            )
-        except HistoricalIngestionError:
-            continue
+        payload: dict[str, Any] = {}
+        if extraction is not None:
+            try:
+                payload = decrypt_extraction_payload(
+                    extraction,
+                    reviewed=extraction.review_status in {"accepted", "corrected"},
+                )
+            except HistoricalIngestionError:
+                payload = {}
+
+        understanding_payload: dict[str, Any] = {}
+        if understanding is not None:
+            try:
+                understanding_payload = decrypt_extraction_payload(understanding)
+            except HistoricalIngestionError:
+                understanding_payload = {}
 
         candidate_rows: list[dict[str, Any]] = []
-        for item in (payload.get("candidates") or [])[:12]:
+        all_candidates = payload.get("candidates") or []
+        for item in all_candidates[:60]:
             if not isinstance(item, dict):
                 continue
             category = str(item.get("category") or "").strip().lower()
@@ -390,7 +506,8 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             )
 
         threads: list[dict[str, Any]] = []
-        for item in (payload.get("priority_threads") or [])[:8]:
+        all_threads = payload.get("priority_threads") or []
+        for item in all_threads[:20]:
             if not isinstance(item, dict):
                 continue
             threads.append(
@@ -410,15 +527,57 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
         result.append(
             {
                 "evidence_id": source.id,
-                "extraction_id": extraction.id,
+                "structured_extraction_id": extraction.id if extraction else None,
+                "understanding_extraction_id": (
+                    understanding.id if understanding else None
+                ),
                 "source_type": source.historical_source_type,
                 "safe_display_name": _clip(source.safe_display_name, limit=160),
                 "source_review_status": source.review_status,
-                "extraction_review_status": extraction.review_status,
-                "case_focus": _clip(payload.get("case_focus"), limit=1200),
+                "extraction_review_status": (
+                    extraction.review_status if extraction else None
+                ),
+                "document": (
+                    payload.get("document")
+                    if isinstance(payload.get("document"), dict)
+                    else (
+                        understanding_payload.get("document")
+                        if isinstance(understanding_payload.get("document"), dict)
+                        else {}
+                    )
+                ),
+                "rina_summary": _clip(payload.get("rina_summary"), limit=1800),
+                "case_focus": _clip(payload.get("case_focus"), limit=1800),
+                "advisor_suggestions": [
+                    _clip(item, limit=500)
+                    for item in (payload.get("advisor_suggestions") or [])[:12]
+                    if _clip(item, limit=500)
+                ],
+                "candidate_count": len(all_candidates),
+                "priority_thread_count": len(all_threads),
                 "priority_threads": threads,
                 "candidates": candidate_rows,
-                "semantic_authority": "candidate_only",
+                "understanding": (
+                    _compact_understanding_payload(understanding_payload)
+                    if understanding_payload
+                    else None
+                ),
+                "bundle_content": (
+                    _bundle_child_content_summary(source.id)
+                    if source.historical_source_type == "whatsapp_conversation"
+                    else None
+                ),
+                "semantic_authority": (
+                    "advisor_reviewed_source"
+                    if (
+                        source.review_status == "accepted"
+                        or (
+                            extraction is not None
+                            and extraction.review_status in {"accepted", "corrected"}
+                        )
+                    )
+                    else "candidate_only"
+                ),
             }
         )
 
@@ -476,6 +635,7 @@ def build_rina_historical_copilot_context(
             VehicleEvidence.car_id == context.car_id,
             VehicleEvidence.historical_source_type.isnot(None),
             VehicleEvidence.deleted_at.is_(None),
+            ~VehicleEvidence.bundle_parent_items.any(),
         )
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
         .limit(40)
@@ -591,10 +751,13 @@ def build_rina_historical_copilot_context(
         "selected_car_id": context.car_id,
         "owner_user_id": owner.id if owner is not None else None,
         "source_review_counts": dict(source_review_counts),
+        "top_level_source_count": len(source_rows),
         "pending_source_ids": pending_source_ids,
         "source_candidate_backlog": source_candidates,
         "unrecorded_candidate_count": sum(
-            len(item.get("candidates") or []) for item in source_candidates
+            int(item.get("candidate_count") or 0)
+            for item in source_candidates
+            if item.get("semantic_authority") == "candidate_only"
         ),
         "priority_thread_count": sum(
             len(item.get("priority_threads") or []) for item in source_candidates

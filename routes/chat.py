@@ -24,6 +24,10 @@ from flask_login import current_user, login_required
 from sqlalchemy import or_
 
 from extensions import db
+from historical_ingestion.reconciliation import (
+    HistoricalReconciliationError,
+    apply_reconciliation,
+)
 from models import (
     AdvisorNote,
     Car,
@@ -381,6 +385,78 @@ def chat_historical_copilot():
                     "Rina prepares candidate history; an advisor reviews and "
                     "authorizes durable changes."
                 ),
+            }
+        ),
+        200,
+    )
+
+
+@chat_bp.post("/chat/historical-copilot/apply-reconciliation")
+@login_required
+def chat_historical_copilot_apply_reconciliation():
+    """Apply only an advisor-reviewed reconciliation after explicit confirmation."""
+
+    data = request.get_json(silent=True) or {}
+    car_id = _coerce_car_id(data.get("car_id"))
+    extraction_id = _coerce_car_id(data.get("extraction_id"))
+    confirmed = data.get("confirm") is True
+
+    if car_id is None or extraction_id is None or not confirmed:
+        return jsonify({"error": "Explicit advisor confirmation is required."}), 400
+
+    try:
+        context = resolve_rina_vehicle_context(
+            user_id=current_user.id,
+            car_id=car_id,
+        )
+    except (RinaAuthorityError, RinaContextResolutionError):
+        return jsonify({"error": "That vehicle is not available to this account."}), 403
+
+    if context.authority not in {"advisor", "administrator"}:
+        return jsonify({"error": "Historical Copilot requires advisor access."}), 403
+
+    try:
+        plan = apply_reconciliation(
+            extraction_id=extraction_id,
+            actor_user_id=current_user.id,
+        )
+        db.session.commit()
+    except HistoricalReconciliationError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "rina_historical_copilot_apply_failed car_id=%s extraction_id=%s actor_id=%s",
+            car_id,
+            extraction_id,
+            current_user.id,
+        )
+        return jsonify({"error": "Aura could not apply the approved history."}), 500
+
+    if plan is None:
+        return (
+            jsonify(
+                {
+                    "car_id": car_id,
+                    "extraction_id": extraction_id,
+                    "state": "nothing_confirmed_to_apply",
+                    "plan_id": None,
+                }
+            ),
+            200,
+        )
+
+    if plan.car_id != car_id:
+        return jsonify({"error": "Approved history does not match this vehicle."}), 409
+
+    return (
+        jsonify(
+            {
+                "car_id": car_id,
+                "extraction_id": extraction_id,
+                "state": "applied",
+                "plan_id": plan.id,
             }
         ),
         200,

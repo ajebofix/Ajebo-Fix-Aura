@@ -14,8 +14,9 @@ from typing import Any
 from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
 from historical_ingestion.models import HistoricalServiceEpisode
+from historical_ingestion.reconciliation import applied_reconciliation_plan
 from historical_ingestion.service import HistoricalIngestionError, decrypt_extraction_payload
-from models import Car, CarDriver, TreatmentPlan, User, VehicleEvent
+from models import Car, CarDriver, CarOwnership, TreatmentPlan, User, VehicleEvent
 from profiles.models import ClientProfile, ProfileAuditEvent
 from rina.audit_models import RinaAIAuditEvent
 from services.rina_context_resolver import RinaResolvedContext
@@ -173,6 +174,8 @@ def _attribution_summary(extraction: EvidenceExtraction | None) -> dict[str, Any
                 {
                     "classification": _clip(row.get("classification"), limit=32),
                     "title": _clip(row.get("title"), limit=220),
+                    "summary": _clip(row.get("summary"), limit=700),
+                    "match_reason": _clip(row.get("match_reason"), limit=500),
                     "evidence_role": _clip(row.get("evidence_role"), limit=40),
                     "occurred_at": _clip(row.get("occurred_at"), limit=64),
                     "confidence": row.get("confidence"),
@@ -306,6 +309,319 @@ def _historical_episodes(car_id: int) -> list[dict[str, Any]]:
             }
         )
     return result
+
+
+def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
+    """Expose bounded candidate-only source analysis before advisor publication."""
+
+    sources = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == car_id,
+            VehicleEvidence.historical_source_type.isnot(None),
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .limit(8)
+        .all()
+    )
+
+    result: list[dict[str, Any]] = []
+    for source in sources:
+        extraction = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=source.id,
+                extraction_type="structured_fields",
+                status="completed",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        if extraction is None:
+            continue
+
+        try:
+            payload = decrypt_extraction_payload(
+                extraction,
+                reviewed=extraction.review_status in {"accepted", "corrected"},
+            )
+        except HistoricalIngestionError:
+            continue
+
+        candidate_rows: list[dict[str, Any]] = []
+        for item in (payload.get("candidates") or [])[:12]:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or "").strip().lower()
+            destination = str(item.get("suggested_destination") or "").strip().lower()
+            if category == "financial" or destination == "financial_separate":
+                continue
+            action = item.get("action") if isinstance(item.get("action"), dict) else {}
+            candidate_rows.append(
+                {
+                    "candidate_id": _clip(item.get("candidate_id"), limit=64),
+                    "category": _clip(category, limit=40),
+                    "state": _clip(item.get("state"), limit=40),
+                    "title": _clip(item.get("title"), limit=220),
+                    "detail": _clip(item.get("detail"), limit=350),
+                    "occurred_at": _clip(item.get("occurred_at"), limit=64),
+                    "suggested_destination": _clip(destination, limit=48),
+                    "completion_confirmed": bool(item.get("completion_confirmed")),
+                    "action": {
+                        "kind": _clip(action.get("kind"), limit=40),
+                        "component_name": _clip(action.get("component_name"), limit=220),
+                        "component_location": _clip(
+                            action.get("component_location"),
+                            limit=120,
+                        ),
+                    }
+                    if action
+                    else None,
+                    "source_fact_ids": [
+                        _clip(ref, limit=120)
+                        for ref in (item.get("source_fact_ids") or [])[:8]
+                        if _clip(ref, limit=120)
+                    ],
+                    "review_decision": _clip(item.get("review_decision"), limit=24),
+                    "candidate_only": item.get("review_decision") not in {
+                        "accepted",
+                    },
+                }
+            )
+
+        threads: list[dict[str, Any]] = []
+        for item in (payload.get("priority_threads") or [])[:8]:
+            if not isinstance(item, dict):
+                continue
+            threads.append(
+                {
+                    "title": _clip(item.get("title"), limit=220),
+                    "priority": _clip(item.get("priority"), limit=40),
+                    "reason": _clip(item.get("reason"), limit=500),
+                    "status": _clip(item.get("status"), limit=40),
+                    "source_refs": [
+                        _clip(ref, limit=120)
+                        for ref in (item.get("source_refs") or [])[:8]
+                        if _clip(ref, limit=120)
+                    ],
+                }
+            )
+
+        result.append(
+            {
+                "evidence_id": source.id,
+                "extraction_id": extraction.id,
+                "source_type": source.historical_source_type,
+                "safe_display_name": _clip(source.safe_display_name, limit=160),
+                "source_review_status": source.review_status,
+                "extraction_review_status": extraction.review_status,
+                "case_focus": _clip(payload.get("case_focus"), limit=1200),
+                "priority_threads": threads,
+                "candidates": candidate_rows,
+                "semantic_authority": "candidate_only",
+            }
+        )
+
+    return result
+
+
+def build_rina_historical_copilot_context(
+    context: RinaResolvedContext,
+) -> dict[str, Any] | None:
+    """Return advisor-facing historical backlog without promoting candidates to truth."""
+
+    if context.authority not in _PRIVILEGED:
+        return None
+
+    car = db.session.get(Car, context.car_id)
+    if car is None:
+        return None
+
+    episodes = _historical_episodes(context.car_id)
+    source_candidates = _historical_source_candidate_backlog(context.car_id)
+
+    open_groups: list[dict[str, Any]] = []
+    seen: set[tuple[object, ...]] = set()
+    for episode in episodes:
+        attribution = episode.get("case_attribution") or {}
+        for group in attribution.get("evidence_groups") or []:
+            classification = str(group.get("classification") or "").strip().lower()
+            if classification not in {"uncertain", "other_episode", "unassigned"}:
+                continue
+            key = (
+                classification,
+                group.get("title"),
+                tuple(group.get("source_refs") or []),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            open_groups.append(
+                {
+                    "classification": classification,
+                    "title": group.get("title"),
+                    "summary": group.get("summary"),
+                    "match_reason": group.get("match_reason"),
+                    "evidence_role": group.get("evidence_role"),
+                    "occurred_at": group.get("occurred_at"),
+                    "confidence": group.get("confidence"),
+                    "source_refs": list(group.get("source_refs") or [])[:8],
+                    "source_episode_id": episode.get("episode_id"),
+                    "candidate_only": True,
+                }
+            )
+
+    source_rows = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == context.car_id,
+            VehicleEvidence.historical_source_type.isnot(None),
+            VehicleEvidence.deleted_at.is_(None),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .limit(40)
+        .all()
+    )
+    source_review_counts = Counter(
+        str(row.review_status or "unknown") for row in source_rows
+    )
+    pending_source_ids = [
+        row.id
+        for row in source_rows
+        if row.review_status not in {"accepted", "superseded", "deleted"}
+    ][:12]
+
+    owner = car.active_ownership.user if car.active_ownership else None
+    known_other_vehicles: list[dict[str, Any]] = []
+    if owner is not None:
+        ownerships = (
+            CarOwnership.query.join(Car, Car.id == CarOwnership.car_id)
+            .filter(
+                CarOwnership.user_id == owner.id,
+                CarOwnership.is_active.is_(True),
+                CarOwnership.car_id != context.car_id,
+            )
+            .order_by(CarOwnership.start_date.desc(), CarOwnership.id.desc())
+            .limit(12)
+            .all()
+        )
+        for ownership in ownerships:
+            other = ownership.car
+            if other is None:
+                continue
+            known_other_vehicles.append(
+                {
+                    "car_id": other.id,
+                    "display_name": _clip(other.rina_display_name, limit=220),
+                    "plate_number": _clip(ownership.plate_number, limit=20),
+                    "vin_tail": (
+                        str(other.vin or "").strip().upper()[-6:]
+                        if other.vin
+                        else None
+                    ),
+                }
+            )
+
+    identity_candidates = [
+        group
+        for group in open_groups
+        if str(group.get("evidence_role") or "").strip().lower() == "identity"
+    ]
+    possible_unregistered_vehicle = bool(
+        identity_candidates
+        and any(
+            group.get("classification") in {"other_episode", "unassigned"}
+            for group in identity_candidates
+        )
+    )
+
+    reconciliation_backlog: list[dict[str, Any]] = []
+    for episode in episodes:
+        reconciliation = episode.get("reconciliation")
+        if reconciliation is None:
+            if episode.get("case_attribution"):
+                reconciliation_backlog.append(
+                    {
+                        "episode_id": episode.get("episode_id"),
+                        "title": episode.get("title"),
+                        "state": "reconciliation_not_prepared",
+                    }
+                )
+            continue
+
+        review_status = str(reconciliation.get("review_status") or "").strip().lower()
+        counts = reconciliation.get("decision_counts") or {}
+        unreviewed = int(counts.get("unreviewed") or 0)
+        extraction_id = reconciliation.get("extraction_id")
+
+        if review_status in {"accepted", "corrected"} and not unreviewed:
+            applied = (
+                applied_reconciliation_plan(int(extraction_id))
+                if extraction_id
+                else None
+            )
+            if applied is None:
+                reconciliation_backlog.append(
+                    {
+                        "episode_id": episode.get("episode_id"),
+                        "title": episode.get("title"),
+                        "state": "ready_to_apply",
+                        "reconciliation_extraction_id": extraction_id,
+                        "unreviewed_candidates": 0,
+                    }
+                )
+            continue
+
+        reconciliation_backlog.append(
+            {
+                "episode_id": episode.get("episode_id"),
+                "title": episode.get("title"),
+                "state": (
+                    "advisor_review_required"
+                    if review_status not in {"accepted", "corrected"}
+                    else "candidate_decisions_incomplete"
+                ),
+                "reconciliation_extraction_id": extraction_id,
+                "unreviewed_candidates": unreviewed,
+            }
+        )
+
+    return {
+        "scope": "advisor_supervised_historical_copilot",
+        "candidate_only": True,
+        "selected_car_id": context.car_id,
+        "owner_user_id": owner.id if owner is not None else None,
+        "source_review_counts": dict(source_review_counts),
+        "pending_source_ids": pending_source_ids,
+        "source_candidate_backlog": source_candidates,
+        "unrecorded_candidate_count": sum(
+            len(item.get("candidates") or []) for item in source_candidates
+        ),
+        "priority_thread_count": sum(
+            len(item.get("priority_threads") or []) for item in source_candidates
+        ),
+        "reconciliation_backlog": reconciliation_backlog[:12],
+        "unresolved_attribution_groups": open_groups[:20],
+        "known_other_client_vehicles": known_other_vehicles,
+        "possible_unregistered_vehicle": possible_unregistered_vehicle,
+        "possible_unregistered_vehicle_evidence": identity_candidates[:8],
+        "vehicle_identity_proposals": [
+            {
+                "title": item.get("title"),
+                "summary": item.get("summary"),
+                "confidence": item.get("confidence"),
+                "source_refs": item.get("source_refs") or [],
+                "proposal_state": "human_confirmation_required",
+            }
+            for item in identity_candidates[:8]
+        ],
+        "supervision_policy": {
+            "rina_may_prepare": True,
+            "advisor_must_review": True,
+            "advisor_must_authorize_durable_write": True,
+            "rina_may_self_approve": False,
+            "new_vehicle_identity_requires_human_confirmation": True,
+        },
+    }
 
 
 def _completion_detail(action: TreatmentAction) -> dict[str, Any] | None:
@@ -614,6 +930,7 @@ def build_rina_advisor_360_context(
     owner = _safe_owner_context(car)
     owner_user_id = owner.get("owner_user_id") if owner else None
     treatment_history = _treatment_context(context.car_id)
+    historical_copilot = build_rina_historical_copilot_context(context)
 
     return {
         "context_version": 1,
@@ -628,6 +945,7 @@ def build_rina_advisor_360_context(
             "active_drivers": _driver_context(context.car_id),
         },
         "historical_episodes": _historical_episodes(context.car_id),
+        "historical_copilot": historical_copilot,
         "treatment_history": treatment_history,
         "canonical_treatment_action_index": _canonical_treatment_action_index(
             treatment_history

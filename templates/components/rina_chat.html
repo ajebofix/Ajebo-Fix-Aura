@@ -87,14 +87,32 @@
                 aria-live="polite"
             ></div>
 
-            <button
-                id="rina-clear-context"
-                class="btn btn-secondary"
-                type="button"
+            <div class="button-grid" style="margin-top: 10px;">
+                <button
+                    id="rina-historical-copilot"
+                    class="btn btn-secondary"
+                    type="button"
+                    style="display: none;"
+                >
+                    Historical Copilot
+                </button>
+
+                <button
+                    id="rina-clear-context"
+                    class="btn btn-secondary"
+                    type="button"
+                    style="display: none;"
+                >
+                    Return to Advisor overview
+                </button>
+            </div>
+
+            <div
+                id="rina-historical-copilot-panel"
+                class="profile-notice"
                 style="margin-top: 10px; display: none;"
-            >
-                Return to Advisor overview
-            </button>
+                aria-live="polite"
+            ></div>
         {% else %}
             <select
                 id="rina-vehicle-select"
@@ -174,6 +192,8 @@
     const vehicleSearchButtonEl = document.getElementById("rina-vehicle-search-button");
     const vehicleResultsEl = document.getElementById("rina-vehicle-results");
     const clearContextEl = document.getElementById("rina-clear-context");
+    const historicalCopilotEl = document.getElementById("rina-historical-copilot");
+    const historicalCopilotPanelEl = document.getElementById("rina-historical-copilot-panel");
     const currentContextEl = document.getElementById("rina-current-context");
     const vehicleStatusEl = document.getElementById("rina-vehicle-status");
     const authorityBannerEl = document.getElementById("rina-authority-banner");
@@ -189,6 +209,7 @@
     let selectedAuthority = null;
     let loading = false;
     let accountWelcome = null;
+    let rinaVoice = null;
 
     function authorityPresentation(authority) {
         if (authority === "driver") {
@@ -545,6 +566,196 @@
         }
     }
 
+    function appendCopilotLine(parent, label, value) {
+        const row = document.createElement("p");
+        row.style.margin = "5px 0";
+        const strong = document.createElement("strong");
+        strong.textContent = `${label}: `;
+        row.appendChild(strong);
+        row.appendChild(document.createTextNode(String(value)));
+        parent.appendChild(row);
+    }
+
+    function renderHistoricalCopilot(data) {
+        if (!historicalCopilotPanelEl) return;
+        historicalCopilotPanelEl.replaceChildren();
+
+        const backlog = data?.backlog || {};
+        const title = document.createElement("strong");
+        title.textContent = "Rina Historical Copilot";
+        historicalCopilotPanelEl.appendChild(title);
+
+        const intro = document.createElement("p");
+        intro.style.margin = "6px 0 10px";
+        intro.textContent = "Rina can prepare missing historical memory for advisor review. Nothing below becomes durable vehicle truth without advisor approval.";
+        historicalCopilotPanelEl.appendChild(intro);
+
+        const unresolved = backlog.unresolved_attribution_groups || [];
+        const reconciliations = backlog.reconciliation_backlog || [];
+        const pendingSources = backlog.pending_source_ids || [];
+        const otherVehicles = backlog.known_other_client_vehicles || [];
+
+        appendCopilotLine(historicalCopilotPanelEl, "Pending sources", pendingSources.length);
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Unrecorded source candidates",
+            Number(backlog.unrecorded_candidate_count || 0)
+        );
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Historical priority threads",
+            Number(backlog.priority_thread_count || 0)
+        );
+        appendCopilotLine(historicalCopilotPanelEl, "Episodes needing reconciliation/review", reconciliations.length);
+        appendCopilotLine(historicalCopilotPanelEl, "Unresolved historical groups", unresolved.length);
+        appendCopilotLine(historicalCopilotPanelEl, "Other registered client vehicles", otherVehicles.length);
+
+        const readyToApply = reconciliations.filter(
+            item => item.state === "ready_to_apply" && item.reconciliation_extraction_id
+        );
+        if (readyToApply.length) {
+            const heading = document.createElement("strong");
+            heading.textContent = "Advisor-approved history ready to apply";
+            historicalCopilotPanelEl.appendChild(heading);
+
+            for (const item of readyToApply) {
+                const row = document.createElement("div");
+                row.style.margin = "8px 0";
+
+                const label = document.createElement("p");
+                label.style.margin = "0 0 6px";
+                label.textContent = item.title || `Historical episode ${item.episode_id}`;
+                row.appendChild(label);
+
+                const applyButton = document.createElement("button");
+                applyButton.type = "button";
+                applyButton.className = "btn btn-primary";
+                applyButton.textContent = "Apply approved history";
+                applyButton.addEventListener("click", () => {
+                    applyHistoricalReconciliation(item.reconciliation_extraction_id);
+                });
+                row.appendChild(applyButton);
+                historicalCopilotPanelEl.appendChild(row);
+            }
+        }
+
+        if (backlog.possible_unregistered_vehicle) {
+            const warning = document.createElement("p");
+            warning.style.margin = "9px 0";
+            warning.textContent = "Rina found candidate identity evidence that may belong to another vehicle not yet registered in Aura. Advisor confirmation is required before creating or assigning a vehicle.";
+            historicalCopilotPanelEl.appendChild(warning);
+
+            if (data.client_vehicle_url) {
+                const vehicleLink = document.createElement("a");
+                vehicleLink.className = "btn btn-secondary";
+                vehicleLink.style.margin = "0 0 10px";
+                vehicleLink.href = data.client_vehicle_url;
+                vehicleLink.textContent = "Confirm / add second vehicle";
+                historicalCopilotPanelEl.appendChild(vehicleLink);
+            }
+        }
+
+        if (unresolved.length) {
+            const heading = document.createElement("strong");
+            heading.textContent = "Candidate backlog";
+            historicalCopilotPanelEl.appendChild(heading);
+
+            const list = document.createElement("ul");
+            list.style.margin = "7px 0 10px 22px";
+            list.style.padding = "0";
+            for (const item of unresolved.slice(0, 6)) {
+                const li = document.createElement("li");
+                li.style.margin = "4px 0";
+                li.textContent = `${item.title || "Historical item"} — ${item.classification || "needs review"}`;
+                list.appendChild(li);
+            }
+            historicalCopilotPanelEl.appendChild(list);
+        }
+
+        const review = document.createElement("a");
+        review.className = "btn btn-secondary";
+        review.href = data.review_url;
+        review.textContent = "Review Rina’s historical proposals";
+        historicalCopilotPanelEl.appendChild(review);
+        historicalCopilotPanelEl.style.display = "block";
+    }
+
+    async function applyHistoricalReconciliation(extractionId) {
+        const numericExtractionId = Number(extractionId);
+        if (!selectedCarId || !Number.isInteger(numericExtractionId)) return;
+
+        const approved = window.confirm(
+            "Apply the advisor-reviewed historical reconciliation to durable vehicle history? Rina cannot undo or self-approve this action."
+        );
+        if (!approved) return;
+
+        let refreshCopilot = false;
+        loading = true;
+        setChatEnabled(true);
+        try {
+            const data = await fetchJson(
+                "/chat/historical-copilot/apply-reconciliation",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        car_id: selectedCarId,
+                        extraction_id: numericExtractionId,
+                        confirm: true,
+                    }),
+                }
+            );
+
+            appendMessage(
+                "assistant",
+                data.state === "applied"
+                    ? "The advisor-approved historical reconciliation has been applied to durable history. I’ll use the canonical record on the next question."
+                    : "There were no confirmed historical actions to apply."
+            );
+            refreshCopilot = true;
+        } catch (error) {
+            appendMessage(
+                "assistant",
+                error.data?.error || "I could not apply that approved historical reconciliation."
+            );
+        } finally {
+            loading = false;
+            setChatEnabled(Boolean(selectedCarId || accountWelcome));
+        }
+
+        if (refreshCopilot) {
+            await loadHistoricalCopilot();
+        }
+    }
+
+    async function loadHistoricalCopilot() {
+        if (!isProfessional || !selectedCarId || loading) return;
+        loading = true;
+        setChatEnabled(true);
+        if (historicalCopilotEl) historicalCopilotEl.disabled = true;
+        try {
+            const data = await fetchJson(
+                `/chat/historical-copilot?car_id=${encodeURIComponent(selectedCarId)}`
+            );
+            renderHistoricalCopilot(data);
+        } catch (error) {
+            if (historicalCopilotPanelEl) {
+                historicalCopilotPanelEl.replaceChildren();
+                const message = document.createElement("p");
+                message.style.margin = "0";
+                message.textContent = error.status === 403
+                    ? "Historical Copilot is available only in an authorised advisor context."
+                    : "Rina could not load the historical backlog right now.";
+                historicalCopilotPanelEl.appendChild(message);
+                historicalCopilotPanelEl.style.display = "block";
+            }
+        } finally {
+            loading = false;
+            if (historicalCopilotEl) historicalCopilotEl.disabled = false;
+            setChatEnabled(Boolean(selectedCarId || accountWelcome));
+        }
+    }
+
     async function clearVehicleContext({ quiet = false } = {}) {
         if (loading) return;
         loading = true;
@@ -563,6 +774,11 @@
             if (vehicleSelectEl) vehicleSelectEl.value = "";
             if (vehicleResultsEl) vehicleResultsEl.replaceChildren();
             if (clearContextEl) clearContextEl.style.display = "none";
+            if (historicalCopilotEl) historicalCopilotEl.style.display = "none";
+            if (historicalCopilotPanelEl) {
+                historicalCopilotPanelEl.style.display = "none";
+                historicalCopilotPanelEl.replaceChildren();
+            }
             setProfessionalContextLabel(null);
             updateAuthorityBanner();
             vehicleStatusEl.textContent = isProfessional
@@ -597,6 +813,11 @@
             selectedAuthority = data.authority || selectedOptionAuthority();
             if (vehicleSelectEl) vehicleSelectEl.value = String(selectedCarId);
             if (clearContextEl) clearContextEl.style.display = "inline-block";
+            if (historicalCopilotEl) historicalCopilotEl.style.display = "inline-block";
+            if (historicalCopilotPanelEl) {
+                historicalCopilotPanelEl.style.display = "none";
+                historicalCopilotPanelEl.replaceChildren();
+            }
             setProfessionalContextLabel(data.context_label || data.label || "Selected vehicle");
             const presentation = authorityPresentation(selectedAuthority);
             vehicleStatusEl.textContent = `Rina is scoped to ${data.context_label || data.label} as ${presentation.label}.`;
@@ -795,13 +1016,51 @@
         }
     }
 
+    function chooseRinaVoice() {
+        if (!("speechSynthesis" in window)) return null;
+        const voices = window.speechSynthesis.getVoices() || [];
+        if (!voices.length) return null;
+
+        const preferredNames = [
+            "Serena",
+            "Samantha",
+            "Sonia",
+            "Karen",
+            "Moira",
+            "Tessa",
+            "Fiona",
+            "Ava",
+            "Susan",
+            "Zoe",
+            "Google UK English Female",
+            "Microsoft Sonia Online",
+            "Microsoft Libby Online",
+        ];
+
+        for (const preferred of preferredNames) {
+            const exact = voices.find(voice =>
+                voice.name.toLowerCase().includes(preferred.toLowerCase())
+            );
+            if (exact) return exact;
+        }
+
+        return voices.find(voice => /^en-GB$/i.test(voice.lang))
+            || voices.find(voice => /^en(?:-|$)/i.test(voice.lang))
+            || null;
+    }
+
+    function loadRinaVoice() {
+        rinaVoice = chooseRinaVoice();
+    }
+
     function speak(text) {
         try {
             window.speechSynthesis.cancel();
             const speech = new SpeechSynthesisUtterance(text);
-            speech.lang = "en-GB";
-            speech.rate = 0.95;
-            speech.pitch = 1.05;
+            speech.lang = rinaVoice?.lang || "en-GB";
+            if (rinaVoice) speech.voice = rinaVoice;
+            speech.rate = 0.94;
+            speech.pitch = 1.0;
             speech.volume = 1;
             window.speechSynthesis.speak(speech);
         } catch (_) {
@@ -836,6 +1095,15 @@
 
         if (clearContextEl) {
             clearContextEl.addEventListener("click", () => clearVehicleContext());
+        }
+
+        if (historicalCopilotEl) {
+            historicalCopilotEl.addEventListener("click", loadHistoricalCopilot);
+        }
+
+        if ("speechSynthesis" in window) {
+            loadRinaVoice();
+            window.speechSynthesis.addEventListener?.("voiceschanged", loadRinaVoice);
         }
 
         sendEl.addEventListener("click", sendToRina);

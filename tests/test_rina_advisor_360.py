@@ -13,6 +13,7 @@ from rina.audit_models import RinaAIAuditEvent
 from services.rina_advisor_360 import (
     _display_treatment_action_title,
     build_rina_advisor_360_context,
+    build_rina_historical_copilot_context,
 )
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_contracts import RinaRequest
@@ -57,6 +58,232 @@ def test_display_treatment_action_title_preserves_meaningful_plan_when_not_compl
         "Annual maintenance plan",
         "recommended",
     ) == "Annual maintenance plan"
+
+
+
+def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(app):
+    with app.app_context():
+        owner, admin, car, _action = _setup_longitudinal_case()
+        episode = HistoricalServiceEpisode.query.filter_by(car_id=car.id).first()
+        corpus = VehicleEvidence.query.filter_by(
+            car_id=car.id,
+            historical_source_type="whatsapp_conversation",
+        ).first()
+
+        payload = {
+            "schema_version": 1,
+            "episode_summary": "Later review found evidence outside the anchored job.",
+            "match_overview": "One identity thread may belong to another vehicle.",
+            "evidence_groups": [
+                {
+                    "classification": "other_episode",
+                    "title": "Possible second Mercedes identity",
+                    "summary": "The source refers to a different vehicle identity.",
+                    "occurred_at": None,
+                    "evidence_role": "identity",
+                    "source_refs": ["CHAT m000901"],
+                    "source_excerpt": "Different Mercedes discussed here.",
+                    "confidence": 0.86,
+                    "match_reason": "Identity does not fit the anchored episode.",
+                },
+                {
+                    "classification": "unassigned",
+                    "title": "Unassigned earlier workshop visit",
+                    "summary": "Relevant vehicle history without a safe episode assignment.",
+                    "occurred_at": None,
+                    "evidence_role": "context",
+                    "source_refs": ["CHAT m000902"],
+                    "source_excerpt": "Earlier visit needs advisor review.",
+                    "confidence": 0.72,
+                    "match_reason": "Insufficient episode evidence.",
+                },
+            ],
+            "advisor_attention": ["Confirm whether the identity thread is another car."],
+            "source_ref_counts": {
+                "matched": 0,
+                "uncertain": 0,
+                "other_episode": 1,
+                "unassigned": 1,
+            },
+        }
+        cipher, version, digest = _payload_cipher(payload)
+        newer = EvidenceExtraction(
+            evidence_id=corpus.id,
+            extraction_type="historical_case_attribution",
+            provider="test",
+            provider_model="test-model",
+            status="completed",
+            result_ciphertext=cipher,
+            result_key_version=version,
+            result_sha256=digest,
+            review_status="unreviewed",
+            provenance={
+                "analysis_pipeline": "historical_case_attribution_v1",
+                "episode_id": episode.id,
+                "semantic_authority": "candidate_only",
+            },
+            completed_at=datetime(2026, 9, 22, 10, 0, 0),
+        )
+        db.session.add(newer)
+        db.session.flush()
+
+        source_payload = {
+            "schema_version": 2,
+            "case_focus": "Several historical workshop jobs remain to be reviewed.",
+            "priority_threads": [
+                {
+                    "title": "Earlier workshop visit",
+                    "priority": "normal",
+                    "reason": "The conversation contains a separate earlier job.",
+                    "status": "completed_work",
+                    "source_refs": ["CHAT m000910"],
+                }
+            ],
+            "supporting_context": [],
+            "low_relevance_context": [],
+            "candidates": [
+                {
+                    "candidate_id": "SRC001",
+                    "category": "work_item",
+                    "state": "completed",
+                    "title": "Earlier workshop service",
+                    "detail": "Candidate historical work not yet published.",
+                    "suggested_destination": "treatment_action",
+                    "occurred_at": "2026-07-02T10:00:00",
+                    "completion_confirmed": True,
+                    "source_fact_ids": ["CHAT m000910"],
+                    "review_decision": "unreviewed",
+                    "action": {
+                        "kind": "service",
+                        "component_name": None,
+                        "component_location": None,
+                    },
+                },
+                {
+                    "candidate_id": "SRC002",
+                    "category": "observation",
+                    "state": "observed",
+                    "title": "Possible other vehicle identity",
+                    "detail": "Candidate identity needs advisor confirmation.",
+                    "suggested_destination": "vehicle_identity",
+                    "occurred_at": None,
+                    "completion_confirmed": False,
+                    "source_fact_ids": ["CHAT m000911"],
+                    "review_decision": "unreviewed",
+                    "action": None,
+                },
+            ],
+        }
+        source_cipher, source_version, source_digest = _payload_cipher(source_payload)
+        source_analysis = EvidenceExtraction(
+            evidence_id=corpus.id,
+            extraction_type="structured_fields",
+            provider="test",
+            provider_model="test-model",
+            status="completed",
+            result_ciphertext=source_cipher,
+            result_key_version=source_version,
+            result_sha256=source_digest,
+            review_status="unreviewed",
+            provenance={
+                "analysis_pipeline": "whatsapp_bundle_v1",
+                "semantic_authority": "candidate_only",
+            },
+            completed_at=datetime(2026, 9, 22, 10, 2, 0),
+        )
+        db.session.add(source_analysis)
+        db.session.flush()
+
+        ready_payload = {
+            "schema_version": 1,
+            "summary": "Rina prepared one advisor-confirmed historical action.",
+            "advisor_notice": "Advisor has reviewed the proposal.",
+            "candidates": [
+                {
+                    "candidate_id": "READY001",
+                    "title": "Historical inspection",
+                    "kind": "service",
+                    "component_name": None,
+                    "component_location": None,
+                    "suggested_occurred_at": "2026-08-09T10:00:00",
+                    "occurred_at": "2026-08-09T10:00:00",
+                    "evidence_state": "completion_claim",
+                    "source_refs": ["CHAT m000903"],
+                    "evidence_basis": "Advisor-confirmed source evidence.",
+                    "confidence": 0.95,
+                    "reconciliation_reason": "Missing from durable history.",
+                    "advisor_decision": "confirmed",
+                    "component_condition": "not_applicable",
+                    "advisor_note": "Confirmed for supervised apply.",
+                }
+            ],
+            "advisor_review_note": "Ready for explicit apply.",
+        }
+        cipher2, version2, digest2 = _payload_cipher(ready_payload)
+        ready_reconciliation = EvidenceExtraction(
+            evidence_id=corpus.id,
+            extraction_type="historical_reconciliation",
+            provider="test",
+            provider_model="test-model",
+            status="completed",
+            result_ciphertext=cipher2,
+            result_key_version=version2,
+            result_sha256=digest2,
+            review_status="corrected",
+            reviewed_by_user_id=admin.id,
+            reviewed_at=datetime(2026, 9, 22, 10, 10, 0),
+            reviewed_result_ciphertext=cipher2,
+            reviewed_result_key_version=version2,
+            reviewed_result_sha256=digest2,
+            provenance={
+                "analysis_pipeline": "historical_episode_reconciliation_v1",
+                "episode_id": episode.id,
+                "attribution_extraction_id": newer.id,
+                "semantic_authority": "candidate_only",
+            },
+            completed_at=datetime(2026, 9, 22, 10, 5, 0),
+        )
+        db.session.add(ready_reconciliation)
+        db.session.commit()
+
+        context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
+        copilot = build_rina_historical_copilot_context(context)
+
+        assert copilot is not None
+        assert copilot["candidate_only"] is True
+        assert copilot["unrecorded_candidate_count"] == 2
+        assert copilot["priority_thread_count"] == 1
+        assert copilot["source_candidate_backlog"][0]["case_focus"].startswith(
+            "Several historical workshop jobs"
+        )
+        assert all(
+            row["candidate_only"]
+            for row in copilot["source_candidate_backlog"][0]["candidates"]
+        )
+        assert copilot["possible_unregistered_vehicle"] is True
+        assert {
+            row["classification"]
+            for row in copilot["unresolved_attribution_groups"]
+        } == {"other_episode", "unassigned"}
+        assert copilot["supervision_policy"]["rina_may_prepare"] is True
+        assert copilot["supervision_policy"]["advisor_must_review"] is True
+        assert (
+            copilot["supervision_policy"]["advisor_must_authorize_durable_write"]
+            is True
+        )
+        assert copilot["supervision_policy"]["rina_may_self_approve"] is False
+        ready = [
+            row
+            for row in copilot["reconciliation_backlog"]
+            if row["state"] == "ready_to_apply"
+        ]
+        assert len(ready) == 1
+        assert ready[0]["reconciliation_extraction_id"] == ready_reconciliation.id
+
+        payload360 = build_rina_advisor_360_context(context)
+        assert payload360["historical_copilot"]["possible_unregistered_vehicle"] is True
+        assert payload360["scope"]["read_only"] is True
+
 
 
 def _user(*, suffix: int, role: str = "user") -> User:
@@ -557,6 +784,8 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
         assert "collapse them into one action" in instructions
         assert "do not present a historical candidate as a separate" in instructions.lower()
         assert "use canonical_treatment_action_index.display_title" in instructions
+        assert "historical_copilot is candidate-only" in instructions
+        assert "You may prepare and explain proposed historical records" in instructions
         serialized = json.dumps(payload)
         assert "Private home address" not in serialized
         assert "Private Contact" not in serialized

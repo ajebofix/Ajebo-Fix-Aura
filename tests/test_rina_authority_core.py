@@ -10,6 +10,8 @@ from services.rina_authority import (
     ACTION_ADMIN_GOVERNANCE,
     ACTION_APPROVE_ASSESSMENT,
     ACTION_APPROVE_TREATMENT,
+    ACTION_APPLY_ADVISOR_APPROVED_HISTORY,
+    ACTION_PREPARE_HISTORICAL_RECORDS,
     ACTION_READ_ADVISOR_MEMORY,
     ACTION_READ_OWNER_FINANCIAL_CONTEXT,
     AUTHORITY_ADMINISTRATOR,
@@ -85,6 +87,8 @@ def test_owner_authority_is_vehicle_specific_and_human_approvals_stay_denied(app
         assert authority.global_role == "user"
         assert AUTHORITY_OWNER in authority.relationships
         assert authority.allows(ACTION_READ_OWNER_FINANCIAL_CONTEXT)
+        assert not authority.allows(ACTION_PREPARE_HISTORICAL_RECORDS)
+        assert not authority.allows(ACTION_APPLY_ADVISOR_APPROVED_HISTORY)
         assert not authority.allows(ACTION_APPROVE_ASSESSMENT)
         assert not authority.allows(ACTION_APPROVE_TREATMENT)
 
@@ -112,6 +116,8 @@ def test_driver_cannot_inherit_owner_financial_or_approval_authority(app):
         assert authority.authority == AUTHORITY_DRIVER
         assert not authority.allows(ACTION_READ_OWNER_FINANCIAL_CONTEXT)
         assert not authority.allows(ACTION_READ_ADVISOR_MEMORY)
+        assert not authority.allows(ACTION_PREPARE_HISTORICAL_RECORDS)
+        assert not authority.allows(ACTION_APPLY_ADVISOR_APPROVED_HISTORY)
         assert not authority.allows(ACTION_APPROVE_ASSESSMENT)
         assert not authority.allows(ACTION_APPROVE_TREATMENT)
 
@@ -141,6 +147,8 @@ def test_advisor_role_requires_persisted_vehicle_scope(app):
         authority = resolve_rina_authority(user_id=advisor.id, car_id=car.id)
         assert authority.authority == AUTHORITY_ADVISOR
         assert authority.allows(ACTION_READ_ADVISOR_MEMORY)
+        assert authority.allows(ACTION_PREPARE_HISTORICAL_RECORDS)
+        assert authority.allows(ACTION_APPLY_ADVISOR_APPROVED_HISTORY)
         assert not authority.allows(ACTION_ADMIN_GOVERNANCE)
 
 
@@ -159,6 +167,8 @@ def test_administrator_is_not_misrepresented_as_owner_or_advisor(app):
         assert authority.global_role == "admin"
         assert AUTHORITY_ADMINISTRATOR in authority.relationships
         assert AUTHORITY_OWNER not in authority.relationships
+        assert authority.allows(ACTION_PREPARE_HISTORICAL_RECORDS)
+        assert authority.allows(ACTION_APPLY_ADVISOR_APPROVED_HISTORY)
         assert authority.allows(ACTION_ADMIN_GOVERNANCE)
 
 

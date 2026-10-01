@@ -322,7 +322,7 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             VehicleEvidence.deleted_at.is_(None),
         )
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
-        .limit(16)
+        .limit(8)
         .all()
     )
 
@@ -349,7 +349,7 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             continue
 
         candidate_rows: list[dict[str, Any]] = []
-        for item in (payload.get("candidates") or [])[:30]:
+        for item in (payload.get("candidates") or [])[:12]:
             if not isinstance(item, dict):
                 continue
             category = str(item.get("category") or "").strip().lower()
@@ -363,7 +363,7 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
                     "category": _clip(category, limit=40),
                     "state": _clip(item.get("state"), limit=40),
                     "title": _clip(item.get("title"), limit=220),
-                    "detail": _clip(item.get("detail"), limit=600),
+                    "detail": _clip(item.get("detail"), limit=350),
                     "occurred_at": _clip(item.get("occurred_at"), limit=64),
                     "suggested_destination": _clip(destination, limit=48),
                     "completion_confirmed": bool(item.get("completion_confirmed")),
@@ -390,7 +390,7 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             )
 
         threads: list[dict[str, Any]] = []
-        for item in (payload.get("priority_threads") or [])[:16]:
+        for item in (payload.get("priority_threads") or [])[:8]:
             if not isinstance(item, dict):
                 continue
             threads.append(

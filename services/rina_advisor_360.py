@@ -15,7 +15,7 @@ from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
 from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.service import HistoricalIngestionError, decrypt_extraction_payload
-from models import Car, CarDriver, TreatmentPlan, User, VehicleEvent
+from models import Car, CarDriver, CarOwnership, TreatmentPlan, User, VehicleEvent
 from profiles.models import ClientProfile, ProfileAuditEvent
 from rina.audit_models import RinaAIAuditEvent
 from services.rina_context_resolver import RinaResolvedContext
@@ -306,6 +306,164 @@ def _historical_episodes(car_id: int) -> list[dict[str, Any]]:
             }
         )
     return result
+
+
+def build_rina_historical_copilot_context(
+    context: RinaResolvedContext,
+) -> dict[str, Any] | None:
+    """Return advisor-facing historical backlog without promoting candidates to truth."""
+
+    if context.authority not in _PRIVILEGED:
+        return None
+
+    car = db.session.get(Car, context.car_id)
+    if car is None:
+        return None
+
+    episodes = _historical_episodes(context.car_id)
+
+    open_groups: list[dict[str, Any]] = []
+    seen: set[tuple[object, ...]] = set()
+    for episode in episodes:
+        attribution = episode.get("case_attribution") or {}
+        for group in attribution.get("evidence_groups") or []:
+            classification = str(group.get("classification") or "").strip().lower()
+            if classification not in {"uncertain", "other_episode", "unassigned"}:
+                continue
+            key = (
+                classification,
+                group.get("title"),
+                tuple(group.get("source_refs") or []),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            open_groups.append(
+                {
+                    "classification": classification,
+                    "title": group.get("title"),
+                    "evidence_role": group.get("evidence_role"),
+                    "occurred_at": group.get("occurred_at"),
+                    "confidence": group.get("confidence"),
+                    "source_refs": list(group.get("source_refs") or [])[:8],
+                    "source_episode_id": episode.get("episode_id"),
+                    "candidate_only": True,
+                }
+            )
+
+    source_rows = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == context.car_id,
+            VehicleEvidence.historical_source_type.isnot(None),
+            VehicleEvidence.deleted_at.is_(None),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .limit(40)
+        .all()
+    )
+    source_review_counts = Counter(
+        str(row.review_status or "unknown") for row in source_rows
+    )
+    pending_source_ids = [
+        row.id
+        for row in source_rows
+        if row.review_status not in {"accepted", "superseded", "deleted"}
+    ][:12]
+
+    owner = car.active_ownership.user if car.active_ownership else None
+    known_other_vehicles: list[dict[str, Any]] = []
+    if owner is not None:
+        ownerships = (
+            CarOwnership.query.join(Car, Car.id == CarOwnership.car_id)
+            .filter(
+                CarOwnership.user_id == owner.id,
+                CarOwnership.is_active.is_(True),
+                CarOwnership.car_id != context.car_id,
+            )
+            .order_by(CarOwnership.start_date.desc(), CarOwnership.id.desc())
+            .limit(12)
+            .all()
+        )
+        for ownership in ownerships:
+            other = ownership.car
+            if other is None:
+                continue
+            known_other_vehicles.append(
+                {
+                    "car_id": other.id,
+                    "display_name": _clip(other.rina_display_name, limit=220),
+                    "plate_number": _clip(ownership.plate_number, limit=20),
+                    "vin_tail": (
+                        str(other.vin or "").strip().upper()[-6:]
+                        if other.vin
+                        else None
+                    ),
+                }
+            )
+
+    identity_candidates = [
+        group
+        for group in open_groups
+        if str(group.get("evidence_role") or "").strip().lower() == "identity"
+    ]
+    possible_unregistered_vehicle = bool(
+        identity_candidates
+        and any(
+            group.get("classification") in {"other_episode", "unassigned"}
+            for group in identity_candidates
+        )
+    )
+
+    reconciliation_backlog: list[dict[str, Any]] = []
+    for episode in episodes:
+        reconciliation = episode.get("reconciliation")
+        if reconciliation is None:
+            if episode.get("case_attribution"):
+                reconciliation_backlog.append(
+                    {
+                        "episode_id": episode.get("episode_id"),
+                        "title": episode.get("title"),
+                        "state": "reconciliation_not_prepared",
+                    }
+                )
+            continue
+
+        review_status = str(reconciliation.get("review_status") or "").strip().lower()
+        counts = reconciliation.get("decision_counts") or {}
+        unreviewed = int(counts.get("unreviewed") or 0)
+        if review_status not in {"accepted", "corrected"} or unreviewed:
+            reconciliation_backlog.append(
+                {
+                    "episode_id": episode.get("episode_id"),
+                    "title": episode.get("title"),
+                    "state": (
+                        "advisor_review_required"
+                        if review_status not in {"accepted", "corrected"}
+                        else "candidate_decisions_incomplete"
+                    ),
+                    "unreviewed_candidates": unreviewed,
+                }
+            )
+
+    return {
+        "scope": "advisor_supervised_historical_copilot",
+        "candidate_only": True,
+        "selected_car_id": context.car_id,
+        "source_review_counts": dict(source_review_counts),
+        "pending_source_ids": pending_source_ids,
+        "reconciliation_backlog": reconciliation_backlog[:12],
+        "unresolved_attribution_groups": open_groups[:20],
+        "known_other_client_vehicles": known_other_vehicles,
+        "possible_unregistered_vehicle": possible_unregistered_vehicle,
+        "possible_unregistered_vehicle_evidence": identity_candidates[:8],
+        "supervision_policy": {
+            "rina_may_prepare": True,
+            "advisor_must_review": True,
+            "advisor_must_authorize_durable_write": True,
+            "rina_may_self_approve": False,
+            "new_vehicle_identity_requires_human_confirmation": True,
+        },
+    }
 
 
 def _completion_detail(action: TreatmentAction) -> dict[str, Any] | None:
@@ -614,6 +772,7 @@ def build_rina_advisor_360_context(
     owner = _safe_owner_context(car)
     owner_user_id = owner.get("owner_user_id") if owner else None
     treatment_history = _treatment_context(context.car_id)
+    historical_copilot = build_rina_historical_copilot_context(context)
 
     return {
         "context_version": 1,
@@ -628,6 +787,7 @@ def build_rina_advisor_360_context(
             "active_drivers": _driver_context(context.car_id),
         },
         "historical_episodes": _historical_episodes(context.car_id),
+        "historical_copilot": historical_copilot,
         "treatment_history": treatment_history,
         "canonical_treatment_action_index": _canonical_treatment_action_index(
             treatment_history

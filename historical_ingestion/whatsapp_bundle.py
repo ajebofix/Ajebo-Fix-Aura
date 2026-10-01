@@ -1067,7 +1067,7 @@ def _write_no_speech_transcription(
     _create_encrypted_extraction(
         evidence_id=child.id,
         extraction_type="transcription",
-        provider="aura_video",
+        provider="aura_media",
         payload={
             "schema_version": 1,
             "text": f"{source_ref} No intelligible speech detected.",

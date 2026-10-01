@@ -19,6 +19,8 @@ from historical_ingestion.service import (
 )
 from historical_ingestion.whatsapp_bundle import (
     WhatsAppBundleValidationError,
+    _bundle_source_coverage,
+    _validated_historical_intelligence,
     advance_whatsapp_bundle_analysis,
     ingest_whatsapp_bundle,
     latest_whatsapp_bundle_extraction,
@@ -803,6 +805,17 @@ def test_corrupt_non_transcript_media_is_recorded_and_does_not_kill_bundle(app):
             bundle_evidence_id=started.evidence_id
         ).count() == 4
 
+        archive = db.session.get(VehicleEvidence, started.evidence_id)
+        coverage = _bundle_source_coverage(
+            archive,
+            corpus="[CHAT m000001 | date | sender] test",
+        )
+        assert coverage["archive_member_count"] == 5
+        assert coverage["bundle_item_count"] == 4
+        assert coverage["rejected_unsafe_count"] == 1
+        assert coverage["coverage_complete"] is False
+        assert coverage["claim"] == "partial"
+
 
 def test_bundle_schema_requires_contextual_relevance():
     required_understanding = set(BUNDLE_UNDERSTANDING_SCHEMA["required"])
@@ -813,10 +826,70 @@ def test_bundle_schema_requires_contextual_relevance():
         "supporting_context",
         "low_relevance_context",
     }
+    intelligence_fields = {
+        "vehicle_candidates",
+        "service_episode_candidates",
+    }
     assert relevance_fields <= required_understanding
     assert relevance_fields <= required_candidates
+    assert intelligence_fields <= required_understanding
+    assert intelligence_fields <= required_candidates
+    assert "canonical_comparisons" in required_candidates
     assert "relevance is contextual, never a keyword filter" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
     assert "priority for advisor attention" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
+    assert "MULTIPLE VEHICLES" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
+    assert "segment the ENTIRE chronology" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
+
+
+def test_historical_intelligence_validator_prevents_wholly_missing_with_canonical_match():
+    payload = {
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": 10,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [91],
+                "already_represented_facts": ["Rear AIRMATIC air spring replacement"],
+                "missing_facts": ["Post-work outcome"],
+                "conflicts": [],
+                "reason": "Model initially treated the episode as missing.",
+                "advisor_confirmation_required": False,
+            },
+            {
+                "episode_candidate_id": "E002",
+                "comparison": "already_represented",
+                "matched_car_id": 999,
+                "matched_historical_episode_ids": [555],
+                "matched_treatment_action_ids": [444],
+                "already_represented_facts": [],
+                "missing_facts": [],
+                "conflicts": [],
+                "reason": "Invented canonical identifiers.",
+                "advisor_confirmation_required": False,
+            },
+        ]
+    }
+    trusted = {
+        "known_client_vehicles": [{"car_id": 10}],
+        "canonical_history": {
+            "treatment_actions": [{"treatment_action_id": 91}],
+            "historical_service_episodes": [],
+        },
+    }
+
+    normalized = _validated_historical_intelligence(payload, trusted)
+    first, second = normalized["canonical_comparisons"]
+
+    assert first["comparison"] == "partially_represented"
+    assert first["matched_treatment_action_ids"] == [91]
+    assert first["advisor_confirmation_required"] is True
+
+    assert second["comparison"] == "uncertain"
+    assert second["matched_car_id"] is None
+    assert second["matched_treatment_action_ids"] == []
+    assert second["matched_historical_episode_ids"] == []
+    assert second["advisor_confirmation_required"] is True
 
 
 def test_whatsapp_bundle_accepts_general_vehicle_history_context(app):

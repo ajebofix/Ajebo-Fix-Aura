@@ -465,3 +465,117 @@ def test_historical_copilot_apply_requires_explicit_advisor_confirmation(
         {"type": "historical_reconciliation", "id": extraction.id}
     ]
 
+def test_admin_can_rebuild_historical_intelligence_from_existing_whatsapp_bundle(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=227, role="admin")
+    owner = _user(suffix=228)
+    car = _car(suffix=227)
+    _own(owner=owner, car=car, suffix=227)
+
+    source = VehicleEvidence(
+        car_id=car.id,
+        uploaded_by_user_id=admin.id,
+        evidence_type="archive",
+        purpose="vehicle_history_context",
+        source_channel="whatsapp",
+        historical_source_type="whatsapp_conversation",
+        visibility="advisor",
+        review_status="pending_review",
+        storage_provider="test-private",
+        storage_state="available",
+        object_key="workspace/history-v2.zip",
+        safe_display_name="WhatsApp history.zip",
+        content_type="application/zip",
+        byte_size=512,
+        sha256="6" * 64,
+        consent_basis="advisor_whatsapp_case_import",
+        lawful_purpose="vehicle_care_recordkeeping",
+    )
+    db.session.add(source)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    calls = []
+
+    def fake_restart(*, evidence_id, actor_user_id):
+        calls.append((evidence_id, actor_user_id))
+        return SimpleNamespace(
+            extraction_id=456,
+            status="processing",
+            phase="preprocessing",
+            reused_existing=False,
+        )
+
+    monkeypatch.setattr(
+        "routes.chat.restart_whatsapp_bundle_analysis",
+        fake_restart,
+    )
+
+    response = _post_json(
+        client,
+        "/chat/historical-copilot/rebuild",
+        {"car_id": car.id},
+    )
+    assert response.status_code == 202
+    payload = response.get_json()
+    assert payload["evidence_id"] == source.id
+    assert payload["extraction_id"] == 456
+    assert payload["status"] == "processing"
+    assert payload["status_url"].endswith(
+        f"/admin/cars/{car.id}/historical-records/{source.id}/analysis-status"
+    )
+    assert calls == [(source.id, admin.id)]
+
+    audit = RinaAIAuditEvent.query.filter_by(action_family="historical_rebuild").one()
+    assert audit.car_id == car.id
+    assert audit.user_id == admin.id
+    assert audit.authority == "administrator"
+    assert audit.evidence_refs == [{"type": "vehicle_evidence", "id": source.id}]
+    assert audit.audit_metadata["historical_intelligence_version"] == 2
+
+
+def test_owner_cannot_rebuild_historical_intelligence(app, client, monkeypatch):
+    owner = _user(suffix=229)
+    car = _car(suffix=229)
+    _own(owner=owner, car=car, suffix=229)
+
+    source = VehicleEvidence(
+        car_id=car.id,
+        uploaded_by_user_id=owner.id,
+        evidence_type="archive",
+        purpose="vehicle_history_context",
+        source_channel="whatsapp",
+        historical_source_type="whatsapp_conversation",
+        visibility="advisor",
+        review_status="pending_review",
+        storage_provider="test-private",
+        storage_state="available",
+        object_key="workspace/owner-history.zip",
+        safe_display_name="Owner history.zip",
+        content_type="application/zip",
+        byte_size=256,
+        sha256="5" * 64,
+        consent_basis="owner_uploaded",
+        lawful_purpose="vehicle_care_recordkeeping",
+    )
+    db.session.add(source)
+    db.session.commit()
+    _sign_in(client, owner)
+
+    monkeypatch.setattr(
+        "routes.chat.restart_whatsapp_bundle_analysis",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Owner must not start advisor historical rebuild")
+        ),
+    )
+
+    response = _post_json(
+        client,
+        "/chat/historical-copilot/rebuild",
+        {"car_id": car.id},
+    )
+    assert response.status_code == 403
+

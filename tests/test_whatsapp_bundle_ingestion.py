@@ -19,6 +19,8 @@ from historical_ingestion.service import (
 )
 from historical_ingestion.whatsapp_bundle import (
     WhatsAppBundleValidationError,
+    _bundle_source_coverage,
+    _validated_historical_intelligence,
     advance_whatsapp_bundle_analysis,
     ingest_whatsapp_bundle,
     latest_whatsapp_bundle_extraction,
@@ -127,6 +129,11 @@ class FakeBundleAnalyzer:
         assert "[AUDIO evidence:" in corpus
         assert "[VIDEO evidence:" in corpus
         assert trusted_vehicle_context["audience"] == "Ajebo Fix professional advisor"
+        assert trusted_vehicle_context["historical_intelligence_contract"] == (
+            "multi_vehicle_episode_diff_v2"
+        )
+        assert trusted_vehicle_context["selected_vehicle_car_id"]
+        assert trusted_vehicle_context["known_client_vehicles"]
         return HistoricalBackgroundResponse(
             response_id="bundle-understanding",
             status="queued",
@@ -193,6 +200,72 @@ class FakeBundleAnalyzer:
                             "reason": "They do not alter the vehicle-care chronology.",
                         }
                     ],
+                    "vehicle_candidates": [
+                        {
+                            "candidate_id": "V001",
+                            "identity_state": "selected_vehicle_match",
+                            "make_model_year": "2014 Mercedes-Benz GL 450",
+                            "vin": None,
+                            "plate_number": "JJJ926HX",
+                            "client_name": "Oluwasanmi Ademola Samuel",
+                            "identity_summary": "The principal vehicle in the current care episode.",
+                            "source_refs": ["CHAT m000001"],
+                            "source_excerpt": "Dashboard and screen went off while driving.",
+                            "confidence": 0.98,
+                        },
+                        {
+                            "candidate_id": "V002",
+                            "identity_state": "possible_other_vehicle",
+                            "make_model_year": "Another Mercedes",
+                            "vin": None,
+                            "plate_number": None,
+                            "client_name": "Oluwasanmi Ademola Samuel",
+                            "identity_summary": "A separate vehicle identity appears in older context.",
+                            "source_refs": ["CHAT m000001"],
+                            "source_excerpt": "Older vehicle context is separate from the current episode.",
+                            "confidence": 0.66,
+                        },
+                    ],
+                    "service_episode_candidates": [
+                        {
+                            "episode_candidate_id": "E001",
+                            "vehicle_candidate_id": "V001",
+                            "title": "Electrical interruption and AIRMATIC follow-up",
+                            "date_start": "2026-08-08",
+                            "date_end": "2026-08-14",
+                            "episode_state": "mixed",
+                            "summary": "Current August care episode.",
+                            "reported_concerns": ["Electrical interruption"],
+                            "observations": ["Rear suspension context"],
+                            "recommended_interventions": [],
+                            "authorized_interventions": [],
+                            "completed_interventions": [],
+                            "outcomes": ["Electrical symptom did not return"],
+                            "source_refs": ["CHAT m000001", "CHAT m000002"],
+                            "source_excerpt": "Electrical symptom did not return after work.",
+                            "confidence": 0.96,
+                            "separation_reason": "Continuous August chronology.",
+                        },
+                        {
+                            "episode_candidate_id": "E002",
+                            "vehicle_candidate_id": "V001",
+                            "title": "Earlier workshop service",
+                            "date_start": None,
+                            "date_end": None,
+                            "episode_state": "uncertain",
+                            "summary": "An earlier service episode is distinct from August.",
+                            "reported_concerns": [],
+                            "observations": [],
+                            "recommended_interventions": [],
+                            "authorized_interventions": [],
+                            "completed_interventions": [],
+                            "outcomes": [],
+                            "source_refs": ["CHAT m000001"],
+                            "source_excerpt": "Earlier context precedes the August episode.",
+                            "confidence": 0.72,
+                            "separation_reason": "Different time period and service context.",
+                        },
+                    ],
                 },
             )
         if response_id == "bundle-structuring":
@@ -250,6 +323,98 @@ class FakeBundleAnalyzer:
                             "reason": "They do not alter the vehicle-care chronology.",
                         }
                     ],
+                    "vehicle_candidates": [
+                        {
+                            "candidate_id": "V001",
+                            "identity_state": "selected_vehicle_match",
+                            "make_model_year": "2014 Mercedes-Benz GL 450",
+                            "vin": None,
+                            "plate_number": "JJJ926HX",
+                            "client_name": "Oluwasanmi Ademola Samuel",
+                            "identity_summary": "The principal vehicle in the current care episode.",
+                            "source_refs": ["CHAT m000001"],
+                            "source_excerpt": "Dashboard and screen went off while driving.",
+                            "confidence": 0.98,
+                        },
+                        {
+                            "candidate_id": "V002",
+                            "identity_state": "possible_other_vehicle",
+                            "make_model_year": "Another Mercedes",
+                            "vin": None,
+                            "plate_number": None,
+                            "client_name": "Oluwasanmi Ademola Samuel",
+                            "identity_summary": "A separate vehicle identity appears in older context.",
+                            "source_refs": ["CHAT m000001"],
+                            "source_excerpt": "Older vehicle context is separate from the current episode.",
+                            "confidence": 0.66,
+                        },
+                    ],
+                    "service_episode_candidates": [
+                        {
+                            "episode_candidate_id": "E001",
+                            "vehicle_candidate_id": "V001",
+                            "title": "Electrical interruption and AIRMATIC follow-up",
+                            "date_start": "2026-08-08",
+                            "date_end": "2026-08-14",
+                            "episode_state": "mixed",
+                            "summary": "Current August care episode.",
+                            "reported_concerns": ["Electrical interruption"],
+                            "observations": ["Rear suspension context"],
+                            "recommended_interventions": [],
+                            "authorized_interventions": [],
+                            "completed_interventions": [],
+                            "outcomes": ["Electrical symptom did not return"],
+                            "source_refs": ["CHAT m000001", "CHAT m000002"],
+                            "source_excerpt": "Electrical symptom did not return after work.",
+                            "confidence": 0.96,
+                            "separation_reason": "Continuous August chronology.",
+                        },
+                        {
+                            "episode_candidate_id": "E002",
+                            "vehicle_candidate_id": "V001",
+                            "title": "Earlier workshop service",
+                            "date_start": None,
+                            "date_end": None,
+                            "episode_state": "uncertain",
+                            "summary": "An earlier service episode is distinct from August.",
+                            "reported_concerns": [],
+                            "observations": [],
+                            "recommended_interventions": [],
+                            "authorized_interventions": [],
+                            "completed_interventions": [],
+                            "outcomes": [],
+                            "source_refs": ["CHAT m000001"],
+                            "source_excerpt": "Earlier context precedes the August episode.",
+                            "confidence": 0.72,
+                            "separation_reason": "Different time period and service context.",
+                        },
+                    ],
+                    "canonical_comparisons": [
+                        {
+                            "episode_candidate_id": "E001",
+                            "comparison": "uncertain",
+                            "matched_car_id": None,
+                            "matched_historical_episode_ids": [],
+                            "matched_treatment_action_ids": [],
+                            "already_represented_facts": [],
+                            "missing_facts": [],
+                            "conflicts": [],
+                            "reason": "No durable-match fixture was supplied in this unit case.",
+                            "advisor_confirmation_required": True,
+                        },
+                        {
+                            "episode_candidate_id": "E002",
+                            "comparison": "missing_from_durable_history",
+                            "matched_car_id": None,
+                            "matched_historical_episode_ids": [],
+                            "matched_treatment_action_ids": [],
+                            "already_represented_facts": [],
+                            "missing_facts": ["Earlier workshop service episode"],
+                            "conflicts": [],
+                            "reason": "No canonical episode represents the earlier service.",
+                            "advisor_confirmation_required": True,
+                        },
+                    ],
                     "candidates": [
                         {
                             "category": "outcome",
@@ -296,7 +461,15 @@ class FakeBundleAnalyzer:
     ):
         self.started_structuring += 1
         assert understanding["document"]["document_type"] == "whatsapp_case_bundle"
+        assert understanding["historical_intelligence_version"] == 2
+        assert understanding["source_coverage"]["chat_message_count"] == 2
+        assert len(understanding["vehicle_candidates"]) == 2
+        assert len(understanding["service_episode_candidates"]) == 2
         assert trusted_vehicle_context["audience"] == "Ajebo Fix professional advisor"
+        assert trusted_vehicle_context["historical_intelligence_contract"] == (
+            "multi_vehicle_episode_diff_v2"
+        )
+        assert "canonical_history" in trusted_vehicle_context
         return HistoricalBackgroundResponse(
             response_id="bundle-structuring",
             status="queued",
@@ -515,6 +688,16 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
         assert payload["priority_threads"][0]["status"] == "outcome_followup"
         assert payload["supporting_context"][0]["source_refs"] == ["IMAGE evidence:2"]
         assert payload["low_relevance_context"][0]["reason"]
+        assert payload["historical_intelligence_version"] == 2
+        assert len(payload["vehicle_candidates"]) == 2
+        assert len(payload["service_episode_candidates"]) == 2
+        assert payload["canonical_comparisons"][1]["comparison"] == (
+            "missing_from_durable_history"
+        )
+        assert payload["source_coverage"]["coverage_complete"] is True
+        assert payload["source_coverage"]["chat_message_count"] == 2
+        assert payload["source_coverage"]["archive_member_count"] == 5
+        assert payload["source_coverage"]["completed_item_count"] == 5
         candidate = payload["candidates"][0]
         assert candidate["source_verified"] is True
         assert candidate["source_fact_ids"] == ["CHAT m000002"]
@@ -622,6 +805,17 @@ def test_corrupt_non_transcript_media_is_recorded_and_does_not_kill_bundle(app):
             bundle_evidence_id=started.evidence_id
         ).count() == 4
 
+        archive = db.session.get(VehicleEvidence, started.evidence_id)
+        coverage = _bundle_source_coverage(
+            archive,
+            corpus="[CHAT m000001 | date | sender] test",
+        )
+        assert coverage["archive_member_count"] == 5
+        assert coverage["bundle_item_count"] == 4
+        assert coverage["rejected_unsafe_count"] == 1
+        assert coverage["coverage_complete"] is False
+        assert coverage["claim"] == "partial"
+
 
 def test_bundle_schema_requires_contextual_relevance():
     required_understanding = set(BUNDLE_UNDERSTANDING_SCHEMA["required"])
@@ -632,11 +826,178 @@ def test_bundle_schema_requires_contextual_relevance():
         "supporting_context",
         "low_relevance_context",
     }
+    intelligence_fields = {
+        "vehicle_candidates",
+        "service_episode_candidates",
+    }
     assert relevance_fields <= required_understanding
     assert relevance_fields <= required_candidates
+    assert intelligence_fields <= required_understanding
+    assert intelligence_fields <= required_candidates
+    assert "canonical_comparisons" in required_candidates
     assert "relevance is contextual, never a keyword filter" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
     assert "priority for advisor attention" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
+    assert "MULTIPLE VEHICLES" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
+    assert "segment the ENTIRE chronology" in BUNDLE_UNDERSTANDING_INSTRUCTIONS
 
+
+def test_historical_intelligence_validator_prevents_wholly_missing_with_canonical_match():
+    payload = {
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": 10,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [91],
+                "already_represented_facts": ["Rear AIRMATIC air spring replacement"],
+                "missing_facts": ["Post-work outcome"],
+                "conflicts": [],
+                "reason": "Model initially treated the episode as missing.",
+                "advisor_confirmation_required": False,
+            },
+            {
+                "episode_candidate_id": "E002",
+                "comparison": "already_represented",
+                "matched_car_id": 999,
+                "matched_historical_episode_ids": [555],
+                "matched_treatment_action_ids": [444],
+                "already_represented_facts": [],
+                "missing_facts": [],
+                "conflicts": [],
+                "reason": "Invented canonical identifiers.",
+                "advisor_confirmation_required": False,
+            },
+        ]
+    }
+    trusted = {
+        "known_client_vehicles": [{"car_id": 10}],
+        "canonical_history": {
+            "treatment_actions": [{"treatment_action_id": 91}],
+            "historical_service_episodes": [],
+        },
+    }
+
+    normalized = _validated_historical_intelligence(payload, trusted)
+    first, second = normalized["canonical_comparisons"]
+
+    assert first["comparison"] == "partially_represented"
+    assert first["matched_treatment_action_ids"] == [91]
+    assert first["advisor_confirmation_required"] is True
+
+    assert second["comparison"] == "uncertain"
+    assert second["matched_car_id"] is None
+    assert second["matched_treatment_action_ids"] == []
+    assert second["matched_historical_episode_ids"] == []
+    assert second["advisor_confirmation_required"] is True
+
+
+def test_historical_intelligence_validator_matches_semantic_completed_action():
+    payload = {
+        "vehicle_candidates": [
+            {"candidate_id": "V001", "identity_state": "selected_vehicle_match"}
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E001",
+                "vehicle_candidate_id": "V001",
+                "completed_interventions": [
+                    "Replace rear AIRMATIC air springs as a pair"
+                ],
+            }
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": None,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": ["Rear AIRMATIC air spring replacement"],
+                "conflicts": [],
+                "reason": "Model missed the canonical equivalent.",
+                "advisor_confirmation_required": False,
+            }
+        ],
+    }
+    trusted = {
+        "car_id": 10,
+        "selected_vehicle_car_id": 10,
+        "known_client_vehicles": [{"car_id": 10}],
+        "canonical_history": {
+            "treatment_actions": [
+                {
+                    "treatment_action_id": 91,
+                    "car_id": 10,
+                    "title": "Replace rear AIRMATIC air springs as a pair",
+                    "status": "completed",
+                }
+            ],
+            "historical_service_episodes": [],
+        },
+    }
+
+    normalized = _validated_historical_intelligence(payload, trusted)
+    comparison = normalized["canonical_comparisons"][0]
+
+    assert comparison["comparison"] == "already_represented"
+    assert comparison["matched_treatment_action_ids"] == [91]
+    assert comparison["missing_facts"] == []
+    assert comparison["already_represented_facts"] == [
+        "Replace rear AIRMATIC air springs as a pair"
+    ]
+    assert comparison["advisor_confirmation_required"] is True
+
+
+def test_historical_intelligence_semantic_guard_respects_component_location():
+    payload = {
+        "vehicle_candidates": [
+            {"candidate_id": "V001", "identity_state": "selected_vehicle_match"}
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E001",
+                "vehicle_candidate_id": "V001",
+                "completed_interventions": ["Front lower control arm replacement"],
+            }
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": None,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": ["Front lower control arm replacement"],
+                "conflicts": [],
+                "reason": "No front action exists.",
+                "advisor_confirmation_required": True,
+            }
+        ],
+    }
+    trusted = {
+        "car_id": 10,
+        "selected_vehicle_car_id": 10,
+        "known_client_vehicles": [{"car_id": 10}],
+        "canonical_history": {
+            "treatment_actions": [
+                {
+                    "treatment_action_id": 92,
+                    "car_id": 10,
+                    "title": "Rear lower control arm replacement",
+                    "status": "completed",
+                }
+            ],
+            "historical_service_episodes": [],
+        },
+    }
+
+    normalized = _validated_historical_intelligence(payload, trusted)
+    comparison = normalized["canonical_comparisons"][0]
+    assert comparison["comparison"] == "missing_from_durable_history"
+    assert comparison["matched_treatment_action_ids"] == []
 
 def test_whatsapp_bundle_accepts_general_vehicle_history_context(app):
     with app.app_context():

@@ -63,7 +63,7 @@ def test_display_treatment_action_title_preserves_meaningful_plan_when_not_compl
 
 def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(app):
     with app.app_context():
-        owner, admin, car, _action = _setup_longitudinal_case()
+        owner, admin, car, action = _setup_longitudinal_case()
         episode = HistoricalServiceEpisode.query.filter_by(car_id=car.id).first()
         corpus = VehicleEvidence.query.filter_by(
             car_id=car.id,
@@ -141,6 +141,114 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
             ],
             "supporting_context": [],
             "low_relevance_context": [],
+            "historical_intelligence_version": 2,
+            "source_coverage": {
+                "coverage_version": 2,
+                "chat_message_count": 912,
+                "archive_member_count": 18,
+                "bundle_item_count": 18,
+                "completed_item_count": 18,
+                "failed_item_count": 0,
+                "unsupported_or_skipped_count": 0,
+                "rejected_unsafe_count": 0,
+                "supported_media_complete": True,
+                "coverage_complete": True,
+                "failed_items": [],
+                "non_materialized_members": [],
+                "claim": "complete_supported_evidence",
+            },
+            "vehicle_candidates": [
+                {
+                    "candidate_id": "V001",
+                    "identity_state": "selected_vehicle_match",
+                    "make_model_year": "2014 Mercedes-Benz GL 450",
+                    "vin": car.vin,
+                    "plate_number": "R360-001-LA",
+                    "client_name": owner.name,
+                    "identity_summary": "Selected GL 450.",
+                    "source_refs": ["CHAT m000001"],
+                    "source_excerpt": "GL 450 context.",
+                    "confidence": 0.99,
+                },
+                {
+                    "candidate_id": "V002",
+                    "identity_state": "possible_other_vehicle",
+                    "make_model_year": "Another Mercedes",
+                    "vin": None,
+                    "plate_number": None,
+                    "client_name": owner.name,
+                    "identity_summary": "Older messages point to a distinct vehicle.",
+                    "source_refs": ["CHAT m000911"],
+                    "source_excerpt": "Separate vehicle context.",
+                    "confidence": 0.81,
+                },
+            ],
+            "service_episode_candidates": [
+                {
+                    "episode_candidate_id": "E001",
+                    "vehicle_candidate_id": "V001",
+                    "title": "Recorded AIRMATIC intervention",
+                    "date_start": "2026-08-11",
+                    "date_end": "2026-08-11",
+                    "episode_state": "completed_work",
+                    "summary": "Already represented durable work.",
+                    "reported_concerns": [],
+                    "observations": [],
+                    "recommended_interventions": [],
+                    "authorized_interventions": [],
+                    "completed_interventions": ["Diagnostic scan"],
+                    "outcomes": [],
+                    "source_refs": ["CHAT m000910"],
+                    "source_excerpt": "Diagnostic work completed.",
+                    "confidence": 0.95,
+                    "separation_reason": "Current recorded episode.",
+                },
+                {
+                    "episode_candidate_id": "E002",
+                    "vehicle_candidate_id": "V001",
+                    "title": "Earlier workshop service",
+                    "date_start": "2026-07-02",
+                    "date_end": "2026-07-02",
+                    "episode_state": "completed_work",
+                    "summary": "Earlier work not represented in durable history.",
+                    "reported_concerns": [],
+                    "observations": [],
+                    "recommended_interventions": [],
+                    "authorized_interventions": [],
+                    "completed_interventions": ["Earlier workshop service"],
+                    "outcomes": [],
+                    "source_refs": ["CHAT m000912"],
+                    "source_excerpt": "Earlier service was completed.",
+                    "confidence": 0.91,
+                    "separation_reason": "Distinct earlier date and work.",
+                },
+            ],
+            "canonical_comparisons": [
+                {
+                    "episode_candidate_id": "E001",
+                    "comparison": "already_represented",
+                    "matched_car_id": car.id,
+                    "matched_historical_episode_ids": [episode.id],
+                    "matched_treatment_action_ids": [action.id],
+                    "already_represented_facts": ["Diagnostic scan"],
+                    "missing_facts": [],
+                    "conflicts": [],
+                    "reason": "Canonical action already represents this work.",
+                    "advisor_confirmation_required": False,
+                },
+                {
+                    "episode_candidate_id": "E002",
+                    "comparison": "missing_from_durable_history",
+                    "matched_car_id": car.id,
+                    "matched_historical_episode_ids": [],
+                    "matched_treatment_action_ids": [],
+                    "already_represented_facts": [],
+                    "missing_facts": ["Earlier workshop service"],
+                    "conflicts": [],
+                    "reason": "No canonical equivalent exists.",
+                    "advisor_confirmation_required": True,
+                },
+            ],
             "candidates": [
                 {
                     "candidate_id": "SRC001",
@@ -312,8 +420,17 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
         assert copilot["candidate_only"] is True
         assert copilot["top_level_source_count"] == 2
         assert voice_note.id not in copilot["pending_source_ids"]
-        assert copilot["unrecorded_candidate_count"] == 2
+        assert copilot["historical_intelligence_version"] == 2
+        assert copilot["unrecorded_candidate_count"] == 1
         assert copilot["priority_thread_count"] == 1
+        assert copilot["canonical_comparison_counts"]["already_represented"] == 1
+        assert (
+            copilot["canonical_comparison_counts"]["missing_from_durable_history"]
+            == 1
+        )
+        assert copilot["source_coverage"][0]["coverage_complete"] is True
+        assert len(copilot["vehicle_candidates"]) == 2
+        assert len(copilot["service_episode_candidates"]) == 2
         assert copilot["source_candidate_backlog"][0]["case_focus"].startswith(
             "Several historical workshop jobs"
         )

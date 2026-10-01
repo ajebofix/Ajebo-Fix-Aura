@@ -101,30 +101,246 @@ RELEVANCE_CONTEXT_PROPERTIES: dict[str, Any] = {
 }
 
 
+VEHICLE_CANDIDATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "candidate_id": {"type": "string"},
+        "identity_state": {
+            "type": "string",
+            "enum": [
+                "selected_vehicle_match",
+                "registered_other_vehicle_match",
+                "possible_other_vehicle",
+                "uncertain_vehicle",
+            ],
+        },
+        "make_model_year": {"type": ["string", "null"]},
+        "vin": {"type": ["string", "null"]},
+        "plate_number": {"type": ["string", "null"]},
+        "client_name": {"type": ["string", "null"]},
+        "identity_summary": {"type": "string"},
+        "source_refs": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "source_excerpt": {"type": "string"},
+        "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+        },
+    },
+    "required": [
+        "candidate_id",
+        "identity_state",
+        "make_model_year",
+        "vin",
+        "plate_number",
+        "client_name",
+        "identity_summary",
+        "source_refs",
+        "source_excerpt",
+        "confidence",
+    ],
+}
+
+
+SERVICE_EPISODE_CANDIDATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "episode_candidate_id": {"type": "string"},
+        "vehicle_candidate_id": {"type": ["string", "null"]},
+        "title": {"type": "string"},
+        "date_start": {"type": ["string", "null"]},
+        "date_end": {"type": ["string", "null"]},
+        "episode_state": {
+            "type": "string",
+            "enum": [
+                "completed_work",
+                "recommended_only",
+                "authorized_only",
+                "diagnostic_only",
+                "outcome_followup",
+                "mixed",
+                "uncertain",
+            ],
+        },
+        "summary": {"type": "string"},
+        "reported_concerns": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "observations": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "recommended_interventions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "authorized_interventions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "completed_interventions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "outcomes": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "source_refs": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "source_excerpt": {"type": "string"},
+        "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+        },
+        "separation_reason": {"type": "string"},
+    },
+    "required": [
+        "episode_candidate_id",
+        "vehicle_candidate_id",
+        "title",
+        "date_start",
+        "date_end",
+        "episode_state",
+        "summary",
+        "reported_concerns",
+        "observations",
+        "recommended_interventions",
+        "authorized_interventions",
+        "completed_interventions",
+        "outcomes",
+        "source_refs",
+        "source_excerpt",
+        "confidence",
+        "separation_reason",
+    ],
+}
+
+
+CANONICAL_COMPARISON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "episode_candidate_id": {"type": "string"},
+        "comparison": {
+            "type": "string",
+            "enum": [
+                "already_represented",
+                "partially_represented",
+                "missing_from_durable_history",
+                "conflicting",
+                "uncertain",
+                "belongs_to_other_vehicle",
+            ],
+        },
+        "matched_car_id": {"type": ["integer", "null"]},
+        "matched_historical_episode_ids": {
+            "type": "array",
+            "items": {"type": "integer"},
+        },
+        "matched_treatment_action_ids": {
+            "type": "array",
+            "items": {"type": "integer"},
+        },
+        "already_represented_facts": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "missing_facts": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "conflicts": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "reason": {"type": "string"},
+        "advisor_confirmation_required": {"type": "boolean"},
+    },
+    "required": [
+        "episode_candidate_id",
+        "comparison",
+        "matched_car_id",
+        "matched_historical_episode_ids",
+        "matched_treatment_action_ids",
+        "already_represented_facts",
+        "missing_facts",
+        "conflicts",
+        "reason",
+        "advisor_confirmation_required",
+    ],
+}
+
+
+HISTORICAL_INTELLIGENCE_UNDERSTANDING_PROPERTIES: dict[str, Any] = {
+    "vehicle_candidates": {
+        "type": "array",
+        "items": VEHICLE_CANDIDATE_SCHEMA,
+    },
+    "service_episode_candidates": {
+        "type": "array",
+        "items": SERVICE_EPISODE_CANDIDATE_SCHEMA,
+    },
+}
+
+
+HISTORICAL_INTELLIGENCE_STRUCTURED_PROPERTIES: dict[str, Any] = {
+    **HISTORICAL_INTELLIGENCE_UNDERSTANDING_PROPERTIES,
+    "canonical_comparisons": {
+        "type": "array",
+        "items": CANONICAL_COMPARISON_SCHEMA,
+    },
+}
+
+
 BUNDLE_UNDERSTANDING_SCHEMA = deepcopy(DOCUMENT_UNDERSTANDING_SCHEMA)
 BUNDLE_UNDERSTANDING_SCHEMA["properties"].update(RELEVANCE_CONTEXT_PROPERTIES)
+BUNDLE_UNDERSTANDING_SCHEMA["properties"].update(
+    HISTORICAL_INTELLIGENCE_UNDERSTANDING_PROPERTIES
+)
 BUNDLE_UNDERSTANDING_SCHEMA["required"] = [
     *BUNDLE_UNDERSTANDING_SCHEMA["required"],
     "case_focus",
     "priority_threads",
     "supporting_context",
     "low_relevance_context",
+    "vehicle_candidates",
+    "service_episode_candidates",
 ]
 
 BUNDLE_CANDIDATE_SCHEMA = deepcopy(CANDIDATE_SCHEMA)
 BUNDLE_CANDIDATE_SCHEMA["properties"].update(RELEVANCE_CONTEXT_PROPERTIES)
+BUNDLE_CANDIDATE_SCHEMA["properties"].update(
+    HISTORICAL_INTELLIGENCE_STRUCTURED_PROPERTIES
+)
 BUNDLE_CANDIDATE_SCHEMA["required"] = [
     *BUNDLE_CANDIDATE_SCHEMA["required"],
     "case_focus",
     "priority_threads",
     "supporting_context",
     "low_relevance_context",
+    "vehicle_candidates",
+    "service_episode_candidates",
+    "canonical_comparisons",
 ]
 
 
 BUNDLE_UNDERSTANDING_INSTRUCTIONS = """
-You are A.J. Rina reconstructing a historical vehicle-care case for an AJEBO FIX
-PROFESSIONAL ADVISOR from a WhatsApp export bundle.
+You are A.J. Rina performing HISTORICAL INTELLIGENCE reconstruction for an
+AJEBO FIX PROFESSIONAL ADVISOR from a WhatsApp export bundle.
+
+The source may contain MULTIPLE VEHICLES and MULTIPLE SERVICE EPISODES across
+months or years. The vehicle to which the ZIP was uploaded is context, not an
+assumption that every message/media item belongs to that vehicle.
 
 The input is a reconciled evidence corpus built from:
 - WhatsApp chat messages;
@@ -143,7 +359,17 @@ CONTEXTUAL RELEVANCE:
   apparently unrelated messages until you have read what comes before and after;
 - a message that looks trivial in isolation may establish timing, identity,
   authorisation, contradiction, symptom recurrence, completion or outcome;
-- after reading everything, identify the central vehicle-care case focus;
+- BEFORE deciding the case focus, perform a vehicle census across the entire
+  corpus. Create a distinct vehicle candidate whenever identity evidence, plate/VIN,
+  make/model/year, photographs, document identity or sustained conversation context
+  supports a different vehicle;
+- never force evidence into the uploaded/selected vehicle merely because the ZIP is
+  attached to it;
+- after the vehicle census, segment the ENTIRE chronology into distinct service
+  episodes. An earlier service, a later electrical investigation, a suspension job,
+  an accident repair and a routine maintenance visit must remain separate when the
+  evidence supports separation;
+- identify the central/current case focus only AFTER preserving the other episodes;
 - group related messages/media into priority threads rather than treating every
   message as equally important;
 - "priority" means priority for advisor attention, NOT mechanical diagnosis or
@@ -187,16 +413,40 @@ Authority rules:
 - for non-PDF sources use an empty source_pages list;
 - for PDF facts include real page numbers when they are present in the corpus.
 
-Think like a senior Ajebo Fix advisor handing another advisor a trustworthy,
-chronological case file.
+VEHICLE CENSUS RULES:
+- `vehicle_candidates` must include the selected/uploaded vehicle when supported,
+  but also every materially distinct second/third vehicle supported by the corpus;
+- use `possible_other_vehicle` or `uncertain_vehicle` when identity is incomplete;
+- a different VIN/plate is strong identity evidence, but explicit make/model/year,
+  repeated references such as "the other car", vehicle-specific photographs and
+  document identities may also support a separate candidate;
+- do not claim there is no other vehicle merely because a VIN is absent;
+- every vehicle candidate needs source references and a compact source-supported
+  excerpt.
+
+EPISODE SEGMENTATION RULES:
+- `service_episode_candidates` must attempt to represent ALL meaningful vehicle-care
+  episodes found across the full corpus, not only the most recent or most detailed;
+- episode separation should use chronology, subject continuity, vehicle identity,
+  symptoms, parts, authorisations, payments, follow-up outcomes and explicit job
+  references together;
+- do not call an observation a completed job;
+- completed_interventions must contain only source-supported completed work;
+- if an episode's vehicle cannot be identified responsibly, vehicle_candidate_id
+  must be null and the episode should remain uncertain.
+
+Think like a senior Ajebo Fix advisor reconstructing an entire longitudinal client
+history, not summarising one repair conversation.
 """.strip()
 
 
 BUNDLE_STRUCTURING_INSTRUCTIONS = """
-You are A.J. Rina converting an already-understood WhatsApp historical case bundle
+You are A.J. Rina converting an already-understood WhatsApp longitudinal history
 into candidate Aura records for an AJEBO FIX PROFESSIONAL ADVISOR.
 
-Use ONLY the pass-1 understanding supplied to you. Do not invent new source facts.
+You receive the pass-1 understanding plus TRUSTED AURA CONTEXT containing known
+client vehicles and durable canonical history. Use ONLY those supplied sources.
+Do not invent new source facts or database records.
 
 Rules:
 - owner/client complaint -> Reported Concern only when it was actually reported;
@@ -215,7 +465,28 @@ Rules:
   must not become vehicle-history candidates unless later context changed its meaning;
 - keep separate events separate when chronology matters;
 - use preowned_tokunbo only when a source establishes that condition;
-- contradictions or incomplete evidence belong in advisor_attention.
+- contradictions or incomplete evidence belong in advisor_attention;
+- preserve vehicle_candidates and service_episode_candidates from pass 1, correcting
+  only when trusted Aura context disambiguates identity;
+- for EVERY service_episode_candidate create one canonical_comparisons row;
+- compare semantically, not only by exact wording. "rear air spring replacement",
+  "replace rear AIRMATIC air springs", and equivalent phrasing may describe the same
+  durable intervention;
+- `already_represented` means the meaningful episode facts are already present in
+  supplied canonical Aura history;
+- `partially_represented` means some facts/actions exist canonically but other
+  source-supported facts are genuinely absent;
+- `missing_from_durable_history` is allowed ONLY when no semantically equivalent
+  canonical episode/action represents the source-supported work;
+- never label a completed intervention as missing merely because the source wording
+  differs from the canonical Treatment Action title;
+- when evidence belongs to a different/possible vehicle, use
+  `belongs_to_other_vehicle` or `uncertain` instead of contaminating the
+  selected vehicle's missing-history list;
+- matched_treatment_action_ids and matched_historical_episode_ids must contain ONLY
+  IDs supplied in trusted Aura context; never invent IDs;
+- missing_facts must contain only facts that are source-supported and not already
+  represented canonically.
 
 The result is a professional verification surface. Nothing becomes durable truth
 until the advisor approves it.
@@ -304,11 +575,13 @@ PROFESSIONAL ADVISOR.
 
 You receive:
 1. one advisor-reviewed historical service episode anchor; and
-2. one already-extracted WhatsApp evidence corpus for the SAME vehicle.
+2. one already-extracted WhatsApp evidence corpus that MAY contain multiple
+   vehicles and multiple service episodes.
 
 Your task is NOT to re-diagnose the vehicle and NOT to create durable vehicle
-history. Your task is to decide which parts of the WhatsApp corpus belong to the
-specific anchored service episode.
+history. Your task is to decide which parts of the WhatsApp corpus genuinely belong
+to the specific anchored vehicle/service episode. Evidence for another vehicle must
+be classified as other_episode or unassigned rather than forced into the anchor.
 
 CLASSIFY evidence contextually:
 - matched: strong temporal and semantic evidence that the item belongs to this

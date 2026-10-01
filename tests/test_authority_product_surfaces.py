@@ -223,4 +223,11 @@ def test_rina_chat_prefers_female_voice_and_exposes_historical_copilot():
     assert '"Microsoft Sonia Online"' in source
     assert "speech.voice = rinaVoice" in source
     assert "voiceschanged" in source
+    assert "/chat/historical-copilot/rebuild" in source
+    assert "Run full historical reconstruction" in source
+    assert "Rebuild full historical intelligence" in source
+    assert "Source coverage" in source
+    assert "Historical reconstruction" in source
+    assert "missing_from_durable_history" in source
+    assert "Additional / uncertain vehicle identities" in source
 

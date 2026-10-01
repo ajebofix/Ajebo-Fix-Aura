@@ -433,6 +433,23 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
             lawful_purpose="vehicle_care_recordkeeping",
         )
         db.session.add(superseded)
+
+        failed_rebuild = EvidenceExtraction(
+            evidence_id=corpus.id,
+            extraction_type="structured_fields",
+            provider="test",
+            provider_model="test-model",
+            status="failed",
+            review_status="unreviewed",
+            provenance={
+                "analysis_pipeline": "whatsapp_bundle_v1",
+                "background_stage": "failed",
+                "failure_class": "BundleFailure",
+                "failure_detail": "OpenAI background response ended with status failed.",
+            },
+            completed_at=datetime(2026, 9, 22, 11, 0, 0),
+        )
+        db.session.add(failed_rebuild)
         db.session.commit()
 
         context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
@@ -454,6 +471,11 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
             == 1
         )
         assert copilot["source_coverage"][0]["coverage_complete"] is True
+        assert copilot["source_coverage"][0]["bundle_item_count"] == 1
+        assert copilot["source_coverage"][0]["completed_item_count"] == 1
+        assert copilot["latest_rebuilds"][0]["status"] == "failed"
+        assert copilot["latest_rebuilds"][0]["phase"] == "failed"
+        assert copilot["latest_rebuilds"][0]["is_latest_completed_snapshot"] is False
         assert len(copilot["vehicle_candidates"]) == 2
         assert len(copilot["service_episode_candidates"]) == 2
         assert copilot["source_candidate_backlog"][0]["case_focus"].startswith(

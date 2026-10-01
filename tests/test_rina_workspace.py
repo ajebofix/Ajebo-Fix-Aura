@@ -1,6 +1,7 @@
 """Advisor entry, verified identity, and account/vehicle isolation regressions."""
 
 import json
+from types import SimpleNamespace
 
 from test_rina_chat_cutover import (
     _car,
@@ -11,6 +12,7 @@ from test_rina_chat_cutover import (
     _user,
 )
 
+from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
 from models import AdvisorNote, ChatMessage, VehicleProfile
 from rina.audit_models import RinaAIAuditEvent
@@ -372,4 +374,85 @@ def test_owner_cannot_open_historical_copilot(app, client):
         query_string={"car_id": car.id},
     )
     assert response.status_code == 403
+
+def test_historical_copilot_apply_requires_explicit_advisor_confirmation(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=225, role="admin")
+    owner = _user(suffix=226)
+    car = _car(suffix=225)
+    _own(owner=owner, car=car, suffix=225)
+
+    evidence = VehicleEvidence(
+        car_id=car.id,
+        uploaded_by_user_id=admin.id,
+        evidence_type="archive",
+        purpose="service_document",
+        source_channel="whatsapp",
+        historical_source_type="whatsapp_conversation",
+        visibility="advisor",
+        review_status="accepted",
+        storage_provider="test-private",
+        storage_state="available",
+        object_key="workspace/historical-copilot.zip",
+        safe_display_name="Historical Copilot.zip",
+        content_type="application/zip",
+        byte_size=128,
+        sha256="9" * 64,
+        consent_basis="advisor_whatsapp_case_import",
+        lawful_purpose="vehicle_care_recordkeeping",
+    )
+    db.session.add(evidence)
+    db.session.flush()
+    extraction = EvidenceExtraction(
+        evidence_id=evidence.id,
+        extraction_type="historical_reconciliation",
+        provider="test",
+        provider_model="test-model",
+        status="completed",
+        review_status="corrected",
+        provenance={"episode_id": 1},
+    )
+    db.session.add(extraction)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    calls = []
+
+    def fake_apply_reconciliation(*, extraction_id, actor_user_id):
+        calls.append((extraction_id, actor_user_id))
+        return SimpleNamespace(id=987, car_id=car.id)
+
+    monkeypatch.setattr(
+        "routes.chat.apply_reconciliation",
+        fake_apply_reconciliation,
+    )
+
+    missing_confirmation = _post_json(
+        client,
+        "/chat/historical-copilot/apply-reconciliation",
+        {
+            "car_id": car.id,
+            "extraction_id": extraction.id,
+            "confirm": False,
+        },
+    )
+    assert missing_confirmation.status_code == 400
+    assert calls == []
+
+    applied = _post_json(
+        client,
+        "/chat/historical-copilot/apply-reconciliation",
+        {
+            "car_id": car.id,
+            "extraction_id": extraction.id,
+            "confirm": True,
+        },
+    )
+    assert applied.status_code == 200
+    assert applied.get_json()["state"] == "applied"
+    assert applied.get_json()["plan_id"] == 987
+    assert calls == [(extraction.id, admin.id)]
 

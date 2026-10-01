@@ -1,7 +1,5 @@
 """Supervised conversational historical-record review through Ask Rina."""
 
-from types import SimpleNamespace
-
 from test_rina_chat_cutover import _car, _own, _post_json, _sign_in, _user
 
 from evidence.models import EvidenceExtraction, VehicleEvidence

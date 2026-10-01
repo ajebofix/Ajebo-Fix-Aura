@@ -208,3 +208,17 @@ def test_rina_chat_renders_assistant_markdown_without_raw_html():
     assert "/^(#{1,4})\\s+(.+)$/" in source
     assert "/^(\\d+)\\.\\s+(.+)$/" in source
 
+def test_rina_chat_prefers_female_voice_and_exposes_historical_copilot():
+    source = _source("templates/components/rina_chat.html")
+
+    assert 'id="rina-historical-copilot"' in source
+    assert 'id="rina-historical-copilot-panel"' in source
+    assert '"/chat/historical-copilot?car_id=' in source
+    assert "Rina prepares candidate history" in source
+    assert "function chooseRinaVoice" in source
+    assert '"Serena"' in source
+    assert '"Samantha"' in source
+    assert '"Microsoft Sonia Online"' in source
+    assert "speech.voice = rinaVoice" in source
+    assert "voiceschanged" in source
+

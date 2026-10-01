@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -26,6 +27,7 @@ from evidence.storage import (
     build_evidence_storage_provider,
 )
 from extensions import db
+from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.service import (
     HistoricalDocumentValidationError,
     HistoricalIngestionAccessError,
@@ -41,7 +43,8 @@ from historical_ingestion.service import (
     decrypt_extraction_payload,
 )
 from historical_ingestion.whatsapp_bundle_analyzer import WhatsAppBundleAdvisorAnalyzer
-from models import Car
+from models import Car, CarOwnership, TreatmentPlan, VehicleEvent
+from treatment.models import TreatmentAction
 from rina.providers.base import RinaProviderError, RinaProviderTransientError
 
 
@@ -1246,6 +1249,339 @@ def _process_child(
         )
 
 
+def _iso(value: object) -> str | None:
+    if value is None:
+        return None
+    isoformat = getattr(value, "isoformat", None)
+    return isoformat() if callable(isoformat) else str(value)
+
+
+def _historical_intelligence_context(car: Car) -> dict[str, Any]:
+    """Trusted Aura context used only to disambiguate and diff source history."""
+
+    base = _trusted_vehicle_context(car)
+    active_ownership = (
+        CarOwnership.query.filter_by(car_id=car.id, is_active=True)
+        .order_by(CarOwnership.id.desc())
+        .first()
+    )
+
+    ownerships = []
+    if active_ownership is not None:
+        ownerships = (
+            CarOwnership.query.filter_by(
+                user_id=active_ownership.user_id,
+                is_active=True,
+            )
+            .order_by(CarOwnership.start_date.desc(), CarOwnership.id.desc())
+            .limit(24)
+            .all()
+        )
+
+    if not ownerships:
+        ownerships = [active_ownership] if active_ownership is not None else []
+
+    known_vehicles: list[dict[str, Any]] = []
+    known_car_ids: list[int] = []
+    for ownership in ownerships:
+        if ownership is None or ownership.car is None:
+            continue
+        known_car = ownership.car
+        known_car_ids.append(known_car.id)
+        known_vehicles.append(
+            {
+                "car_id": known_car.id,
+                "display_name": known_car.rina_display_name,
+                "vin": (known_car.vin or "").strip().upper() or None,
+                "plate_number": (ownership.plate_number or "").strip() or None,
+                "is_selected_vehicle": known_car.id == car.id,
+            }
+        )
+
+    if car.id not in known_car_ids:
+        known_car_ids.insert(0, car.id)
+        known_vehicles.insert(
+            0,
+            {
+                "car_id": car.id,
+                "display_name": car.rina_display_name,
+                "vin": (car.vin or "").strip().upper() or None,
+                "plate_number": (
+                    (active_ownership.plate_number or "").strip()
+                    if active_ownership is not None
+                    else None
+                ),
+                "is_selected_vehicle": True,
+            },
+        )
+
+    actions = (
+        TreatmentAction.query.filter(TreatmentAction.car_id.in_(known_car_ids))
+        .order_by(TreatmentAction.completed_at.desc(), TreatmentAction.id.desc())
+        .limit(240)
+        .all()
+    )
+    plans_by_id = {
+        row.id: row
+        for row in TreatmentPlan.query.filter(
+            TreatmentPlan.id.in_(
+                sorted({action.treatment_plan_id for action in actions})
+            )
+        ).all()
+    } if actions else {}
+
+    canonical_actions = []
+    for action in actions:
+        plan = plans_by_id.get(action.treatment_plan_id)
+        canonical_actions.append(
+            {
+                "treatment_action_id": action.id,
+                "treatment_plan_id": action.treatment_plan_id,
+                "car_id": action.car_id,
+                "plan_title": plan.title if plan is not None else None,
+                "plan_record_origin": plan.record_origin if plan is not None else None,
+                "title": action.title,
+                "status": action.status,
+                "completed_at": _iso(action.completed_at),
+                "created_at": _iso(action.created_at),
+            }
+        )
+
+    historical_episodes = [
+        {
+            "historical_episode_id": episode.id,
+            "car_id": episode.car_id,
+            "title": episode.title,
+            "job_reference": episode.job_reference,
+            "episode_date": _iso(episode.episode_date),
+            "status": episode.status,
+        }
+        for episode in (
+            HistoricalServiceEpisode.query.filter(
+                HistoricalServiceEpisode.car_id.in_(known_car_ids),
+                HistoricalServiceEpisode.status == "active",
+            )
+            .order_by(
+                HistoricalServiceEpisode.episode_date.desc(),
+                HistoricalServiceEpisode.id.desc(),
+            )
+            .limit(120)
+            .all()
+        )
+    ]
+
+    vehicle_events = [
+        {
+            "vehicle_event_id": event.id,
+            "car_id": event.car_id,
+            "event_type": event.event_type,
+            "title": event.title,
+            "description": str(event.description or "")[:500] or None,
+            "event_date": _iso(event.event_date),
+            "occurred_at": _iso(event.occurred_at),
+            "source": event.source,
+        }
+        for event in (
+            VehicleEvent.query.filter(VehicleEvent.car_id.in_(known_car_ids))
+            .order_by(VehicleEvent.occurred_at.desc(), VehicleEvent.id.desc())
+            .limit(180)
+            .all()
+        )
+    ]
+
+    return {
+        **base,
+        "historical_intelligence_contract": "multi_vehicle_episode_diff_v2",
+        "selected_vehicle_car_id": car.id,
+        "known_client_vehicles": known_vehicles,
+        "canonical_history": {
+            "treatment_actions": canonical_actions,
+            "historical_service_episodes": historical_episodes,
+            "vehicle_events": vehicle_events,
+        },
+        "canonical_rule": (
+            "Do not call source-supported work missing when an equivalent durable "
+            "Treatment Action, historical episode, or vehicle event already represents it."
+        ),
+    }
+
+
+def _bundle_source_coverage(
+    evidence: VehicleEvidence,
+    *,
+    corpus: str,
+) -> dict[str, Any]:
+    """Deterministic proof of how much of an imported bundle Aura processed."""
+
+    items = (
+        EvidenceBundleItem.query.filter_by(bundle_evidence_id=evidence.id)
+        .order_by(EvidenceBundleItem.member_index.asc())
+        .all()
+    )
+    expected_by_kind = Counter(str(item.member_kind or "unknown") for item in items)
+    completed_by_kind: Counter[str] = Counter()
+    failed_by_kind: Counter[str] = Counter()
+    failed_items: list[dict[str, Any]] = []
+
+    required_by_kind = {
+        "transcript": {"document_text"},
+        "document": {"document_text"},
+        "image": {"image_observation"},
+        "audio": {"transcription"},
+        "video": {"transcription", "image_observation"},
+    }
+
+    for item in items:
+        child = item.child
+        kind = str(item.member_kind or "unknown")
+        if child is None or kind not in required_by_kind:
+            failed_by_kind[kind] += 1
+            failed_items.append(
+                {
+                    "member_kind": kind,
+                    "evidence_id": item.child_evidence_id,
+                    "safe_display_name": None,
+                    "failed_extraction_types": ["materialization"],
+                }
+            )
+            continue
+
+        required = required_by_kind[kind]
+        rows = EvidenceExtraction.query.filter(
+            EvidenceExtraction.evidence_id == child.id,
+            EvidenceExtraction.extraction_type.in_(required),
+        ).all()
+        statuses = {
+            extraction_type: {
+                row.status
+                for row in rows
+                if row.extraction_type == extraction_type
+            }
+            for extraction_type in required
+        }
+        successful = {
+            extraction_type
+            for extraction_type, values in statuses.items()
+            if "completed" in values
+        }
+        failed = sorted(
+            extraction_type
+            for extraction_type, values in statuses.items()
+            if "completed" not in values and "failed" in values
+        )
+
+        if required <= successful:
+            completed_by_kind[kind] += 1
+        else:
+            failed_by_kind[kind] += 1
+            failed_items.append(
+                {
+                    "member_kind": kind,
+                    "evidence_id": child.id,
+                    "safe_display_name": child.safe_display_name,
+                    "failed_extraction_types": failed
+                    or sorted(required - successful),
+                }
+            )
+
+    chat_message_count = len(
+        re.findall(r"(?m)^\[CHAT m\d{6}\b", corpus)
+    )
+    total_items = len(items)
+    completed_items = sum(completed_by_kind.values())
+    failed_count = len(failed_items)
+
+    return {
+        "coverage_version": 1,
+        "chat_message_count": chat_message_count,
+        "bundle_item_count": total_items,
+        "expected_by_kind": dict(expected_by_kind),
+        "completed_by_kind": dict(completed_by_kind),
+        "failed_by_kind": dict(failed_by_kind),
+        "completed_item_count": completed_items,
+        "failed_item_count": failed_count,
+        "coverage_complete": bool(total_items and completed_items == total_items),
+        "failed_items": failed_items[:40],
+        "claim": (
+            "complete"
+            if total_items and completed_items == total_items
+            else "partial"
+        ),
+    }
+
+
+def _validated_historical_intelligence(
+    payload: dict[str, Any],
+    trusted_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Reject invented canonical IDs and impossible missing/already-recorded states."""
+
+    normalized = dict(payload)
+    known_car_ids = {
+        int(row.get("car_id"))
+        for row in (trusted_context.get("known_client_vehicles") or [])
+        if row.get("car_id") is not None
+    }
+    canonical = trusted_context.get("canonical_history") or {}
+    known_action_ids = {
+        int(row.get("treatment_action_id"))
+        for row in (canonical.get("treatment_actions") or [])
+        if row.get("treatment_action_id") is not None
+    }
+    known_episode_ids = {
+        int(row.get("historical_episode_id"))
+        for row in (canonical.get("historical_service_episodes") or [])
+        if row.get("historical_episode_id") is not None
+    }
+
+    comparisons = []
+    for row in normalized.get("canonical_comparisons") or []:
+        if not isinstance(row, dict):
+            continue
+        clean = dict(row)
+        clean["matched_car_id"] = (
+            int(clean["matched_car_id"])
+            if clean.get("matched_car_id") in known_car_ids
+            else None
+        )
+        clean["matched_treatment_action_ids"] = [
+            int(value)
+            for value in (clean.get("matched_treatment_action_ids") or [])
+            if value in known_action_ids
+        ]
+        clean["matched_historical_episode_ids"] = [
+            int(value)
+            for value in (clean.get("matched_historical_episode_ids") or [])
+            if value in known_episode_ids
+        ]
+
+        represented = list(clean.get("already_represented_facts") or [])
+        matched_any = bool(
+            clean["matched_treatment_action_ids"]
+            or clean["matched_historical_episode_ids"]
+            or represented
+        )
+        comparison = str(clean.get("comparison") or "uncertain")
+        if comparison == "missing_from_durable_history" and matched_any:
+            clean["comparison"] = "partially_represented"
+            clean["advisor_confirmation_required"] = True
+            clean["reason"] = (
+                "Aura found canonical matches in the model comparison. The episode "
+                "cannot be treated as wholly missing; review only the remaining facts."
+            )
+        elif comparison == "already_represented" and not matched_any:
+            clean["comparison"] = "uncertain"
+            clean["advisor_confirmation_required"] = True
+            clean["reason"] = (
+                "The model marked this episode represented but did not cite a supplied "
+                "canonical record. Advisor confirmation is required."
+            )
+        comparisons.append(clean)
+
+    normalized["canonical_comparisons"] = comparisons
+    return normalized
+
+
 def _corpus(evidence: VehicleEvidence) -> str:
     chunks: list[str] = []
     items = (
@@ -1471,9 +1807,10 @@ def advance_whatsapp_bundle_analysis(
                 )
 
             corpus = _corpus(evidence)
+            intelligence_context = _historical_intelligence_context(evidence.car)
             response = analyzer.start_bundle_understanding_background(
                 corpus=corpus,
-                trusted_vehicle_context=_trusted_vehicle_context(evidence.car),
+                trusted_vehicle_context=intelligence_context,
             )
             analysis.provider = analyzer.provider_name
             analysis.provider_model = response.model
@@ -1542,21 +1879,29 @@ def advance_whatsapp_bundle_analysis(
 
         corpus = _corpus(evidence)
         if stage == "understanding":
+            intelligence_context = _historical_intelligence_context(evidence.car)
+            coverage = _bundle_source_coverage(evidence, corpus=corpus)
+            understanding_payload = {
+                **response.payload,
+                "source_coverage": coverage,
+                "historical_intelligence_version": 2,
+            }
             understanding = _create_encrypted_extraction(
                 evidence_id=evidence.id,
                 extraction_type="document_understanding",
                 provider=analyzer.provider_name,
                 provider_model=response.model,
-                payload=response.payload,
+                payload=understanding_payload,
                 provenance={
                     "analysis_pipeline": PIPELINE,
                     "semantic_authority": "candidate_only",
                     "reasoning_stage": "whole_bundle_understanding",
+                    "historical_intelligence_version": 2,
                 },
             )
             next_response = analyzer.start_bundle_structuring_background(
-                understanding=response.payload,
-                trusted_vehicle_context=_trusted_vehicle_context(evidence.car),
+                understanding=understanding_payload,
+                trusted_vehicle_context=intelligence_context,
             )
             analysis.provider_model = next_response.model
             analysis.provider_request_id = next_response.response_id
@@ -1603,6 +1948,30 @@ def advance_whatsapp_bundle_analysis(
                 if isinstance(response.payload.get("low_relevance_context"), list)
                 else []
             )[:40]
+            normalized["vehicle_candidates"] = (
+                response.payload.get("vehicle_candidates")
+                if isinstance(response.payload.get("vehicle_candidates"), list)
+                else []
+            )[:24]
+            normalized["service_episode_candidates"] = (
+                response.payload.get("service_episode_candidates")
+                if isinstance(response.payload.get("service_episode_candidates"), list)
+                else []
+            )[:80]
+            normalized["canonical_comparisons"] = (
+                response.payload.get("canonical_comparisons")
+                if isinstance(response.payload.get("canonical_comparisons"), list)
+                else []
+            )[:80]
+            normalized["source_coverage"] = _bundle_source_coverage(
+                evidence,
+                corpus=corpus,
+            )
+            normalized["historical_intelligence_version"] = 2
+            normalized = _validated_historical_intelligence(
+                normalized,
+                _historical_intelligence_context(evidence.car),
+            )
             cipher, version, digest = _payload_cipher(normalized)
             analysis.result_ciphertext = cipher
             analysis.result_key_version = version
@@ -1617,6 +1986,7 @@ def advance_whatsapp_bundle_analysis(
                 "background_response_id": response.response_id,
                 "provider_output_normalized": True,
                 "reasoning_stage": "advisor_bundle_structuring",
+                "historical_intelligence_version": 2,
             }
             db.session.commit()
             done, total = _counts(evidence.id)

@@ -625,7 +625,7 @@
         );
         appendCopilotLine(
             historicalCopilotPanelEl,
-            "Unrecorded source candidates",
+            "Genuinely missing episodes",
             Number(backlog.unrecorded_candidate_count || 0)
         );
         appendCopilotLine(
@@ -633,9 +633,25 @@
             "Historical priority threads",
             Number(backlog.priority_thread_count || 0)
         );
-        appendCopilotLine(historicalCopilotPanelEl, "Episodes needing reconciliation/review", reconciliations.length);
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Episodes needing advisor review",
+            Number(backlog.advisor_review_episode_count || reconciliations.length)
+        );
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Episodes belonging to another vehicle",
+            Number(backlog.belongs_to_other_vehicle_count || 0)
+        );
         appendCopilotLine(historicalCopilotPanelEl, "Unresolved historical groups", unresolved.length);
         appendCopilotLine(historicalCopilotPanelEl, "Other registered client vehicles", otherVehicles.length);
+        if (Number(backlog.archived_source_count || 0)) {
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Archived / superseded sources",
+                Number(backlog.archived_source_count || 0)
+            );
+        }
 
         const coverageRows = backlog.source_coverage || [];
         if (coverageRows.length) {
@@ -727,6 +743,11 @@
                 "Conflicting / uncertain",
                 Number(comparisonCounts.conflicting || 0)
                     + Number(comparisonCounts.uncertain || 0)
+            );
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Belongs to another vehicle",
+                Number(comparisonCounts.belongs_to_other_vehicle || 0)
             );
 
             const vehicleCandidates = backlog.vehicle_candidates || [];
@@ -932,9 +953,25 @@
 
             const completed = Number(state.completed_items || 0);
             const total = Number(state.total_items || 0);
-            button.textContent = total
-                ? `Reconstructing history… ${completed}/${total}`
-                : "Reconstructing full history…";
+            const phase = String(state.phase || "").trim().toLowerCase();
+
+            if (phase === "retry_failed_media") {
+                button.textContent = total
+                    ? `Retrying failed media… ${completed}/${total} source items terminal`
+                    : "Retrying failed historical media…";
+            } else if (phase === "preprocessing") {
+                button.textContent = total
+                    ? `Processing source media… ${completed}/${total}`
+                    : "Processing historical media…";
+            } else if (phase === "understanding") {
+                button.textContent = "Source processing complete · Discovering vehicles and service episodes…";
+            } else if (phase === "structuring") {
+                button.textContent = "Comparing reconstructed episodes with Aura history…";
+            } else {
+                button.textContent = total
+                    ? `Reconstructing history… ${completed}/${total}`
+                    : "Reconstructing full history…";
+            }
 
             if (state.status === "completed") {
                 button.textContent = "Historical reconstruction complete";
@@ -975,10 +1012,10 @@
                     body: JSON.stringify({ car_id: selectedCarId }),
                 }
             );
-            appendMessage(
-                "assistant",
-                data.message || "I’m rebuilding the imported WhatsApp history now."
-            );
+            const startingMessage = data.phase === "retry_failed_media"
+                ? "I found incomplete historical media from the earlier run. I’m retrying only those failed items first, then I’ll refresh the full historical reconstruction."
+                : (data.message || "I’m rebuilding the imported WhatsApp history now.");
+            appendMessage("assistant", startingMessage);
 
             if (data.status === "completed") {
                 await loadHistoricalCopilot();

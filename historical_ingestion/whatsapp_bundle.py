@@ -45,7 +45,11 @@ from historical_ingestion.service import (
 from historical_ingestion.whatsapp_bundle_analyzer import WhatsAppBundleAdvisorAnalyzer
 from models import Car, CarOwnership, TreatmentPlan, VehicleEvent
 from treatment.models import TreatmentAction
-from rina.providers.base import RinaProviderError, RinaProviderTransientError
+from rina.providers.base import (
+    RinaProviderError,
+    RinaProviderRejectedError,
+    RinaProviderTransientError,
+)
 
 
 MAX_ARCHIVE_BYTES = 150 * 1024 * 1024
@@ -568,7 +572,14 @@ def restart_whatsapp_bundle_analysis(
             reused_existing=True,
         )
 
-    stage = "preprocessing" if _manifest_extraction(evidence.id) else "unpacking"
+    if _manifest_extraction(evidence.id):
+        stage = (
+            "retry_failed_media"
+            if _failed_retry_candidates(evidence.id)
+            else "preprocessing"
+        )
+    else:
+        stage = "unpacking"
     row = _create_processing_extraction(
         evidence_id=evidence.id,
         actor_user_id=actor_user_id,
@@ -836,21 +847,55 @@ def _member_source_ref(item: EvidenceBundleItem) -> str:
     return base + "]"
 
 
-def _child_done(item: EvidenceBundleItem) -> bool:
-    required = {
+def _required_extraction_types(item: EvidenceBundleItem) -> set[str]:
+    return {
         "transcript": {"document_text"},
         "document": {"document_text"},
         "image": {"image_observation"},
         "audio": {"transcription"},
         "video": {"transcription", "image_observation"},
     }[item.member_kind]
+
+
+def _child_completed_types(item: EvidenceBundleItem) -> set[str]:
+    required = _required_extraction_types(item)
     rows = EvidenceExtraction.query.filter(
         EvidenceExtraction.evidence_id == item.child_evidence_id,
         EvidenceExtraction.extraction_type.in_(required),
-        EvidenceExtraction.status.in_({"completed", "failed"}),
+        EvidenceExtraction.status == "completed",
     ).all()
-    terminal = {row.extraction_type for row in rows}
-    return required <= terminal
+    return {row.extraction_type for row in rows}
+
+
+def _child_failed_types(item: EvidenceBundleItem) -> set[str]:
+    required = _required_extraction_types(item)
+    rows = EvidenceExtraction.query.filter(
+        EvidenceExtraction.evidence_id == item.child_evidence_id,
+        EvidenceExtraction.extraction_type.in_(required),
+        EvidenceExtraction.status == "failed",
+    ).all()
+    return {row.extraction_type for row in rows}
+
+
+def _child_done(item: EvidenceBundleItem) -> bool:
+    required = _required_extraction_types(item)
+    completed = _child_completed_types(item)
+    failed = _child_failed_types(item)
+    return required <= (completed | failed)
+
+
+def _failed_retry_candidates(evidence_id: int) -> list[EvidenceBundleItem]:
+    rows = (
+        EvidenceBundleItem.query.filter_by(bundle_evidence_id=evidence_id)
+        .order_by(EvidenceBundleItem.member_index.asc())
+        .all()
+    )
+    return [
+        item
+        for item in rows
+        if (_required_extraction_types(item) - _child_completed_types(item))
+        & _child_failed_types(item)
+    ]
 
 
 def _mark_child_failure(
@@ -877,7 +922,12 @@ def _mark_child_failure(
     db.session.commit()
 
 
-def _audio_wav_chunks(payload: bytes) -> list[bytes]:
+def _audio_wav_chunks(
+    payload: bytes,
+    *,
+    chunk_seconds: int = 6 * 60,
+    max_total_seconds: int = 30 * 60,
+) -> list[bytes]:
     """Decode supported WhatsApp audio into bounded transcription-safe WAV chunks."""
     try:
         import av
@@ -887,8 +937,8 @@ def _audio_wav_chunks(payload: bytes) -> list[bytes]:
         ) from exc
 
     sample_rate = 16_000
-    chunk_seconds = 6 * 60
-    max_total_seconds = 30 * 60
+    chunk_seconds = max(30, int(chunk_seconds))
+    max_total_seconds = max(chunk_seconds, int(max_total_seconds))
     bytes_per_sample = 2
     chunk_pcm_limit = sample_rate * chunk_seconds * bytes_per_sample
     total_sample_limit = sample_rate * max_total_seconds
@@ -970,6 +1020,67 @@ def _audio_wav_chunks(payload: bytes) -> list[bytes]:
         wav_chunks.append(output.getvalue())
 
     return wav_chunks
+
+
+def _transcribe_wav_chunks(
+    *,
+    analyzer: WhatsAppBundleAdvisorAnalyzer,
+    wav_chunks: list[bytes],
+    filename_prefix: str,
+) -> tuple[str, int, int]:
+    """Return transcript plus successful/no-speech chunk counts."""
+
+    transcript_parts: list[str] = []
+    no_speech_chunks = 0
+    for chunk_index, wav_payload in enumerate(wav_chunks, start=1):
+        try:
+            value = analyzer.transcribe_audio(
+                payload=wav_payload,
+                filename=f"{filename_prefix}-{chunk_index:03d}.wav",
+                content_type="audio/wav",
+            )
+        except RinaProviderRejectedError as exc:
+            if "no usable text" in str(exc).lower():
+                no_speech_chunks += 1
+                continue
+            raise
+        transcript_parts.append(value)
+
+    transcript = "\n".join(
+        (
+            f"[audio part {index}/{len(transcript_parts)}] {value}"
+            if len(transcript_parts) > 1
+            else value
+        )
+        for index, value in enumerate(transcript_parts, start=1)
+    )
+    return transcript, len(transcript_parts), no_speech_chunks
+
+
+def _write_no_speech_transcription(
+    *,
+    child: VehicleEvidence,
+    source_ref: str,
+    reason: str,
+    chunk_count: int = 0,
+) -> None:
+    _create_encrypted_extraction(
+        evidence_id=child.id,
+        extraction_type="transcription",
+        provider="aura_media",
+        payload={
+            "schema_version": 1,
+            "text": f"{source_ref} No intelligible speech detected.",
+            "speech_detected": False,
+            "reason": reason,
+        },
+        provenance={
+            "analysis_pipeline": PIPELINE,
+            "semantic_authority": "none",
+            "speech_detected": False,
+            "transcription_chunks": chunk_count,
+        },
+    )
 
 
 def _video_derivatives(payload: bytes, suffix: str) -> tuple[bytes | None, list[bytes]]:
@@ -1153,24 +1264,22 @@ def _process_child(
         return
 
     if item.member_kind == "audio":
+        if "transcription" in _child_completed_types(item):
+            return
         wav_chunks = _audio_wav_chunks(payload)
-        transcript_parts: list[str] = []
-        for chunk_index, wav_payload in enumerate(wav_chunks, start=1):
-            text = analyzer.transcribe_audio(
-                payload=wav_payload,
-                filename=f"whatsapp-audio-{chunk_index:03d}.wav",
-                content_type="audio/wav",
-            )
-            transcript_parts.append(text)
-
-        transcript = "\n".join(
-            (
-                f"[audio part {index}/{len(transcript_parts)}] {text}"
-                if len(transcript_parts) > 1
-                else text
-            )
-            for index, text in enumerate(transcript_parts, start=1)
+        transcript, speech_chunks, no_speech_chunks = _transcribe_wav_chunks(
+            analyzer=analyzer,
+            wav_chunks=wav_chunks,
+            filename_prefix="whatsapp-audio",
         )
+        if not transcript:
+            _write_no_speech_transcription(
+                child=child,
+                source_ref=source_ref,
+                reason="audio_chunks_returned_no_usable_text",
+                chunk_count=len(wav_chunks),
+            )
+            return
         _create_encrypted_extraction(
             evidence_id=child.id,
             extraction_type="transcription",
@@ -1182,71 +1291,82 @@ def _process_child(
                 "semantic_authority": "source_transcription",
                 "audio_normalization": "pcm_s16_mono_16khz_wav",
                 "transcription_chunks": len(wav_chunks),
+                "speech_chunks": speech_chunks,
+                "no_speech_chunks": no_speech_chunks,
             },
         )
         return
 
     if item.member_kind == "video":
+        completed_types = _child_completed_types(item)
         suffix = PurePosixPath(child.safe_display_name).suffix.lower() or ".mp4"
         audio, frames = _video_derivatives(payload, suffix)
         transcript = ""
-        if audio:
-            try:
-                transcript = analyzer.transcribe_audio(
-                    payload=audio,
-                    filename="video-audio.wav",
-                    content_type="audio/wav",
-                )
-            except Exception as exc:
-                _mark_child_failure(
-                    evidence_id=child.id,
-                    extraction_type="transcription",
-                    provider="openai",
-                    exc=exc,
-                )
-        if transcript:
-            _create_encrypted_extraction(
-                evidence_id=child.id,
-                extraction_type="transcription",
-                provider="openai",
-                provider_model=analyzer.transcription_model,
-                payload={"schema_version": 1, "text": f"{source_ref} {transcript}"},
-                provenance={
-                    "analysis_pipeline": PIPELINE,
-                    "semantic_authority": "source_transcription",
-                },
-            )
-        elif not any(
-            r.extraction_type == "transcription" for r in child.extractions
-        ):
-            _create_encrypted_extraction(
-                evidence_id=child.id,
-                extraction_type="transcription",
-                provider="aura_video",
-                payload={"schema_version": 1, "text": f"{source_ref} No usable audio transcript."},
-                provenance={
-                    "analysis_pipeline": PIPELINE,
-                    "semantic_authority": "none",
-                },
-            )
 
-        observation = analyzer.observe_video_frames(
-            frames=frames,
-            transcript=transcript,
-            source_ref=source_ref,
-        )
-        _create_encrypted_extraction(
-            evidence_id=child.id,
-            extraction_type="image_observation",
-            provider="openai",
-            provider_model=analyzer.media_model,
-            payload={"schema_version": 1, **observation},
-            provenance={
-                "analysis_pipeline": PIPELINE,
-                "semantic_authority": "candidate_only",
-                "representative_frames": len(frames),
-            },
-        )
+        if "transcription" not in completed_types:
+            if audio:
+                wav_chunks = _audio_wav_chunks(
+                    audio,
+                    chunk_seconds=2 * 60,
+                    max_total_seconds=10 * 60,
+                )
+                transcript, speech_chunks, no_speech_chunks = _transcribe_wav_chunks(
+                    analyzer=analyzer,
+                    wav_chunks=wav_chunks,
+                    filename_prefix="video-audio",
+                )
+                if transcript:
+                    _create_encrypted_extraction(
+                        evidence_id=child.id,
+                        extraction_type="transcription",
+                        provider="openai",
+                        provider_model=analyzer.transcription_model,
+                        payload={
+                            "schema_version": 1,
+                            "text": f"{source_ref} {transcript}",
+                            "speech_detected": True,
+                        },
+                        provenance={
+                            "analysis_pipeline": PIPELINE,
+                            "semantic_authority": "source_transcription",
+                            "audio_normalization": "pcm_s16_mono_16khz_wav",
+                            "transcription_chunks": len(wav_chunks),
+                            "speech_chunks": speech_chunks,
+                            "no_speech_chunks": no_speech_chunks,
+                        },
+                    )
+                else:
+                    _write_no_speech_transcription(
+                        child=child,
+                        source_ref=source_ref,
+                        reason="video_audio_chunks_returned_no_usable_text",
+                        chunk_count=len(wav_chunks),
+                    )
+            else:
+                _write_no_speech_transcription(
+                    child=child,
+                    source_ref=source_ref,
+                    reason="video_contains_no_decodable_audio_stream",
+                )
+
+        if "image_observation" not in completed_types:
+            observation = analyzer.observe_video_frames(
+                frames=frames,
+                transcript=transcript,
+                source_ref=source_ref,
+            )
+            _create_encrypted_extraction(
+                evidence_id=child.id,
+                extraction_type="image_observation",
+                provider="openai",
+                provider_model=analyzer.media_model,
+                payload={"schema_version": 1, **observation},
+                provenance={
+                    "analysis_pipeline": PIPELINE,
+                    "semantic_authority": "candidate_only",
+                    "representative_frames": len(frames),
+                },
+            )
 
 
 def _iso(value: object) -> str | None:
@@ -2029,6 +2149,96 @@ def advance_whatsapp_bundle_analysis(
                 status="processing",
                 phase="preprocessing",
                 message=f"Rina secured the bundle. Analysing media 0/{total}.",
+                completed_items=done,
+                total_items=total,
+            )
+
+        if stage == "retry_failed_media":
+            attempted = {
+                int(value)
+                for value in (provenance.get("retry_attempted_child_ids") or [])
+                if str(value).isdigit()
+            }
+            retry_candidates = [
+                item
+                for item in _failed_retry_candidates(evidence.id)
+                if int(item.child_evidence_id) not in attempted
+            ]
+            pending_retry = retry_candidates[0] if retry_candidates else None
+
+            if pending_retry is not None:
+                try:
+                    _process_child(
+                        item=pending_retry,
+                        storage_provider=provider,
+                        analyzer=analyzer,
+                    )
+                except (
+                    RinaProviderError,
+                    EvidenceStorageError,
+                    HistoricalIngestionError,
+                    EvidenceImageValidationError,
+                    OSError,
+                    ValueError,
+                ) as exc:
+                    missing_types = (
+                        _required_extraction_types(pending_retry)
+                        - _child_completed_types(pending_retry)
+                    )
+                    for missing_type in missing_types:
+                        _mark_child_failure(
+                            evidence_id=pending_retry.child_evidence_id,
+                            extraction_type=missing_type,
+                            provider="aura_bundle_retry",
+                            exc=exc,
+                        )
+
+                attempted.add(int(pending_retry.child_evidence_id))
+                analysis = db.session.get(EvidenceExtraction, analysis.id)
+                analysis.provenance = {
+                    **(analysis.provenance or {}),
+                    "retry_attempted_child_ids": sorted(attempted),
+                }
+                db.session.commit()
+
+                remaining = len(
+                    [
+                        item
+                        for item in _failed_retry_candidates(evidence.id)
+                        if int(item.child_evidence_id) not in attempted
+                    ]
+                )
+                done, total = _counts(evidence.id)
+                return WhatsAppBundleStatus(
+                    evidence_id=evidence.id,
+                    extraction_id=analysis.id,
+                    status="processing",
+                    phase="retry_failed_media",
+                    message=(
+                        "Rina is retrying failed historical media. "
+                        f"{remaining} item{'s' if remaining != 1 else ''} remain."
+                    ),
+                    completed_items=done,
+                    total_items=total,
+                )
+
+            analysis.provenance = {
+                **provenance,
+                "background_stage": "preprocessing",
+                "retry_attempted_child_ids": sorted(attempted),
+                "media_retry_completed": True,
+            }
+            db.session.commit()
+            done, total = _counts(evidence.id)
+            return WhatsAppBundleStatus(
+                evidence_id=evidence.id,
+                extraction_id=analysis.id,
+                status="processing",
+                phase="preprocessing",
+                message=(
+                    "Media retry is complete. Rina is rebuilding the full historical "
+                    "intelligence with the improved evidence set."
+                ),
                 completed_items=done,
                 total_items=total,
             )

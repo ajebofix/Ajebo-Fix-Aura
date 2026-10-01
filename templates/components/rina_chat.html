@@ -600,6 +600,35 @@
         appendCopilotLine(historicalCopilotPanelEl, "Unresolved historical groups", unresolved.length);
         appendCopilotLine(historicalCopilotPanelEl, "Other registered client vehicles", otherVehicles.length);
 
+        const readyToApply = reconciliations.filter(
+            item => item.state === "ready_to_apply" && item.reconciliation_extraction_id
+        );
+        if (readyToApply.length) {
+            const heading = document.createElement("strong");
+            heading.textContent = "Advisor-approved history ready to apply";
+            historicalCopilotPanelEl.appendChild(heading);
+
+            for (const item of readyToApply) {
+                const row = document.createElement("div");
+                row.style.margin = "8px 0";
+
+                const label = document.createElement("p");
+                label.style.margin = "0 0 6px";
+                label.textContent = item.title || `Historical episode ${item.episode_id}`;
+                row.appendChild(label);
+
+                const applyButton = document.createElement("button");
+                applyButton.type = "button";
+                applyButton.className = "btn btn-primary";
+                applyButton.textContent = "Apply approved history";
+                applyButton.addEventListener("click", () => {
+                    applyHistoricalReconciliation(item.reconciliation_extraction_id);
+                });
+                row.appendChild(applyButton);
+                historicalCopilotPanelEl.appendChild(row);
+            }
+        }
+
         if (backlog.possible_unregistered_vehicle) {
             const warning = document.createElement("p");
             warning.style.margin = "9px 0";
@@ -639,6 +668,49 @@
         review.textContent = "Review Rina’s historical proposals";
         historicalCopilotPanelEl.appendChild(review);
         historicalCopilotPanelEl.style.display = "block";
+    }
+
+    async function applyHistoricalReconciliation(extractionId) {
+        const numericExtractionId = Number(extractionId);
+        if (!selectedCarId || !Number.isInteger(numericExtractionId)) return;
+
+        const approved = window.confirm(
+            "Apply the advisor-reviewed historical reconciliation to durable vehicle history? Rina cannot undo or self-approve this action."
+        );
+        if (!approved) return;
+
+        loading = true;
+        setChatEnabled(true);
+        try {
+            const data = await fetchJson(
+                "/chat/historical-copilot/apply-reconciliation",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        car_id: selectedCarId,
+                        extraction_id: numericExtractionId,
+                        confirm: true,
+                    }),
+                }
+            );
+
+            appendMessage(
+                "assistant",
+                data.state === "applied"
+                    ? "The advisor-approved historical reconciliation has been applied to durable history. I’ll use the canonical record on the next question."
+                    : "There were no confirmed historical actions to apply."
+            );
+            await loadHistoricalCopilot();
+        } catch (error) {
+            appendMessage(
+                "assistant",
+                error.data?.error || "I could not apply that approved historical reconciliation."
+            );
+        } finally {
+            loading = false;
+            setChatEnabled(Boolean(selectedCarId || accountWelcome));
+        }
     }
 
     async function loadHistoricalCopilot() {

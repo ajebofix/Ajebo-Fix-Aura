@@ -740,9 +740,10 @@ def apply_reconciliation(
         advisor_id=actor_user_id,
         title=f"Historical reconciliation — {reference}"[:255],
         internal_instructions=(
-            "Advisor-confirmed historical reconciliation addendum. Rina proposed "
-            "candidate work from episode-specific WhatsApp attribution; the advisor "
-            "personally confirmed the interventions recorded in this plan."
+            "Advisor-confirmed historical reconciliation addendum. Candidate work may "
+            "originate from episode-specific evidence or from an advisor-supplied "
+            "correction captured during supervised A.J. Rina review. The advisor "
+            "personally confirmed every intervention recorded in this plan."
         ),
         client_summary=(
             f"Historical completed work reconciled by an Ajebo Fix advisor for {reference}."
@@ -773,17 +774,28 @@ def apply_reconciliation(
             for ref in (row.get("source_refs") or [])[:30]
             if str(ref or "").strip()
         ]
+        advisor_supplied = row.get("advisor_supplied") is True
+        provenance_copy = (
+            "Advisor-supplied historical correction captured during supervised "
+            "A.J. Rina review; no independent source ref was promoted as proof."
+            if advisor_supplied
+            else (
+                "Advisor-reconciled historical completed work. Attribution source refs: "
+                + (
+                    ", ".join(source_refs)
+                    if source_refs
+                    else "not separately available"
+                )
+                + "."
+            )
+        )
         action = TreatmentActionLifecycleService.create(
             plan_id=plan.id,
             actor_user_id=actor_user_id,
             creation_key=f"historical-reconciliation:{extraction.id}:{candidate_id}",
             title=title,
             client_summary=_clip(row.get("evidence_basis"), limit=3000) or None,
-            internal_instructions=(
-                "Advisor-reconciled historical completed work. Attribution source refs: "
-                + (", ".join(source_refs) if source_refs else "not separately available")
-                + "."
-            ),
+            internal_instructions=provenance_copy,
             visibility="advisor",
             occurred_at=when,
             source="historical_reconciliation",
@@ -828,7 +840,9 @@ def apply_reconciliation(
                 else "not_applicable"
             ),
             quantity=1 if kind == "component_replacement" else None,
-            source_evidence_id=extraction.evidence_id,
+            source_evidence_id=(
+                None if advisor_supplied else extraction.evidence_id
+            ),
             verification_status="advisor_reconciled",
             verified_by_user_id=actor_user_id,
             verified_at=datetime.utcnow(),

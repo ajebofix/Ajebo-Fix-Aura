@@ -230,4 +230,11 @@ def test_rina_chat_prefers_female_voice_and_exposes_historical_copilot():
     assert "Historical reconstruction" in source
     assert "missing_from_durable_history" in source
     assert "Additional / uncertain vehicle identities" in source
+    assert "Genuinely missing episodes" in source
+    assert "Episodes needing advisor review" in source
+    assert "Episodes belonging to another vehicle" in source
+    assert "Archived / superseded sources" in source
+    assert "Retrying failed media" in source
+    assert "Discovering vehicles and service episodes" in source
+    assert "Comparing reconstructed episodes with Aura history" in source
 

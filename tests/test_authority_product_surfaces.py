@@ -213,7 +213,7 @@ def test_rina_chat_prefers_female_voice_and_exposes_historical_copilot():
 
     assert 'id="rina-historical-copilot"' in source
     assert 'id="rina-historical-copilot-panel"' in source
-    assert '"/chat/historical-copilot?car_id=' in source
+    assert "/chat/historical-copilot?car_id=" in source
     assert "Rina prepares candidate history" in source
     assert "function chooseRinaVoice" in source
     assert '"Serena"' in source

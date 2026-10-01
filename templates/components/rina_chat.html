@@ -605,6 +605,15 @@
             warning.style.margin = "9px 0";
             warning.textContent = "Rina found candidate identity evidence that may belong to another vehicle not yet registered in Aura. Advisor confirmation is required before creating or assigning a vehicle.";
             historicalCopilotPanelEl.appendChild(warning);
+
+            if (data.client_vehicle_url) {
+                const vehicleLink = document.createElement("a");
+                vehicleLink.className = "btn btn-secondary";
+                vehicleLink.style.margin = "0 0 10px";
+                vehicleLink.href = data.client_vehicle_url;
+                vehicleLink.textContent = "Confirm / add second vehicle";
+                historicalCopilotPanelEl.appendChild(vehicleLink);
+            }
         }
 
         if (unresolved.length) {

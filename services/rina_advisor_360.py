@@ -416,6 +416,7 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             VehicleEvidence.historical_source_type.isnot(None),
             VehicleEvidence.storage_state == "available",
             VehicleEvidence.deleted_at.is_(None),
+            VehicleEvidence.review_status != "superseded",
             ~VehicleEvidence.bundle_parent_items.any(),
         )
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
@@ -673,11 +674,21 @@ def build_rina_historical_copilot_context(
             VehicleEvidence.car_id == context.car_id,
             VehicleEvidence.historical_source_type.isnot(None),
             VehicleEvidence.deleted_at.is_(None),
+            VehicleEvidence.review_status != "superseded",
             ~VehicleEvidence.bundle_parent_items.any(),
         )
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
         .limit(40)
         .all()
+    )
+    archived_source_count = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == context.car_id,
+            VehicleEvidence.historical_source_type.isnot(None),
+            VehicleEvidence.deleted_at.is_(None),
+            VehicleEvidence.review_status == "superseded",
+            ~VehicleEvidence.bundle_parent_items.any(),
+        ).count()
     )
     source_review_counts = Counter(
         str(row.review_status or "unknown") for row in source_rows
@@ -813,6 +824,7 @@ def build_rina_historical_copilot_context(
         "owner_user_id": owner.id if owner is not None else None,
         "source_review_counts": dict(source_review_counts),
         "top_level_source_count": len(source_rows),
+        "archived_source_count": archived_source_count,
         "pending_source_ids": pending_source_ids,
         "source_candidate_backlog": source_candidates,
         "historical_intelligence_version": max(
@@ -864,6 +876,26 @@ def build_rina_historical_copilot_context(
                 for comparison in (item.get("canonical_comparisons") or [])
                 if isinstance(comparison, dict)
             )
+        ),
+        "advisor_review_episode_count": sum(
+            1
+            for item in source_candidates
+            for comparison in (item.get("canonical_comparisons") or [])
+            if isinstance(comparison, dict)
+            and comparison.get("comparison")
+            in {
+                "partially_represented",
+                "missing_from_durable_history",
+                "conflicting",
+                "uncertain",
+            }
+        ),
+        "belongs_to_other_vehicle_count": sum(
+            1
+            for item in source_candidates
+            for comparison in (item.get("canonical_comparisons") or [])
+            if isinstance(comparison, dict)
+            and comparison.get("comparison") == "belongs_to_other_vehicle"
         ),
         "unrecorded_candidate_count": sum(
             1

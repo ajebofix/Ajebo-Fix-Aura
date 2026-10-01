@@ -14,6 +14,7 @@ from typing import Any
 from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
 from historical_ingestion.models import HistoricalServiceEpisode
+from historical_ingestion.reconciliation import applied_reconciliation_plan
 from historical_ingestion.service import HistoricalIngestionError, decrypt_extraction_payload
 from models import Car, CarDriver, CarOwnership, TreatmentPlan, User, VehicleEvent
 from profiles.models import ClientProfile, ProfileAuditEvent
@@ -431,19 +432,39 @@ def build_rina_historical_copilot_context(
         review_status = str(reconciliation.get("review_status") or "").strip().lower()
         counts = reconciliation.get("decision_counts") or {}
         unreviewed = int(counts.get("unreviewed") or 0)
-        if review_status not in {"accepted", "corrected"} or unreviewed:
-            reconciliation_backlog.append(
-                {
-                    "episode_id": episode.get("episode_id"),
-                    "title": episode.get("title"),
-                    "state": (
-                        "advisor_review_required"
-                        if review_status not in {"accepted", "corrected"}
-                        else "candidate_decisions_incomplete"
-                    ),
-                    "unreviewed_candidates": unreviewed,
-                }
+        extraction_id = reconciliation.get("extraction_id")
+
+        if review_status in {"accepted", "corrected"} and not unreviewed:
+            applied = (
+                applied_reconciliation_plan(int(extraction_id))
+                if extraction_id
+                else None
             )
+            if applied is None:
+                reconciliation_backlog.append(
+                    {
+                        "episode_id": episode.get("episode_id"),
+                        "title": episode.get("title"),
+                        "state": "ready_to_apply",
+                        "reconciliation_extraction_id": extraction_id,
+                        "unreviewed_candidates": 0,
+                    }
+                )
+            continue
+
+        reconciliation_backlog.append(
+            {
+                "episode_id": episode.get("episode_id"),
+                "title": episode.get("title"),
+                "state": (
+                    "advisor_review_required"
+                    if review_status not in {"accepted", "corrected"}
+                    else "candidate_decisions_incomplete"
+                ),
+                "reconciliation_extraction_id": extraction_id,
+                "unreviewed_candidates": unreviewed,
+            }
+        )
 
     return {
         "scope": "advisor_supervised_historical_copilot",

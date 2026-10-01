@@ -42,6 +42,8 @@ from models import (
 from services.rina_advisor_360 import build_rina_historical_copilot_context
 from services.rina_audit import record_rina_audit
 from services.rina_authority import (
+    ACTION_APPLY_ADVISOR_APPROVED_HISTORY,
+    ACTION_PREPARE_HISTORICAL_RECORDS,
     RinaAuthorityError,
     resolve_rina_authority,
 )
@@ -367,7 +369,10 @@ def chat_historical_copilot():
     except (RinaAuthorityError, RinaContextResolutionError):
         return jsonify({"error": "That vehicle is not available to this account."}), 403
 
-    if context.authority not in {"advisor", "administrator"}:
+    if (
+        context.authority not in {"advisor", "administrator"}
+        or ACTION_PREPARE_HISTORICAL_RECORDS not in context.allowed_actions
+    ):
         return jsonify({"error": "Historical Copilot requires advisor access."}), 403
 
     backlog = build_rina_historical_copilot_context(context) or {}
@@ -413,7 +418,10 @@ def chat_historical_copilot_apply_reconciliation():
     except (RinaAuthorityError, RinaContextResolutionError):
         return jsonify({"error": "That vehicle is not available to this account."}), 403
 
-    if context.authority not in {"advisor", "administrator"}:
+    if (
+        context.authority not in {"advisor", "administrator"}
+        or ACTION_APPLY_ADVISOR_APPROVED_HISTORY not in context.allowed_actions
+    ):
         return jsonify({"error": "Historical Copilot requires advisor access."}), 403
 
     extraction = db.session.get(EvidenceExtraction, extraction_id)

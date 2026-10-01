@@ -595,7 +595,16 @@
         const pendingSources = backlog.pending_source_ids || [];
         const otherVehicles = backlog.known_other_client_vehicles || [];
 
-        appendCopilotLine(historicalCopilotPanelEl, "Pending sources", pendingSources.length);
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Top-level historical sources",
+            Number(backlog.top_level_source_count || 0)
+        );
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Sources pending advisor review",
+            pendingSources.length
+        );
         appendCopilotLine(
             historicalCopilotPanelEl,
             "Unrecorded source candidates",
@@ -609,6 +618,50 @@
         appendCopilotLine(historicalCopilotPanelEl, "Episodes needing reconciliation/review", reconciliations.length);
         appendCopilotLine(historicalCopilotPanelEl, "Unresolved historical groups", unresolved.length);
         appendCopilotLine(historicalCopilotPanelEl, "Other registered client vehicles", otherVehicles.length);
+
+        const importedSources = backlog.source_candidate_backlog || [];
+        if (importedSources.length) {
+            const sourceHeading = document.createElement("strong");
+            sourceHeading.textContent = "Imported source memory";
+            historicalCopilotPanelEl.appendChild(sourceHeading);
+
+            for (const source of importedSources) {
+                const sourceCard = document.createElement("div");
+                sourceCard.style.margin = "8px 0 12px";
+                sourceCard.style.padding = "10px 0";
+                sourceCard.style.borderBottom = "1px solid rgba(100,116,139,.18)";
+
+                const name = document.createElement("strong");
+                name.textContent = source.safe_display_name
+                    || source.document?.title
+                    || source.source_type
+                    || "Historical source";
+                sourceCard.appendChild(name);
+
+                const meta = document.createElement("p");
+                meta.style.margin = "4px 0";
+                const childCount = Number(source.bundle_content?.total_children || 0);
+                meta.textContent = [
+                    source.source_type || "historical source",
+                    source.source_review_status || "unreviewed",
+                    `${Number(source.candidate_count || 0)} extracted candidate${Number(source.candidate_count || 0) === 1 ? "" : "s"}`,
+                    childCount ? `${childCount} bundle item${childCount === 1 ? "" : "s"}` : null,
+                ].filter(Boolean).join(" · ");
+                sourceCard.appendChild(meta);
+
+                const sourceSummary = source.rina_summary
+                    || source.case_focus
+                    || source.understanding?.advisor_narrative;
+                if (sourceSummary) {
+                    const summary = document.createElement("p");
+                    summary.style.margin = "4px 0";
+                    summary.textContent = sourceSummary;
+                    sourceCard.appendChild(summary);
+                }
+
+                historicalCopilotPanelEl.appendChild(sourceCard);
+            }
+        }
 
         const readyToApply = reconciliations.filter(
             item => item.state === "ready_to_apply" && item.reconciliation_extraction_id

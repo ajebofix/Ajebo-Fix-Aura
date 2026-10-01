@@ -233,6 +233,7 @@ def _reconciliation_summary(
                     row.get("advisor_decision"),
                     limit=32,
                 ),
+                "reviewed_by_advisor": row.get("reviewed_by_advisor") is True,
                 "component_name": _clip(row.get("component_name"), limit=220),
                 "component_location": _clip(
                     row.get("component_location"),
@@ -255,7 +256,12 @@ def _reconciliation_summary(
         )
 
     counts = Counter(
-        str(item.get("advisor_decision") or "unreviewed") for item in candidates
+        (
+            str(item.get("advisor_decision") or "unsure")
+            if item.get("reviewed_by_advisor") is True
+            else "unreviewed"
+        )
+        for item in candidates
     )
     return {
         "extraction_id": extraction.id,

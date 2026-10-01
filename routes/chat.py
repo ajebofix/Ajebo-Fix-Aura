@@ -1144,6 +1144,284 @@ def chat():
         _conversation_id_for(car_id) if car_id is not None else _new_conversation_id()
     )
 
+    historical_review_requested = (
+        car_id is not None
+        and (
+            _history_review_session_active()
+            or _historical_review_start_requested(message)
+        )
+    )
+
+    if historical_review_requested:
+        try:
+            context = resolve_rina_vehicle_context(
+                user_id=current_user.id,
+                car_id=car_id,
+            )
+        except (RinaAuthorityError, RinaContextResolutionError):
+            _clear_historical_review_binding()
+            return (
+                jsonify(
+                    {
+                        "reply": "That vehicle is not available to this account.",
+                        "intent": "historical_review",
+                        "car_id": None,
+                        "authority": None,
+                        "state": RINA_STATE_AUTHORITY_DENIED,
+                        "conversation_id": None,
+                        "uncertainty": "vehicle authority could not be proven",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                403,
+            )
+
+        if (
+            context.authority not in {"advisor", "administrator"}
+            or ACTION_PREPARE_HISTORICAL_RECORDS not in context.allowed_actions
+        ):
+            _clear_historical_review_binding()
+            return (
+                jsonify(
+                    {
+                        "reply": (
+                            "Historical recording through Rina requires advisor access "
+                            "to this vehicle."
+                        ),
+                        "intent": "historical_review",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_AUTHORITY_DENIED,
+                        "conversation_id": None,
+                        "uncertainty": "historical write authority is not available",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                403,
+            )
+
+        if (
+            _explicit_historical_apply_confirmation(message)
+            and ACTION_APPLY_ADVISOR_APPROVED_HISTORY not in context.allowed_actions
+        ):
+            return (
+                jsonify(
+                    {
+                        "reply": (
+                            "You can review this historical draft, but this account "
+                            "cannot authorize the durable write."
+                        ),
+                        "intent": "historical_review",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_AUTHORITY_DENIED,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "durable historical write authority is not available",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                403,
+            )
+
+        history_request_id = _new_conversation_id()
+        try:
+            history_result = _handle_historical_review_turn(
+                context=context,
+                message=message,
+            )
+            conversation_id = _bind_rina_vehicle(
+                car_id=context.car_id,
+                conversation_id=conversation_id,
+            )
+
+            reply = str(history_result.get("reply") or "").strip()
+            extraction_id = _coerce_car_id(history_result.get("extraction_id"))
+            evidence_refs = (
+                [{"type": "historical_reconciliation", "id": extraction_id}]
+                if extraction_id is not None
+                else []
+            )
+            applied_plan_id = _coerce_car_id(history_result.get("applied_plan_id"))
+            if applied_plan_id is not None:
+                evidence_refs.append(
+                    {"type": "treatment_plan", "id": applied_plan_id}
+                )
+
+            if message:
+                save_rina_chat_turn(
+                    user_id=current_user.id,
+                    car_id=context.car_id,
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=message,
+                    channel="in_app",
+                    commit=False,
+                )
+                save_rina_chat_turn(
+                    user_id=current_user.id,
+                    car_id=context.car_id,
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=reply,
+                    channel="in_app",
+                    commit=False,
+                )
+
+            record_rina_audit(
+                request_id=history_request_id,
+                user_id=current_user.id,
+                car_id=context.car_id,
+                authority=context.authority,
+                state=RINA_STATE_ANSWERED,
+                outcome="answered",
+                action_family=(
+                    "historical_apply"
+                    if applied_plan_id is not None
+                    else "historical_chat_review"
+                ),
+                provider_status=str(
+                    history_result.get("provider_status") or "not_called"
+                ),
+                provider=(
+                    str(history_result.get("provider"))
+                    if history_result.get("provider")
+                    else None
+                ),
+                provider_model=(
+                    str(history_result.get("provider_model"))
+                    if history_result.get("provider_model")
+                    else None
+                ),
+                provider_request_id=(
+                    str(history_result.get("provider_request_id"))
+                    if history_result.get("provider_request_id")
+                    else None
+                ),
+                evidence_refs=evidence_refs,
+                metadata={
+                    "channel": "in_app",
+                    "context_version": context.context_version,
+                    "provider_attempted": (
+                        history_result.get("provider_status") == "ok"
+                    ),
+                },
+                commit=False,
+            )
+            db.session.commit()
+            return (
+                jsonify(
+                    {
+                        "reply": reply,
+                        "intent": "historical_review",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_ANSWERED,
+                        "conversation_id": conversation_id,
+                        "uncertainty": None,
+                        "escalation": None,
+                        "evidence_refs": evidence_refs,
+                        "historical_review": {
+                            "phase": history_result.get("phase"),
+                            "extraction_id": extraction_id,
+                            "candidate_id": history_result.get("candidate_id"),
+                            "applied_plan_id": applied_plan_id,
+                        },
+                    }
+                ),
+                200,
+            )
+        except RinaProviderError as exc:
+            db.session.rollback()
+            reply = (
+                "I couldn't interpret that historical correction safely, so I did "
+                "not change the draft. Please rephrase the correction and try again."
+            )
+            record_rina_audit(
+                request_id=history_request_id,
+                user_id=current_user.id,
+                car_id=context.car_id,
+                authority=context.authority,
+                state=RINA_STATE_PROVIDER_UNAVAILABLE,
+                outcome="provider_failed",
+                action_family="historical_chat_review",
+                provider_status=getattr(exc, "provider_status", "unavailable"),
+                provider="openai",
+                evidence_refs=(),
+                metadata={
+                    "channel": "in_app",
+                    "context_version": context.context_version,
+                    "provider_attempted": True,
+                    "failure_class": getattr(exc, "failure_class", "provider_error"),
+                },
+                commit=True,
+            )
+            return (
+                jsonify(
+                    {
+                        "reply": reply,
+                        "intent": "historical_review",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_PROVIDER_UNAVAILABLE,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "the correction was not safely interpreted",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                503,
+            )
+        except HistoricalReconciliationError as exc:
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "reply": (
+                            "I couldn't update that historical draft safely. "
+                            + str(exc)
+                        ),
+                        "intent": "historical_review",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_ABSTAINED,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "historical reconciliation validation failed",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                400,
+            )
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "Rina conversational historical review failed user_id=%s car_id=%s",
+                current_user.id,
+                car_id,
+            )
+            return (
+                jsonify(
+                    {
+                        "reply": (
+                            "I couldn't update that historical draft safely. Nothing "
+                            "new was written to durable vehicle history."
+                        ),
+                        "intent": "historical_review",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_PROVIDER_UNAVAILABLE,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "the historical review transaction did not complete",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                503,
+            )
+
     try:
         response = orchestrate_rina(
             user_id=current_user.id,

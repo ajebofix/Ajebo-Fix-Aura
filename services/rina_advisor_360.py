@@ -449,6 +449,7 @@ def build_rina_historical_copilot_context(
         "scope": "advisor_supervised_historical_copilot",
         "candidate_only": True,
         "selected_car_id": context.car_id,
+        "owner_user_id": owner.id if owner is not None else None,
         "source_review_counts": dict(source_review_counts),
         "pending_source_ids": pending_source_ids,
         "reconciliation_backlog": reconciliation_backlog[:12],

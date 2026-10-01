@@ -23,8 +23,9 @@ from flask import (
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 
-from evidence.models import EvidenceExtraction
+from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
+from historical_ingestion.whatsapp_bundle import restart_whatsapp_bundle_analysis
 from historical_ingestion.reconciliation import (
     HistoricalReconciliationError,
     apply_reconciliation,
@@ -394,6 +395,100 @@ def chat_historical_copilot():
             }
         ),
         200,
+    )
+
+
+@chat_bp.post("/chat/historical-copilot/rebuild")
+@login_required
+def chat_historical_copilot_rebuild():
+    """Re-run whole-corpus Historical Intelligence without re-uploading the ZIP."""
+
+    data = request.get_json(silent=True) or {}
+    car_id = _coerce_car_id(data.get("car_id"))
+    if car_id is None:
+        return jsonify({"error": "A valid vehicle is required."}), 400
+
+    try:
+        context = resolve_rina_vehicle_context(
+            user_id=current_user.id,
+            car_id=car_id,
+        )
+    except (RinaAuthorityError, RinaContextResolutionError):
+        return jsonify({"error": "That vehicle is not available to this account."}), 403
+
+    if (
+        context.authority not in {"advisor", "administrator"}
+        or ACTION_PREPARE_HISTORICAL_RECORDS not in context.allowed_actions
+    ):
+        return jsonify({"error": "Historical Copilot requires advisor access."}), 403
+
+    source = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == car_id,
+            VehicleEvidence.evidence_type == "archive",
+            VehicleEvidence.historical_source_type == "whatsapp_conversation",
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+            VehicleEvidence.review_status != "superseded",
+            ~VehicleEvidence.bundle_parent_items.any(),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .first()
+    )
+    if source is None:
+        return jsonify({"error": "No active WhatsApp case bundle is available."}), 404
+
+    try:
+        result = restart_whatsapp_bundle_analysis(
+            evidence_id=source.id,
+            actor_user_id=current_user.id,
+        )
+        record_rina_audit(
+            request_id=_new_conversation_id(),
+            user_id=current_user.id,
+            car_id=car_id,
+            authority=context.authority,
+            state="answered",
+            outcome="answered",
+            action_family="historical_rebuild",
+            provider_status="not_called",
+            evidence_refs=[{"type": "vehicle_evidence", "id": source.id}],
+            metadata={
+                "channel": "advisor_workspace",
+                "historical_intelligence_version": 2,
+            },
+            commit=False,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "rina_historical_intelligence_rebuild_failed car_id=%s actor_id=%s",
+            car_id,
+            current_user.id,
+        )
+        return jsonify({"error": "Aura could not start the historical reconstruction."}), 500
+
+    return (
+        jsonify(
+            {
+                "car_id": car_id,
+                "evidence_id": source.id,
+                "extraction_id": result.extraction_id,
+                "status": result.status,
+                "phase": result.phase,
+                "reused_existing": result.reused_existing,
+                "status_url": (
+                    f"/admin/cars/{car_id}/historical-records/"
+                    f"{source.id}/analysis-status"
+                ),
+                "message": (
+                    "Rina is rebuilding the full historical intelligence from the "
+                    "already-imported WhatsApp bundle."
+                ),
+            }
+        ),
+        202 if result.status == "processing" else 200,
     )
 
 

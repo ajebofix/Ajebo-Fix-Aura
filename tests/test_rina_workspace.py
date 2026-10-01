@@ -355,6 +355,9 @@ def test_admin_can_open_supervised_historical_copilot(app, client):
     assert payload["review_url"].endswith(
         f"/admin/cars/{car.id}/historical-records"
     )
+    assert payload["client_vehicle_url"].endswith(
+        f"/admin/clients/{owner.id}/vehicles/new"
+    )
 
 
 def test_owner_cannot_open_historical_copilot(app, client):

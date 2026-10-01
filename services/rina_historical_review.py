@@ -27,6 +27,10 @@ from historical_ingestion.reconciliation import (
 from rina.providers.base import RinaProviderError
 from services.rina_advisor_360 import build_rina_historical_copilot_context
 from services.rina_context_resolver import RinaResolvedContext
+from services.rina_historical_intelligence_bridge import (
+    DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
+    direct_drafts_for_car,
+)
 
 
 _ALLOWED_DECISIONS = {"confirmed", "not_done", "unsure"}
@@ -274,6 +278,8 @@ def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]
 
     backlog = build_rina_historical_copilot_context(context) or {}
     choices: list[dict[str, Any]] = []
+    seen_extraction_ids: set[int] = set()
+
     for row in backlog.get("reconciliation_backlog") or []:
         if not isinstance(row, dict):
             continue
@@ -287,15 +293,58 @@ def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]
             "ready_to_apply",
         }:
             continue
+        numeric_extraction_id = int(extraction_id)
+        seen_extraction_ids.add(numeric_extraction_id)
         choices.append(
             {
                 "episode_id": int(row.get("episode_id") or 0),
-                "extraction_id": int(extraction_id),
+                "extraction_id": numeric_extraction_id,
                 "title": str(row.get("title") or "Historical service episode")[:255],
                 "state": state,
                 "unreviewed_candidates": int(row.get("unreviewed_candidates") or 0),
             }
         )
+
+    for extraction in direct_drafts_for_car(context.car_id):
+        if extraction.id in seen_extraction_ids:
+            continue
+        if applied_reconciliation_plan(extraction.id) is not None:
+            continue
+        reviewed = extraction.review_status in {"accepted", "corrected"}
+        payload = reconciliation_payload(extraction, reviewed=reviewed)
+        rows = (
+            payload.get("candidates")
+            if isinstance(payload, dict)
+            and isinstance(payload.get("candidates"), list)
+            else []
+        )
+        unreviewed = sum(
+            1
+            for row in rows
+            if isinstance(row, dict) and row.get("reviewed_by_advisor") is not True
+        )
+        state = (
+            "ready_to_apply"
+            if reviewed and unreviewed == 0
+            else "candidate_decisions_incomplete"
+            if reviewed
+            else "advisor_review_required"
+        )
+        choices.append(
+            {
+                "episode_id": 0,
+                "extraction_id": extraction.id,
+                "title": str(
+                    payload.get("episode_title")
+                    or (extraction.provenance or {}).get("episode_title")
+                    or "Historical Intelligence episode"
+                )[:255],
+                "state": state,
+                "unreviewed_candidates": unreviewed,
+            }
+        )
+        seen_extraction_ids.add(extraction.id)
+
     return choices[:12]
 
 
@@ -304,7 +353,11 @@ def _load_state(
     extraction_id: int,
     actor_user_id: int,
     car_id: int,
-) -> tuple[EvidenceExtraction, HistoricalServiceEpisode, dict[str, Any]]:
+) -> tuple[
+    EvidenceExtraction,
+    HistoricalServiceEpisode | None,
+    dict[str, Any],
+]:
     extraction = db.session.get(EvidenceExtraction, int(extraction_id))
     if (
         extraction is None
@@ -317,12 +370,24 @@ def _load_state(
             "That historical reconciliation is not available for this vehicle."
         )
 
-    episode_id = int((extraction.provenance or {}).get("episode_id") or 0)
-    episode = db.session.get(HistoricalServiceEpisode, episode_id)
-    if episode is None or episode.car_id != int(car_id):
-        raise HistoricalReconciliationError(
-            "Historical reconciliation provenance is incomplete."
-        )
+    provenance = extraction.provenance or {}
+    direct_intelligence = (
+        provenance.get("analysis_pipeline")
+        == DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE
+    )
+    episode: HistoricalServiceEpisode | None = None
+    if direct_intelligence:
+        if int(provenance.get("selected_car_id") or 0) != int(car_id):
+            raise HistoricalReconciliationError(
+                "Historical Intelligence reconciliation provenance is incomplete."
+            )
+    else:
+        episode_id = int(provenance.get("episode_id") or 0)
+        episode = db.session.get(HistoricalServiceEpisode, episode_id)
+        if episode is None or episode.car_id != int(car_id):
+            raise HistoricalReconciliationError(
+                "Historical reconciliation provenance is incomplete."
+            )
 
     reviewed = extraction.review_status in {"accepted", "corrected"}
     payload = reconciliation_payload(extraction, reviewed=reviewed)
@@ -331,8 +396,8 @@ def _load_state(
             "The historical reconciliation draft is unavailable."
         )
 
-    # Re-use the canonical review saver as the authority check. It will be called
-    # only after a change; read-only turns are already vehicle-authorized by chat.
+    # The active chat route re-authorizes the selected vehicle every turn. The
+    # canonical review saver performs the write-time authority check.
     _ = actor_user_id
     return extraction, episode, deepcopy(payload)
 
@@ -363,10 +428,25 @@ def summarize_state(
         None,
     )
     next_row = pending_date or (unreviewed_rows[0] if unreviewed_rows else None)
+    provenance = (
+        db.session.get(EvidenceExtraction, int(extraction_id)).provenance or {}
+    )
+    episode_id = episode.id if episode is not None else 0
+    episode_title = (
+        (episode.title if episode is not None else None)
+        or payload.get("episode_title")
+        or provenance.get("episode_title")
+        or provenance.get("episode_candidate_id")
+        or (
+            f"Episode {episode.id}"
+            if episode is not None
+            else "Historical Intelligence episode"
+        )
+    )
     return HistoricalReviewState(
         extraction_id=int(extraction_id),
-        episode_id=episode.id,
-        episode_title=episode.title or f"Episode {episode.id}",
+        episode_id=episode_id,
+        episode_title=str(episode_title)[:255],
         payload=payload,
         all_reviewed=not unreviewed_rows,
         confirmed_count=sum(

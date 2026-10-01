@@ -892,6 +892,113 @@ def test_historical_intelligence_validator_prevents_wholly_missing_with_canonica
     assert second["advisor_confirmation_required"] is True
 
 
+def test_historical_intelligence_validator_matches_semantic_completed_action():
+    payload = {
+        "vehicle_candidates": [
+            {"candidate_id": "V001", "identity_state": "selected_vehicle_match"}
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E001",
+                "vehicle_candidate_id": "V001",
+                "completed_interventions": [
+                    "Replace rear AIRMATIC air springs as a pair"
+                ],
+            }
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": None,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": ["Rear AIRMATIC air spring replacement"],
+                "conflicts": [],
+                "reason": "Model missed the canonical equivalent.",
+                "advisor_confirmation_required": False,
+            }
+        ],
+    }
+    trusted = {
+        "car_id": 10,
+        "selected_vehicle_car_id": 10,
+        "known_client_vehicles": [{"car_id": 10}],
+        "canonical_history": {
+            "treatment_actions": [
+                {
+                    "treatment_action_id": 91,
+                    "car_id": 10,
+                    "title": "Replace rear AIRMATIC air springs as a pair",
+                    "status": "completed",
+                }
+            ],
+            "historical_service_episodes": [],
+        },
+    }
+
+    normalized = _validated_historical_intelligence(payload, trusted)
+    comparison = normalized["canonical_comparisons"][0]
+
+    assert comparison["comparison"] == "already_represented"
+    assert comparison["matched_treatment_action_ids"] == [91]
+    assert comparison["missing_facts"] == []
+    assert comparison["already_represented_facts"] == [
+        "Replace rear AIRMATIC air springs as a pair"
+    ]
+    assert comparison["advisor_confirmation_required"] is True
+
+
+def test_historical_intelligence_semantic_guard_respects_component_location():
+    payload = {
+        "vehicle_candidates": [
+            {"candidate_id": "V001", "identity_state": "selected_vehicle_match"}
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E001",
+                "vehicle_candidate_id": "V001",
+                "completed_interventions": ["Front lower control arm replacement"],
+            }
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": None,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": ["Front lower control arm replacement"],
+                "conflicts": [],
+                "reason": "No front action exists.",
+                "advisor_confirmation_required": True,
+            }
+        ],
+    }
+    trusted = {
+        "car_id": 10,
+        "selected_vehicle_car_id": 10,
+        "known_client_vehicles": [{"car_id": 10}],
+        "canonical_history": {
+            "treatment_actions": [
+                {
+                    "treatment_action_id": 92,
+                    "car_id": 10,
+                    "title": "Rear lower control arm replacement",
+                    "status": "completed",
+                }
+            ],
+            "historical_service_episodes": [],
+        },
+    }
+
+    normalized = _validated_historical_intelligence(payload, trusted)
+    comparison = normalized["canonical_comparisons"][0]
+    assert comparison["comparison"] == "missing_from_durable_history"
+    assert comparison["matched_treatment_action_ids"] == []
+
 def test_whatsapp_bundle_accepts_general_vehicle_history_context(app):
     with app.app_context():
         owner = _user(suffix=10)

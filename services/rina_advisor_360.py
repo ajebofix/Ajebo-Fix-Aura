@@ -174,6 +174,8 @@ def _attribution_summary(extraction: EvidenceExtraction | None) -> dict[str, Any
                 {
                     "classification": _clip(row.get("classification"), limit=32),
                     "title": _clip(row.get("title"), limit=220),
+                    "summary": _clip(row.get("summary"), limit=700),
+                    "match_reason": _clip(row.get("match_reason"), limit=500),
                     "evidence_role": _clip(row.get("evidence_role"), limit=40),
                     "occurred_at": _clip(row.get("occurred_at"), limit=64),
                     "confidence": row.get("confidence"),
@@ -343,6 +345,8 @@ def build_rina_historical_copilot_context(
                 {
                     "classification": classification,
                     "title": group.get("title"),
+                    "summary": group.get("summary"),
+                    "match_reason": group.get("match_reason"),
                     "evidence_role": group.get("evidence_role"),
                     "occurred_at": group.get("occurred_at"),
                     "confidence": group.get("confidence"),
@@ -478,6 +482,16 @@ def build_rina_historical_copilot_context(
         "known_other_client_vehicles": known_other_vehicles,
         "possible_unregistered_vehicle": possible_unregistered_vehicle,
         "possible_unregistered_vehicle_evidence": identity_candidates[:8],
+        "vehicle_identity_proposals": [
+            {
+                "title": item.get("title"),
+                "summary": item.get("summary"),
+                "confidence": item.get("confidence"),
+                "source_refs": item.get("source_refs") or [],
+                "proposal_state": "human_confirmation_required",
+            }
+            for item in identity_candidates[:8]
+        ],
         "supervision_policy": {
             "rina_may_prepare": True,
             "advisor_must_review": True,

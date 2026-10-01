@@ -41,6 +41,10 @@ from models import (
     VehicleAssessment,
 )
 from services.rina_advisor_360 import build_rina_historical_copilot_context
+from services.rina_historical_intelligence_bridge import (
+    discover_intelligence_episode_choices,
+    stage_intelligence_episode_candidate,
+)
 from services.rina_historical_review import (
     already_applied as historical_review_already_applied,
     candidate_prompt as historical_candidate_prompt,
@@ -92,6 +96,7 @@ _SESSION_HISTORY_REVIEW_EXTRACTION_KEY = "rina_history_review_extraction_id"
 _SESSION_HISTORY_REVIEW_CANDIDATE_KEY = "rina_history_review_candidate_id"
 _SESSION_HISTORY_REVIEW_PHASE_KEY = "rina_history_review_phase"
 _SESSION_HISTORY_REVIEW_CHOICES_KEY = "rina_history_review_choices"
+_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY = "rina_history_intelligence_choices"
 _BOOKING_PATTERN = re.compile(
     r"\b(book|consult|consultation|appointment|schedule|reserve|assessment)\b",
     re.IGNORECASE,
@@ -194,10 +199,63 @@ def _historical_review_choice_index(message: str, choice_count: int) -> int | No
     return None
 
 
+def _historical_intelligence_choices_prompt(choices) -> str:
+    lines = [
+        "I found source-supported historical service episodes for this vehicle. "
+        "Choose the one you want me to stage for advisor review:"
+    ]
+    for index, item in enumerate(choices, start=1):
+        date_bits = [value for value in (item.date_start, item.date_end) if value]
+        date_label = (
+            date_bits[0]
+            if len(date_bits) == 1 or (len(date_bits) == 2 and date_bits[0] == date_bits[1])
+            else " to ".join(date_bits)
+            if date_bits
+            else "date not established"
+        )
+        lines.append(
+            f"{index}. **{item.title}** — {date_label} · {item.comparison}"
+        )
+    lines.append(
+        "These are candidate episodes from imported evidence, not durable vehicle "
+        "history. Reply with the number to review one, or say **cancel review**."
+    )
+    return "\n".join(lines)
+
+
+def _start_staged_intelligence_review(*, context, choice_key: str) -> dict[str, object]:
+    extraction = stage_intelligence_episode_candidate(
+        context=context,
+        choice_key=choice_key,
+        actor_user_id=current_user.id,
+    )
+    state = summarize_historical_review(
+        extraction_id=extraction.id,
+        actor_user_id=current_user.id,
+        car_id=context.car_id,
+    )
+    _history_review_bind(
+        extraction_id=extraction.id,
+        candidate_id=state.next_candidate_id,
+        phase="reviewing",
+    )
+    return {
+        "reply": historical_candidate_prompt(state, state.next_candidate_id),
+        "phase": "reviewing",
+        "extraction_id": extraction.id,
+        "candidate_id": state.next_candidate_id,
+        "provider_status": "not_called",
+        "provider": None,
+        "provider_model": None,
+        "provider_request_id": None,
+    }
+
+
 def _history_review_session_active() -> bool:
+    phase = str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "")
     return (
         _coerce_car_id(session.get(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY)) is not None
-        or str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "") == "choose_episode"
+        or phase in {"choose_episode", "choose_intelligence_episode"}
     )
 
 
@@ -214,11 +272,39 @@ def _history_review_bind(
         session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
     session[_SESSION_HISTORY_REVIEW_PHASE_KEY] = str(phase)[:40]
     session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
+    session.pop(_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY, None)
 
 
 def _history_review_choice_prompt(context) -> dict[str, object]:
     choices = discover_review_choices(context)
     if not choices:
+        intelligence_choices = discover_intelligence_episode_choices(context)
+        if len(intelligence_choices) == 1:
+            return _start_staged_intelligence_review(
+                context=context,
+                choice_key=intelligence_choices[0].choice_key,
+            )
+        if len(intelligence_choices) > 1:
+            session[_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY] = [
+                item.choice_key for item in intelligence_choices
+            ]
+            session[_SESSION_HISTORY_REVIEW_PHASE_KEY] = "choose_intelligence_episode"
+            session.pop(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY, None)
+            session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
+            session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
+            return {
+                "reply": _historical_intelligence_choices_prompt(
+                    intelligence_choices
+                ),
+                "phase": "choose_intelligence_episode",
+                "extraction_id": None,
+                "candidate_id": None,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
+
         backlog = build_rina_historical_copilot_context(context) or {}
         unprepared = [
             row
@@ -229,10 +315,10 @@ def _history_review_choice_prompt(context) -> dict[str, object]:
         if unprepared:
             return {
                 "reply": (
-                    "I found historical episode evidence, but the advisor reconciliation "
-                    "checklist has not been prepared yet. Open Historical Copilot and let "
-                    "Rina prepare that episode first; then we can review and record it "
-                    "entirely through this conversation."
+                    "I found a formal historical episode with case attribution, but its "
+                    "reconciliation checklist has not been prepared yet. I won't convert "
+                    "that attribution into durable history without the governed "
+                    "reconciliation step."
                 ),
                 "phase": None,
                 "extraction_id": None,
@@ -244,9 +330,9 @@ def _history_review_choice_prompt(context) -> dict[str, object]:
             }
         return {
             "reply": (
-                "I don't have a prepared historical reconciliation waiting for this "
-                "vehicle. I won't invent one. Historical Copilot can first reconstruct "
-                "the imported evidence and compare it with Aura's durable history."
+                "I don't have a source-supported completed-work episode that is eligible "
+                "for historical recording on this selected vehicle. I won't invent one "
+                "or pull work across from another vehicle."
             ),
             "phase": None,
             "extraction_id": None,
@@ -349,6 +435,34 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
         }
 
     phase = str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "")
+    if phase == "choose_intelligence_episode":
+        choice_keys = [
+            str(item)
+            for item in (
+                session.get(_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY) or []
+            )
+            if str(item).strip()
+        ]
+        index = _historical_review_choice_index(message, len(choice_keys))
+        if index is None:
+            return {
+                "reply": (
+                    "Reply with the number of the source-supported historical episode "
+                    "you want to review, or say **cancel review**."
+                ),
+                "phase": "choose_intelligence_episode",
+                "extraction_id": None,
+                "candidate_id": None,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
+        return _start_staged_intelligence_review(
+            context=context,
+            choice_key=choice_keys[index],
+        )
+
     if phase == "choose_episode":
         choice_ids = [
             int(item)
@@ -590,6 +704,7 @@ def _clear_historical_review_binding() -> None:
     session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
     session.pop(_SESSION_HISTORY_REVIEW_PHASE_KEY, None)
     session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
+    session.pop(_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY, None)
 
 
 def _clear_rina_binding() -> None:

@@ -329,3 +329,44 @@ def test_professional_vehicle_search_requires_two_characters(app, client):
     assert response.status_code == 200
     assert response.get_json()["vehicles"] == []
 
+def test_admin_can_open_supervised_historical_copilot(app, client):
+    admin = _user(suffix=222, role="admin")
+    owner = _user(suffix=223)
+    car = _car(suffix=222)
+    _own(owner=owner, car=car, suffix=222)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    response = client.get(
+        "/chat/historical-copilot",
+        query_string={"car_id": car.id},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["car_id"] == car.id
+    assert payload["backlog"]["candidate_only"] is True
+    assert payload["backlog"]["supervision_policy"]["rina_may_prepare"] is True
+    assert (
+        payload["backlog"]["supervision_policy"][
+            "advisor_must_authorize_durable_write"
+        ]
+        is True
+    )
+    assert payload["review_url"].endswith(
+        f"/admin/cars/{car.id}/historical-records"
+    )
+
+
+def test_owner_cannot_open_historical_copilot(app, client):
+    owner = _user(suffix=224)
+    car = _car(suffix=224)
+    _own(owner=owner, car=car, suffix=224)
+    db.session.commit()
+    _sign_in(client, owner)
+
+    response = client.get(
+        "/chat/historical-copilot",
+        query_string={"car_id": car.id},
+    )
+    assert response.status_code == 403
+

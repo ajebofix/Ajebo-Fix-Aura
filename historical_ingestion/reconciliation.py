@@ -44,6 +44,9 @@ from treatment.models import TreatmentActionCompletionDetail
 
 
 PIPELINE = "historical_episode_reconciliation_v1"
+DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE = (
+    "historical_intelligence_candidate_reconciliation_v1"
+)
 _ALLOWED_KINDS = {
     "component_replacement",
     "service",
@@ -617,20 +620,30 @@ def save_reconciliation_review(
     if extraction is None or extraction.evidence is None:
         raise HistoricalReconciliationError("Historical reconciliation was not found.")
     provenance = extraction.provenance or {}
+    direct_intelligence = (
+        provenance.get("analysis_pipeline")
+        == DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE
+    )
     episode = db.session.get(
         HistoricalServiceEpisode,
         int(provenance.get("episode_id") or 0),
     )
-    if (
-        episode is None
-        or episode.car_id != extraction.evidence.car_id
-        or extraction.extraction_type != "historical_reconciliation"
-        or extraction.status != "completed"
-    ):
+    if extraction.extraction_type != "historical_reconciliation" or extraction.status != "completed":
         raise HistoricalReconciliationError(
             "Historical reconciliation provenance is incomplete."
         )
-    _authority(actor_user_id, episode.car_id)
+    if direct_intelligence:
+        if int(provenance.get("selected_car_id") or 0) != extraction.evidence.car_id:
+            raise HistoricalReconciliationError(
+                "Historical Intelligence reconciliation vehicle provenance is incomplete."
+            )
+        _authority(actor_user_id, extraction.evidence.car_id)
+    else:
+        if episode is None or episode.car_id != extraction.evidence.car_id:
+            raise HistoricalReconciliationError(
+                "Historical reconciliation provenance is incomplete."
+            )
+        _authority(actor_user_id, episode.car_id)
 
     candidates = reviewed_payload.get("candidates")
     if not isinstance(candidates, list):
@@ -693,15 +706,28 @@ def apply_reconciliation(
         raise HistoricalReconciliationError("Historical reconciliation was not found.")
 
     provenance = extraction.provenance or {}
+    direct_intelligence = (
+        provenance.get("analysis_pipeline")
+        == DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE
+    )
     episode = db.session.get(
         HistoricalServiceEpisode,
         int(provenance.get("episode_id") or 0),
     )
-    if episode is None or episode.car_id != extraction.evidence.car_id:
-        raise HistoricalReconciliationError(
-            "Historical reconciliation provenance is incomplete."
-        )
-    _authority(actor_user_id, episode.car_id)
+    if direct_intelligence:
+        if int(provenance.get("selected_car_id") or 0) != extraction.evidence.car_id:
+            raise HistoricalReconciliationError(
+                "Historical Intelligence reconciliation vehicle provenance is incomplete."
+            )
+        car_id = extraction.evidence.car_id
+        _authority(actor_user_id, car_id)
+    else:
+        if episode is None or episode.car_id != extraction.evidence.car_id:
+            raise HistoricalReconciliationError(
+                "Historical reconciliation provenance is incomplete."
+            )
+        car_id = episode.car_id
+        _authority(actor_user_id, car_id)
 
     if extraction.review_status not in {"accepted", "corrected"}:
         raise HistoricalReconciliationError(
@@ -733,10 +759,18 @@ def apply_reconciliation(
 
     start_at = min(when for _, when in dated)
     finish_at = max(when for _, when in dated)
-    reference = episode.job_reference or f"Episode {episode.id}"
+    if direct_intelligence:
+        reference = (
+            _clip(reviewed.get("episode_title"), limit=180)
+            or _clip(provenance.get("episode_title"), limit=180)
+            or _clip(provenance.get("episode_candidate_id"), limit=80)
+            or f"Historical source {extraction.evidence_id}"
+        )
+    else:
+        reference = episode.job_reference or f"Episode {episode.id}"
 
     plan = TreatmentPlan(
-        car_id=episode.car_id,
+        car_id=car_id,
         advisor_id=actor_user_id,
         title=f"Historical reconciliation — {reference}"[:255],
         internal_instructions=(

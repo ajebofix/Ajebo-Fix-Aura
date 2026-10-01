@@ -18,6 +18,7 @@ on:
       - "services/rina_memory_service.py"
       - "services/rina_authority.py"
       - "services/rina_historical_review.py"
+      - "services/rina_historical_intelligence_bridge.py"
       - "services/rina_advisor_360.py"
       - "historical_ingestion/reconciliation.py"
       - "tests/test_rina_conversational_history.py"
@@ -71,6 +72,7 @@ jobs:
           services/rina_material_summary.py
           services/rina_runtime_flags.py
           services/rina_historical_review.py
+          services/rina_historical_intelligence_bridge.py
           services/rina_advisor_360.py
           historical_ingestion/reconciliation.py
           tests/test_rina_conversational_history.py
@@ -99,6 +101,7 @@ jobs:
           services/rina_material_summary.py
           services/rina_runtime_flags.py
           services/rina_historical_review.py
+          services/rina_historical_intelligence_bridge.py
           services/rina_advisor_360.py
           historical_ingestion/reconciliation.py
           tests/test_rina_conversational_history.py
@@ -117,6 +120,7 @@ jobs:
           services/rina_material_summary.py
           services/rina_runtime_flags.py
           services/rina_historical_review.py
+          services/rina_historical_intelligence_bridge.py
           historical_ingestion/reconciliation.py
           scripts/verify_rina_chat_cutover_postgres.py
 

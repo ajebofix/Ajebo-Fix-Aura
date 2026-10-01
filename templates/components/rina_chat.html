@@ -596,6 +596,16 @@
         const otherVehicles = backlog.known_other_client_vehicles || [];
 
         appendCopilotLine(historicalCopilotPanelEl, "Pending sources", pendingSources.length);
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Unrecorded source candidates",
+            Number(backlog.unrecorded_candidate_count || 0)
+        );
+        appendCopilotLine(
+            historicalCopilotPanelEl,
+            "Historical priority threads",
+            Number(backlog.priority_thread_count || 0)
+        );
         appendCopilotLine(historicalCopilotPanelEl, "Episodes needing reconciliation/review", reconciliations.length);
         appendCopilotLine(historicalCopilotPanelEl, "Unresolved historical groups", unresolved.length);
         appendCopilotLine(historicalCopilotPanelEl, "Other registered client vehicles", otherVehicles.length);

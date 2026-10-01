@@ -647,25 +647,43 @@
                 const coverageText = document.createElement("p");
                 coverageText.style.margin = "6px 0 10px";
                 const expected = Number(coverage.bundle_item_count || 0);
+                const archiveMembers = Number(coverage.archive_member_count || expected);
                 const completed = Number(coverage.completed_item_count || 0);
                 const failed = Number(coverage.failed_item_count || 0);
+                const rejected = Number(coverage.rejected_unsafe_count || 0);
+                const skipped = Number(coverage.unsupported_or_skipped_count || 0);
                 const messages = Number(coverage.chat_message_count || 0);
                 coverageText.textContent = [
                     messages ? `${messages} WhatsApp messages parsed` : "Transcript parsed",
-                    `${completed}/${expected} bundle items fully processed`,
+                    `${completed}/${expected} supported bundle items fully processed`,
+                    archiveMembers !== expected ? `${archiveMembers} total archive members` : null,
                     failed ? `${failed} item${failed === 1 ? "" : "s"} with failed analysis` : "no failed media analysis",
+                    rejected ? `${rejected} unsafe/rejected` : null,
+                    skipped ? `${skipped} unsupported/skipped` : null,
                     coverage.coverage_complete ? "coverage complete" : "coverage partial",
-                ].join(" · ");
+                ].filter(Boolean).join(" · ");
                 historicalCopilotPanelEl.appendChild(coverageText);
 
-                if (failed && Array.isArray(coverage.failed_items)) {
+                if (
+                    (failed || rejected || skipped)
+                    && (
+                        Array.isArray(coverage.failed_items)
+                        || Array.isArray(coverage.non_materialized_members)
+                    )
+                ) {
                     const failures = document.createElement("ul");
                     failures.style.margin = "0 0 12px 22px";
-                    for (const item of coverage.failed_items.slice(0, 8)) {
+                    const rows = [
+                        ...(coverage.failed_items || []),
+                        ...(coverage.non_materialized_members || []),
+                    ].slice(0, 12);
+                    for (const item of rows) {
                         const li = document.createElement("li");
                         li.textContent = [
                             item.safe_display_name || item.member_kind || "bundle item",
-                            (item.failed_extraction_types || []).join(", "),
+                            item.status || null,
+                            (item.failed_extraction_types || []).join(", ") || null,
+                            item.reason || null,
                         ].filter(Boolean).join(" — ");
                         failures.appendChild(li);
                     }

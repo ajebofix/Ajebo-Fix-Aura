@@ -16,6 +16,7 @@ from typing import Any
 
 from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
+from historical_ingestion.reconciliation import applied_reconciliation_plan
 from historical_ingestion.service import _payload_cipher
 from services.rina_advisor_360 import build_rina_historical_copilot_context
 from services.rina_context_resolver import RinaResolvedContext
@@ -205,6 +206,17 @@ def discover_intelligence_episode_choices(
                 _clip(episode.get("title"), 255)
                 or f"Historical service candidate {episode_candidate_id}"
             )
+            existing = _existing_direct_draft(
+                evidence_id=evidence_id,
+                structured_extraction_id=structured_extraction_id,
+                episode_candidate_id=episode_candidate_id,
+            )
+            if (
+                existing is not None
+                and applied_reconciliation_plan(existing.id) is not None
+            ):
+                continue
+
             choices.append(
                 HistoricalIntelligenceEpisodeChoice(
                     choice_key=_choice_key(

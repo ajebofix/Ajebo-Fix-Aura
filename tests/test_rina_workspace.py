@@ -534,7 +534,7 @@ def test_admin_can_rebuild_historical_intelligence_from_existing_whatsapp_bundle
     assert audit.user_id == admin.id
     assert audit.authority == "administrator"
     assert audit.evidence_refs == [{"type": "vehicle_evidence", "id": source.id}]
-    assert audit.metadata_json["historical_intelligence_version"] == 2
+    assert audit.audit_metadata["historical_intelligence_version"] == 2
 
 
 def test_owner_cannot_rebuild_historical_intelligence(app, client, monkeypatch):

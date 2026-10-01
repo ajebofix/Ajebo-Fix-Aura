@@ -125,6 +125,58 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
             completed_at=datetime(2026, 9, 22, 10, 0, 0),
         )
         db.session.add(newer)
+        db.session.flush()
+
+        ready_payload = {
+            "schema_version": 1,
+            "summary": "Rina prepared one advisor-confirmed historical action.",
+            "advisor_notice": "Advisor has reviewed the proposal.",
+            "candidates": [
+                {
+                    "candidate_id": "READY001",
+                    "title": "Historical inspection",
+                    "kind": "service",
+                    "component_name": None,
+                    "component_location": None,
+                    "suggested_occurred_at": "2026-08-09T10:00:00",
+                    "occurred_at": "2026-08-09T10:00:00",
+                    "evidence_state": "completion_claim",
+                    "source_refs": ["CHAT m000903"],
+                    "evidence_basis": "Advisor-confirmed source evidence.",
+                    "confidence": 0.95,
+                    "reconciliation_reason": "Missing from durable history.",
+                    "advisor_decision": "confirmed",
+                    "component_condition": "not_applicable",
+                    "advisor_note": "Confirmed for supervised apply.",
+                }
+            ],
+            "advisor_review_note": "Ready for explicit apply.",
+        }
+        cipher2, version2, digest2 = _payload_cipher(ready_payload)
+        ready_reconciliation = EvidenceExtraction(
+            evidence_id=corpus.id,
+            extraction_type="historical_reconciliation",
+            provider="test",
+            provider_model="test-model",
+            status="completed",
+            result_ciphertext=cipher2,
+            result_key_version=version2,
+            result_sha256=digest2,
+            review_status="corrected",
+            reviewed_by_user_id=admin.id,
+            reviewed_at=datetime(2026, 9, 22, 10, 10, 0),
+            reviewed_result_ciphertext=cipher2,
+            reviewed_result_key_version=version2,
+            reviewed_result_sha256=digest2,
+            provenance={
+                "analysis_pipeline": "historical_episode_reconciliation_v1",
+                "episode_id": episode.id,
+                "attribution_extraction_id": newer.id,
+                "semantic_authority": "candidate_only",
+            },
+            completed_at=datetime(2026, 9, 22, 10, 5, 0),
+        )
+        db.session.add(ready_reconciliation)
         db.session.commit()
 
         context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
@@ -144,6 +196,13 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
             is True
         )
         assert copilot["supervision_policy"]["rina_may_self_approve"] is False
+        ready = [
+            row
+            for row in copilot["reconciliation_backlog"]
+            if row["state"] == "ready_to_apply"
+        ]
+        assert len(ready) == 1
+        assert ready[0]["reconciliation_extraction_id"] == ready_reconciliation.id
 
         payload360 = build_rina_advisor_360_context(context)
         assert payload360["historical_copilot"]["possible_unregistered_vehicle"] is True

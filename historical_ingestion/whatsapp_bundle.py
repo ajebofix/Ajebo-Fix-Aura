@@ -1491,20 +1491,69 @@ def _bundle_source_coverage(
     completed_items = sum(completed_by_kind.values())
     failed_count = len(failed_items)
 
+    archive_member_count = total_items
+    unsupported_or_skipped_count = 0
+    rejected_unsafe_count = 0
+    non_materialized_members: list[dict[str, Any]] = []
+    manifest = _manifest_extraction(evidence.id)
+    if manifest is not None:
+        try:
+            manifest_payload = decrypt_extraction_payload(manifest)
+        except HistoricalIngestionError:
+            manifest_payload = {}
+        archive_member_count = int(
+            manifest_payload.get("member_count") or total_items
+        )
+        for member in manifest_payload.get("members") or []:
+            if not isinstance(member, dict):
+                continue
+            status = str(member.get("status") or "").strip().lower()
+            if status == "skipped":
+                unsupported_or_skipped_count += 1
+            elif status == "rejected_unsafe":
+                rejected_unsafe_count += 1
+            else:
+                continue
+            non_materialized_members.append(
+                {
+                    "member_kind": str(member.get("kind") or "unknown")[:40],
+                    "safe_display_name": str(
+                        member.get("safe_name")
+                        or member.get("original_name")
+                        or "archive member"
+                    )[:180],
+                    "status": status,
+                    "reason": str(member.get("reason") or "")[:120] or None,
+                }
+            )
+
+    supported_media_complete = bool(
+        total_items and completed_items == total_items and failed_count == 0
+    )
+    coverage_complete = bool(
+        supported_media_complete and rejected_unsafe_count == 0
+    )
+
     return {
-        "coverage_version": 1,
+        "coverage_version": 2,
         "chat_message_count": chat_message_count,
+        "archive_member_count": archive_member_count,
         "bundle_item_count": total_items,
+        "materialized_supported_item_count": total_items,
         "expected_by_kind": dict(expected_by_kind),
         "completed_by_kind": dict(completed_by_kind),
         "failed_by_kind": dict(failed_by_kind),
         "completed_item_count": completed_items,
         "failed_item_count": failed_count,
-        "coverage_complete": bool(total_items and completed_items == total_items),
+        "unsupported_or_skipped_count": unsupported_or_skipped_count,
+        "rejected_unsafe_count": rejected_unsafe_count,
+        "supported_media_complete": supported_media_complete,
+        "coverage_complete": coverage_complete,
         "failed_items": failed_items[:40],
+        "non_materialized_members": non_materialized_members[:40],
         "claim": (
-            "complete"
-            if total_items and completed_items == total_items
+            "complete_supported_evidence"
+            if coverage_complete
             else "partial"
         ),
     }

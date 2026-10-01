@@ -233,7 +233,11 @@ def _reconciliation_summary(
                     row.get("advisor_decision"),
                     limit=32,
                 ),
-                "reviewed_by_advisor": row.get("reviewed_by_advisor") is True,
+                "reviewed_by_advisor": (
+                    row.get("reviewed_by_advisor") is True
+                    if "reviewed_by_advisor" in row
+                    else reviewed
+                ),
                 "component_name": _clip(row.get("component_name"), limit=220),
                 "component_location": _clip(
                     row.get("component_location"),

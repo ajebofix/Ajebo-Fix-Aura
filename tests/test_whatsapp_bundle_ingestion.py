@@ -1001,6 +1001,123 @@ def test_restart_retries_only_failed_media_before_whole_history(
         assert current.provenance["retry_attempted_child_ids"] == [child.id]
 
 
+def test_failed_background_understanding_is_retried_once_without_reprocessing_media(
+    app,
+    monkeypatch,
+):
+    from historical_ingestion import whatsapp_bundle as bundle_module
+
+    class RetryUnderstandingAnalyzer(FakeBundleAnalyzer):
+        def __init__(self):
+            super().__init__()
+            self.understanding_ids = []
+
+        def start_bundle_understanding_background(
+            self,
+            *,
+            corpus: str,
+            trusted_vehicle_context: dict,
+        ):
+            self.started_understanding += 1
+            response_id = f"bundle-understanding-{self.started_understanding}"
+            self.understanding_ids.append(response_id)
+            return HistoricalBackgroundResponse(
+                response_id=response_id,
+                status="queued",
+                model="fake-bundle-model",
+            )
+
+        def retrieve_background(self, response_id: str):
+            if response_id == "bundle-understanding-1":
+                return HistoricalBackgroundResponse(
+                    response_id=response_id,
+                    status="failed",
+                    model="fake-bundle-model",
+                )
+            if response_id == "bundle-understanding-2":
+                completed = super().retrieve_background("bundle-understanding")
+                return HistoricalBackgroundResponse(
+                    response_id=response_id,
+                    status="completed",
+                    model=completed.model,
+                    payload=completed.payload,
+                )
+            return super().retrieve_background(response_id)
+
+    with app.app_context():
+        owner = _user(suffix=35)
+        advisor = _user(suffix=36, role="admin")
+        car = _owned_car(owner, suffix=35)
+        storage = RecordingStorageProvider()
+        analyzer = RetryUnderstandingAnalyzer()
+
+        monkeypatch.setattr(
+            bundle_module,
+            "_video_derivatives",
+            lambda *_args, **_kwargs: (
+                b"ID3" + b"\x00" * 80,
+                [_image_bytes()],
+            ),
+        )
+        monkeypatch.setattr(
+            bundle_module,
+            "_audio_wav_chunks",
+            lambda *_args, **_kwargs: [
+                b"RIFF" + b"\x00" * 32 + b"WAVE" + b"\x00" * 80
+            ],
+        )
+
+        started = ingest_whatsapp_bundle(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(_zip_bytes()),
+            purpose="service_document",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+        )
+
+        state = None
+        for _ in range(10):
+            state = advance_whatsapp_bundle_analysis(
+                extraction_id=started.extraction_id,
+                actor_user_id=advisor.id,
+                storage_provider=storage,
+                analyzer=analyzer,
+            )
+            if state.phase == "understanding":
+                break
+
+        assert state is not None
+        assert state.phase == "understanding"
+        media_calls_before_retry = (analyzer.images, analyzer.audio, analyzer.videos)
+
+        retried = advance_whatsapp_bundle_analysis(
+            extraction_id=started.extraction_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            analyzer=analyzer,
+        )
+        assert retried.status == "processing"
+        assert retried.phase == "understanding"
+        assert analyzer.started_understanding == 2
+        assert (analyzer.images, analyzer.audio, analyzer.videos) == media_calls_before_retry
+
+        current = db.session.get(EvidenceExtraction, started.extraction_id)
+        assert current.status == "processing"
+        assert current.provenance["background_reasoning_retry_count"] == 1
+        assert current.provenance["previous_background_status"] == "failed"
+
+        advanced = advance_whatsapp_bundle_analysis(
+            extraction_id=started.extraction_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            analyzer=analyzer,
+        )
+        assert advanced.phase == "structuring"
+        current = db.session.get(EvidenceExtraction, started.extraction_id)
+        assert current.provenance["background_reasoning_retry_count"] == 0
+
+
 def test_identical_whatsapp_zip_reuses_existing_processing_analysis(app):
     with app.app_context():
         owner = _user(suffix=4)

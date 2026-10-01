@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
-from evidence.models import EvidenceExtraction, VehicleEvidence
+from evidence.models import EvidenceBundleItem, EvidenceExtraction, VehicleEvidence
 from historical_ingestion.service import (
     HistoricalIngestionError,
     decrypt_extraction_payload,
@@ -71,6 +72,203 @@ def _uncertainty(context: RinaResolvedContext) -> str | None:
     if context.vehicle.verification_state in {"not_recorded", "unverified"}:
         return "some vehicle intelligence has no recorded advisor verification state"
     return None
+
+
+_HISTORICAL_QUERY_STOPWORDS = {
+    "about",
+    "after",
+    "again",
+    "also",
+    "are",
+    "been",
+    "client",
+    "current",
+    "does",
+    "for",
+    "from",
+    "have",
+    "historical",
+    "history",
+    "into",
+    "missing",
+    "record",
+    "records",
+    "rina",
+    "show",
+    "source",
+    "sources",
+    "tell",
+    "that",
+    "the",
+    "their",
+    "this",
+    "vehicle",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+}
+
+
+def _historical_query_terms(message: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", str(message or "").lower())
+        if len(token) >= 3 and token not in _HISTORICAL_QUERY_STOPWORDS
+    }
+
+
+def _historical_payload_text(
+    extraction_type: str,
+    payload: dict[str, Any],
+) -> str:
+    if extraction_type in {"document_text", "transcription"}:
+        return str(payload.get("text") or "").strip()
+
+    if extraction_type == "image_observation":
+        parts = [
+            str(payload.get("summary") or "").strip(),
+            " ".join(map(str, payload.get("observations") or [])),
+            str(payload.get("visible_text") or "").strip(),
+            " ".join(map(str, payload.get("uncertainties") or [])),
+        ]
+        return "\n".join(part for part in parts if part).strip()
+
+    if extraction_type == "document_understanding":
+        parts: list[str] = [
+            str(payload.get("advisor_narrative") or "").strip(),
+            " ".join(
+                str(item.get("event") or "")
+                for item in (payload.get("chronology") or [])
+                if isinstance(item, dict)
+            ),
+            " ".join(
+                " ".join(
+                    [
+                        str(item.get("title") or ""),
+                        str(item.get("detail") or ""),
+                        str(item.get("why_it_matters") or ""),
+                    ]
+                )
+                for item in (payload.get("facts") or [])
+                if isinstance(item, dict)
+            ),
+        ]
+        return "\n".join(part for part in parts if part).strip()
+
+    return ""
+
+
+def _historical_source_retrieval(
+    context: RinaResolvedContext,
+    message: str,
+) -> list[dict[str, Any]]:
+    """Retrieve bounded excerpts from all imported source content for this turn."""
+
+    if context.authority not in {"advisor", "administrator"}:
+        return []
+
+    terms = _historical_query_terms(message)
+    roots = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == context.car_id,
+            VehicleEvidence.historical_source_type.isnot(None),
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+            ~VehicleEvidence.bundle_parent_items.any(),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .limit(8)
+        .all()
+    )
+
+    candidates: list[tuple[int, int, dict[str, Any]]] = []
+    for root in roots:
+        evidence_rows: list[tuple[VehicleEvidence, str]] = [(root, "root_source")]
+        if root.historical_source_type == "whatsapp_conversation":
+            bundle_rows = (
+                EvidenceBundleItem.query.filter_by(bundle_evidence_id=root.id)
+                .order_by(EvidenceBundleItem.member_index.asc())
+                .limit(160)
+                .all()
+            )
+            evidence_rows.extend(
+                (row.child, str(row.member_kind or "bundle_child"))
+                for row in bundle_rows
+                if row.child is not None
+            )
+
+        for evidence, source_kind in evidence_rows:
+            extraction_types = (
+                ("document_text", "document_understanding")
+                if source_kind == "root_source"
+                else ("document_text", "transcription", "image_observation")
+            )
+            for extraction_type in extraction_types:
+                extraction = (
+                    EvidenceExtraction.query.filter_by(
+                        evidence_id=evidence.id,
+                        extraction_type=extraction_type,
+                        status="completed",
+                    )
+                    .order_by(EvidenceExtraction.id.desc())
+                    .first()
+                )
+                if extraction is None:
+                    continue
+                try:
+                    payload = decrypt_extraction_payload(extraction)
+                except HistoricalIngestionError:
+                    continue
+                text_value = _historical_payload_text(extraction_type, payload)
+                if not text_value:
+                    continue
+
+                lowered = text_value.lower()
+                score = sum(1 for term in terms if term in lowered)
+                if source_kind == "root_source":
+                    score += 1
+                if not terms:
+                    score += 1
+
+                chunks = [
+                    text_value[index : index + 1200]
+                    for index in range(0, min(len(text_value), 7200), 1200)
+                ]
+                for chunk_index, chunk in enumerate(chunks):
+                    chunk_lower = chunk.lower()
+                    chunk_score = sum(1 for term in terms if term in chunk_lower)
+                    effective_score = max(score if chunk_index == 0 else 0, chunk_score)
+                    candidates.append(
+                        (
+                            effective_score,
+                            -chunk_index,
+                            {
+                                "parent_source_id": root.id,
+                                "source_type": root.historical_source_type,
+                                "evidence_id": evidence.id,
+                                "source_kind": source_kind,
+                                "safe_display_name": _clip(
+                                    evidence.safe_display_name,
+                                    limit=160,
+                                ),
+                                "extraction_type": extraction_type,
+                                "content_excerpt": _clip(chunk, limit=1200),
+                                "semantic_authority": (
+                                    "source_content_not_durable_truth"
+                                ),
+                            },
+                        )
+                    )
+
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    if terms:
+        matched = [item for item in candidates if item[0] > 0]
+        selected = matched[:14] if matched else candidates[:8]
+    else:
+        selected = candidates[:8]
+    return [item[2] for item in selected]
 
 
 def _reviewed_historical_records(
@@ -192,6 +390,7 @@ def _trusted_context_payload(
     *,
     context: RinaResolvedContext,
     memory: RinaMemoryBundle,
+    message: str,
 ) -> dict[str, Any]:
     vehicle = {
         "display_name": context.vehicle.display_name,
@@ -225,8 +424,13 @@ def _trusted_context_payload(
     ]
 
     advisor_360 = None
+    historical_source_retrieval: list[dict[str, Any]] = []
     if rina_advisor_360_enabled():
         advisor_360 = build_rina_advisor_360_context(context)
+        historical_source_retrieval = _historical_source_retrieval(
+            context,
+            message,
+        )
 
     reviewed_historical_records = _reviewed_historical_records(context)
     if advisor_360 is not None:
@@ -280,6 +484,7 @@ def _trusted_context_payload(
         "progression": progression,
         "reviewed_summaries": summaries,
         "reviewed_historical_records": reviewed_historical_records,
+        "historical_source_retrieval": historical_source_retrieval,
         "advisor_360": advisor_360,
         "allowed_actions": list(context.allowed_actions),
     }
@@ -331,6 +536,9 @@ BOUNDARIES
 - Human approval remains required for assessment and treatment decisions.
 - Reviewed historical-record context may contain advisor-approved extraction facts. Preserve the recorded state: recommended, authorised and completed are not interchangeable.
 - When Advisor 360 historical_copilot is present, you may help the advisor reconstruct missing history: identify pending historical sources, unresolved attribution groups, likely separate service episodes, and possible evidence of another client vehicle.
+- historical_copilot.source_candidate_backlog contains the actual structured interpretation of imported top-level sources. Use its document identity, summaries/case focus, chronology, facts, candidates, priority threads, ambiguities and suggestions when answering source/history questions; do not reduce a source to a count when content is supplied.
+- historical_source_retrieval contains query-relevant excerpts from imported PDF text, WhatsApp transcript material, voice-note/video transcriptions and image observations. Use those excerpts when the advisor asks what a source or media item contains. Source content is evidence, not durable professional truth, unless separately advisor-reviewed/canonicalised.
+- WhatsApp bundle child evidence is content inside one parent historical source, not dozens of independent pending sources. Never report bundle-child counts as the number of historical sources.
 - historical_copilot is candidate-only. Never turn an uncertain, other_episode, unassigned, or possible-unregistered-vehicle item into durable vehicle truth merely because it appears in the copilot backlog.
 - You may prepare and explain proposed historical records for an advisor, but the advisor must review/edit and explicitly authorize any durable write. You may never approve your own proposal.
 - If evidence suggests another vehicle that is not yet registered in Aura, say that it is a possible vehicle identity and explain what must be confirmed (for example VIN, plate, make/model/year) before a new vehicle record is created.
@@ -368,7 +576,11 @@ def build_rina_provider_context(
     be introduced later only behind a task-specific minimization rule.
     """
 
-    trusted_payload = _trusted_context_payload(context=context, memory=memory)
+    trusted_payload = _trusted_context_payload(
+        context=context,
+        memory=memory,
+        message=rina_request.message,
+    )
     context_json = json.dumps(
         trusted_payload,
         ensure_ascii=True,

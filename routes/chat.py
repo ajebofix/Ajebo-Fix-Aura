@@ -34,6 +34,7 @@ from models import (
     User,
     VehicleAssessment,
 )
+from services.rina_advisor_360 import build_rina_historical_copilot_context
 from services.rina_audit import record_rina_audit
 from services.rina_authority import (
     RinaAuthorityError,
@@ -43,6 +44,10 @@ from services.rina_contracts import (
     RINA_STATE_AUTHORITY_DENIED,
     RINA_STATE_ESCALATION_REQUIRED,
     RINA_STATE_VEHICLE_REQUIRED,
+)
+from services.rina_context_resolver import (
+    RinaContextResolutionError,
+    resolve_rina_vehicle_context,
 )
 from services.rina_material_summary import (
     MATERIAL_ADVISOR_REVIEW,
@@ -334,6 +339,43 @@ def chat_vehicle_search():
             {
                 "query": query,
                 "vehicles": _professional_vehicle_search(query, limit=20),
+            }
+        ),
+        200,
+    )
+
+
+@chat_bp.get("/chat/historical-copilot")
+@login_required
+def chat_historical_copilot():
+    """Read-only supervised historical backlog for an explicit vehicle."""
+
+    car_id = _coerce_car_id(request.args.get("car_id"))
+    if car_id is None:
+        return jsonify({"error": "A valid vehicle is required."}), 400
+
+    try:
+        context = resolve_rina_vehicle_context(
+            user_id=current_user.id,
+            car_id=car_id,
+        )
+    except (RinaAuthorityError, RinaContextResolutionError):
+        return jsonify({"error": "That vehicle is not available to this account."}), 403
+
+    if context.authority not in {"advisor", "administrator"}:
+        return jsonify({"error": "Historical Copilot requires advisor access."}), 403
+
+    backlog = build_rina_historical_copilot_context(context) or {}
+    return (
+        jsonify(
+            {
+                "car_id": car_id,
+                "backlog": backlog,
+                "review_url": f"/admin/cars/{car_id}/historical-records",
+                "policy": (
+                    "Rina prepares candidate history; an advisor reviews and "
+                    "authorizes durable changes."
+                ),
             }
         ),
         200,

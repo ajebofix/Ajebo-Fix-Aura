@@ -127,6 +127,73 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
         db.session.add(newer)
         db.session.flush()
 
+        source_payload = {
+            "schema_version": 2,
+            "case_focus": "Several historical workshop jobs remain to be reviewed.",
+            "priority_threads": [
+                {
+                    "title": "Earlier workshop visit",
+                    "priority": "normal",
+                    "reason": "The conversation contains a separate earlier job.",
+                    "status": "completed_work",
+                    "source_refs": ["CHAT m000910"],
+                }
+            ],
+            "supporting_context": [],
+            "low_relevance_context": [],
+            "candidates": [
+                {
+                    "candidate_id": "SRC001",
+                    "category": "work_item",
+                    "state": "completed",
+                    "title": "Earlier workshop service",
+                    "detail": "Candidate historical work not yet published.",
+                    "suggested_destination": "treatment_action",
+                    "occurred_at": "2026-07-02T10:00:00",
+                    "completion_confirmed": True,
+                    "source_fact_ids": ["CHAT m000910"],
+                    "review_decision": "unreviewed",
+                    "action": {
+                        "kind": "service",
+                        "component_name": None,
+                        "component_location": None,
+                    },
+                },
+                {
+                    "candidate_id": "SRC002",
+                    "category": "observation",
+                    "state": "observed",
+                    "title": "Possible other vehicle identity",
+                    "detail": "Candidate identity needs advisor confirmation.",
+                    "suggested_destination": "vehicle_identity",
+                    "occurred_at": None,
+                    "completion_confirmed": False,
+                    "source_fact_ids": ["CHAT m000911"],
+                    "review_decision": "unreviewed",
+                    "action": None,
+                },
+            ],
+        }
+        source_cipher, source_version, source_digest = _payload_cipher(source_payload)
+        source_analysis = EvidenceExtraction(
+            evidence_id=corpus.id,
+            extraction_type="structured_fields",
+            provider="test",
+            provider_model="test-model",
+            status="completed",
+            result_ciphertext=source_cipher,
+            result_key_version=source_version,
+            result_sha256=source_digest,
+            review_status="unreviewed",
+            provenance={
+                "analysis_pipeline": "whatsapp_bundle_v1",
+                "semantic_authority": "candidate_only",
+            },
+            completed_at=datetime(2026, 9, 22, 10, 2, 0),
+        )
+        db.session.add(source_analysis)
+        db.session.flush()
+
         ready_payload = {
             "schema_version": 1,
             "summary": "Rina prepared one advisor-confirmed historical action.",
@@ -184,6 +251,15 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
 
         assert copilot is not None
         assert copilot["candidate_only"] is True
+        assert copilot["unrecorded_candidate_count"] == 2
+        assert copilot["priority_thread_count"] == 1
+        assert copilot["source_candidate_backlog"][0]["case_focus"].startswith(
+            "Several historical workshop jobs"
+        )
+        assert all(
+            row["candidate_only"]
+            for row in copilot["source_candidate_backlog"][0]["candidates"]
+        )
         assert copilot["possible_unregistered_vehicle"] is True
         assert {
             row["classification"]

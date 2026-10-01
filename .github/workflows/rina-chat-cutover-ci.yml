@@ -17,6 +17,10 @@ on:
       - "services/rina_orchestrator.py"
       - "services/rina_memory_service.py"
       - "services/rina_authority.py"
+      - "services/rina_historical_review.py"
+      - "services/rina_advisor_360.py"
+      - "historical_ingestion/reconciliation.py"
+      - "tests/test_rina_conversational_history.py"
       - "tests/test_rina_chat_cutover.py"
       - "tests/test_rina_workspace.py"
       - "services/rina_speaker.py"
@@ -66,6 +70,10 @@ jobs:
           dashboard/routes.py
           services/rina_material_summary.py
           services/rina_runtime_flags.py
+          services/rina_historical_review.py
+          services/rina_advisor_360.py
+          historical_ingestion/reconciliation.py
+          tests/test_rina_conversational_history.py
           tests/test_rina_chat_cutover.py
           tests/test_rina_workspace.py
           services/rina_speaker.py
@@ -79,6 +87,7 @@ jobs:
           tests/test_rina_memory_scope.py
           tests/test_rina_orchestrator.py
           tests/test_rina_openai_provider.py
+          tests/test_rina_conversational_history.py
           tests/test_rina_chat_cutover.py
           tests/test_rina_workspace.py
 
@@ -89,6 +98,10 @@ jobs:
           dashboard/routes.py
           services/rina_material_summary.py
           services/rina_runtime_flags.py
+          services/rina_historical_review.py
+          services/rina_advisor_360.py
+          historical_ingestion/reconciliation.py
+          tests/test_rina_conversational_history.py
           tests/test_rina_chat_cutover.py
           tests/test_rina_workspace.py
           services/rina_speaker.py
@@ -103,6 +116,8 @@ jobs:
           dashboard/routes.py
           services/rina_material_summary.py
           services/rina_runtime_flags.py
+          services/rina_historical_review.py
+          historical_ingestion/reconciliation.py
           scripts/verify_rina_chat_cutover_postgres.py
 
       - name: Verify legacy Rina engine is not referenced by active chat route

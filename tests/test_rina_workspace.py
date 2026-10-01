@@ -456,3 +456,12 @@ def test_historical_copilot_apply_requires_explicit_advisor_confirmation(
     assert applied.get_json()["plan_id"] == 987
     assert calls == [(extraction.id, admin.id)]
 
+    audit = RinaAIAuditEvent.query.filter_by(action_family="historical_apply").one()
+    assert audit.car_id == car.id
+    assert audit.user_id == admin.id
+    assert audit.authority == "administrator"
+    assert audit.provider_status == "not_called"
+    assert audit.evidence_refs == [
+        {"type": "historical_reconciliation", "id": extraction.id}
+    ]
+

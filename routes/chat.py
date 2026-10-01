@@ -437,6 +437,21 @@ def chat_historical_copilot_apply_reconciliation():
             extraction_id=extraction_id,
             actor_user_id=current_user.id,
         )
+        record_rina_audit(
+            request_id=_new_conversation_id(),
+            user_id=current_user.id,
+            car_id=car_id,
+            authority=context.authority,
+            state="answered",
+            outcome="answered",
+            action_family="historical_apply",
+            provider_status="not_called",
+            evidence_refs=[
+                {"type": "historical_reconciliation", "id": extraction_id}
+            ],
+            metadata={"channel": "advisor_workspace"},
+            commit=False,
+        )
         db.session.commit()
     except HistoricalReconciliationError as exc:
         db.session.rollback()

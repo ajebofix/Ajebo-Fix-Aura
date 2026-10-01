@@ -234,6 +234,23 @@ def _start_staged_intelligence_review(*, context, choice_key: str) -> dict[str, 
         actor_user_id=current_user.id,
         car_id=context.car_id,
     )
+    if state.all_reviewed:
+        _history_review_bind(
+            extraction_id=extraction.id,
+            candidate_id=None,
+            phase="awaiting_apply_confirmation",
+        )
+        return {
+            "reply": historical_review_preview(state),
+            "phase": "awaiting_apply_confirmation",
+            "extraction_id": extraction.id,
+            "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
     _history_review_bind(
         extraction_id=extraction.id,
         candidate_id=state.next_candidate_id,

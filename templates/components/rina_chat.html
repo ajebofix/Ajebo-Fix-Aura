@@ -590,6 +590,24 @@
         intro.textContent = "Rina can prepare missing historical memory for advisor review. Nothing below becomes durable vehicle truth without advisor approval.";
         historicalCopilotPanelEl.appendChild(intro);
 
+        const intelligenceVersion = Number(backlog.historical_intelligence_version || 0);
+        const rebuildButton = document.createElement("button");
+        rebuildButton.type = "button";
+        rebuildButton.className = "btn btn-primary";
+        rebuildButton.style.margin = "0 0 12px";
+        rebuildButton.textContent = intelligenceVersion >= 2
+            ? "Rebuild full historical intelligence"
+            : "Run full historical reconstruction";
+        rebuildButton.addEventListener("click", () => rebuildHistoricalIntelligence(rebuildButton));
+        historicalCopilotPanelEl.appendChild(rebuildButton);
+
+        if (intelligenceVersion < 2) {
+            const versionNotice = document.createElement("p");
+            versionNotice.style.margin = "0 0 12px";
+            versionNotice.textContent = "This WhatsApp bundle has not yet been rebuilt with multi-vehicle Historical Intelligence v2. Rina should not make definitive missing-job or second-vehicle conclusions until that reconstruction completes.";
+            historicalCopilotPanelEl.appendChild(versionNotice);
+        }
+
         const unresolved = backlog.unresolved_attribution_groups || [];
         const reconciliations = backlog.reconciliation_backlog || [];
         const pendingSources = backlog.pending_source_ids || [];
@@ -618,6 +636,155 @@
         appendCopilotLine(historicalCopilotPanelEl, "Episodes needing reconciliation/review", reconciliations.length);
         appendCopilotLine(historicalCopilotPanelEl, "Unresolved historical groups", unresolved.length);
         appendCopilotLine(historicalCopilotPanelEl, "Other registered client vehicles", otherVehicles.length);
+
+        const coverageRows = backlog.source_coverage || [];
+        if (coverageRows.length) {
+            const coverageHeading = document.createElement("strong");
+            coverageHeading.textContent = "Source coverage";
+            historicalCopilotPanelEl.appendChild(coverageHeading);
+
+            for (const coverage of coverageRows) {
+                const coverageText = document.createElement("p");
+                coverageText.style.margin = "6px 0 10px";
+                const expected = Number(coverage.bundle_item_count || 0);
+                const completed = Number(coverage.completed_item_count || 0);
+                const failed = Number(coverage.failed_item_count || 0);
+                const messages = Number(coverage.chat_message_count || 0);
+                coverageText.textContent = [
+                    messages ? `${messages} WhatsApp messages parsed` : "Transcript parsed",
+                    `${completed}/${expected} bundle items fully processed`,
+                    failed ? `${failed} item${failed === 1 ? "" : "s"} with failed analysis` : "no failed media analysis",
+                    coverage.coverage_complete ? "coverage complete" : "coverage partial",
+                ].join(" · ");
+                historicalCopilotPanelEl.appendChild(coverageText);
+
+                if (failed && Array.isArray(coverage.failed_items)) {
+                    const failures = document.createElement("ul");
+                    failures.style.margin = "0 0 12px 22px";
+                    for (const item of coverage.failed_items.slice(0, 8)) {
+                        const li = document.createElement("li");
+                        li.textContent = [
+                            item.safe_display_name || item.member_kind || "bundle item",
+                            (item.failed_extraction_types || []).join(", "),
+                        ].filter(Boolean).join(" — ");
+                        failures.appendChild(li);
+                    }
+                    historicalCopilotPanelEl.appendChild(failures);
+                }
+            }
+        }
+
+        const comparisonCounts = backlog.canonical_comparison_counts || {};
+        if (intelligenceVersion >= 2) {
+            const intelligenceHeading = document.createElement("strong");
+            intelligenceHeading.textContent = "Historical reconstruction";
+            historicalCopilotPanelEl.appendChild(intelligenceHeading);
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Vehicle candidates detected",
+                (backlog.vehicle_candidates || []).length
+            );
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Service episodes reconstructed",
+                (backlog.service_episode_candidates || []).length
+            );
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Already represented in Aura",
+                Number(comparisonCounts.already_represented || 0)
+            );
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Partially represented",
+                Number(comparisonCounts.partially_represented || 0)
+            );
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Missing from durable history",
+                Number(comparisonCounts.missing_from_durable_history || 0)
+            );
+            appendCopilotLine(
+                historicalCopilotPanelEl,
+                "Conflicting / uncertain",
+                Number(comparisonCounts.conflicting || 0)
+                    + Number(comparisonCounts.uncertain || 0)
+            );
+
+            const vehicleCandidates = backlog.vehicle_candidates || [];
+            const additionalVehicles = vehicleCandidates.filter(
+                item => item.identity_state !== "selected_vehicle_match"
+            );
+            if (additionalVehicles.length) {
+                const vehicleHeading = document.createElement("strong");
+                vehicleHeading.textContent = "Additional / uncertain vehicle identities";
+                historicalCopilotPanelEl.appendChild(vehicleHeading);
+                const list = document.createElement("ul");
+                list.style.margin = "7px 0 12px 22px";
+                for (const vehicle of additionalVehicles.slice(0, 8)) {
+                    const li = document.createElement("li");
+                    li.textContent = [
+                        vehicle.make_model_year || vehicle.identity_summary || "Possible vehicle",
+                        vehicle.plate_number ? `plate ${vehicle.plate_number}` : null,
+                        vehicle.vin ? `VIN ${vehicle.vin}` : null,
+                        vehicle.identity_state,
+                    ].filter(Boolean).join(" · ");
+                    list.appendChild(li);
+                }
+                historicalCopilotPanelEl.appendChild(list);
+            }
+
+            const episodesById = new Map(
+                (backlog.service_episode_candidates || []).map(
+                    item => [String(item.episode_candidate_id || ""), item]
+                )
+            );
+            const missingComparisons = (backlog.canonical_comparisons || []).filter(
+                item => item.comparison === "missing_from_durable_history"
+                    || item.comparison === "partially_represented"
+                    || item.comparison === "conflicting"
+                    || item.comparison === "uncertain"
+            );
+            if (missingComparisons.length) {
+                const diffHeading = document.createElement("strong");
+                diffHeading.textContent = "Advisor review from canonical diff";
+                historicalCopilotPanelEl.appendChild(diffHeading);
+
+                for (const comparison of missingComparisons.slice(0, 10)) {
+                    const episode = episodesById.get(String(comparison.episode_candidate_id || "")) || {};
+                    const card = document.createElement("div");
+                    card.style.margin = "8px 0 12px";
+                    card.style.padding = "8px 0";
+                    card.style.borderBottom = "1px solid rgba(100,116,139,.18)";
+
+                    const label = document.createElement("strong");
+                    label.textContent = episode.title || comparison.episode_candidate_id || "Historical episode";
+                    card.appendChild(label);
+
+                    const state = document.createElement("p");
+                    state.style.margin = "4px 0";
+                    state.textContent = String(comparison.comparison || "uncertain").replaceAll("_", " ");
+                    card.appendChild(state);
+
+                    const reason = document.createElement("p");
+                    reason.style.margin = "4px 0";
+                    reason.textContent = comparison.reason || episode.summary || "";
+                    card.appendChild(reason);
+
+                    if (Array.isArray(comparison.missing_facts) && comparison.missing_facts.length) {
+                        const missing = document.createElement("ul");
+                        missing.style.margin = "5px 0 0 22px";
+                        for (const fact of comparison.missing_facts.slice(0, 6)) {
+                            const li = document.createElement("li");
+                            li.textContent = fact;
+                            missing.appendChild(li);
+                        }
+                        card.appendChild(missing);
+                    }
+                    historicalCopilotPanelEl.appendChild(card);
+                }
+            }
+        }
 
         const importedSources = backlog.source_candidate_backlog || [];
         if (importedSources.length) {
@@ -731,6 +898,90 @@
         review.textContent = "Review Rina’s historical proposals";
         historicalCopilotPanelEl.appendChild(review);
         historicalCopilotPanelEl.style.display = "block";
+    }
+
+    async function pollHistoricalRebuild(statusUrl, button) {
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            let state;
+            try {
+                state = await fetchJson(statusUrl);
+            } catch (_) {
+                button.disabled = false;
+                button.textContent = "Check / rebuild historical intelligence";
+                return;
+            }
+
+            const completed = Number(state.completed_items || 0);
+            const total = Number(state.total_items || 0);
+            button.textContent = total
+                ? `Reconstructing history… ${completed}/${total}`
+                : "Reconstructing full history…";
+
+            if (state.status === "completed") {
+                button.textContent = "Historical reconstruction complete";
+                await loadHistoricalCopilot();
+                appendMessage(
+                    "assistant",
+                    "I’ve rebuilt the WhatsApp history using the multi-vehicle, multi-episode reconstruction and compared it with Aura’s durable history. Ask me what is genuinely missing, already recorded, uncertain, or tied to another vehicle."
+                );
+                return;
+            }
+
+            if (state.status === "failed") {
+                button.disabled = false;
+                button.textContent = "Retry full historical reconstruction";
+                appendMessage(
+                    "assistant",
+                    "The full historical reconstruction failed safely. No durable vehicle history was changed."
+                );
+                return;
+            }
+        }
+
+        button.disabled = false;
+        button.textContent = "Historical reconstruction is still running";
+    }
+
+    async function rebuildHistoricalIntelligence(button) {
+        if (!selectedCarId || !button || button.disabled) return;
+        button.disabled = true;
+        button.textContent = "Starting full reconstruction…";
+
+        try {
+            const data = await fetchJson(
+                "/chat/historical-copilot/rebuild",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ car_id: selectedCarId }),
+                }
+            );
+            appendMessage(
+                "assistant",
+                data.message || "I’m rebuilding the imported WhatsApp history now."
+            );
+
+            if (data.status === "completed") {
+                await loadHistoricalCopilot();
+                return;
+            }
+
+            if (data.status_url) {
+                await pollHistoricalRebuild(data.status_url, button);
+                return;
+            }
+
+            button.disabled = false;
+            button.textContent = "Check / rebuild historical intelligence";
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = "Retry full historical reconstruction";
+            appendMessage(
+                "assistant",
+                error.data?.error || "I could not start the historical reconstruction."
+            );
+        }
     }
 
     async function applyHistoricalReconciliation(extractionId) {

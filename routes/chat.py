@@ -23,6 +23,7 @@ from flask import (
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 
+from evidence.models import EvidenceExtraction
 from extensions import db
 from historical_ingestion.reconciliation import (
     HistoricalReconciliationError,
@@ -415,6 +416,14 @@ def chat_historical_copilot_apply_reconciliation():
     if context.authority not in {"advisor", "administrator"}:
         return jsonify({"error": "Historical Copilot requires advisor access."}), 403
 
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    if (
+        extraction is None
+        or extraction.evidence is None
+        or extraction.evidence.car_id != car_id
+    ):
+        return jsonify({"error": "Approved history does not match this vehicle."}), 409
+
     try:
         plan = apply_reconciliation(
             extraction_id=extraction_id,
@@ -446,9 +455,6 @@ def chat_historical_copilot_apply_reconciliation():
             ),
             200,
         )
-
-    if plan.car_id != car_id:
-        return jsonify({"error": "Approved history does not match this vehicle."}), 409
 
     return (
         jsonify(

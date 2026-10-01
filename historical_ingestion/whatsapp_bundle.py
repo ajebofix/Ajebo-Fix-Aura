@@ -1559,6 +1559,158 @@ def _bundle_source_coverage(
     }
 
 
+_CANONICAL_MATCH_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "authorised",
+    "authorized",
+    "complete",
+    "completed",
+    "completion",
+    "done",
+    "for",
+    "in",
+    "install",
+    "installed",
+    "installation",
+    "of",
+    "on",
+    "plan",
+    "planned",
+    "rebuild",
+    "rebuilt",
+    "reconstruct",
+    "reconstructed",
+    "reconstruction",
+    "repair",
+    "repaired",
+    "replacement",
+    "replace",
+    "replaced",
+    "service",
+    "serviced",
+    "the",
+    "to",
+    "was",
+    "work",
+}
+
+_LOCATION_TOKENS = {
+    "front",
+    "rear",
+    "left",
+    "right",
+    "upper",
+    "lower",
+    "top",
+    "bottom",
+    "inner",
+    "outer",
+}
+
+
+def _canonical_match_tokens(value: object) -> set[str]:
+    tokens: set[str] = set()
+    for raw in re.findall(r"[a-z0-9]+", str(value or "").lower()):
+        token = raw
+        if token.endswith("ies") and len(token) > 4:
+            token = token[:-3] + "y"
+        elif token.endswith("s") and len(token) > 4 and not token.endswith("ss"):
+            token = token[:-1]
+        if token in _CANONICAL_MATCH_STOPWORDS or len(token) < 2:
+            continue
+        tokens.add(token)
+    return tokens
+
+
+def _semantically_equivalent_action(left: object, right: object) -> bool:
+    """Conservative deterministic backstop for obvious canonical duplicates."""
+
+    left_tokens = _canonical_match_tokens(left)
+    right_tokens = _canonical_match_tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+
+    left_locations = left_tokens & _LOCATION_TOKENS
+    right_locations = right_tokens & _LOCATION_TOKENS
+    if left_locations and right_locations and left_locations != right_locations:
+        return False
+
+    left_core = left_tokens - _LOCATION_TOKENS
+    right_core = right_tokens - _LOCATION_TOKENS
+    if not left_core or not right_core:
+        return False
+
+    overlap = left_core & right_core
+    smaller = min(len(left_core), len(right_core))
+    if smaller <= 0:
+        return False
+
+    # Require at least two meaningful shared terms except for a very distinctive
+    # exact one-token component name. This keeps the server guard conservative;
+    # the reasoning model still performs the broader semantic comparison.
+    if len(overlap) >= 2 and len(overlap) / smaller >= 0.75:
+        return True
+
+    distinctive_singletons = {
+        "alternator",
+        "battery",
+        "compressor",
+        "radiator",
+        "starter",
+        "valve",
+    }
+    return (
+        len(left_core) == 1
+        and len(right_core) == 1
+        and next(iter(left_core)) in distinctive_singletons
+        and left_core == right_core
+    )
+
+
+def _canonical_action_matches_for_episode(
+    episode: dict[str, Any],
+    *,
+    car_id: int | None,
+    canonical_actions: list[dict[str, Any]],
+) -> tuple[list[int], list[str], list[str]]:
+    interventions = [
+        str(value).strip()
+        for value in (episode.get("completed_interventions") or [])
+        if str(value).strip()
+    ]
+    matched_ids: list[int] = []
+    represented: list[str] = []
+    unmatched: list[str] = []
+
+    for intervention in interventions:
+        matches = [
+            row
+            for row in canonical_actions
+            if (
+                (car_id is None or int(row.get("car_id") or 0) == car_id)
+                and str(row.get("status") or "").lower() == "completed"
+                and _semantically_equivalent_action(
+                    intervention,
+                    row.get("title"),
+                )
+            )
+        ]
+        if not matches:
+            unmatched.append(intervention)
+            continue
+        represented.append(intervention)
+        for row in matches:
+            action_id = row.get("treatment_action_id")
+            if action_id is not None and int(action_id) not in matched_ids:
+                matched_ids.append(int(action_id))
+
+    return matched_ids, represented, unmatched
+
+
 def _validated_historical_intelligence(
     payload: dict[str, Any],
     trusted_context: dict[str, Any],
@@ -1583,6 +1735,17 @@ def _validated_historical_intelligence(
         if row.get("historical_episode_id") is not None
     }
 
+    episode_by_id = {
+        str(row.get("episode_candidate_id") or ""): row
+        for row in (normalized.get("service_episode_candidates") or [])
+        if isinstance(row, dict) and row.get("episode_candidate_id")
+    }
+    canonical_actions = [
+        row
+        for row in (canonical.get("treatment_actions") or [])
+        if isinstance(row, dict)
+    ]
+
     comparisons = []
     for row in normalized.get("canonical_comparisons") or []:
         if not isinstance(row, dict):
@@ -1603,6 +1766,77 @@ def _validated_historical_intelligence(
             for value in (clean.get("matched_historical_episode_ids") or [])
             if value in known_episode_ids
         ]
+
+        represented = list(clean.get("already_represented_facts") or [])
+        comparison = str(clean.get("comparison") or "uncertain")
+        episode = episode_by_id.get(str(clean.get("episode_candidate_id") or ""))
+
+        if episode is not None and comparison in {
+            "missing_from_durable_history",
+            "partially_represented",
+        }:
+            effective_car_id = clean.get("matched_car_id")
+            if effective_car_id is None:
+                vehicle_candidate_id = str(episode.get("vehicle_candidate_id") or "")
+                vehicle_candidate = next(
+                    (
+                        item
+                        for item in (normalized.get("vehicle_candidates") or [])
+                        if isinstance(item, dict)
+                        and str(item.get("candidate_id") or "") == vehicle_candidate_id
+                    ),
+                    None,
+                )
+                if (
+                    vehicle_candidate is not None
+                    and vehicle_candidate.get("identity_state")
+                    == "selected_vehicle_match"
+                ):
+                    effective_car_id = int(
+                        trusted_context.get("selected_vehicle_car_id")
+                        or trusted_context.get("car_id")
+                        or 0
+                    ) or None
+
+            deterministic_ids, deterministic_facts, unmatched_interventions = (
+                _canonical_action_matches_for_episode(
+                    episode,
+                    car_id=effective_car_id,
+                    canonical_actions=canonical_actions,
+                )
+            )
+            for action_id in deterministic_ids:
+                if action_id not in clean["matched_treatment_action_ids"]:
+                    clean["matched_treatment_action_ids"].append(action_id)
+            for fact in deterministic_facts:
+                if fact not in represented:
+                    represented.append(fact)
+
+            missing_facts = [
+                str(value)
+                for value in (clean.get("missing_facts") or [])
+                if str(value).strip()
+            ]
+            clean["missing_facts"] = [
+                fact
+                for fact in missing_facts
+                if not any(
+                    _semantically_equivalent_action(fact, represented_fact)
+                    for represented_fact in deterministic_facts
+                )
+            ]
+            if deterministic_facts:
+                clean["already_represented_facts"] = represented
+                clean["advisor_confirmation_required"] = True
+                if unmatched_interventions or clean["missing_facts"]:
+                    clean["comparison"] = "partially_represented"
+                else:
+                    clean["comparison"] = "already_represented"
+                clean["reason"] = (
+                    "Aura's deterministic canonical guard matched source-supported "
+                    "completed work to an existing completed Treatment Action. "
+                    "Only unmatched source facts may be proposed."
+                )
 
         represented = list(clean.get("already_represented_facts") or [])
         matched_any = bool(

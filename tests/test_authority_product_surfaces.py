@@ -237,4 +237,7 @@ def test_rina_chat_prefers_female_voice_and_exposes_historical_copilot():
     assert "Retrying failed media" in source
     assert "Discovering vehicles and service episodes" in source
     assert "Comparing reconstructed episodes with Aura history" in source
+    assert "The latest rebuild failed during" in source
+    assert "last successful snapshot" in source
+    assert "Retry historical reasoning" in source
 

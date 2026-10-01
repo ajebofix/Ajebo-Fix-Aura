@@ -407,6 +407,72 @@ def _bundle_child_content_summary(source_id: int) -> dict[str, Any]:
     }
 
 
+def _live_bundle_processing_coverage(source_id: int) -> dict[str, Any]:
+    """Current child-processing state, independent of the last completed AI rebuild."""
+
+    required_by_kind = {
+        "transcript": {"document_text"},
+        "document": {"document_text"},
+        "image": {"image_observation"},
+        "audio": {"transcription"},
+        "video": {"transcription", "image_observation"},
+    }
+    rows = (
+        EvidenceBundleItem.query.filter_by(bundle_evidence_id=source_id)
+        .order_by(EvidenceBundleItem.member_index.asc())
+        .all()
+    )
+    completed_items = 0
+    failed_items: list[dict[str, Any]] = []
+    incomplete_items = 0
+
+    for row in rows:
+        required = required_by_kind.get(str(row.member_kind or ""))
+        child = row.child
+        if not required or child is None:
+            incomplete_items += 1
+            continue
+
+        completed_types = {
+            extraction.extraction_type
+            for extraction in child.extractions
+            if extraction.status == "completed"
+            and extraction.extraction_type in required
+        }
+        missing = required - completed_types
+        if not missing:
+            completed_items += 1
+            continue
+
+        failed_types = {
+            extraction.extraction_type
+            for extraction in child.extractions
+            if extraction.status == "failed"
+            and extraction.extraction_type in missing
+        }
+        if failed_types:
+            failed_items.append(
+                {
+                    "child_evidence_id": child.id,
+                    "safe_display_name": _clip(child.safe_display_name, limit=160),
+                    "member_kind": row.member_kind,
+                    "failed_extraction_types": sorted(failed_types),
+                    "status": "failed",
+                }
+            )
+        else:
+            incomplete_items += 1
+
+    return {
+        "bundle_item_count": len(rows),
+        "completed_item_count": completed_items,
+        "failed_item_count": len(failed_items),
+        "incomplete_item_count": incomplete_items,
+        "failed_items": failed_items[:24],
+        "supported_media_complete": bool(rows) and completed_items == len(rows),
+    }
+
+
 def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
     """Expose bounded candidate-only source analysis before advisor publication."""
 
@@ -555,6 +621,59 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
             )
         )
 
+        latest_run = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=source.id,
+                extraction_type="structured_fields",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        latest_rebuild: dict[str, Any] | None = None
+        if latest_run is not None:
+            latest_provenance = dict(latest_run.provenance or {})
+            latest_rebuild = {
+                "extraction_id": latest_run.id,
+                "status": latest_run.status,
+                "phase": _clip(
+                    latest_provenance.get("background_stage"),
+                    limit=48,
+                ),
+                "failure_class": _clip(
+                    latest_provenance.get("failure_class"),
+                    limit=120,
+                ),
+                "failure_detail": _clip(
+                    latest_provenance.get("failure_detail"),
+                    limit=320,
+                ),
+                "completed_at": _iso(latest_run.completed_at),
+                "is_latest_completed_snapshot": bool(
+                    extraction is not None and latest_run.id == extraction.id
+                ),
+            }
+
+        if source.historical_source_type == "whatsapp_conversation":
+            operational = _live_bundle_processing_coverage(source.id)
+            source_coverage = {
+                **source_coverage,
+                **operational,
+            }
+            unsupported = int(
+                source_coverage.get("unsupported_or_skipped_count") or 0
+            )
+            rejected = int(source_coverage.get("rejected_unsafe_count") or 0)
+            source_coverage["coverage_complete"] = bool(
+                operational["supported_media_complete"]
+                and unsupported == 0
+                and rejected == 0
+            )
+            source_coverage["claim"] = (
+                "complete_supported_evidence"
+                if source_coverage["coverage_complete"]
+                else "partial"
+            )
+
         result.append(
             {
                 "evidence_id": source.id,
@@ -592,6 +711,7 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
                     payload.get("historical_intelligence_version") or 0
                 ),
                 "source_coverage": source_coverage,
+                "latest_rebuild": latest_rebuild,
                 "vehicle_candidates": vehicle_candidates,
                 "service_episode_candidates": service_episodes,
                 "canonical_comparisons": canonical_comparisons,
@@ -841,6 +961,14 @@ def build_rina_historical_copilot_context(
             }
             for item in source_candidates
             if item.get("source_coverage")
+        ],
+        "latest_rebuilds": [
+            {
+                "evidence_id": item.get("evidence_id"),
+                **(item.get("latest_rebuild") or {}),
+            }
+            for item in source_candidates
+            if item.get("latest_rebuild")
         ],
         "vehicle_candidates": [
             {

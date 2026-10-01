@@ -308,3 +308,271 @@ def test_confirmed_work_without_date_stays_draft_until_date_is_supplied(
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+
+def _historical_intelligence_source(*, admin, car):
+    evidence = VehicleEvidence(
+        car_id=car.id,
+        uploaded_by_user_id=admin.id,
+        evidence_type="archive",
+        purpose="vehicle_history_context",
+        source_channel="whatsapp",
+        historical_source_type="whatsapp_conversation",
+        visibility="advisor",
+        review_status="accepted",
+        storage_provider="test-private",
+        storage_state="available",
+        object_key=f"tests/intelligence-{car.id}.zip",
+        safe_display_name="Historical WhatsApp export.zip",
+        content_type="application/zip",
+        byte_size=512,
+        sha256=("b" * 63) + str(car.id % 10),
+        consent_basis="advisor_whatsapp_case_import",
+        lawful_purpose="vehicle_care_recordkeeping",
+    )
+    db.session.add(evidence)
+    db.session.flush()
+
+    payload = {
+        "historical_intelligence_version": 2,
+        "rina_summary": "Longitudinal history reconstructed from WhatsApp evidence.",
+        "priority_threads": [],
+        "candidates": [],
+        "vehicle_candidates": [
+            {
+                "candidate_id": "V001",
+                "identity_state": "selected_vehicle_match",
+                "make_model_year": "2014 Mercedes-Benz GL 450",
+            }
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E001",
+                "vehicle_candidate_id": "V001",
+                "title": "Alternator replacement",
+                "date_start": "2026-02-14",
+                "date_end": "2026-02-14",
+                "episode_state": "completed_work_supported",
+                "summary": "Messages support a completed alternator replacement.",
+                "reported_concerns": ["Charging concern"],
+                "observations": [],
+                "recommended_interventions": ["Replace alternator"],
+                "authorized_interventions": ["Replace alternator"],
+                "completed_interventions": ["Alternator replacement"],
+                "outcomes": [],
+                "source_refs": ["CHAT m000120", "CHAT m000127"],
+                "source_excerpt": (
+                    "[CHAT m000127] Alternator replaced and vehicle handed over."
+                ),
+                "confidence": 0.93,
+                "separation_reason": "Distinct dated charging-system service episode.",
+            }
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": car.id,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": ["Alternator replacement"],
+                "conflicts": [],
+                "reason": "No equivalent completed Treatment Action exists.",
+                "advisor_confirmation_required": True,
+            }
+        ],
+    }
+    cipher, version, digest = _payload_cipher(payload)
+    extraction = EvidenceExtraction(
+        evidence_id=evidence.id,
+        extraction_type="structured_fields",
+        provider="test",
+        provider_model="test-model",
+        status="completed",
+        review_status="accepted",
+        result_ciphertext=cipher,
+        result_key_version=version,
+        result_sha256=digest,
+        reviewed_result_ciphertext=cipher,
+        reviewed_result_key_version=version,
+        reviewed_result_sha256=digest,
+        provenance={
+            "analysis_pipeline": "whatsapp_bundle_historical_intelligence_v2",
+            "background_stage": "completed",
+            "historical_intelligence_version": 2,
+        },
+    )
+    db.session.add(extraction)
+    db.session.commit()
+    return evidence, extraction
+
+
+def test_chat_stages_historical_intelligence_episode_when_no_formal_reconciliation(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=308, role="admin")
+    owner = _user(suffix=309)
+    car = _car(suffix=308, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=308)
+    evidence, source_extraction = _historical_intelligence_source(
+        admin=admin,
+        car=car,
+    )
+
+    _sign_in(client, admin)
+    _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
+
+    started = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "Rina, let's record the previous jobs you found on this Mercedes.",
+        },
+    )
+    assert started.status_code == 200
+    assert started.json["intent"] == "historical_review"
+    assert "Alternator replacement" in started.json["reply"]
+    assert "Item 1 of 1" in started.json["reply"]
+
+    draft_id = started.json["historical_review"]["extraction_id"]
+    draft = db.session.get(EvidenceExtraction, draft_id)
+    assert draft is not None
+    assert draft.evidence_id == evidence.id
+    assert draft.extraction_type == "historical_reconciliation"
+    assert draft.status == "completed"
+    assert draft.review_status == "unreviewed"
+    assert (
+        draft.provenance["analysis_pipeline"]
+        == "historical_intelligence_candidate_reconciliation_v1"
+    )
+    assert draft.provenance["source_structured_extraction_id"] == source_extraction.id
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    monkeypatch.setattr(
+        "routes.chat.interpret_historical_review_turn",
+        lambda **_kwargs: _confirmation_interpretation(date="2026-02-14"),
+    )
+    reviewed = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "Yes, the alternator was replaced on 14 February 2026.",
+        },
+    )
+    assert reviewed.status_code == 200
+    assert "Ready for your final review" in reviewed.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    applied = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Confirm and record"},
+    )
+    assert applied.status_code == 200
+    assert "Recorded." in applied.json["reply"]
+
+    plan = TreatmentPlan.query.filter_by(
+        source_extraction_id=draft_id,
+        record_origin="historical_reconciliation",
+    ).one()
+    assert plan.car_id == car.id
+    action = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).one()
+    assert action.title == "Alternator replacement"
+    assert action.status == "completed"
+
+
+def test_historical_intelligence_bridge_rejects_other_vehicle_candidates(app, client):
+    admin = _user(suffix=310, role="admin")
+    owner = _user(suffix=311)
+    car = _car(suffix=310, model="GL 450")
+    _own(owner=owner, car=car, suffix=310)
+    evidence, extraction = _historical_intelligence_source(admin=admin, car=car)
+
+    payload = {
+        "historical_intelligence_version": 2,
+        "rina_summary": "Another vehicle is present in the corpus.",
+        "priority_threads": [],
+        "candidates": [],
+        "vehicle_candidates": [
+            {
+                "candidate_id": "V999",
+                "identity_state": "possible_other_vehicle",
+                "make_model_year": "2018 Lexus RX 350",
+            }
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E999",
+                "vehicle_candidate_id": "V999",
+                "title": "Lexus brake service",
+                "date_start": "2026-03-01",
+                "date_end": "2026-03-01",
+                "episode_state": "completed_work_supported",
+                "summary": "Brake work for another vehicle.",
+                "reported_concerns": [],
+                "observations": [],
+                "recommended_interventions": [],
+                "authorized_interventions": [],
+                "completed_interventions": ["Front brake pad replacement"],
+                "outcomes": [],
+                "source_refs": ["CHAT m000300"],
+                "source_excerpt": "[CHAT m000300] Lexus front pads completed.",
+                "confidence": 0.91,
+                "separation_reason": "Distinct vehicle identity.",
+            }
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E999",
+                "comparison": "belongs_to_other_vehicle",
+                "matched_car_id": None,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": ["Front brake pad replacement"],
+                "conflicts": [],
+                "reason": "Evidence belongs to a different vehicle candidate.",
+                "advisor_confirmation_required": True,
+            }
+        ],
+    }
+    cipher, version, digest = _payload_cipher(payload)
+    extraction.result_ciphertext = cipher
+    extraction.result_key_version = version
+    extraction.result_sha256 = digest
+    extraction.reviewed_result_ciphertext = cipher
+    extraction.reviewed_result_key_version = version
+    extraction.reviewed_result_sha256 = digest
+    db.session.commit()
+
+    _sign_in(client, admin)
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "Rina, record the previous jobs you found on this vehicle.",
+        },
+    )
+    assert response.status_code == 200
+    assert "won't invent one" in response.json["reply"] or (
+        "pull work across from another vehicle" in response.json["reply"]
+    )
+    direct = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="historical_reconciliation",
+        )
+        .all()
+    )
+    assert direct == []

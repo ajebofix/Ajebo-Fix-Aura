@@ -20,10 +20,13 @@ from historical_ingestion.service import (
 from historical_ingestion.whatsapp_bundle import (
     WhatsAppBundleValidationError,
     _bundle_source_coverage,
+    _create_encrypted_extraction,
+    _process_child,
     _validated_historical_intelligence,
     advance_whatsapp_bundle_analysis,
     ingest_whatsapp_bundle,
     latest_whatsapp_bundle_extraction,
+    restart_whatsapp_bundle_analysis,
 )
 from historical_ingestion.whatsapp_bundle_analyzer import (
     BUNDLE_CANDIDATE_SCHEMA,
@@ -31,6 +34,7 @@ from historical_ingestion.whatsapp_bundle_analyzer import (
     BUNDLE_UNDERSTANDING_SCHEMA,
 )
 from models import Car, CarOwnership, User
+from rina.providers.base import RinaProviderRejectedError
 
 
 PASSWORD = "Password123"
@@ -712,6 +716,289 @@ def test_whatsapp_bundle_is_safe_private_lineage_and_multimodal_case(
             extraction_type="transcription",
             status="completed",
         ).count() == 1
+
+
+def test_video_no_speech_becomes_completed_transcription_not_failure(
+    app,
+    monkeypatch,
+):
+    from historical_ingestion import whatsapp_bundle as bundle_module
+
+    class NoSpeechAnalyzer(FakeBundleAnalyzer):
+        def transcribe_audio(self, *, payload: bytes, filename: str, content_type: str):
+            self.audio += 1
+            raise RinaProviderRejectedError(
+                "Audio transcription returned no usable text"
+            )
+
+    with app.app_context():
+        owner = _user(suffix=31)
+        advisor = _user(suffix=32, role="admin")
+        car = _owned_car(owner, suffix=31)
+        storage = RecordingStorageProvider()
+
+        archive = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=advisor.id,
+            evidence_type="archive",
+            purpose="vehicle_history_context",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider=storage.provider_name,
+            storage_state="available",
+            object_key="retry/archive.zip",
+            safe_display_name="WhatsApp history.zip",
+            content_type="application/zip",
+            byte_size=128,
+            sha256="1" * 64,
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        child = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=advisor.id,
+            evidence_type="video",
+            purpose="vehicle_history_context",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider=storage.provider_name,
+            storage_state="available",
+            object_key="retry/video.mp4",
+            safe_display_name="VID-retry.mp4",
+            content_type="video/mp4",
+            byte_size=96,
+            sha256="2" * 64,
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        db.session.add_all([archive, child])
+        db.session.flush()
+        item = EvidenceBundleItem(
+            bundle_evidence_id=archive.id,
+            child_evidence_id=child.id,
+            member_index=1,
+            member_kind="video",
+            member_sha256="2" * 64,
+        )
+        db.session.add(item)
+        db.session.commit()
+        storage.objects[child.object_key] = b"video-bytes"
+
+        monkeypatch.setattr(
+            bundle_module,
+            "_video_derivatives",
+            lambda *_args, **_kwargs: (
+                b"wav-audio",
+                [_image_bytes()],
+            ),
+        )
+        monkeypatch.setattr(
+            bundle_module,
+            "_audio_wav_chunks",
+            lambda *_args, **_kwargs: [
+                b"RIFF" + b"\x00" * 32 + b"WAVE" + b"\x00" * 80,
+                b"RIFF" + b"\x00" * 32 + b"WAVE" + b"\x00" * 80,
+            ],
+        )
+
+        _process_child(
+            item=item,
+            storage_provider=storage,
+            analyzer=NoSpeechAnalyzer(),
+        )
+
+        transcription = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=child.id,
+                extraction_type="transcription",
+                status="completed",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        assert transcription is not None
+        payload = decrypt_extraction_payload(transcription)
+        assert payload["speech_detected"] is False
+        assert "No intelligible speech detected" in payload["text"]
+        assert transcription.provenance["semantic_authority"] == "none"
+
+        observation = EvidenceExtraction.query.filter_by(
+            evidence_id=child.id,
+            extraction_type="image_observation",
+            status="completed",
+        ).first()
+        assert observation is not None
+
+
+def test_restart_retries_only_failed_media_before_whole_history(
+    app,
+    monkeypatch,
+):
+    from historical_ingestion import whatsapp_bundle as bundle_module
+
+    with app.app_context():
+        owner = _user(suffix=33)
+        advisor = _user(suffix=34, role="admin")
+        car = _owned_car(owner, suffix=33)
+        storage = RecordingStorageProvider()
+        analyzer = FakeBundleAnalyzer()
+
+        archive = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=advisor.id,
+            evidence_type="archive",
+            purpose="vehicle_history_context",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider=storage.provider_name,
+            storage_state="available",
+            object_key="retry/history.zip",
+            safe_display_name="WhatsApp history.zip",
+            content_type="application/zip",
+            byte_size=128,
+            sha256="3" * 64,
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        child = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=advisor.id,
+            evidence_type="video",
+            purpose="vehicle_history_context",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider=storage.provider_name,
+            storage_state="available",
+            object_key="retry/failed-video.mp4",
+            safe_display_name="VID-failed.mp4",
+            content_type="video/mp4",
+            byte_size=96,
+            sha256="4" * 64,
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        db.session.add_all([archive, child])
+        db.session.flush()
+        item = EvidenceBundleItem(
+            bundle_evidence_id=archive.id,
+            child_evidence_id=child.id,
+            member_index=1,
+            member_kind="video",
+            member_sha256="4" * 64,
+        )
+        db.session.add(item)
+
+        _create_encrypted_extraction(
+            evidence_id=archive.id,
+            extraction_type="archive_manifest",
+            provider="test",
+            payload={
+                "schema_version": 1,
+                "bundle_type": "whatsapp_export",
+                "member_count": 1,
+                "supported_member_count": 1,
+                "members": [
+                    {
+                        "member_index": 1,
+                        "original_name": "VID-failed.mp4",
+                        "safe_name": "VID-failed.mp4",
+                        "kind": "video",
+                        "status": "materialized",
+                        "child_evidence_id": child.id,
+                    }
+                ],
+            },
+            provenance={"analysis_pipeline": "whatsapp_bundle_v1"},
+        )
+        _create_encrypted_extraction(
+            evidence_id=child.id,
+            extraction_type="image_observation",
+            provider="test",
+            payload={
+                "schema_version": 1,
+                "summary": "Frames are readable.",
+                "observations": [],
+                "visible_text": "",
+                "uncertainties": [],
+            },
+            provenance={"analysis_pipeline": "whatsapp_bundle_v1"},
+        )
+        failed = EvidenceExtraction(
+            evidence_id=child.id,
+            extraction_type="transcription",
+            provider="openai",
+            status="failed",
+            review_status="unreviewed",
+            provenance={
+                "analysis_pipeline": "whatsapp_bundle_v1",
+                "failure_class": "RinaProviderRejectedError",
+                "failure_detail": "provider rejected long video audio",
+            },
+        )
+        db.session.add(failed)
+        db.session.commit()
+        storage.objects[child.object_key] = b"video-bytes"
+
+        monkeypatch.setattr(
+            bundle_module,
+            "_video_derivatives",
+            lambda *_args, **_kwargs: (
+                b"wav-audio",
+                [_image_bytes()],
+            ),
+        )
+        monkeypatch.setattr(
+            bundle_module,
+            "_audio_wav_chunks",
+            lambda *_args, **_kwargs: [
+                b"RIFF" + b"\x00" * 32 + b"WAVE" + b"\x00" * 80
+            ],
+        )
+
+        started = restart_whatsapp_bundle_analysis(
+            evidence_id=archive.id,
+            actor_user_id=advisor.id,
+        )
+        assert started.phase == "retry_failed_media"
+
+        first = advance_whatsapp_bundle_analysis(
+            extraction_id=started.extraction_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            analyzer=analyzer,
+        )
+        assert first.phase == "retry_failed_media"
+        completed_transcription = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=child.id,
+                extraction_type="transcription",
+                status="completed",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        assert completed_transcription is not None
+        assert analyzer.audio == 1
+        assert analyzer.videos == 0  # existing visual analysis was not repeated
+
+        second = advance_whatsapp_bundle_analysis(
+            extraction_id=started.extraction_id,
+            actor_user_id=advisor.id,
+            storage_provider=storage,
+            analyzer=analyzer,
+        )
+        assert second.phase == "preprocessing"
+        current = db.session.get(EvidenceExtraction, started.extraction_id)
+        assert current.provenance["media_retry_completed"] is True
+        assert current.provenance["retry_attempted_child_ids"] == [child.id]
 
 
 def test_identical_whatsapp_zip_reuses_existing_processing_analysis(app):

@@ -1531,7 +1531,9 @@ def _bundle_source_coverage(
         total_items and completed_items == total_items and failed_count == 0
     )
     coverage_complete = bool(
-        supported_media_complete and rejected_unsafe_count == 0
+        supported_media_complete
+        and rejected_unsafe_count == 0
+        and unsupported_or_skipped_count == 0
     )
 
     return {

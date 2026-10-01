@@ -16,6 +16,7 @@ _ALLOWED_METADATA_KEYS: Final = frozenset(
         "feature_flag",
         "failure_class",
         "provider_attempted",
+        "historical_intelligence_version",
     }
 )
 

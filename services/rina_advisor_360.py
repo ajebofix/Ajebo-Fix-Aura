@@ -311,6 +311,120 @@ def _historical_episodes(car_id: int) -> list[dict[str, Any]]:
     return result
 
 
+def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
+    """Expose bounded candidate-only source analysis before advisor publication."""
+
+    sources = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == car_id,
+            VehicleEvidence.historical_source_type.isnot(None),
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .limit(16)
+        .all()
+    )
+
+    result: list[dict[str, Any]] = []
+    for source in sources:
+        extraction = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=source.id,
+                extraction_type="structured_fields",
+                status="completed",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        if extraction is None:
+            continue
+
+        try:
+            payload = decrypt_extraction_payload(
+                extraction,
+                reviewed=extraction.review_status in {"accepted", "corrected"},
+            )
+        except HistoricalIngestionError:
+            continue
+
+        candidate_rows: list[dict[str, Any]] = []
+        for item in (payload.get("candidates") or [])[:30]:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or "").strip().lower()
+            destination = str(item.get("suggested_destination") or "").strip().lower()
+            if category == "financial" or destination == "financial_separate":
+                continue
+            action = item.get("action") if isinstance(item.get("action"), dict) else {}
+            candidate_rows.append(
+                {
+                    "candidate_id": _clip(item.get("candidate_id"), limit=64),
+                    "category": _clip(category, limit=40),
+                    "state": _clip(item.get("state"), limit=40),
+                    "title": _clip(item.get("title"), limit=220),
+                    "detail": _clip(item.get("detail"), limit=600),
+                    "occurred_at": _clip(item.get("occurred_at"), limit=64),
+                    "suggested_destination": _clip(destination, limit=48),
+                    "completion_confirmed": bool(item.get("completion_confirmed")),
+                    "action": {
+                        "kind": _clip(action.get("kind"), limit=40),
+                        "component_name": _clip(action.get("component_name"), limit=220),
+                        "component_location": _clip(
+                            action.get("component_location"),
+                            limit=120,
+                        ),
+                    }
+                    if action
+                    else None,
+                    "source_fact_ids": [
+                        _clip(ref, limit=120)
+                        for ref in (item.get("source_fact_ids") or [])[:8]
+                        if _clip(ref, limit=120)
+                    ],
+                    "review_decision": _clip(item.get("review_decision"), limit=24),
+                    "candidate_only": item.get("review_decision") not in {
+                        "accepted",
+                    },
+                }
+            )
+
+        threads: list[dict[str, Any]] = []
+        for item in (payload.get("priority_threads") or [])[:16]:
+            if not isinstance(item, dict):
+                continue
+            threads.append(
+                {
+                    "title": _clip(item.get("title"), limit=220),
+                    "priority": _clip(item.get("priority"), limit=40),
+                    "reason": _clip(item.get("reason"), limit=500),
+                    "status": _clip(item.get("status"), limit=40),
+                    "source_refs": [
+                        _clip(ref, limit=120)
+                        for ref in (item.get("source_refs") or [])[:8]
+                        if _clip(ref, limit=120)
+                    ],
+                }
+            )
+
+        result.append(
+            {
+                "evidence_id": source.id,
+                "extraction_id": extraction.id,
+                "source_type": source.historical_source_type,
+                "safe_display_name": _clip(source.safe_display_name, limit=160),
+                "source_review_status": source.review_status,
+                "extraction_review_status": extraction.review_status,
+                "case_focus": _clip(payload.get("case_focus"), limit=1200),
+                "priority_threads": threads,
+                "candidates": candidate_rows,
+                "semantic_authority": "candidate_only",
+            }
+        )
+
+    return result
+
+
 def build_rina_historical_copilot_context(
     context: RinaResolvedContext,
 ) -> dict[str, Any] | None:
@@ -324,6 +438,7 @@ def build_rina_historical_copilot_context(
         return None
 
     episodes = _historical_episodes(context.car_id)
+    source_candidates = _historical_source_candidate_backlog(context.car_id)
 
     open_groups: list[dict[str, Any]] = []
     seen: set[tuple[object, ...]] = set()
@@ -477,6 +592,13 @@ def build_rina_historical_copilot_context(
         "owner_user_id": owner.id if owner is not None else None,
         "source_review_counts": dict(source_review_counts),
         "pending_source_ids": pending_source_ids,
+        "source_candidate_backlog": source_candidates,
+        "unrecorded_candidate_count": sum(
+            len(item.get("candidates") or []) for item in source_candidates
+        ),
+        "priority_thread_count": sum(
+            len(item.get("priority_threads") or []) for item in source_candidates
+        ),
         "reconciliation_backlog": reconciliation_backlog[:12],
         "unresolved_attribution_groups": open_groups[:20],
         "known_other_client_vehicles": known_other_vehicles,

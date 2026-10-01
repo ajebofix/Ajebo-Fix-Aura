@@ -411,6 +411,28 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
             completed_at=datetime(2026, 9, 22, 10, 5, 0),
         )
         db.session.add(ready_reconciliation)
+
+        superseded = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=admin.id,
+            evidence_type="document",
+            purpose="service_document",
+            source_channel="web",
+            historical_source_type="standalone_document",
+            visibility="advisor",
+            review_status="superseded",
+            storage_provider="test-private",
+            storage_state="available",
+            object_key="advisor360/superseded-old.pdf",
+            safe_display_name="Old superseded copy.pdf",
+            content_type="application/pdf",
+            byte_size=128,
+            sha256="9" * 64,
+            uploaded_at=datetime(2026, 9, 19, 12, 0, 0),
+            consent_basis="advisor_vehicle_care_record",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        db.session.add(superseded)
         db.session.commit()
 
         context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
@@ -419,9 +441,12 @@ def test_historical_copilot_surfaces_candidate_backlog_without_promoting_truth(a
         assert copilot is not None
         assert copilot["candidate_only"] is True
         assert copilot["top_level_source_count"] == 2
+        assert copilot["archived_source_count"] == 1
         assert voice_note.id not in copilot["pending_source_ids"]
         assert copilot["historical_intelligence_version"] == 2
         assert copilot["unrecorded_candidate_count"] == 1
+        assert copilot["advisor_review_episode_count"] == 1
+        assert copilot["belongs_to_other_vehicle_count"] == 0
         assert copilot["priority_thread_count"] == 1
         assert copilot["canonical_comparison_counts"]["already_represented"] == 1
         assert (

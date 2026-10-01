@@ -366,12 +366,17 @@ def chat_historical_copilot():
         return jsonify({"error": "Historical Copilot requires advisor access."}), 403
 
     backlog = build_rina_historical_copilot_context(context) or {}
+    owner_user_id = backlog.get("owner_user_id")
+    client_vehicle_url = (
+        f"/admin/clients/{owner_user_id}/vehicles/new" if owner_user_id else None
+    )
     return (
         jsonify(
             {
                 "car_id": car_id,
                 "backlog": backlog,
                 "review_url": f"/admin/cars/{car_id}/historical-records",
+                "client_vehicle_url": client_vehicle_url,
                 "policy": (
                     "Rina prepares candidate history; an advisor reviews and "
                     "authorizes durable changes."

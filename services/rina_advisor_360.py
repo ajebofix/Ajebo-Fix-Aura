@@ -524,6 +524,36 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
                 }
             )
 
+        vehicle_candidates = (
+            payload.get("vehicle_candidates")
+            if isinstance(payload.get("vehicle_candidates"), list)
+            else []
+        )[:24]
+        service_episodes = (
+            payload.get("service_episode_candidates")
+            if isinstance(payload.get("service_episode_candidates"), list)
+            else []
+        )[:80]
+        canonical_comparisons = (
+            payload.get("canonical_comparisons")
+            if isinstance(payload.get("canonical_comparisons"), list)
+            else []
+        )[:80]
+        comparison_counts = Counter(
+            str(item.get("comparison") or "uncertain")
+            for item in canonical_comparisons
+            if isinstance(item, dict)
+        )
+        source_coverage = (
+            payload.get("source_coverage")
+            if isinstance(payload.get("source_coverage"), dict)
+            else (
+                understanding_payload.get("source_coverage")
+                if isinstance(understanding_payload.get("source_coverage"), dict)
+                else {}
+            )
+        )
+
         result.append(
             {
                 "evidence_id": source.id,
@@ -557,6 +587,14 @@ def _historical_source_candidate_backlog(car_id: int) -> list[dict[str, Any]]:
                 "priority_thread_count": len(all_threads),
                 "priority_threads": threads,
                 "candidates": candidate_rows,
+                "historical_intelligence_version": int(
+                    payload.get("historical_intelligence_version") or 0
+                ),
+                "source_coverage": source_coverage,
+                "vehicle_candidates": vehicle_candidates,
+                "service_episode_candidates": service_episodes,
+                "canonical_comparisons": canonical_comparisons,
+                "canonical_comparison_counts": dict(comparison_counts),
                 "understanding": (
                     _compact_understanding_payload(understanding_payload)
                     if understanding_payload
@@ -686,11 +724,34 @@ def build_rina_historical_copilot_context(
         for group in open_groups
         if str(group.get("evidence_role") or "").strip().lower() == "identity"
     ]
+    v2_vehicle_candidates = [
+        {
+            **item,
+            "source_evidence_id": source.get("evidence_id"),
+        }
+        for source in source_candidates
+        for item in (source.get("vehicle_candidates") or [])
+        if isinstance(item, dict)
+        and str(item.get("identity_state") or "") in {
+            "registered_other_vehicle_match",
+            "possible_other_vehicle",
+            "uncertain_vehicle",
+        }
+    ]
     possible_unregistered_vehicle = bool(
-        identity_candidates
-        and any(
-            group.get("classification") in {"other_episode", "unassigned"}
-            for group in identity_candidates
+        (
+            identity_candidates
+            and any(
+                group.get("classification") in {"other_episode", "unassigned"}
+                for group in identity_candidates
+            )
+        )
+        or any(
+            item.get("identity_state") in {
+                "possible_other_vehicle",
+                "uncertain_vehicle",
+            }
+            for item in v2_vehicle_candidates
         )
     )
 
@@ -754,10 +815,62 @@ def build_rina_historical_copilot_context(
         "top_level_source_count": len(source_rows),
         "pending_source_ids": pending_source_ids,
         "source_candidate_backlog": source_candidates,
-        "unrecorded_candidate_count": sum(
-            int(item.get("candidate_count") or 0)
+        "historical_intelligence_version": max(
+            [
+                int(item.get("historical_intelligence_version") or 0)
+                for item in source_candidates
+            ]
+            or [0]
+        ),
+        "source_coverage": [
+            {
+                "evidence_id": item.get("evidence_id"),
+                **(item.get("source_coverage") or {}),
+            }
             for item in source_candidates
-            if item.get("semantic_authority") == "candidate_only"
+            if item.get("source_coverage")
+        ],
+        "vehicle_candidates": [
+            {
+                **vehicle,
+                "source_evidence_id": item.get("evidence_id"),
+            }
+            for item in source_candidates
+            for vehicle in (item.get("vehicle_candidates") or [])
+            if isinstance(vehicle, dict)
+        ][:40],
+        "service_episode_candidates": [
+            {
+                **episode,
+                "source_evidence_id": item.get("evidence_id"),
+            }
+            for item in source_candidates
+            for episode in (item.get("service_episode_candidates") or [])
+            if isinstance(episode, dict)
+        ][:120],
+        "canonical_comparisons": [
+            {
+                **comparison,
+                "source_evidence_id": item.get("evidence_id"),
+            }
+            for item in source_candidates
+            for comparison in (item.get("canonical_comparisons") or [])
+            if isinstance(comparison, dict)
+        ][:120],
+        "canonical_comparison_counts": dict(
+            Counter(
+                str(comparison.get("comparison") or "uncertain")
+                for item in source_candidates
+                for comparison in (item.get("canonical_comparisons") or [])
+                if isinstance(comparison, dict)
+            )
+        ),
+        "unrecorded_candidate_count": sum(
+            1
+            for item in source_candidates
+            for comparison in (item.get("canonical_comparisons") or [])
+            if isinstance(comparison, dict)
+            and comparison.get("comparison") == "missing_from_durable_history"
         ),
         "priority_thread_count": sum(
             len(item.get("priority_threads") or []) for item in source_candidates
@@ -767,16 +880,36 @@ def build_rina_historical_copilot_context(
         "known_other_client_vehicles": known_other_vehicles,
         "possible_unregistered_vehicle": possible_unregistered_vehicle,
         "possible_unregistered_vehicle_evidence": identity_candidates[:8],
-        "vehicle_identity_proposals": [
-            {
-                "title": item.get("title"),
-                "summary": item.get("summary"),
-                "confidence": item.get("confidence"),
-                "source_refs": item.get("source_refs") or [],
-                "proposal_state": "human_confirmation_required",
-            }
-            for item in identity_candidates[:8]
-        ],
+        "vehicle_identity_proposals": (
+            [
+                {
+                    "title": item.get("title"),
+                    "summary": item.get("summary"),
+                    "confidence": item.get("confidence"),
+                    "source_refs": item.get("source_refs") or [],
+                    "proposal_state": "human_confirmation_required",
+                }
+                for item in identity_candidates[:8]
+            ]
+            + [
+                {
+                    "title": (
+                        item.get("make_model_year")
+                        or item.get("identity_summary")
+                        or "Possible additional vehicle"
+                    ),
+                    "summary": item.get("identity_summary"),
+                    "confidence": item.get("confidence"),
+                    "source_refs": item.get("source_refs") or [],
+                    "vin": item.get("vin"),
+                    "plate_number": item.get("plate_number"),
+                    "identity_state": item.get("identity_state"),
+                    "source_evidence_id": item.get("source_evidence_id"),
+                    "proposal_state": "human_confirmation_required",
+                }
+                for item in v2_vehicle_candidates[:12]
+            ]
+        )[:16],
         "supervision_policy": {
             "rina_may_prepare": True,
             "advisor_must_review": True,

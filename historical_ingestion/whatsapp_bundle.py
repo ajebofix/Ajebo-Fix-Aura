@@ -2367,9 +2367,65 @@ def advance_whatsapp_bundle_analysis(
                 total_items=total,
             )
         if response.status != "completed" or not isinstance(response.payload, dict):
+            retry_count = int(provenance.get("background_reasoning_retry_count") or 0)
+            if retry_count < 1 and stage in {"understanding", "structuring"}:
+                corpus = _corpus(evidence)
+                intelligence_context = _historical_intelligence_context(evidence.car)
+
+                if stage == "understanding":
+                    retry_response = analyzer.start_bundle_understanding_background(
+                        corpus=corpus,
+                        trusted_vehicle_context=intelligence_context,
+                    )
+                else:
+                    understanding_id = int(
+                        provenance.get("understanding_extraction_id") or 0
+                    )
+                    understanding = db.session.get(
+                        EvidenceExtraction,
+                        understanding_id,
+                    )
+                    if understanding is None or understanding.status != "completed":
+                        return _mark_analysis_failed(
+                            analysis,
+                            "The completed understanding pass required for a structuring retry is missing.",
+                        )
+                    understanding_payload = decrypt_extraction_payload(understanding)
+                    retry_response = analyzer.start_bundle_structuring_background(
+                        understanding=understanding_payload,
+                        trusted_vehicle_context=intelligence_context,
+                    )
+
+                analysis.provider_model = retry_response.model
+                analysis.provider_request_id = retry_response.response_id
+                analysis.provenance = {
+                    **provenance,
+                    "background_response_id": retry_response.response_id,
+                    "background_reasoning_retry_count": retry_count + 1,
+                    "previous_background_response_id": response.response_id,
+                    "previous_background_status": response.status,
+                }
+                db.session.commit()
+                done, total = _counts(evidence.id)
+                return WhatsAppBundleStatus(
+                    evidence_id=evidence.id,
+                    extraction_id=analysis.id,
+                    status="processing",
+                    phase=stage,
+                    message=(
+                        "Rina's reasoning pass ended early. Aura restarted this "
+                        "reasoning stage once without reprocessing the source media."
+                    ),
+                    completed_items=done,
+                    total_items=total,
+                )
+
             return _mark_analysis_failed(
                 analysis,
-                f"OpenAI background response ended with status {response.status}.",
+                (
+                    "OpenAI background response ended with status "
+                    f"{response.status} after {retry_count} automatic retry."
+                ),
             )
 
         corpus = _corpus(evidence)
@@ -2406,6 +2462,7 @@ def advance_whatsapp_bundle_analysis(
                 "background_response_id": next_response.response_id,
                 "understanding_extraction_id": understanding.id,
                 "understanding_response_id": response.response_id,
+                "background_reasoning_retry_count": 0,
             }
             db.session.commit()
             done, total = _counts(evidence.id)

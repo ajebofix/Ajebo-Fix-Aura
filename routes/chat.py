@@ -101,6 +101,475 @@ def detect_intent(message: str) -> str:
     return "booking" if _BOOKING_PATTERN.search(message or "") else "general"
 
 
+def _normalise_chat_command(message: str) -> str:
+    return " ".join(str(message or "").strip().lower().split())
+
+
+def _historical_review_start_requested(message: str) -> bool:
+    text = _normalise_chat_command(message)
+    if not text:
+        return False
+    direct_phrases = (
+        "record the previous jobs",
+        "record previous jobs",
+        "record the historical",
+        "record historical",
+        "add previous jobs",
+        "add the previous jobs",
+        "clean up the history",
+        "clean up history",
+        "review the previous jobs",
+        "review previous jobs",
+        "review historical services",
+        "record past services",
+        "record the past services",
+        "reconcile the history",
+        "reconcile historical",
+    )
+    if any(phrase in text for phrase in direct_phrases):
+        return True
+    action_words = ("record", "review", "reconcile", "add", "clean up")
+    history_words = ("previous", "historical", "past", "history")
+    work_words = ("job", "jobs", "service", "services", "work", "repair", "repairs")
+    return (
+        any(word in text for word in action_words)
+        and any(word in text for word in history_words)
+        and any(word in text for word in work_words)
+    )
+
+
+def _explicit_historical_apply_confirmation(message: str) -> bool:
+    text = _normalise_chat_command(message).strip(" .!?")
+    if text in {
+        "confirm and record",
+        "confirm & record",
+        "record it",
+        "record them",
+        "yes record it",
+        "yes record them",
+        "go ahead and record it",
+        "go ahead and record them",
+        "apply approved history",
+        "apply the approved history",
+    }:
+        return True
+    return (
+        ("record" in text or "apply" in text)
+        and any(token in text for token in ("confirm", "yes", "go ahead", "approved"))
+    )
+
+
+def _historical_review_cancel_requested(message: str) -> bool:
+    text = _normalise_chat_command(message).strip(" .!?")
+    return text in {
+        "cancel",
+        "cancel review",
+        "stop",
+        "stop review",
+        "exit review",
+        "leave review",
+        "don't record",
+        "do not record",
+    }
+
+
+def _historical_review_choice_index(message: str, choice_count: int) -> int | None:
+    text = _normalise_chat_command(message).strip(" .!?")
+    if text.isdigit():
+        value = int(text)
+        return value - 1 if 1 <= value <= choice_count else None
+    words = {
+        "first": 0,
+        "second": 1,
+        "third": 2,
+        "fourth": 3,
+        "fifth": 4,
+    }
+    for word, index in words.items():
+        if word in text and index < choice_count:
+            return index
+    return None
+
+
+def _history_review_session_active() -> bool:
+    return (
+        _coerce_car_id(session.get(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY)) is not None
+        or str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "") == "choose_episode"
+    )
+
+
+def _history_review_bind(
+    *,
+    extraction_id: int,
+    candidate_id: str | None,
+    phase: str,
+) -> None:
+    session[_SESSION_HISTORY_REVIEW_EXTRACTION_KEY] = int(extraction_id)
+    if candidate_id:
+        session[_SESSION_HISTORY_REVIEW_CANDIDATE_KEY] = str(candidate_id)[:64]
+    else:
+        session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
+    session[_SESSION_HISTORY_REVIEW_PHASE_KEY] = str(phase)[:40]
+    session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
+
+
+def _history_review_choice_prompt(context) -> dict[str, object]:
+    choices = discover_review_choices(context)
+    if not choices:
+        backlog = build_rina_historical_copilot_context(context) or {}
+        unprepared = [
+            row
+            for row in (backlog.get("reconciliation_backlog") or [])
+            if isinstance(row, dict)
+            and row.get("state") == "reconciliation_not_prepared"
+        ]
+        if unprepared:
+            return {
+                "reply": (
+                    "I found historical episode evidence, but the advisor reconciliation "
+                    "checklist has not been prepared yet. Open Historical Copilot and let "
+                    "Rina prepare that episode first; then we can review and record it "
+                    "entirely through this conversation."
+                ),
+                "phase": None,
+                "extraction_id": None,
+                "candidate_id": None,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
+        return {
+            "reply": (
+                "I don't have a prepared historical reconciliation waiting for this "
+                "vehicle. I won't invent one. Historical Copilot can first reconstruct "
+                "the imported evidence and compare it with Aura's durable history."
+            ),
+            "phase": None,
+            "extraction_id": None,
+            "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
+    if len(choices) > 1:
+        session[_SESSION_HISTORY_REVIEW_CHOICES_KEY] = [
+            int(item["extraction_id"]) for item in choices
+        ]
+        session[_SESSION_HISTORY_REVIEW_PHASE_KEY] = "choose_episode"
+        session.pop(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY, None)
+        session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
+        return {
+            "reply": review_choices_prompt(choices),
+            "phase": "choose_episode",
+            "extraction_id": None,
+            "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
+    extraction_id = int(choices[0]["extraction_id"])
+    state = summarize_historical_review(
+        extraction_id=extraction_id,
+        actor_user_id=current_user.id,
+        car_id=context.car_id,
+    )
+    if historical_review_already_applied(extraction_id) is not None:
+        _clear_historical_review_binding()
+        return {
+            "reply": (
+                "That historical reconciliation has already been applied to durable "
+                "vehicle history, so I won't duplicate it."
+            ),
+            "phase": None,
+            "extraction_id": extraction_id,
+            "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
+    if state.all_reviewed:
+        _history_review_bind(
+            extraction_id=extraction_id,
+            candidate_id=None,
+            phase="awaiting_apply_confirmation",
+        )
+        return {
+            "reply": historical_review_preview(state),
+            "phase": "awaiting_apply_confirmation",
+            "extraction_id": extraction_id,
+            "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
+    _history_review_bind(
+        extraction_id=extraction_id,
+        candidate_id=state.next_candidate_id,
+        phase="reviewing",
+    )
+    return {
+        "reply": historical_candidate_prompt(state, state.next_candidate_id),
+        "phase": "reviewing",
+        "extraction_id": extraction_id,
+        "candidate_id": state.next_candidate_id,
+        "provider_status": "not_called",
+        "provider": None,
+        "provider_model": None,
+        "provider_request_id": None,
+    }
+
+
+def _handle_historical_review_turn(*, context, message: str) -> dict[str, object]:
+    if _historical_review_cancel_requested(message):
+        _clear_historical_review_binding()
+        return {
+            "reply": (
+                "Historical review closed. I did not apply any new durable vehicle "
+                "history. Any saved advisor draft remains available for later review."
+            ),
+            "phase": None,
+            "extraction_id": None,
+            "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
+    phase = str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "")
+    if phase == "choose_episode":
+        choice_ids = [
+            int(item)
+            for item in (session.get(_SESSION_HISTORY_REVIEW_CHOICES_KEY) or [])
+            if str(item).isdigit()
+        ]
+        index = _historical_review_choice_index(message, len(choice_ids))
+        if index is None:
+            return {
+                "reply": (
+                    "Reply with the number of the historical episode you want to review, "
+                    "or say **cancel review**."
+                ),
+                "phase": "choose_episode",
+                "extraction_id": None,
+                "candidate_id": None,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
+        extraction_id = choice_ids[index]
+        state = summarize_historical_review(
+            extraction_id=extraction_id,
+            actor_user_id=current_user.id,
+            car_id=context.car_id,
+        )
+        if state.all_reviewed:
+            _history_review_bind(
+                extraction_id=extraction_id,
+                candidate_id=None,
+                phase="awaiting_apply_confirmation",
+            )
+            return {
+                "reply": historical_review_preview(state),
+                "phase": "awaiting_apply_confirmation",
+                "extraction_id": extraction_id,
+                "candidate_id": None,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
+        _history_review_bind(
+            extraction_id=extraction_id,
+            candidate_id=state.next_candidate_id,
+            phase="reviewing",
+        )
+        return {
+            "reply": historical_candidate_prompt(state, state.next_candidate_id),
+            "phase": "reviewing",
+            "extraction_id": extraction_id,
+            "candidate_id": state.next_candidate_id,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
+    extraction_id = _coerce_car_id(
+        session.get(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY)
+    )
+    if extraction_id is None:
+        return _history_review_choice_prompt(context)
+
+    state = summarize_historical_review(
+        extraction_id=extraction_id,
+        actor_user_id=current_user.id,
+        car_id=context.car_id,
+    )
+
+    if _explicit_historical_apply_confirmation(message):
+        if not state.all_reviewed:
+            _history_review_bind(
+                extraction_id=extraction_id,
+                candidate_id=state.next_candidate_id,
+                phase="reviewing",
+            )
+            return {
+                "reply": historical_review_preview(state),
+                "phase": "reviewing",
+                "extraction_id": extraction_id,
+                "candidate_id": state.next_candidate_id,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
+
+        state = validate_historical_review_ready(
+            extraction_id=extraction_id,
+            actor_user_id=current_user.id,
+            car_id=context.car_id,
+        )
+        if state.confirmed_count == 0:
+            _clear_historical_review_binding()
+            return {
+                "reply": (
+                    "There are no advisor-confirmed completed items to write. I closed "
+                    "the review without changing durable vehicle history."
+                ),
+                "phase": None,
+                "extraction_id": extraction_id,
+                "candidate_id": None,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+                "applied_plan_id": None,
+            }
+
+        plan = apply_reconciliation(
+            extraction_id=extraction_id,
+            actor_user_id=current_user.id,
+        )
+        plan_id = plan.id if plan is not None else None
+        _clear_historical_review_binding()
+        return {
+            "reply": (
+                f"Recorded. I applied {state.confirmed_count} advisor-confirmed "
+                "historical item(s) to this vehicle's durable history. The source "
+                "evidence and advisor review remain linked for audit. I did not write "
+                "items you marked not done or uncertain."
+            ),
+            "phase": None,
+            "extraction_id": extraction_id,
+            "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+            "applied_plan_id": plan_id,
+        }
+
+    current_candidate_id = str(
+        session.get(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY) or ""
+    ).strip() or state.next_candidate_id
+
+    interpretation = interpret_historical_review_turn(
+        message=message,
+        state=state,
+        current_candidate_id=current_candidate_id,
+        phase=phase or "reviewing",
+    )
+    interpreted = interpretation.payload
+
+    if interpreted.get("intent") == "cancel":
+        _clear_historical_review_binding()
+        return {
+            "reply": (
+                "Historical review closed. Nothing new was written to durable vehicle "
+                "history."
+            ),
+            "phase": None,
+            "extraction_id": extraction_id,
+            "candidate_id": None,
+            "provider_status": "ok",
+            "provider": interpretation.provider,
+            "provider_model": interpretation.model,
+            "provider_request_id": interpretation.provider_request_id,
+        }
+
+    if interpreted.get("intent") in {"show_draft", "question", "no_change"} and not (
+        interpreted.get("changes") or interpreted.get("additions")
+    ):
+        reply = historical_review_preview(state)
+        note = str(interpreted.get("assistant_note") or "").strip()
+        if note and interpreted.get("intent") == "question":
+            reply = f"{note}\n\n{reply}"
+        return {
+            "reply": reply,
+            "phase": (
+                "awaiting_apply_confirmation" if state.all_reviewed else "reviewing"
+            ),
+            "extraction_id": extraction_id,
+            "candidate_id": state.next_candidate_id,
+            "provider_status": "ok",
+            "provider": interpretation.provider,
+            "provider_model": interpretation.model,
+            "provider_request_id": interpretation.provider_request_id,
+        }
+
+    updated = update_review_from_interpretation(
+        extraction_id=extraction_id,
+        actor_user_id=current_user.id,
+        car_id=context.car_id,
+        interpretation=interpreted,
+    )
+
+    if updated.all_reviewed:
+        _history_review_bind(
+            extraction_id=extraction_id,
+            candidate_id=None,
+            phase="awaiting_apply_confirmation",
+        )
+        reply = historical_review_preview(updated)
+        phase = "awaiting_apply_confirmation"
+        candidate_id = None
+    else:
+        _history_review_bind(
+            extraction_id=extraction_id,
+            candidate_id=updated.next_candidate_id,
+            phase=(
+                "awaiting_date"
+                if updated.pending_date_candidate_id == updated.next_candidate_id
+                else "reviewing"
+            ),
+        )
+        reply = historical_candidate_prompt(updated, updated.next_candidate_id)
+        phase = str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "reviewing")
+        candidate_id = updated.next_candidate_id
+
+    return {
+        "reply": reply,
+        "phase": phase,
+        "extraction_id": extraction_id,
+        "candidate_id": candidate_id,
+        "provider_status": "ok",
+        "provider": interpretation.provider,
+        "provider_model": interpretation.model,
+        "provider_request_id": interpretation.provider_request_id,
+    }
+
+
 def _coerce_car_id(value) -> int | None:
     try:
         car_id = int(value)

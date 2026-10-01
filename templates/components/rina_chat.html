@@ -591,6 +591,22 @@
         historicalCopilotPanelEl.appendChild(intro);
 
         const intelligenceVersion = Number(backlog.historical_intelligence_version || 0);
+        const latestRebuilds = backlog.latest_rebuilds || [];
+        const failedLatestRebuild = latestRebuilds.find(
+            item => item.status === "failed" && !item.is_latest_completed_snapshot
+        );
+        if (failedLatestRebuild) {
+            const failureNotice = document.createElement("p");
+            failureNotice.style.margin = "0 0 12px";
+            failureNotice.style.padding = "10px 12px";
+            failureNotice.style.borderRadius = "12px";
+            failureNotice.style.background = "rgba(148, 163, 184, .14)";
+            const failedPhase = String(failedLatestRebuild.phase || "reasoning").replaceAll("_", " ");
+            failureNotice.textContent =
+                `The latest rebuild failed during ${failedPhase}. The reconstruction shown below is the last successful snapshot. Any media recovered before the failure remains stored and will be reused on the next reasoning attempt.`;
+            historicalCopilotPanelEl.appendChild(failureNotice);
+        }
+
         const rebuildButton = document.createElement("button");
         rebuildButton.type = "button";
         rebuildButton.className = "btn btn-primary";
@@ -985,10 +1001,11 @@
 
             if (state.status === "failed") {
                 button.disabled = false;
-                button.textContent = "Retry full historical reconstruction";
+                button.textContent = "Retry historical reasoning";
+                await loadHistoricalCopilot();
                 appendMessage(
                     "assistant",
-                    "The full historical reconstruction failed safely. No durable vehicle history was changed."
+                    "The latest historical reasoning pass failed safely. I preserved the previously completed reconstruction and any media recovered before the failure. No durable vehicle history was changed."
                 );
                 return;
             }
@@ -1031,7 +1048,7 @@
             button.textContent = "Check / rebuild historical intelligence";
         } catch (error) {
             button.disabled = false;
-            button.textContent = "Retry full historical reconstruction";
+            button.textContent = "Retry historical reasoning";
             appendMessage(
                 "assistant",
                 error.data?.error || "I could not start the historical reconstruction."

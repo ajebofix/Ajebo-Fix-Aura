@@ -412,7 +412,7 @@ def summarize_state(
     actor_user_id: int,
     car_id: int,
 ) -> HistoricalReviewState:
-    _, episode, payload = _load_state(
+    extraction, episode, payload = _load_state(
         extraction_id=extraction_id,
         actor_user_id=actor_user_id,
         car_id=car_id,
@@ -428,9 +428,7 @@ def summarize_state(
         None,
     )
     next_row = pending_date or (unreviewed_rows[0] if unreviewed_rows else None)
-    provenance = (
-        db.session.get(EvidenceExtraction, int(extraction_id)).provenance or {}
-    )
+    provenance = extraction.provenance or {}
     episode_id = episode.id if episode is not None else 0
     episode_title = (
         (episode.title if episode is not None else None)

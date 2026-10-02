@@ -48,6 +48,7 @@ class HistoricalIntelligenceEpisodeChoice:
     source_refs: tuple[str, ...]
     source_excerpt: str
     completed_interventions: tuple[str, ...]
+    intake_required: bool
     confidence: float
 
 
@@ -193,7 +194,11 @@ def discover_intelligence_episode_choices(
                 episode=episode,
                 comparison=comparison,
             )
-            if not completed:
+            intake_required = not completed and comparison_state in {
+                "uncertain",
+                "conflicting",
+            }
+            if not completed and not intake_required:
                 continue
 
             try:
@@ -239,6 +244,7 @@ def discover_intelligence_episode_choices(
                     ),
                     source_excerpt=_clip(episode.get("source_excerpt"), 1800),
                     completed_interventions=tuple(completed),
+                    intake_required=intake_required,
                     confidence=confidence,
                 )
             )
@@ -361,13 +367,25 @@ def stage_intelligence_episode_candidate(
         "schema_version": 1,
         "summary": choice.summary,
         "advisor_notice": (
-            "This draft was staged deterministically from Historical Intelligence. "
-            "Every completed intervention still requires advisor review and a dated "
-            "confirmation before it can become durable vehicle history."
+            "Historical Intelligence found this episode but did not prove completed "
+            "work. The advisor must clarify what actually happened before Aura can "
+            "prepare any durable history."
+            if choice.intake_required
+            else (
+                "This draft was staged deterministically from Historical Intelligence. "
+                "Every completed intervention still requires advisor review and a dated "
+                "confirmation before it can become durable vehicle history."
+            )
         ),
         "episode_title": choice.title,
         "episode_candidate_id": choice.episode_candidate_id,
+        "episode_date_start": choice.date_start,
+        "episode_date_end": choice.date_end,
+        "source_excerpt": choice.source_excerpt,
         "canonical_comparison": choice.comparison,
+        "advisor_intake_required": choice.intake_required,
+        "advisor_intake_resolved": not choice.intake_required,
+        "advisor_intake_outcome": None,
         "candidates": rows,
     }
     cipher, version, digest = _payload_cipher(payload)
@@ -392,6 +410,7 @@ def stage_intelligence_episode_candidate(
             "staged_by_user_id": actor_user_id,
             "semantic_authority": "candidate_only",
             "canonical_comparison": choice.comparison,
+            "advisor_intake_required": choice.intake_required,
             "schema_version": 1,
         },
     )

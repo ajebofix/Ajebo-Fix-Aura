@@ -125,6 +125,7 @@ def _confirmation_interpretation(*, date="2026-05-18", candidate_id="R001"):
                 }
             ],
             "additions": [],
+            "episode_outcome": None,
             "assistant_note": "",
         },
         provider="test-provider",
@@ -288,6 +289,7 @@ def test_confirmed_work_without_date_stays_draft_until_date_is_supplied(
                 }
             ],
             "additions": [],
+            "episode_outcome": None,
             "assistant_note": "",
         },
         provider="test-provider",
@@ -406,6 +408,219 @@ def _historical_intelligence_source(*, admin, car):
     db.session.add(extraction)
     db.session.commit()
     return evidence, extraction
+
+
+def _uncertain_historical_intelligence_source(*, admin, car):
+    evidence, extraction = _historical_intelligence_source(admin=admin, car=car)
+    payload = {
+        "historical_intelligence_version": 2,
+        "rina_summary": "May interaction needs advisor clarification.",
+        "priority_threads": [],
+        "candidates": [],
+        "vehicle_candidates": [
+            {
+                "candidate_id": "V001",
+                "identity_state": "selected_vehicle_match",
+                "make_model_year": "2014 Mercedes-Benz GL 450",
+            }
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E-MAY",
+                "vehicle_candidate_id": "V001",
+                "title": "May Mercedes-Benz maintenance payment, tyre incident and resale discussion",
+                "date_start": "2026-05-01",
+                "date_end": "2026-05-31",
+                "episode_state": "uncertain",
+                "summary": (
+                    "The interaction is Mercedes-labelled, but the imported evidence "
+                    "does not establish what work was actually completed."
+                ),
+                "reported_concerns": ["Tyre incident"],
+                "observations": [],
+                "recommended_interventions": [],
+                "authorized_interventions": [],
+                "completed_interventions": [],
+                "outcomes": [],
+                "source_refs": ["CHAT m000210", "CHAT m000222"],
+                "source_excerpt": (
+                    "[CHAT m000210] May Mercedes discussion includes maintenance/payment "
+                    "context but does not prove completed work."
+                ),
+                "confidence": 0.71,
+                "separation_reason": "Distinct May Mercedes interaction.",
+            }
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E-MAY",
+                "comparison": "uncertain",
+                "matched_car_id": car.id,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": [],
+                "conflicts": [],
+                "reason": "Completed work is not established by source evidence.",
+                "advisor_confirmation_required": True,
+            }
+        ],
+    }
+    cipher, version, digest = _payload_cipher(payload)
+    extraction.result_ciphertext = cipher
+    extraction.result_key_version = version
+    extraction.result_sha256 = digest
+    extraction.reviewed_result_ciphertext = cipher
+    extraction.reviewed_result_key_version = version
+    extraction.reviewed_result_sha256 = digest
+    db.session.commit()
+    return evidence, extraction
+
+
+def test_uncertain_may_episode_stays_in_chat_for_advisor_clarification(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=312, role="admin")
+    owner = _user(suffix=313)
+    car = _car(suffix=312, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=312)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
+
+    started = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "Rina, let's record the previous jobs you found on this Mercedes.",
+        },
+    )
+    assert started.status_code == 200
+    assert started.json["intent"] == "historical_review"
+    assert "Historical clarification" in started.json["reply"]
+    assert "May Mercedes-Benz" in started.json["reply"]
+    assert "does not prove what work was actually completed" in started.json["reply"]
+    assert started.json["historical_review"]["phase"] == "reviewing"
+
+    interpretation = HistoricalReviewInterpretation(
+        payload={
+            "intent": "update",
+            "changes": [],
+            "additions": [
+                {
+                    "title": "Engine oil and filter service",
+                    "kind": "service",
+                    "component_name": None,
+                    "component_location": None,
+                    "component_condition": "not_applicable",
+                    "occurred_at": "2026-05-18",
+                    "advisor_note": (
+                        "Advisor confirmed this work belongs to the May Mercedes episode."
+                    ),
+                    "explicitly_completed": True,
+                }
+            ],
+            "episode_outcome": "completed_work_described",
+            "assistant_note": "",
+        },
+        provider="test-provider",
+        model="test-model",
+        provider_request_id="req-may-intake",
+    )
+    monkeypatch.setattr(
+        "routes.chat.interpret_historical_review_turn",
+        lambda **_kwargs: interpretation,
+    )
+    clarified = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": (
+                "Yes. On 18 May we changed the engine oil and filter on this GL450."
+            ),
+        },
+    )
+    assert clarified.status_code == 200
+    assert "Ready for your final review" in clarified.json["reply"]
+    assert "Engine oil and filter service" in clarified.json["reply"]
+    assert "advisor-supplied correction" in clarified.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    applied = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Confirm and record"},
+    )
+    assert applied.status_code == 200
+    assert "Recorded." in applied.json["reply"]
+    plan = TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).one()
+    action = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).one()
+    assert action.title == "Engine oil and filter service"
+    assert action.status == "completed"
+    assert action.completion_detail.source_evidence_id is None
+
+
+def test_uncertain_episode_can_be_closed_without_writing_history(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=314, role="admin")
+    owner = _user(suffix=315)
+    car = _car(suffix=314, model="GL 450")
+    _own(owner=owner, car=car, suffix=314)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
+    _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "Let's record the previous jobs on this Mercedes.",
+        },
+    )
+
+    interpretation = HistoricalReviewInterpretation(
+        payload={
+            "intent": "update",
+            "changes": [],
+            "additions": [],
+            "episode_outcome": "no_completed_work",
+            "assistant_note": "",
+        },
+        provider="test-provider",
+        model="test-model",
+        provider_request_id="req-may-no-work",
+    )
+    monkeypatch.setattr(
+        "routes.chat.interpret_historical_review_turn",
+        lambda **_kwargs: interpretation,
+    )
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "No actual work was completed in May.",
+        },
+    )
+    assert response.status_code == 200
+    assert "no completed work should be recorded" in response.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
 
 
 def test_chat_stages_historical_intelligence_episode_when_no_formal_reconciliation(

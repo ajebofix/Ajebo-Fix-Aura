@@ -844,6 +844,79 @@ def _scope_guard_interpretation(
     )
 
 
+def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
+    """Preserve explicit advisor context that must not become completed work."""
+
+    text = str(message or "").strip()
+    if not text:
+        return []
+
+    dated_matches = list(_EXPLICIT_DATE_RE.finditer(text))
+    default_date = None
+    if dated_matches:
+        match = dated_matches[-1]
+        try:
+            default_date = datetime(
+                int(match.group(3)),
+                _MONTH_NUMBERS[match.group(2).lower()],
+                int(match.group(1)),
+            ).date().isoformat()
+        except ValueError:
+            default_date = None
+
+    sentence_rows: list[tuple[int, str]] = []
+    cursor = 0
+    for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
+        sentence = re.sub(r"\s+", " ", match.group(0)).strip()
+        if sentence:
+            sentence_rows.append((match.start(), sentence))
+        cursor = match.end()
+
+    notes: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for offset, sentence in sentence_rows:
+        lowered = sentence.lower()
+        category = None
+
+        if re.search(r"\b(?:purchas(?:e|ed)|bought|procured)\b", lowered):
+            category = "procurement"
+        elif re.search(
+            r"\b(?:not|wasn't|was not|were not)\s+"
+            r"(?:installed|fitted|replaced|performed|done|glued|bonded)\b",
+            lowered,
+        ):
+            category = "not_performed"
+        elif re.search(r"\b(?:advised|recommended|referred|told)\b", lowered):
+            category = "recommendation"
+        elif re.search(
+            r"\b(?:referred to|meant|did not mean|does not mean|"
+            r"was not referring to|were not referring to)\b",
+            lowered,
+        ):
+            category = "clarification"
+
+        if category is None:
+            continue
+
+        occurred_at = _nearest_explicit_date_before(text, offset) or default_date
+        note = _clip(sentence, 1200)
+        if not note:
+            continue
+        key = (category, note.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        notes.append(
+            {
+                "category": category,
+                "occurred_at": occurred_at,
+                "note": note,
+            }
+        )
+
+    return notes[:20]
+
+
 def _enrich_interpretation_with_explicit_advisor_facts(
     *,
     message: str,

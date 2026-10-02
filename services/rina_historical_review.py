@@ -1047,6 +1047,21 @@ def _enrich_interpretation_with_explicit_advisor_facts(
                 existing[field] = fallback[field]
 
     explicit_context = _explicit_context_notes(message)
+    explicit_note_categories = {
+        str(row.get("note") or "").strip().lower(): str(row.get("category") or "")
+        for row in explicit_context
+        if isinstance(row, dict) and str(row.get("note") or "").strip()
+    }
+    payload["context_notes"] = [
+        row
+        for row in payload.get("context_notes") or []
+        if not (
+            isinstance(row, dict)
+            and str(row.get("note") or "").strip().lower() in explicit_note_categories
+            and str(row.get("category") or "")
+            != explicit_note_categories[str(row.get("note") or "").strip().lower()]
+        )
+    ]
     existing_context_keys = {
         (str(row.get("category") or ""), str(row.get("note") or "").strip().lower())
         for row in payload.get("context_notes") or []
@@ -1431,6 +1446,14 @@ def review_preview(state: HistoricalReviewState) -> str:
             detail = f"- **{row.get('title') or 'Historical intervention'}**"
             if row.get("occurred_at"):
                 detail += f" — {row.get('occurred_at')}"
+            component_name = str(row.get("component_name") or "").strip()
+            if (
+                row.get("kind") == "component_replacement"
+                and component_name
+                and component_name.lower()
+                not in str(row.get("title") or "").lower()
+            ):
+                detail += f" · {component_name}"
             if row.get("component_condition") not in {None, "", "not_applicable", "unknown"}:
                 detail += f" · {row.get('component_condition')}"
             if row.get("advisor_supplied"):

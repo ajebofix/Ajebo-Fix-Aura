@@ -965,3 +965,87 @@ def test_historical_correction_does_not_cross_month_scopes(
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+
+def test_scope_acknowledgement_stays_in_may_review_without_provider(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=326, role="admin")
+    owner = _user(suffix=327)
+    car = _car(suffix=326, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=326)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def should_not_call_provider(_self, **_kwargs):
+        raise AssertionError("scope acknowledgement must not call the provider")
+
+    monkeypatch.setattr(
+        HistoricalReviewInterpreter,
+        "interpret",
+        should_not_call_provider,
+    )
+
+    response = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "We are reviewing the May history"},
+    )
+    assert response.status_code == 200
+    assert response.json["historical_review"]["phase"] == "reviewing"
+    assert "This historical review is scoped to May 2026" in response.json["reply"]
+    assert "Historical clarification" in response.json["reply"]
+    assert "Ready for your final review" not in response.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+
+def test_provider_no_change_does_not_show_final_review_while_intake_unresolved(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=328, role="admin")
+    owner = _user(suffix=329)
+    car = _car(suffix=328, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=328)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    interpretation = HistoricalReviewInterpretation(
+        payload={
+            "intent": "no_change",
+            "changes": [],
+            "additions": [],
+            "episode_outcome": None,
+            "assistant_note": "",
+        },
+        provider="test-provider",
+        model="test-model",
+        provider_request_id="req-no-change-unresolved",
+    )
+    monkeypatch.setattr(
+        "routes.chat.interpret_historical_review_turn",
+        lambda **_kwargs: interpretation,
+    )
+
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "Okay, I understand the source context.",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json["historical_review"]["phase"] == "reviewing"
+    assert "Historical clarification" in response.json["reply"]
+    assert "Ready for your final review" not in response.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0

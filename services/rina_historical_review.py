@@ -673,6 +673,78 @@ def _state_episode_month(state: HistoricalReviewState) -> tuple[int, int] | None
     return None
 
 
+def _deterministic_non_mutating_interpretation(
+    *,
+    message: str,
+    state: HistoricalReviewState,
+) -> HistoricalReviewInterpretation | None:
+    text = " ".join(str(message or "").strip().lower().split()).strip(" .!?")
+    if not text:
+        return None
+
+    if text in {
+        "show draft",
+        "show the draft",
+        "show me the draft",
+        "show current draft",
+        "show me the current draft",
+        "where are we",
+        "where are we now",
+    }:
+        return HistoricalReviewInterpretation(
+            payload={
+                "intent": "show_draft",
+                "changes": [],
+                "additions": [],
+                "episode_outcome": None,
+                "assistant_note": "",
+            },
+            provider="deterministic_review_navigation",
+            model="aura-history-navigation-v1",
+            provider_request_id=None,
+        )
+
+    active = _state_episode_month(state)
+    month_names = "|".join(_MONTH_NUMBERS)
+    scope_match = re.fullmatch(
+        rf"(?:yes[, ]*)?(?:we (?:are|'re) )?reviewing (?:the )?"
+        rf"(?P<month>{month_names})(?: (?P<year>20\d{{2}}))? history",
+        text,
+        re.IGNORECASE,
+    )
+    if scope_match and active is not None:
+        active_year, active_month = active
+        stated_month = _MONTH_NUMBERS[scope_match.group("month").lower()]
+        stated_year = (
+            int(scope_match.group("year"))
+            if scope_match.group("year")
+            else active_year
+        )
+        if (stated_year, stated_month) == active:
+            active_name = next(
+                name.title()
+                for name, number in _MONTH_NUMBERS.items()
+                if number == active_month
+            )
+            return HistoricalReviewInterpretation(
+                payload={
+                    "intent": "question",
+                    "changes": [],
+                    "additions": [],
+                    "episode_outcome": None,
+                    "assistant_note": (
+                        f"Yes. This historical review is scoped to "
+                        f"{active_name} {active_year}."
+                    ),
+                },
+                provider="deterministic_review_navigation",
+                model="aura-history-navigation-v1",
+                provider_request_id=None,
+            )
+
+    return None
+
+
 def _scope_guard_interpretation(
     *,
     message: str,
@@ -1165,6 +1237,13 @@ def interpret_turn(
     scope_guard = _scope_guard_interpretation(message=message, state=state)
     if scope_guard is not None:
         return scope_guard
+
+    navigation = _deterministic_non_mutating_interpretation(
+        message=message,
+        state=state,
+    )
+    if navigation is not None:
+        return navigation
 
     try:
         active = interpreter or HistoricalReviewInterpreter()

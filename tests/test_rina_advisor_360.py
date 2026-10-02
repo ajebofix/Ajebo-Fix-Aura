@@ -1164,6 +1164,24 @@ def _add_reviewed_august_context() -> EvidenceExtraction:
                 "note": "A separate roadside event occurred before workshop arrival.",
                 "advisor_supplied": True,
             },
+            {
+                "category": "assessment_finding",
+                "occurred_at": "2026-08-10",
+                "note": "Workshop assessment confirmed the recorded electrical issue.",
+                "advisor_supplied": True,
+            },
+            {
+                "category": "procurement",
+                "occurred_at": "2026-08-10",
+                "note": "A replacement trim part was purchased but not installed.",
+                "advisor_supplied": True,
+            },
+            {
+                "category": "client_advisor_context",
+                "occurred_at": None,
+                "note": "The client and advisor discussed future vehicle plans.",
+                "advisor_supplied": True,
+            },
         ],
         "advisor_review_note": "Confirmed after historical review.",
     }
@@ -1195,8 +1213,116 @@ def test_advisor_360_exposes_reviewed_historical_context_notes(app):
         assert [row["category"] for row in notes] == [
             "reported_concern",
             "external_event",
+            "assessment_finding",
+            "procurement",
+            "client_advisor_context",
         ]
         assert episode["reconciliation"]["applied_treatment_plan_id"] is not None
+
+
+def test_plain_historical_recap_bypasses_provider_and_uses_product_native_order(
+    app,
+    monkeypatch,
+):
+    monkeypatch.setenv("RINA_ORCHESTRATION_ENABLED", "true")
+
+    with app.app_context():
+        owner, admin, car, action = _setup_longitudinal_case()
+        _add_reviewed_august_context()
+
+        plan = TreatmentPlan.query.filter_by(
+            car_id=car.id,
+            record_origin="historical_reconciliation",
+        ).one()
+
+        starter = TreatmentAction(
+            treatment_plan_id=plan.id,
+            car_id=car.id,
+            created_by_user_id=admin.id,
+            creation_key="advisor360-starter-display",
+            title="Starter motor replacement",
+            client_summary="Starter motor replaced.",
+            status="completed",
+            visibility="advisor",
+            completed_at=datetime(2026, 8, 10, 12, 0, 0),
+        )
+        oil_filter = TreatmentAction(
+            treatment_plan_id=plan.id,
+            car_id=car.id,
+            created_by_user_id=admin.id,
+            creation_key="advisor360-oil-filter-display",
+            title="Engine oil filter replacement",
+            client_summary="Oil filter replaced.",
+            status="completed",
+            visibility="advisor",
+            completed_at=datetime(2026, 8, 10, 12, 30, 0),
+        )
+        db.session.add_all([starter, oil_filter])
+        db.session.flush()
+        db.session.add_all(
+            [
+                TreatmentActionCompletionDetail(
+                    treatment_action_id=starter.id,
+                    action_kind="component_replacement",
+                    component_name="bosch starter motor",
+                    component_location=None,
+                    component_condition="new",
+                    verification_status="advisor_reconciled",
+                    verified_by_user_id=admin.id,
+                    verified_at=datetime(2026, 9, 24, 8, 15, 0),
+                ),
+                TreatmentActionCompletionDetail(
+                    treatment_action_id=oil_filter.id,
+                    action_kind="component_replacement",
+                    component_name="engine oil filter",
+                    component_location=None,
+                    component_condition="new",
+                    verification_status="advisor_reconciled",
+                    verified_by_user_id=admin.id,
+                    verified_at=datetime(2026, 9, 24, 8, 16, 0),
+                ),
+            ]
+        )
+        db.session.commit()
+
+        provider = _TransientHistoryProvider()
+        response = orchestrate_rina(
+            user_id=admin.id,
+            car_id=car.id,
+            message="What happened with this Mercedes in August 2026?",
+            provider=provider,
+        )
+
+        assert provider.calls == []
+        assert response.state == "answered"
+        assert response.provider_status == "not_called"
+        assert response.uncertainty is None
+        assert response.message.startswith(
+            "Based on Aura's reviewed records for August 2026:"
+        )
+        assert "language service" not in response.message.lower()
+        assert "Starter motor replacement" in response.message
+        assert "Bosch starter motor" in response.message
+        assert "Engine oil filter replacement" in response.message
+        assert "Engine oil filter replacement — 2026-08-10 · Engine oil filter" not in (
+            response.message
+        )
+
+        concern_at = response.message.index("Reported concern")
+        external_at = response.message.index("External event")
+        assessment_at = response.message.index("Assessment finding")
+        completed_at = response.message.index("Recorded completed work")
+        procurement_at = response.message.index("Procurement")
+        client_context_at = response.message.index("Client/advisor context")
+        assert concern_at < external_at < assessment_at < completed_at
+        assert completed_at < procurement_at < client_context_at
+
+        audit = RinaAIAuditEvent.query.filter_by(
+            request_id=response.request_id
+        ).one()
+        assert audit.outcome == "answered"
+        assert audit.provider_status == "not_called"
+        assert audit.audit_metadata["provider_attempted"] is False
 
 
 def test_historical_recap_survives_transient_provider_failure(app, monkeypatch):
@@ -1218,20 +1344,25 @@ def test_historical_recap_survives_transient_provider_failure(app, monkeypatch):
         assert "Reported concern" in direct
         assert "intermittent electrical concern" in direct
         assert "External event" in direct
-        assert "not additional completed work" in direct
+        assert "Additional reviewed context" in direct
 
         provider = _TransientHistoryProvider()
         response = orchestrate_rina(
             user_id=admin.id,
             car_id=car.id,
-            message="What happened with this Mercedes in August 2026?",
+            message=(
+                "Compare what happened with this Mercedes in August 2026 "
+                "with earlier history."
+            ),
             provider=provider,
         )
 
         assert len(provider.calls) == 1
         assert response.state == "answered"
         assert response.provider_status == "unavailable"
-        assert "direct read of Aura's reviewed records" in response.message
+        assert response.message.startswith(
+            "Based on Aura's reviewed records for August 2026:"
+        )
         assert "Diagnostic scan" in response.message
         assert "Reported concern" in response.message
         assert "External event" in response.message

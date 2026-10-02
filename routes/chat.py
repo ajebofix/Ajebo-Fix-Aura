@@ -750,7 +750,10 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             )
             response_phase = (
                 "awaiting_date"
-                if state.pending_date_candidate_id == state.next_candidate_id
+                if (
+                    state.pending_date_candidate_id is not None
+                    and state.pending_date_candidate_id == state.next_candidate_id
+                )
                 else "reviewing"
             )
             response_candidate_id = state.next_candidate_id
@@ -791,7 +794,10 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             candidate_id=updated.next_candidate_id,
             phase=(
                 "awaiting_date"
-                if updated.pending_date_candidate_id == updated.next_candidate_id
+                if (
+                    updated.pending_date_candidate_id is not None
+                    and updated.pending_date_candidate_id == updated.next_candidate_id
+                )
                 else "reviewing"
             ),
         )

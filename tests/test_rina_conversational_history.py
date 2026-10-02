@@ -1383,8 +1383,128 @@ def test_explicit_context_reclassifies_existing_persisted_wrong_category(
     matching = [
         row
         for row in repaired.get("advisor_context_notes") or []
-        if str(row.get("note") or "").strip().lower() == bad_note.lower()
+        if "resale valuation" in str(row.get("note") or "").lower()
     ]
     assert len(matching) == 1
     assert matching[0]["category"] == "client_advisor_context"
     assert matching[0]["occurred_at"] is None
+    assert not str(matching[0]["note"]).lower().startswith("client/advisor context")
+
+
+def test_inline_mobile_labeled_context_is_extracted_and_repairs_shorter_old_row(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=338, role="admin")
+    owner = _user(suffix=339)
+    car = _car(suffix=338, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=338)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def provider_failure(_self, **_kwargs):
+        raise RinaProviderError("test provider unavailable")
+
+    monkeypatch.setattr(HistoricalReviewInterpreter, "interpret", provider_failure)
+
+    initial = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_may_correction()},
+    )
+    assert initial.status_code == 200
+
+    grille = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_grille_context_correction()},
+    )
+    assert grille.status_code == 200
+
+    extraction_id = grille.json["historical_review"]["extraction_id"]
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    reviewed = reconciliation_payload(extraction, reviewed=True)
+    shorter_bad_note = (
+        "Client/advisor context: Mr Demola said he intended to sell this Mercedes-Benz "
+        "and purchase another Mercedes-Benz, so we discussed the vehicle's resale "
+        "valuation."
+    )
+    reviewed.setdefault("advisor_context_notes", []).append(
+        {
+            "category": "procurement",
+            "occurred_at": "2026-05-13",
+            "note": shorter_bad_note,
+            "advisor_supplied": True,
+        }
+    )
+    save_reconciliation_review(
+        extraction_id=extraction_id,
+        actor_user_id=admin.id,
+        reviewed_payload=reviewed,
+    )
+    db.session.commit()
+
+    inline_message = _demola_remaining_context_correction().replace("\n\n", " ")
+    corrected = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": inline_message},
+    )
+    assert corrected.status_code == 200
+    assert corrected.json["historical_review"]["phase"] == "awaiting_apply_confirmation"
+
+    reply = corrected.json["reply"].lower()
+    assert "reported concern" in reply
+    assert "assessment finding" in reply
+    assert "external event" in reply
+    assert "client advisor context" in reply
+    assert "would not restart until it had cooled for a few hours" in reply
+    assert "burnt/faulty" in reply
+    assert "used tyre from a vulcaniser" in reply
+    assert "resale valuation" in reply
+    assert "bosch starter motor" in reply
+    assert "· new" in reply
+
+    procurement_lines = [
+        line
+        for line in reply.splitlines()
+        if line.strip().startswith("- **procurement**")
+    ]
+    assert not any("resale valuation" in line for line in procurement_lines)
+
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    repaired = reconciliation_payload(extraction, reviewed=True)
+    resale_rows = [
+        row
+        for row in repaired.get("advisor_context_notes") or []
+        if "resale valuation" in str(row.get("note") or "").lower()
+    ]
+    assert len(resale_rows) == 1
+    assert resale_rows[0]["category"] == "client_advisor_context"
+    assert resale_rows[0]["occurred_at"] is None
+
+    categories = {
+        row.get("category")
+        for row in repaired.get("advisor_context_notes") or []
+        if isinstance(row, dict)
+    }
+    assert {
+        "reported_concern",
+        "assessment_finding",
+        "external_event",
+        "client_advisor_context",
+    }.issubset(categories)
+
+    applied = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Confirm and record"},
+    )
+    assert applied.status_code == 200
+    plan = TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).one()
+    actions = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).all()
+    assert len(actions) == 3

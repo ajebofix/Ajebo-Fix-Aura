@@ -111,6 +111,26 @@
         {% endif %}
     </div>
 
+    {% if evidence.historical_source_type == 'standalone_document'
+        and not analysis_reviewed
+        and evidence.review_status != 'superseded' %}
+    <form
+        method="POST"
+        action="{{ url_for('chat.start_historical_source_chat_review') }}"
+        style="margin-top:14px;"
+    >
+        <input type="hidden" name="car_id" value="{{ car.id }}">
+        <input type="hidden" name="evidence_id" value="{{ evidence.id }}">
+        <button type="submit" class="btn btn-primary btn-block">
+            Continue review with Rina
+        </button>
+    </form>
+    <p class="muted" style="margin-top:8px;">
+        Rina will carry this exact analysis into the selected vehicle conversation.
+        Nothing becomes durable history until you explicitly confirm the final draft.
+    </p>
+    {% endif %}
+
     {% if evidence.review_status != 'superseded' %}
     <details style="margin-top:14px;">
         <summary><strong>Run Rina again from the original source</strong></summary>

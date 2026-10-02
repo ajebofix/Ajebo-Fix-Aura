@@ -1525,7 +1525,7 @@ def _standalone_document_analysis(*, admin, car):
         uploaded_by_user_id=admin.id,
         evidence_type="document",
         purpose="treatment_evidence",
-        source_channel="advisor_upload",
+        source_channel="web",
         historical_source_type="standalone_document",
         visibility="advisor",
         review_status="pending_review",

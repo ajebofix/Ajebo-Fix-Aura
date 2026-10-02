@@ -1432,6 +1432,14 @@ def start_historical_source_chat_review():
         db.session.commit()
     except (ValueError, HistoricalReconciliationError) as exc:
         db.session.rollback()
+        current_app.logger.warning(
+            "rina_standalone_history_handoff_rejected car_id=%s evidence_id=%s "
+            "actor_id=%s detail=%s",
+            car_id,
+            evidence_id,
+            current_user.id,
+            str(exc).replace("\n", " ").strip()[:500],
+        )
         flash(str(exc), "error")
         return redirect(fallback_url)
     except Exception:

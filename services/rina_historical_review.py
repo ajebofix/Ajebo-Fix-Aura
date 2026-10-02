@@ -533,28 +533,28 @@ _MONTH_NUMBERS = {
 }
 
 _EXPLICIT_DATE_RE = re.compile(
-    r"\\b(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+of)?\\s+"
+    r"\b(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+"
     r"(January|February|March|April|May|June|July|August|September|October|November|December)"
-    r"\\s+(20\\d{2})\\b",
+    r"\s+(20\d{2})\b",
     re.IGNORECASE,
 )
 
 _CORRECTION_LABEL_RE = re.compile(
-    r"\\b(?:please\\s+)?(?:correct|update|rewrite|replace)\\s+(?:the\\s+)?"
-    r"(?P<label>[^.!?\\n]{3,120}?\\bhistory)\\b",
+    r"\b(?:please\s+)?(?:correct|update|rewrite|replace)\s+(?:the\s+)?"
+    r"(?P<label>[^.!?\n]{3,120}?\bhistory)\b",
     re.IGNORECASE,
 )
 
 _COMPLETED_BLOCK_RE = re.compile(
-    r"\\b(?:(?:the\\s+)?work\\s+completed(?:\\s+by\\s+[^:,.]{1,60})?"
-    r"|(?:the\\s+)?completed\\s+work)\\s+"
-    r"(?:was|were|included|includes)\\s*:?\\s*",
+    r"\b(?:(?:the\s+)?work\s+completed(?:\s+by\s+[^:,.]{1,60})?"
+    r"|(?:the\s+)?completed\s+work)\s+"
+    r"(?:was|were|included|includes)\s*:?\s*",
     re.IGNORECASE,
 )
 
 _MONTH_YEAR_RE = re.compile(
-    r"\\b(January|February|March|April|May|June|July|August|September|October|November|December)"
-    r"\\s+(20\\d{2})\\b",
+    r"\b(January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\s+(20\d{2})\b",
     re.IGNORECASE,
 )
 
@@ -588,7 +588,7 @@ def _nearest_explicit_date_before(message: str, offset: int) -> str | None:
 
 def _work_title_key(value: object) -> tuple[str, ...]:
     text = str(value or "").lower()
-    text = re.sub(r"\\breplace(?:d|ment)?\\b", " replacement ", text)
+    text = re.sub(r"\breplace(?:d|ment)?\b", " replacement ", text)
     text = re.sub(r"[^a-z0-9]+", " ", text)
     return tuple(sorted(token for token in text.split() if token))
 
@@ -601,34 +601,34 @@ def _explicit_completed_additions(message: str) -> list[dict[str, Any]]:
 
     block = text[match.end() : match.end() + 900]
     block = re.split(
-        r"\\b(?:Please\\s+show|Do\\s+not\\s+write|Before\\s+writing)\\b",
+        r"\b(?:Please\s+show|Do\s+not\s+write|Before\s+writing)\b",
         block,
         maxsplit=1,
         flags=re.IGNORECASE,
     )[0]
-    block = re.sub(r"^\\s*[-*•]\\s*", "", block)
-    parts = re.split(r"(?:\\s+\\*\\s+|\\n\\s*[-*•]\\s*|;\\s*)", block)
+    block = re.sub(r"^\s*[-*•]\s*", "", block)
+    parts = re.split(r"(?:\s+\*\s+|\n\s*[-*•]\s*|;\s*)", block)
     occurred_at = _nearest_explicit_date_before(text, match.start())
 
     additions: list[dict[str, Any]] = []
     for raw in parts:
-        title = re.sub(r"\\s+", " ", raw).strip(" \\t\\r\\n.,:;-")
+        title = re.sub(r"\s+", " ", raw).strip(" \t\r\n.,:;-")
         if not title or len(title) < 3:
             continue
         title = title[:255]
 
         is_replacement = bool(
-            re.search(r"\\breplace(?:d|ment)?\\b", title, re.IGNORECASE)
+            re.search(r"\breplace(?:d|ment)?\b", title, re.IGNORECASE)
         )
         component_name = None
         if is_replacement:
             component_name = re.sub(
-                r"\\breplace(?:d|ment)?\\b",
+                r"\breplace(?:d|ment)?\b",
                 " ",
                 title,
                 flags=re.IGNORECASE,
             )
-            component_name = re.sub(r"\\s+", " ", component_name).strip(" -")
+            component_name = re.sub(r"\s+", " ", component_name).strip(" -")
             component_name = component_name[:255] or None
 
         additions.append(
@@ -661,7 +661,7 @@ def _state_episode_month(state: HistoricalReviewState) -> tuple[int, int] | None
     values: set[tuple[int, int]] = set()
     for field in ("episode_date_start", "episode_date_end"):
         value = str(state.payload.get(field) or "").strip()
-        match = re.match(r"^(20\\d{2})-(\\d{2})-", value)
+        match = re.match(r"^(20\d{2})-(\d{2})-", value)
         if match:
             values.add((int(match.group(1)), int(match.group(2))))
     if len(values) == 1:

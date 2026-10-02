@@ -552,6 +552,12 @@ _COMPLETED_BLOCK_RE = re.compile(
     re.IGNORECASE,
 )
 
+_MONTH_YEAR_RE = re.compile(
+    r"\\b(January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\\s+(20\\d{2})\\b",
+    re.IGNORECASE,
+)
+
 
 def _advisor_episode_title(message: str) -> str | None:
     match = _CORRECTION_LABEL_RE.search(str(message or ""))
@@ -641,6 +647,67 @@ def _explicit_completed_additions(message: str) -> list[dict[str, Any]]:
             }
         )
     return additions
+
+
+def _message_episode_month(message: str) -> tuple[int, int] | None:
+    values = {
+        (int(year), _MONTH_NUMBERS[month.lower()])
+        for month, year in _MONTH_YEAR_RE.findall(str(message or ""))
+    }
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _state_episode_month(state: HistoricalReviewState) -> tuple[int, int] | None:
+    values: set[tuple[int, int]] = set()
+    for field in ("episode_date_start", "episode_date_end"):
+        value = str(state.payload.get(field) or "").strip()
+        match = re.match(r"^(20\\d{2})-(\\d{2})-", value)
+        if match:
+            values.add((int(match.group(1)), int(match.group(2))))
+    if len(values) == 1:
+        return next(iter(values))
+
+    match = _MONTH_YEAR_RE.search(state.episode_title)
+    if match:
+        return (int(match.group(2)), _MONTH_NUMBERS[match.group(1).lower()])
+    return None
+
+
+def _scope_guard_interpretation(
+    *,
+    message: str,
+    state: HistoricalReviewState,
+) -> HistoricalReviewInterpretation | None:
+    target = _message_episode_month(message)
+    active = _state_episode_month(state)
+    if target is None or active is None or target == active:
+        return None
+
+    target_year, target_month = target
+    active_year, active_month = active
+    target_name = next(
+        name.title() for name, number in _MONTH_NUMBERS.items() if number == target_month
+    )
+    active_name = next(
+        name.title() for name, number in _MONTH_NUMBERS.items() if number == active_month
+    )
+    return HistoricalReviewInterpretation(
+        payload={
+            "intent": "question",
+            "changes": [],
+            "additions": [],
+            "episode_outcome": None,
+            "assistant_note": (
+                f"Your correction refers to {target_name} {target_year}, but the active "
+                f"historical draft is scoped to {active_name} {active_year}. I did not "
+                "mix those episodes or change the draft. Close this review or select "
+                "the matching historical episode first."
+            ),
+        },
+        provider="deterministic_scope_guard",
+        model="aura-history-scope-v1",
+        provider_request_id=None,
+    )
 
 
 def _enrich_interpretation_with_explicit_advisor_facts(
@@ -1095,6 +1162,10 @@ def interpret_turn(
     phase: str,
     interpreter: HistoricalReviewInterpreter | None = None,
 ) -> HistoricalReviewInterpretation:
+    scope_guard = _scope_guard_interpretation(message=message, state=state)
+    if scope_guard is not None:
+        return scope_guard
+
     active = interpreter or HistoricalReviewInterpreter()
     try:
         parsed = active.interpret(

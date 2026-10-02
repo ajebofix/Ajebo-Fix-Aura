@@ -922,7 +922,10 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
 
     sentence_rows: list[tuple[int, str]] = []
     for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
-        if any(start <= match.start() < finish for start, finish in labeled_ranges):
+        if any(
+            match.start() < finish and match.end() > start
+            for start, finish in labeled_ranges
+        ):
             continue
         sentence = re.sub(r"\s+", " ", match.group(0)).strip()
         if sentence:

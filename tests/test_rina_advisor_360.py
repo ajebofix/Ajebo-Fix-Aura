@@ -10,14 +10,17 @@ from historical_ingestion.service import _payload_cipher
 from models import Car, CarOwnership, TreatmentPlan, User, VehicleEvent
 from profiles.models import ClientProfile, ProfileAuditEvent
 from rina.audit_models import RinaAIAuditEvent
+from rina.providers.base import RinaProviderTransientError
 from services.rina_advisor_360 import (
     _display_treatment_action_title,
     build_rina_advisor_360_context,
     build_rina_historical_copilot_context,
+    deterministic_historical_recap,
 )
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_contracts import RinaRequest
 from services.rina_memory_service import RinaMemoryBundle
+from services.rina_orchestrator import orchestrate_rina
 from services.rina_provider_context import build_rina_provider_context
 from services.rina_runtime_flags import rina_advisor_360_enabled
 from treatment.models import (
@@ -1104,3 +1107,138 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
             ),
         )
         assert _provider_json(provider_off)["advisor_360"] is None
+
+
+class _TransientHistoryProvider:
+    provider_name = "fake-history"
+    model = "fake-history-model"
+
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, request):
+        self.calls.append(request)
+        raise RinaProviderTransientError("temporary provider failure")
+
+
+def _add_reviewed_august_context() -> EvidenceExtraction:
+    reconciliation = EvidenceExtraction.query.filter_by(
+        extraction_type="historical_reconciliation"
+    ).one()
+    payload = {
+        "schema_version": 1,
+        "episode_title": "August 2026 workshop history",
+        "episode_date_start": "2026-08-10",
+        "episode_date_end": "2026-08-10",
+        "summary": "Advisor reconciled missing historical work.",
+        "candidates": [
+            {
+                "candidate_id": "R001",
+                "title": "Diagnostic scan",
+                "kind": "service",
+                "component_name": None,
+                "component_location": None,
+                "suggested_occurred_at": "2026-08-10T11:00:00",
+                "occurred_at": "2026-08-10T11:00:00",
+                "evidence_state": "completion_claim",
+                "source_refs": ["CHAT m000308"],
+                "evidence_basis": "Scan evidence exists.",
+                "confidence": 0.98,
+                "reconciliation_reason": "Not preserved in original record.",
+                "advisor_decision": "confirmed",
+                "component_condition": "not_applicable",
+                "advisor_note": "Personally confirmed.",
+                "reviewed_by_advisor": True,
+            }
+        ],
+        "advisor_context_notes": [
+            {
+                "category": "reported_concern",
+                "occurred_at": "2026-08-10",
+                "note": "The client reported an intermittent electrical concern.",
+                "advisor_supplied": True,
+            },
+            {
+                "category": "external_event",
+                "occurred_at": "2026-08-10",
+                "note": "A separate roadside event occurred before workshop arrival.",
+                "advisor_supplied": True,
+            },
+        ],
+        "advisor_review_note": "Confirmed after historical review.",
+    }
+    cipher, version, digest = _payload_cipher(payload)
+    reconciliation.reviewed_result_ciphertext = cipher
+    reconciliation.reviewed_result_key_version = version
+    reconciliation.reviewed_result_sha256 = digest
+    reconciliation.review_status = "corrected"
+    db.session.flush()
+    return reconciliation
+
+
+def test_advisor_360_exposes_reviewed_historical_context_notes(app):
+    with app.app_context():
+        owner, admin, car, action = _setup_longitudinal_case()
+        reconciliation = _add_reviewed_august_context()
+        db.session.commit()
+
+        context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
+        payload = build_rina_advisor_360_context(context)
+
+        episode = next(
+            row
+            for row in payload["historical_episodes"]
+            if row["reconciliation"]
+            and row["reconciliation"]["extraction_id"] == reconciliation.id
+        )
+        notes = episode["reconciliation"]["advisor_context_notes"]
+        assert [row["category"] for row in notes] == [
+            "reported_concern",
+            "external_event",
+        ]
+        assert episode["reconciliation"]["applied_treatment_plan_id"] is not None
+
+
+def test_historical_recap_survives_transient_provider_failure(app, monkeypatch):
+    monkeypatch.setenv("RINA_ORCHESTRATION_ENABLED", "true")
+
+    with app.app_context():
+        owner, admin, car, action = _setup_longitudinal_case()
+        _add_reviewed_august_context()
+        db.session.commit()
+
+        context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
+        direct = deterministic_historical_recap(
+            context,
+            "What happened with this Mercedes in August 2026?",
+        )
+        assert direct is not None
+        assert "August 2026 workshop history" in direct
+        assert "Diagnostic scan" in direct
+        assert "Reported concern" in direct
+        assert "intermittent electrical concern" in direct
+        assert "External event" in direct
+        assert "not additional completed work" in direct
+
+        provider = _TransientHistoryProvider()
+        response = orchestrate_rina(
+            user_id=admin.id,
+            car_id=car.id,
+            message="What happened with this Mercedes in August 2026?",
+            provider=provider,
+        )
+
+        assert len(provider.calls) == 1
+        assert response.state == "answered"
+        assert response.provider_status == "unavailable"
+        assert "direct read of Aura's reviewed records" in response.message
+        assert "Diagnostic scan" in response.message
+        assert "Reported concern" in response.message
+        assert "External event" in response.message
+
+        audit = RinaAIAuditEvent.query.filter_by(
+            request_id=response.request_id
+        ).one()
+        assert audit.outcome == "answered"
+        assert audit.audit_metadata["failure_class"] == "transient"
+        assert audit.audit_metadata["provider_attempted"] is True

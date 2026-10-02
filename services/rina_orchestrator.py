@@ -15,6 +15,7 @@ from rina.providers.base import (
     RinaProviderError,
 )
 from rina.providers.openai_provider import OpenAIRinaProvider
+from services.rina_advisor_360 import deterministic_historical_recap
 from services.rina_audit import record_rina_audit
 from services.rina_authority import RinaAuthorityError
 from services.rina_context_resolver import (
@@ -363,13 +364,26 @@ def orchestrate_rina(
         try:
             active_provider = _provider_for_runtime()
         except RinaProviderError as exc:
+            structured_fallback = deterministic_historical_recap(
+                context,
+                clean_message,
+            )
             response = RinaResponse(
                 request_id=resolved_request_id,
                 car_id=context.car_id,
                 authority=context.authority,
-                state=RINA_STATE_PROVIDER_UNAVAILABLE,
-                message=_fallback_message(context.authority),
-                uncertainty="the configured language provider is unavailable",
+                state=(
+                    RINA_STATE_ANSWERED
+                    if structured_fallback
+                    else RINA_STATE_PROVIDER_UNAVAILABLE
+                ),
+                message=structured_fallback or _fallback_message(context.authority),
+                uncertainty=(
+                    "language provider unavailable; answer read directly from reviewed "
+                    "Aura history"
+                    if structured_fallback
+                    else "the configured language provider is unavailable"
+                ),
                 escalation=None,
                 actions=(),
                 evidence_refs=provider_context.evidence_refs,
@@ -378,7 +392,7 @@ def orchestrate_rina(
             _audit_response(
                 response=response,
                 user_id=user_id,
-                outcome="provider_failed",
+                outcome=("answered" if structured_fallback else "provider_failed"),
                 provider="openai",
                 provider_model=None,
                 provider_request_id=None,
@@ -431,13 +445,26 @@ def orchestrate_rina(
             if exc.provider_status == PROVIDER_STATUS_REJECTED
             else PROVIDER_STATUS_UNAVAILABLE
         )
+        structured_fallback = deterministic_historical_recap(
+            context,
+            clean_message,
+        )
         response = RinaResponse(
             request_id=resolved_request_id,
             car_id=context.car_id,
             authority=context.authority,
-            state=RINA_STATE_PROVIDER_UNAVAILABLE,
-            message=_fallback_message(context.authority),
-            uncertainty="the language provider could not complete this request",
+            state=(
+                RINA_STATE_ANSWERED
+                if structured_fallback
+                else RINA_STATE_PROVIDER_UNAVAILABLE
+            ),
+            message=structured_fallback or _fallback_message(context.authority),
+            uncertainty=(
+                "language provider unavailable; answer read directly from reviewed "
+                "Aura history"
+                if structured_fallback
+                else "the language provider could not complete this request"
+            ),
             escalation=None,
             actions=(),
             evidence_refs=provider_context.evidence_refs,
@@ -446,7 +473,7 @@ def orchestrate_rina(
         _audit_response(
             response=response,
             user_id=user_id,
-            outcome="provider_failed",
+            outcome=("answered" if structured_fallback else "provider_failed"),
             provider=str(provider_name),
             provider_model=(str(provider_model) if provider_model else None),
             provider_request_id=None,

@@ -769,16 +769,39 @@ def apply_reconciliation(
     else:
         reference = episode.job_reference or f"Episode {episode.id}"
 
+    context_notes = [
+        row
+        for row in reviewed.get("advisor_context_notes") or []
+        if isinstance(row, dict)
+    ]
+    context_lines: list[str] = []
+    for row in context_notes[:40]:
+        category = _clip(row.get("category"), limit=40) or "context"
+        note = _clip(row.get("note"), limit=1200)
+        occurred_at = _clip(row.get("occurred_at"), limit=64)
+        if not note:
+            continue
+        prefix = f"[{occurred_at}] " if occurred_at else ""
+        context_lines.append(f"{prefix}{category}: {note}")
+
+    internal_instructions = (
+        "Advisor-confirmed historical reconciliation addendum. Candidate work may "
+        "originate from episode-specific evidence or from an advisor-supplied "
+        "correction captured during supervised A.J. Rina review. The advisor "
+        "personally confirmed every intervention recorded in this plan."
+    )
+    if context_lines:
+        internal_instructions += (
+            "\n\nAdvisor-supplied historical context below is not completed treatment "
+            "work and must not be presented as a completed intervention:\n- "
+            + "\n- ".join(context_lines)
+        )
+
     plan = TreatmentPlan(
         car_id=car_id,
         advisor_id=actor_user_id,
         title=f"Historical reconciliation — {reference}"[:255],
-        internal_instructions=(
-            "Advisor-confirmed historical reconciliation addendum. Candidate work may "
-            "originate from episode-specific evidence or from an advisor-supplied "
-            "correction captured during supervised A.J. Rina review. The advisor "
-            "personally confirmed every intervention recorded in this plan."
-        ),
+        internal_instructions=internal_instructions,
         client_summary=(
             f"Historical completed work reconciled by an Ajebo Fix advisor for {reference}."
         ),

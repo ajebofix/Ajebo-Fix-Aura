@@ -199,10 +199,66 @@ def _historical_review_choice_index(message: str, choice_count: int) -> int | No
     return None
 
 
+def _historical_intelligence_choice_index(message: str, choices) -> int | None:
+    numeric = _historical_review_choice_index(message, len(choices))
+    if numeric is not None:
+        return numeric
+
+    text = _normalise_chat_command(message)
+    if not text:
+        return None
+
+    month_numbers = {
+        "january": "01",
+        "february": "02",
+        "march": "03",
+        "april": "04",
+        "may": "05",
+        "june": "06",
+        "july": "07",
+        "august": "08",
+        "september": "09",
+        "october": "10",
+        "november": "11",
+        "december": "12",
+    }
+    matched: list[int] = []
+    for index, item in enumerate(choices):
+        haystack = " ".join(
+            str(value or "").lower()
+            for value in (
+                getattr(item, "title", None),
+                getattr(item, "date_start", None),
+                getattr(item, "date_end", None),
+                getattr(item, "summary", None),
+            )
+        )
+        title_words = {
+            word
+            for word in _normalise_chat_command(getattr(item, "title", "")).split()
+            if len(word) >= 4
+        }
+        month_match = any(
+            month in text
+            and (
+                month in haystack
+                or f"-{number}-" in haystack
+            )
+            for month, number in month_numbers.items()
+        )
+        title_match = bool(title_words) and sum(
+            1 for word in title_words if word in text
+        ) >= min(2, len(title_words))
+        if month_match or title_match:
+            matched.append(index)
+
+    return matched[0] if len(matched) == 1 else None
+
+
 def _historical_intelligence_choices_prompt(choices) -> str:
     lines = [
-        "I found source-supported historical service episodes for this vehicle. "
-        "Choose the one you want me to stage for advisor review:"
+        "I found historical episodes for this vehicle that need advisor review or "
+        "clarification. Choose the one you want to work through with me:"
     ]
     for index, item in enumerate(choices, start=1):
         date_bits = [value for value in (item.date_start, item.date_end) if value]
@@ -460,11 +516,16 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             )
             if str(item).strip()
         ]
-        index = _historical_review_choice_index(message, len(choice_keys))
+        live_choices = [
+            item
+            for item in discover_intelligence_episode_choices(context)
+            if item.choice_key in set(choice_keys)
+        ]
+        index = _historical_intelligence_choice_index(message, live_choices)
         if index is None:
             return {
                 "reply": (
-                    "Reply with the number of the source-supported historical episode "
+                    "Reply with the number, month or name of the historical episode "
                     "you want to review, or say **cancel review**."
                 ),
                 "phase": "choose_intelligence_episode",
@@ -477,7 +538,7 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             }
         return _start_staged_intelligence_review(
             context=context,
-            choice_key=choice_keys[index],
+            choice_key=live_choices[index].choice_key,
         )
 
     if phase == "choose_episode":

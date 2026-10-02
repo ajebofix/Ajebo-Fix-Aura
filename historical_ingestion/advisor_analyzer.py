@@ -434,6 +434,7 @@ class HistoricalBackgroundResponse:
     status: str
     model: str
     payload: dict[str, Any] | None = None
+    failure_detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -487,6 +488,33 @@ class HistoricalAdvisorAnalyzer:
                 "Historical document provider returned an invalid object"
             )
         return payload
+
+    @staticmethod
+    def _safe_background_terminal_detail(response: Any) -> str | None:
+        """Return non-sensitive provider terminal detail for failed/incomplete jobs."""
+
+        parts: list[str] = []
+        error = getattr(response, "error", None)
+        if error is not None:
+            for name in ("type", "code", "message"):
+                value = getattr(error, name, None)
+                if value is None and isinstance(error, dict):
+                    value = error.get(name)
+                if value:
+                    clean = str(value).replace("\n", " ").strip()[:500]
+                    parts.append(f"{name}={clean}")
+
+        incomplete = getattr(response, "incomplete_details", None)
+        if incomplete is not None:
+            reason = getattr(incomplete, "reason", None)
+            if reason is None and isinstance(incomplete, dict):
+                reason = incomplete.get("reason")
+            if reason:
+                parts.append(
+                    f"incomplete_reason={str(reason).replace(chr(10), ' ').strip()[:300]}"
+                )
+
+        return " ".join(parts) or None
 
     @staticmethod
     def _safe_provider_detail(exc: Exception) -> str:
@@ -731,6 +759,11 @@ class HistoricalAdvisorAnalyzer:
             status=status,
             model=str(getattr(response, "model", "") or self.model),
             payload=payload,
+            failure_detail=(
+                self._safe_background_terminal_detail(response)
+                if status not in {"queued", "in_progress", "completed"}
+                else None
+            ),
         )
 
     def start_understanding_background(
@@ -770,6 +803,7 @@ class HistoricalAdvisorAnalyzer:
                         "file_data": (
                             f"data:application/pdf;base64,{encoded_pdf}"
                         ),
+                        "detail": "low",
                     },
                 ],
                 schema_name="aura_historical_document_understanding",
@@ -801,6 +835,42 @@ class HistoricalAdvisorAnalyzer:
                 stage="page_preserved_text_background",
             )
             return response, False
+
+    def start_understanding_text_background(
+        self,
+        *,
+        extracted_text: str,
+        trusted_vehicle_context: dict[str, Any],
+    ) -> HistoricalBackgroundResponse:
+        context_text = (
+            "Trusted Aura vehicle context (use for disambiguation only; "
+            "do not overwrite source evidence):\n"
+            + json.dumps(
+                trusted_vehicle_context,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n\nPage-preserved searchable extraction:\n"
+            + extracted_text
+        )
+        return self._start_background(
+            instructions=(
+                UNDERSTANDING_INSTRUCTIONS
+                + "\n\nThe original PDF could not complete provider background "
+                "processing. Use the complete page-preserved text below as the "
+                "authoritative representation for this pass. Do not weaken the "
+                "evidence rules."
+            ),
+            input_content=[
+                {
+                    "type": "input_text",
+                    "text": context_text,
+                }
+            ],
+            schema_name="aura_historical_document_understanding",
+            schema=DOCUMENT_UNDERSTANDING_SCHEMA,
+            stage="page_preserved_text_background_recovery",
+        )
 
     def start_structuring_background(
         self,

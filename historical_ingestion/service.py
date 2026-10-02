@@ -1230,9 +1230,91 @@ def advance_historical_background_analysis(
         )
 
     if response.status != "completed" or not isinstance(response.payload, dict):
+        terminal_detail = (
+            f"OpenAI background response ended with status {response.status}."
+        )
+        if response.failure_detail:
+            terminal_detail += f" {response.failure_detail}"
+
+        can_retry_text_only = (
+            stage == "understanding"
+            and bool(provenance.get("direct_pdf_input"))
+            and not bool(provenance.get("pdf_text_fallback_attempted"))
+            and hasattr(analyzer, "start_understanding_text_background")
+        )
+        if can_retry_text_only:
+            source_extraction_id = int(provenance.get("source_extraction_id") or 0)
+            text_extraction = db.session.get(EvidenceExtraction, source_extraction_id)
+            if text_extraction is None:
+                return _mark_background_failed(
+                    extraction,
+                    f"{terminal_detail} Source text extraction is unavailable.",
+                )
+            source_text, _ = _text_from_extraction(text_extraction)
+
+            car = db.session.get(Car, evidence.car_id)
+            if car is None:
+                return _mark_background_failed(
+                    extraction,
+                    f"{terminal_detail} Vehicle was not found.",
+                )
+
+            try:
+                recovery = analyzer.start_understanding_text_background(
+                    extracted_text=source_text,
+                    trusted_vehicle_context=_trusted_vehicle_context(car),
+                )
+            except RinaProviderError as exc:
+                return _mark_background_failed(
+                    extraction,
+                    (
+                        f"{terminal_detail} Text-only recovery could not start: "
+                        f"{str(exc).replace(chr(10), ' ').strip()[:500]}"
+                    ),
+                )
+
+            extraction.provider_model = recovery.model
+            extraction.provider_request_id = recovery.response_id
+            extraction.provenance = {
+                **provenance,
+                "background_stage": "understanding",
+                "background_response_id": recovery.response_id,
+                "direct_pdf_input": False,
+                "pdf_text_fallback_attempted": True,
+                "pdf_failed_response_id": response.response_id,
+                "pdf_failure_detail": terminal_detail[:900],
+            }
+            try:
+                db.session.commit()
+            except SQLAlchemyError as exc:
+                return _mark_background_persistence_failed(
+                    extraction_id=extraction.id,
+                    exc=exc,
+                )
+
+            current_app.logger.warning(
+                "historical_pdf_terminal_fallback evidence_id=%s extraction_id=%s "
+                "failed_response_id=%s recovery_response_id=%s detail=%s",
+                evidence.id,
+                extraction.id,
+                response.response_id,
+                recovery.response_id,
+                terminal_detail[:900],
+            )
+            return HistoricalBackgroundStatus(
+                evidence_id=evidence.id,
+                extraction_id=extraction.id,
+                status="processing",
+                phase="understanding",
+                message=(
+                    "Rina is continuing the analysis from the secured page-preserved "
+                    "document text."
+                ),
+            )
+
         return _mark_background_failed(
             extraction,
-            f"OpenAI background response ended with status {response.status}.",
+            terminal_detail,
         )
 
     source_extraction_id = int(provenance.get("source_extraction_id") or 0)

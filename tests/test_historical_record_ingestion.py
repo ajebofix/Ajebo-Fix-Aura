@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from reportlab.pdfgen import canvas
@@ -29,6 +30,7 @@ from historical_ingestion.service import (
 from models import Car, CarOwnership, TreatmentPlan, User
 from historical_ingestion.advisor_analyzer import (
     HistoricalAdvisorAnalysis,
+    HistoricalAdvisorAnalyzer,
     HistoricalBackgroundResponse,
 )
 from rina.providers.base import RinaProviderRejectedError
@@ -77,6 +79,64 @@ class RecordingStorageProvider:
 
     def exists(self, *, object_key: str) -> bool:
         return object_key in self.objects
+
+
+
+class _RecordingResponsesClient:
+    def __init__(self):
+        self.create_kwargs = None
+
+    def create(self, **kwargs):
+        self.create_kwargs = kwargs
+        return SimpleNamespace(
+            id="resp-recording",
+            status="queued",
+            model="fake-background-model",
+        )
+
+    def retrieve(self, response_id):
+        return SimpleNamespace(
+            id=response_id,
+            status="failed",
+            model="fake-background-model",
+            error=SimpleNamespace(
+                type="server_error",
+                code="pdf_processing_failed",
+                message="The PDF could not be processed.",
+            ),
+            incomplete_details=None,
+        )
+
+
+class _RecordingOpenAIClient:
+    def __init__(self):
+        self.responses = _RecordingResponsesClient()
+
+
+def test_background_analyzer_uses_low_pdf_detail_and_captures_terminal_error():
+    client = _RecordingOpenAIClient()
+    analyzer = HistoricalAdvisorAnalyzer(
+        client=client,
+        model="fake-background-model",
+        reasoning_effort="high",
+    )
+
+    started, direct_pdf_used = analyzer.start_understanding_background(
+        pdf_payload=b"%PDF-1.7 fake",
+        extracted_text="--- PAGE 1 ---\nHistorical service record",
+        trusted_vehicle_context={"audience": "Ajebo Fix professional advisor"},
+    )
+    assert direct_pdf_used is True
+    assert started.status == "queued"
+    content = client.responses.create_kwargs["input"][0]["content"]
+    pdf_item = next(item for item in content if item["type"] == "input_file")
+    assert pdf_item["detail"] == "low"
+
+    failed = analyzer.retrieve_background("resp-recording")
+    assert failed.status == "failed"
+    assert "type=server_error" in failed.failure_detail
+    assert "code=pdf_processing_failed" in failed.failure_detail
+    assert "The PDF could not be processed." in failed.failure_detail
 
 
 class FakeHistoricalProvider:
@@ -332,6 +392,71 @@ class FakeBackgroundHistoricalProvider:
         assert trusted_vehicle_context["audience"] == "Ajebo Fix professional advisor"
         return HistoricalBackgroundResponse(
             response_id="resp-structuring",
+            status="queued",
+            model=self.model,
+        )
+
+
+
+class TerminalPdfFailureRecoveryProvider(FakeBackgroundHistoricalProvider):
+    def __init__(self):
+        super().__init__()
+        self.started_text_recovery = 0
+
+    def retrieve_background(self, response_id: str):
+        self.retrieve_calls.append(response_id)
+        if response_id == "resp-understanding":
+            return HistoricalBackgroundResponse(
+                response_id=response_id,
+                status="failed",
+                model=self.model,
+                failure_detail="code=provider_error message=PDF processing failed",
+            )
+        if response_id == "resp-understanding-text":
+            return HistoricalBackgroundResponse(
+                response_id=response_id,
+                status="completed",
+                model=self.model,
+                payload={
+                    "document": {
+                        "document_type": "job_record",
+                        "title": "Ajebo Fix job record",
+                        "reference": "JOB-2026-002",
+                        "document_date": "2026-08-18",
+                        "job_reference": "JOB-2026-002",
+                        "sow_reference": "SOW-2026-002",
+                        "client_name": "Historical Owner",
+                        "vehicle_description": "2014 Mercedes-Benz GL 450",
+                        "vin": "4JG166HIST0000012",
+                        "plate_number": None,
+                    },
+                    "advisor_narrative": (
+                        "Recovered from the page-preserved text after PDF processing "
+                        "failed."
+                    ),
+                    "chronology": [],
+                    "facts": [],
+                    "ambiguities": [],
+                    "advisor_suggestions": [
+                        "Confirm completed work from completion evidence."
+                    ],
+                },
+            )
+        if response_id == "resp-structuring":
+            return super().retrieve_background(response_id)
+        raise AssertionError(f"unexpected response id {response_id}")
+
+    def start_understanding_text_background(
+        self,
+        *,
+        extracted_text: str,
+        trusted_vehicle_context: dict,
+    ):
+        self.started_text_recovery += 1
+        assert "--- PAGE 1 ---" in extracted_text
+        assert trusted_vehicle_context["audience"] == "Ajebo Fix professional advisor"
+        return HistoricalBackgroundResponse(
+            response_id="resp-understanding-text",
             status="queued",
             model=self.model,
         )
@@ -695,6 +820,78 @@ def test_background_import_returns_immediately_and_advances_in_two_poll_steps(ap
         payload = decrypt_extraction_payload(usable)
         assert payload["rina_summary"] == "Advisor-grade historical summary."
         assert payload["candidates"][0]["suggested_destination"] == "reported_concern"
+
+
+
+def test_direct_pdf_terminal_failure_recovers_via_text_only_background(app):
+    with app.app_context():
+        owner = _user(suffix=16)
+        advisor = _user(suffix=17, role="admin")
+        car = _owned_car(owner, suffix=16)
+        analyzer = TerminalPdfFailureRecoveryProvider()
+        storage = RecordingStorageProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-002\n"
+            "Intermittent electrical concern\n"
+            "AIRMATIC leak observed"
+        )
+
+        started = ingest_pdf_document_background(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+        background = latest_background_extraction(started.evidence_id)
+        assert background is not None
+        assert background.provenance["direct_pdf_input"] is True
+
+        recovery_poll = advance_historical_background_analysis(
+            extraction_id=background.id,
+            actor_user_id=advisor.id,
+            language_provider=analyzer,
+        )
+        assert recovery_poll.status == "processing"
+        assert recovery_poll.phase == "understanding"
+        assert analyzer.started_text_recovery == 1
+
+        db.session.refresh(background)
+        assert background.status == "processing"
+        assert background.provenance["direct_pdf_input"] is False
+        assert background.provenance["pdf_text_fallback_attempted"] is True
+        assert background.provenance["pdf_failed_response_id"] == "resp-understanding"
+        assert "PDF processing failed" in background.provenance["pdf_failure_detail"]
+        assert background.provenance["background_response_id"] == (
+            "resp-understanding-text"
+        )
+
+        understanding_poll = advance_historical_background_analysis(
+            extraction_id=background.id,
+            actor_user_id=advisor.id,
+            language_provider=analyzer,
+        )
+        assert understanding_poll.status == "processing"
+        assert understanding_poll.phase == "structuring"
+
+        final_poll = advance_historical_background_analysis(
+            extraction_id=background.id,
+            actor_user_id=advisor.id,
+            language_provider=analyzer,
+        )
+        assert final_poll.status == "completed"
+        assert final_poll.review_ready is True
+
+        usable = latest_structured_extraction(started.evidence_id)
+        assert usable is not None
+        assert usable.id == background.id
+        assert usable.status == "completed"
+        assert TreatmentPlan.query.count() == 0
+        assert TreatmentAction.query.count() == 0
 
 
 def test_background_reanalysis_is_idempotent_while_processing(app):

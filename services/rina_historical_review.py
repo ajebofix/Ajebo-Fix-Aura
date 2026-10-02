@@ -1251,6 +1251,10 @@ def update_review_from_interpretation(
         note = _clip(item.get("note"), 1200)
         occurred_at = _clip(item.get("occurred_at"), 64)
         if category not in {
+            "reported_concern",
+            "assessment_finding",
+            "external_event",
+            "client_advisor_context",
             "procurement",
             "recommendation",
             "clarification",
@@ -1575,6 +1579,11 @@ def interpret_turn(
             payload=_enrich_interpretation_with_explicit_advisor_facts(
                 message=message,
                 interpretation=parsed.payload,
+                candidates=[
+                row
+                for row in state.payload.get("candidates") or []
+                if isinstance(row, dict)
+            ],
             ),
             provider=parsed.provider,
             model=parsed.model,
@@ -1587,11 +1596,21 @@ def interpret_turn(
                 "intent": "no_change",
                 "changes": [],
                 "additions": [],
+                "context_notes": [],
                 "episode_outcome": None,
                 "assistant_note": "",
             },
+            candidates=[
+                row
+                for row in state.payload.get("candidates") or []
+                if isinstance(row, dict)
+            ],
         )
-        if deterministic.get("additions") or deterministic.get("context_notes"):
+        if (
+            deterministic.get("changes")
+            or deterministic.get("additions")
+            or deterministic.get("context_notes")
+        ):
             return HistoricalReviewInterpretation(
                 payload=deterministic,
                 provider="deterministic_advisor_fact_guard",

@@ -707,10 +707,10 @@ def apply_reconciliation(
         raise HistoricalReconciliationError("Historical reconciliation was not found.")
 
     provenance = extraction.provenance or {}
-    direct_intelligence = (
-        provenance.get("analysis_pipeline")
-        == DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE
-    )
+    direct_intelligence = provenance.get("analysis_pipeline") in {
+        DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
+        DIRECT_STANDALONE_SOURCE_PIPELINE,
+    }
     episode = db.session.get(
         HistoricalServiceEpisode,
         int(provenance.get("episode_id") or 0),

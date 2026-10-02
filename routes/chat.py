@@ -1532,8 +1532,10 @@ def chat():
         except RinaProviderError as exc:
             db.session.rollback()
             reply = (
-                "I couldn't interpret that historical correction safely, so I did "
-                "not change the draft. Please rephrase the correction and try again."
+                "I couldn't safely interpret that historical correction. I preserved "
+                "the current draft and changed nothing. You do not need to rewrite the "
+                "whole history; retry, or give me only the specific fact that needs "
+                "changing."
             )
             record_rina_audit(
                 request_id=history_request_id,

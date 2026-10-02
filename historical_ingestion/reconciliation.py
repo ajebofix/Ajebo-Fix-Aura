@@ -47,6 +47,7 @@ PIPELINE = "historical_episode_reconciliation_v1"
 DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE = (
     "historical_intelligence_candidate_reconciliation_v1"
 )
+DIRECT_STANDALONE_SOURCE_PIPELINE = "standalone_document_conversational_review_v1"
 _ALLOWED_KINDS = {
     "component_replacement",
     "service",
@@ -620,10 +621,10 @@ def save_reconciliation_review(
     if extraction is None or extraction.evidence is None:
         raise HistoricalReconciliationError("Historical reconciliation was not found.")
     provenance = extraction.provenance or {}
-    direct_intelligence = (
-        provenance.get("analysis_pipeline")
-        == DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE
-    )
+    direct_intelligence = provenance.get("analysis_pipeline") in {
+        DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
+        DIRECT_STANDALONE_SOURCE_PIPELINE,
+    }
     episode = db.session.get(
         HistoricalServiceEpisode,
         int(provenance.get("episode_id") or 0),
@@ -706,10 +707,10 @@ def apply_reconciliation(
         raise HistoricalReconciliationError("Historical reconciliation was not found.")
 
     provenance = extraction.provenance or {}
-    direct_intelligence = (
-        provenance.get("analysis_pipeline")
-        == DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE
-    )
+    direct_intelligence = provenance.get("analysis_pipeline") in {
+        DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
+        DIRECT_STANDALONE_SOURCE_PIPELINE,
+    }
     episode = db.session.get(
         HistoricalServiceEpisode,
         int(provenance.get("episode_id") or 0),

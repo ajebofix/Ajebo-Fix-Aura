@@ -1,6 +1,13 @@
 """Supervised conversational historical-record review through Ask Rina."""
 
-from test_rina_chat_cutover import _car, _own, _post_json, _sign_in, _user
+from test_rina_chat_cutover import (
+    _car,
+    _csrf_token,
+    _own,
+    _post_json,
+    _sign_in,
+    _user,
+)
 
 from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
@@ -10,11 +17,13 @@ from historical_ingestion.reconciliation import (
     save_reconciliation_review,
 )
 from historical_ingestion.service import _payload_cipher
-from models import TreatmentPlan
+from models import ChatMessage, TreatmentPlan
 from rina.providers.base import RinaProviderError
+from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_historical_review import (
     HistoricalReviewInterpretation,
     HistoricalReviewInterpreter,
+    discover_review_choices,
 )
 from treatment.models import TreatmentAction, TreatmentActionCompletionDetail
 
@@ -1508,3 +1517,222 @@ def test_inline_mobile_labeled_context_is_extracted_and_repairs_shorter_old_row(
     ).one()
     actions = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).all()
     assert len(actions) == 3
+
+
+def _standalone_document_analysis(*, admin, car):
+    evidence = VehicleEvidence(
+        car_id=car.id,
+        uploaded_by_user_id=admin.id,
+        evidence_type="document",
+        purpose="treatment_evidence",
+        source_channel="web",
+        historical_source_type="standalone_document",
+        visibility="advisor",
+        review_status="pending_review",
+        storage_provider="test-private",
+        storage_state="available",
+        object_key=f"tests/standalone-history-{car.id}.pdf",
+        safe_display_name="Historical workshop record.pdf",
+        content_type="application/pdf",
+        byte_size=512,
+        sha256=("c" * 63) + str(car.id % 10),
+        consent_basis="advisor_historical_document_import",
+        lawful_purpose="vehicle_care_recordkeeping",
+    )
+    db.session.add(evidence)
+    db.session.flush()
+
+    payload = {
+        "document": {
+            "document_type": "job_record",
+            "title": "June 2026 GLK workshop record",
+            "reference": "JOB-GLK-0626",
+            "document_date": "2026-06-18",
+            "job_reference": "JOB-GLK-0626",
+            "sow_reference": None,
+            "client_name": "Historical Client",
+            "vehicle_description": "2013 Mercedes-Benz GLK 350",
+            "vin": car.vin,
+            "plate_number": None,
+        },
+        "rina_summary": (
+            "The source describes a hot-start complaint and a claimed starter-motor "
+            "replacement. Advisor confirmation is still required."
+        ),
+        "advisor_suggestions": [
+            "Confirm what work was actually completed and the historical date."
+        ],
+        "candidates": [
+            {
+                "category": "reported_concern",
+                "state": "reported",
+                "title": "Hot-start concern",
+                "detail": "Vehicle would not restart while hot.",
+                "occurred_at": "2026-06-17",
+                "source_pages": [1],
+                "source_fact_ids": ["FACT-001"],
+                "source_excerpt": "Vehicle would not restart while hot.",
+                "confidence": 0.97,
+                "confidence_reason": "Explicitly stated in the source.",
+                "suggested_destination": "reported_concern",
+                "outcome_direction": "insufficient_evidence",
+                "advisor_attention": "Context only.",
+                "action": None,
+            },
+            {
+                "category": "work_item",
+                "state": "completed",
+                "title": "Starter motor replacement",
+                "detail": "The document states that the starter motor was replaced.",
+                "occurred_at": "2026-06-18",
+                "source_pages": [2],
+                "source_fact_ids": ["FACT-002"],
+                "source_excerpt": "Starter motor replaced.",
+                "confidence": 0.94,
+                "confidence_reason": "Completion wording is explicit in the source.",
+                "suggested_destination": "treatment_action",
+                "outcome_direction": "insufficient_evidence",
+                "advisor_attention": "Confirm completion before recording.",
+                "action": {
+                    "kind": "component_replacement",
+                    "component_name": "Bosch starter motor",
+                    "component_location": None,
+                    "component_condition": "new",
+                    "quantity": 1,
+                    "odometer_km": None,
+                },
+            },
+        ],
+    }
+    cipher, version, digest = _payload_cipher(payload)
+    structured = EvidenceExtraction(
+        evidence_id=evidence.id,
+        extraction_type="structured_fields",
+        provider="test",
+        provider_model="test-model",
+        status="completed",
+        review_status="unreviewed",
+        result_ciphertext=cipher,
+        result_key_version=version,
+        result_sha256=digest,
+    )
+    db.session.add(structured)
+    db.session.commit()
+    return evidence, structured
+
+
+def test_ready_standalone_analysis_hands_off_into_supervised_rina_chat(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=340, role="admin")
+    owner = _user(suffix=341)
+    car = _car(suffix=340, model="GLK 350")
+    car.year = 2013
+    _own(owner=owner, car=car, suffix=340)
+    evidence, structured = _standalone_document_analysis(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    response = client.post(
+        "/chat/historical-review/from-source",
+        data={
+            "csrf_token": _csrf_token(client),
+            "car_id": car.id,
+            "evidence_id": evidence.id,
+        },
+    )
+    assert response.status_code == 302
+    assert f"/chat/workspace?car_id={car.id}" in response.headers["Location"]
+
+    draft = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="historical_reconciliation",
+        )
+        .order_by(EvidenceExtraction.id.desc())
+        .first()
+    )
+    assert draft is not None
+    assert draft.status == "completed"
+    assert draft.review_status == "unreviewed"
+    assert draft.provenance["analysis_pipeline"] == (
+        "standalone_document_conversational_review_v1"
+    )
+    assert draft.provenance["source_structured_extraction_id"] == structured.id
+
+    staged = reconciliation_payload(draft)
+    assert staged["episode_title"] == "June 2026 GLK workshop record"
+    assert len(staged["candidates"]) == 1
+    candidate = staged["candidates"][0]
+    assert candidate["candidate_id"] == "D001"
+    assert candidate["title"] == "Starter motor replacement"
+    assert candidate["advisor_decision"] == "unsure"
+    assert candidate["reviewed_by_advisor"] is False
+    assert candidate["component_name"] == "Bosch starter motor"
+    assert candidate["component_condition"] == "new"
+
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+    assert TreatmentAction.query.count() == 0
+
+    prompt = (
+        ChatMessage.query.filter_by(
+            user_id=admin.id,
+            car_id=car.id,
+            role="assistant",
+        )
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    assert prompt is not None
+    assert "Starter motor replacement" in prompt.message
+    assert "Nothing becomes durable vehicle history" in prompt.message
+
+    context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
+    choices = discover_review_choices(context)
+    assert any(item["extraction_id"] == draft.id for item in choices)
+
+    monkeypatch.setattr(
+        "routes.chat.interpret_historical_review_turn",
+        lambda **_kwargs: _confirmation_interpretation(
+            date="2026-06-18",
+            candidate_id="D001",
+        ),
+    )
+    reviewed = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": (
+                "Yes, the starter motor replacement was completed on 18 June 2026."
+            ),
+        },
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json["historical_review"]["phase"] == "awaiting_apply_confirmation"
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    applied = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Confirm and record"},
+    )
+    assert applied.status_code == 200
+
+    plan = TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).one()
+    actions = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).all()
+    assert len(actions) == 1
+    assert actions[0].title == "Starter motor replacement"
+
+    detail = TreatmentActionCompletionDetail.query.filter_by(
+        treatment_action_id=actions[0].id
+    ).one()
+    assert detail.component_name == "Bosch starter motor"
+    assert detail.component_condition == "new"

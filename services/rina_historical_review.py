@@ -33,6 +33,10 @@ from services.rina_historical_intelligence_bridge import (
     DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
     direct_drafts_for_car,
 )
+from services.rina_source_review_bridge import (
+    DIRECT_STANDALONE_SOURCE_PIPELINE,
+    direct_source_review_drafts_for_car,
+)
 
 
 _ALLOWED_DECISIONS = {"confirmed", "not_done", "unsure"}
@@ -377,7 +381,10 @@ def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]
             }
         )
 
-    for extraction in direct_drafts_for_car(context.car_id):
+    for extraction in [
+        *direct_drafts_for_car(context.car_id),
+        *direct_source_review_drafts_for_car(context.car_id),
+    ]:
         if extraction.id in seen_extraction_ids:
             continue
         if applied_reconciliation_plan(extraction.id) is not None:
@@ -412,7 +419,7 @@ def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]
                 "title": str(
                     payload.get("episode_title")
                     or (extraction.provenance or {}).get("episode_title")
-                    or "Historical Intelligence episode"
+                    or "Historical source review"
                 )[:255],
                 "state": state,
                 "unreviewed_candidates": unreviewed,
@@ -446,15 +453,15 @@ def _load_state(
         )
 
     provenance = extraction.provenance or {}
-    direct_intelligence = (
-        provenance.get("analysis_pipeline")
-        == DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE
-    )
+    direct_intelligence = provenance.get("analysis_pipeline") in {
+        DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
+        DIRECT_STANDALONE_SOURCE_PIPELINE,
+    }
     episode: HistoricalServiceEpisode | None = None
     if direct_intelligence:
         if int(provenance.get("selected_car_id") or 0) != int(car_id):
             raise HistoricalReconciliationError(
-                "Historical Intelligence reconciliation provenance is incomplete."
+                "Direct historical review provenance is incomplete."
             )
     else:
         episode_id = int(provenance.get("episode_id") or 0)

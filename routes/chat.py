@@ -15,10 +15,13 @@ from flask import (
     Blueprint,
     abort,
     current_app,
+    flash,
     jsonify,
+    redirect,
     render_template,
     request,
     session,
+    url_for,
 )
 from flask_login import current_user, login_required
 from sqlalchemy import or_
@@ -45,6 +48,7 @@ from services.rina_historical_intelligence_bridge import (
     discover_intelligence_episode_choices,
     stage_intelligence_episode_candidate,
 )
+from services.rina_source_review_bridge import stage_standalone_source_review
 from services.rina_historical_review import (
     already_applied as historical_review_already_applied,
     candidate_prompt as historical_candidate_prompt,
@@ -1327,6 +1331,129 @@ def chat_historical_copilot_apply_reconciliation():
         ),
         200,
     )
+
+
+@chat_bp.post("/chat/historical-review/from-source")
+@login_required
+def start_historical_source_chat_review():
+    """Hand one completed standalone source into supervised conversational review."""
+
+    data = request.get_json(silent=True) or request.form
+    car_id = _coerce_car_id(data.get("car_id"))
+    evidence_id = _coerce_car_id(data.get("evidence_id"))
+
+    if car_id is None or evidence_id is None:
+        abort(400)
+
+    fallback_url = url_for(
+        "historical_ingestion.review_document",
+        car_id=car_id,
+        evidence_id=evidence_id,
+    )
+
+    try:
+        context = resolve_rina_vehicle_context(
+            user_id=current_user.id,
+            car_id=car_id,
+        )
+    except (RinaAuthorityError, RinaContextResolutionError):
+        abort(403)
+
+    if (
+        context.authority not in {"advisor", "administrator"}
+        or ACTION_PREPARE_HISTORICAL_RECORDS not in context.allowed_actions
+    ):
+        abort(403)
+
+    try:
+        extraction = stage_standalone_source_review(
+            context=context,
+            evidence_id=evidence_id,
+            actor_user_id=current_user.id,
+        )
+        if historical_review_already_applied(extraction.id) is not None:
+            flash(
+                "This historical source has already been applied to durable vehicle history.",
+                "info",
+            )
+            return redirect(url_for("chat.rina_workspace", car_id=car_id))
+
+        state = summarize_historical_review(
+            extraction_id=extraction.id,
+            actor_user_id=current_user.id,
+            car_id=car_id,
+        )
+
+        conversation_id = _bind_rina_vehicle(
+            car_id=car_id,
+            conversation_id=_conversation_id_for(car_id),
+        )
+        if state.all_reviewed:
+            phase = "awaiting_apply_confirmation"
+            candidate_id = None
+            prompt = historical_review_preview(state)
+        else:
+            phase = "reviewing"
+            candidate_id = state.next_candidate_id
+            prompt = historical_candidate_prompt(state, candidate_id)
+
+        _history_review_bind(
+            extraction_id=extraction.id,
+            candidate_id=candidate_id,
+            phase=phase,
+        )
+        save_rina_chat_turn(
+            user_id=current_user.id,
+            car_id=car_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=prompt,
+            commit=False,
+        )
+        record_rina_audit(
+            request_id=_new_conversation_id(),
+            user_id=current_user.id,
+            car_id=car_id,
+            authority=context.authority,
+            state="answered",
+            outcome="answered",
+            action_family="historical_chat_review",
+            provider_status="not_called",
+            evidence_refs=[
+                {"type": "historical_reconciliation", "id": extraction.id},
+                {"type": "vehicle_evidence", "id": evidence_id},
+            ],
+            metadata={"channel": "advisor_workspace"},
+            commit=False,
+        )
+        db.session.commit()
+    except (ValueError, HistoricalReconciliationError) as exc:
+        db.session.rollback()
+        current_app.logger.warning(
+            "rina_standalone_history_handoff_rejected car_id=%s evidence_id=%s "
+            "actor_id=%s detail=%s",
+            car_id,
+            evidence_id,
+            current_user.id,
+            str(exc).replace("\n", " ").strip()[:500],
+        )
+        flash(str(exc), "error")
+        return redirect(fallback_url)
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "rina_standalone_history_handoff_failed car_id=%s evidence_id=%s actor_id=%s",
+            car_id,
+            evidence_id,
+            current_user.id,
+        )
+        flash(
+            "Aura could not open this historical source in Rina review.",
+            "error",
+        )
+        return redirect(fallback_url)
+
+    return redirect(url_for("chat.rina_workspace", car_id=car_id))
 
 
 @chat_bp.post("/chat/select-vehicle")

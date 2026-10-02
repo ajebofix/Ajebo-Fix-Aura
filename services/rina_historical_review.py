@@ -160,6 +160,10 @@ _REVIEW_SCHEMA: dict[str, Any] = {
                     "category": {
                         "type": "string",
                         "enum": [
+                            "reported_concern",
+                            "assessment_finding",
+                            "external_event",
+                            "client_advisor_context",
                             "procurement",
                             "recommendation",
                             "clarification",
@@ -230,9 +234,12 @@ Rules:
 - If an explicitly completed addition has no date, preserve it as an addition but
   leave its final confirmation pending; Aura will ask for the date.
 - Use context_notes for explicit episode facts that are not completed treatment work:
+  reported concerns, assessment findings, external incidents, client/advisor context,
   parts purchased/procured but not installed, recommendations/referrals, clarification
   of ambiguous source wording, and work the advisor explicitly says was not performed.
-  Never turn those context facts into completed additions.
+  Prefer the advisor's explicit labels (for example "Reported concern",
+  "Workshop assessment", "Tyre incident", or "Client/advisor context") over keyword
+  heuristics. Never turn those context facts into completed additions.
 - A final-review phase does not freeze the draft. If the advisor supplies substantive
   new facts or corrections while awaiting final confirmation, treat them as an update.
 - If the advisor explicitly lists completed work, every clearly listed completed item
@@ -851,34 +858,84 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
     if not text:
         return []
 
-    dated_matches = list(_EXPLICIT_DATE_RE.finditer(text))
-    default_date = None
-    if dated_matches:
-        match = dated_matches[-1]
-        try:
-            default_date = datetime(
-                int(match.group(3)),
-                _MONTH_NUMBERS[match.group(2).lower()],
-                int(match.group(1)),
-            ).date().isoformat()
-        except ValueError:
-            default_date = None
+    notes: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    labeled_ranges: list[tuple[int, int]] = []
+
+    label_categories = (
+        ("reported concern", "reported_concern"),
+        ("workshop assessment", "assessment_finding"),
+        ("assessment finding", "assessment_finding"),
+        ("tyre incident", "external_event"),
+        ("tire incident", "external_event"),
+        ("client/advisor context", "client_advisor_context"),
+        ("client advisor context", "client_advisor_context"),
+    )
+
+    cursor = 0
+    for raw_block in re.split(r"\n\s*\n", text):
+        block = re.sub(r"\s+", " ", raw_block).strip()
+        if not block:
+            continue
+        offset = text.find(raw_block, cursor)
+        if offset < 0:
+            offset = cursor
+        cursor = offset + len(raw_block)
+        lowered = block.lower()
+
+        category = next(
+            (
+                category_name
+                for label, category_name in label_categories
+                if lowered.startswith(label)
+            ),
+            None,
+        )
+        if category is None:
+            continue
+
+        date_match = _EXPLICIT_DATE_RE.search(block)
+        occurred_at = None
+        if date_match:
+            try:
+                occurred_at = datetime(
+                    int(date_match.group(3)),
+                    _MONTH_NUMBERS[date_match.group(2).lower()],
+                    int(date_match.group(1)),
+                ).date().isoformat()
+            except ValueError:
+                occurred_at = None
+
+        note = _clip(block, 1200)
+        if note:
+            key = (category, note.lower())
+            if key not in seen:
+                notes.append(
+                    {
+                        "category": category,
+                        "occurred_at": occurred_at,
+                        "note": note,
+                    }
+                )
+                seen.add(key)
+        labeled_ranges.append((offset, offset + len(raw_block)))
 
     sentence_rows: list[tuple[int, str]] = []
     for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
+        if any(
+            match.start() < finish and match.end() > start
+            for start, finish in labeled_ranges
+        ):
+            continue
         sentence = re.sub(r"\s+", " ", match.group(0)).strip()
         if sentence:
             sentence_rows.append((match.start(), sentence))
 
-    notes: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
     for offset, sentence in sentence_rows:
         lowered = sentence.lower()
         category = None
 
-        if re.search(r"\b(?:purchas(?:e|ed)|bought|procured)\b", lowered):
-            category = "procurement"
-        elif re.search(
+        if re.search(
             r"\b(?:not|wasn't|was not|were not)\s+"
             r"(?:installed|fitted|replaced|performed|done|glued|bonded)\b",
             lowered,
@@ -892,11 +949,13 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
             category = "clarification"
         elif re.search(r"\b(?:advised|recommended|referred|told)\b", lowered):
             category = "recommendation"
+        elif re.search(r"\b(?:purchas(?:e|ed)|bought|procured)\b", lowered):
+            category = "procurement"
 
         if category is None:
             continue
 
-        occurred_at = _nearest_explicit_date_before(text, offset) or default_date
+        occurred_at = _nearest_explicit_date_before(text, offset)
         note = _clip(sentence, 1200)
         if not note:
             continue
@@ -914,11 +973,65 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
 
     return notes[:20]
 
+def _explicit_existing_candidate_changes(
+    *,
+    message: str,
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Capture narrow, explicit detail corrections for already-reviewed work."""
+
+    text = re.sub(r"\s+", " ", str(message or "")).strip()
+    if not text:
+        return []
+
+    changes: list[dict[str, Any]] = []
+    starter_match = re.search(
+        r"\bbrand\s+new\s+(?P<brand>[A-Za-z0-9-]+)\s+starter\s+motor\b",
+        text,
+        re.IGNORECASE,
+    )
+    if starter_match:
+        row = next(
+            (
+                candidate
+                for candidate in candidates
+                if isinstance(candidate, dict)
+                and "starter motor" in str(
+                    candidate.get("title")
+                    or candidate.get("component_name")
+                    or ""
+                ).lower()
+            ),
+            None,
+        )
+        if row is not None and row.get("candidate_id"):
+            brand = starter_match.group("brand")
+            changes.append(
+                {
+                    "candidate_id": str(row["candidate_id"]),
+                    "mark_reviewed": False,
+                    "advisor_decision": None,
+                    "occurred_at": None,
+                    "component_condition": "new",
+                    "advisor_note": (
+                        f"Advisor explicitly confirmed the replacement was a brand new "
+                        f"{brand} starter motor."
+                    ),
+                    "title": None,
+                    "kind": "component_replacement",
+                    "component_name": f"{brand} starter motor",
+                    "component_location": None,
+                }
+            )
+
+    return changes
+
 
 def _enrich_interpretation_with_explicit_advisor_facts(
     *,
     message: str,
     interpretation: dict[str, Any],
+    candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload = deepcopy(interpretation)
     payload.setdefault("changes", [])
@@ -948,7 +1061,50 @@ def _enrich_interpretation_with_explicit_advisor_facts(
         payload["additions"].append(fallback)
         existing_by_key[key] = fallback
 
+    candidate_rows = [
+        row for row in (candidates or []) if isinstance(row, dict)
+    ]
+    deterministic_changes = _explicit_existing_candidate_changes(
+        message=message,
+        candidates=candidate_rows,
+    )
+    changes_by_id = {
+        str(row.get("candidate_id") or ""): row
+        for row in payload.get("changes") or []
+        if isinstance(row, dict)
+    }
+    for fallback in deterministic_changes:
+        candidate_id = str(fallback.get("candidate_id") or "")
+        existing = changes_by_id.get(candidate_id)
+        if existing is None:
+            payload["changes"].append(fallback)
+            changes_by_id[candidate_id] = fallback
+            continue
+        for field in (
+            "component_condition",
+            "advisor_note",
+            "kind",
+            "component_name",
+        ):
+            if not existing.get(field) and fallback.get(field) is not None:
+                existing[field] = fallback[field]
+
     explicit_context = _explicit_context_notes(message)
+    explicit_note_categories = {
+        str(row.get("note") or "").strip().lower(): str(row.get("category") or "")
+        for row in explicit_context
+        if isinstance(row, dict) and str(row.get("note") or "").strip()
+    }
+    payload["context_notes"] = [
+        row
+        for row in payload.get("context_notes") or []
+        if not (
+            isinstance(row, dict)
+            and str(row.get("note") or "").strip().lower() in explicit_note_categories
+            and str(row.get("category") or "")
+            != explicit_note_categories[str(row.get("note") or "").strip().lower()]
+        )
+    ]
     existing_context_keys = {
         (str(row.get("category") or ""), str(row.get("note") or "").strip().lower())
         for row in payload.get("context_notes") or []
@@ -965,7 +1121,7 @@ def _enrich_interpretation_with_explicit_advisor_facts(
             payload["intent"] = "update"
         if payload.get("episode_outcome") is None:
             payload["episode_outcome"] = "completed_work_described"
-    elif explicit_context:
+    elif explicit_context or deterministic_changes:
         if payload.get("intent") in {"show_draft", "question", "no_change", None}:
             payload["intent"] = "update"
     elif episode_title and payload.get("intent") in {"show_draft", "no_change", None}:
@@ -1153,6 +1309,10 @@ def update_review_from_interpretation(
         note = _clip(item.get("note"), 1200)
         occurred_at = _clip(item.get("occurred_at"), 64)
         if category not in {
+            "reported_concern",
+            "assessment_finding",
+            "external_event",
+            "client_advisor_context",
             "procurement",
             "recommendation",
             "clarification",
@@ -1329,6 +1489,14 @@ def review_preview(state: HistoricalReviewState) -> str:
             detail = f"- **{row.get('title') or 'Historical intervention'}**"
             if row.get("occurred_at"):
                 detail += f" — {row.get('occurred_at')}"
+            component_name = str(row.get("component_name") or "").strip()
+            if (
+                row.get("kind") == "component_replacement"
+                and component_name
+                and component_name.lower()
+                not in str(row.get("title") or "").lower()
+            ):
+                detail += f" · {component_name}"
             if row.get("component_condition") not in {None, "", "not_applicable", "unknown"}:
                 detail += f" · {row.get('component_condition')}"
             if row.get("advisor_supplied"):
@@ -1477,6 +1645,11 @@ def interpret_turn(
             payload=_enrich_interpretation_with_explicit_advisor_facts(
                 message=message,
                 interpretation=parsed.payload,
+                candidates=[
+                row
+                for row in state.payload.get("candidates") or []
+                if isinstance(row, dict)
+            ],
             ),
             provider=parsed.provider,
             model=parsed.model,
@@ -1489,11 +1662,21 @@ def interpret_turn(
                 "intent": "no_change",
                 "changes": [],
                 "additions": [],
+                "context_notes": [],
                 "episode_outcome": None,
                 "assistant_note": "",
             },
+            candidates=[
+                row
+                for row in state.payload.get("candidates") or []
+                if isinstance(row, dict)
+            ],
         )
-        if deterministic.get("additions") or deterministic.get("context_notes"):
+        if (
+            deterministic.get("changes")
+            or deterministic.get("additions")
+            or deterministic.get("context_notes")
+        ):
             return HistoricalReviewInterpretation(
                 payload=deterministic,
                 provider="deterministic_advisor_fact_guard",

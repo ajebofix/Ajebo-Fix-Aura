@@ -12,7 +12,7 @@ from services.rina_historical_review import (
     HistoricalReviewInterpretation,
     HistoricalReviewInterpreter,
 )
-from treatment.models import TreatmentAction
+from treatment.models import TreatmentAction, TreatmentActionCompletionDetail
 
 
 def _historical_reconciliation(*, admin, car):
@@ -1179,3 +1179,118 @@ def test_noncompleted_grille_context_survives_provider_failure_without_extra_act
         plan.internal_instructions or ""
     ).lower()
     assert "windscreen adhesive" in (plan.internal_instructions or "").lower()
+
+
+def _demola_remaining_context_correction() -> str:
+    return (
+        "I want to add the remaining historical context to this May 2026 episode before "
+        "I confirm and record it.\n\n"
+        "Reported concern — 12 May 2026: Mr Demola reported that after driving the "
+        "vehicle for a while, if the engine was switched off while hot, the vehicle "
+        "would not restart until it had cooled for a few hours.\n\n"
+        "Workshop assessment — 13 May 2026: During the assessment, the starter motor "
+        "was found to be burnt/faulty and was identified as the cause of the hard-start "
+        "condition. This finding led to the starter motor replacement already shown in "
+        "the completed-work section, and the starter motor replaced was a brand new "
+        "Bosch starter motor.\n\n"
+        "Tyre incident — 13 May 2026: While Mr Demola was driving to the workshop, one "
+        "of the vehicle's tyres blew out. He replaced the blown tyre with a used tyre "
+        "from a vulcaniser before arriving at the workshop. Ajebo Fix did not perform "
+        "this tyre replacement.\n\n"
+        "Client/advisor context: Mr Demola said he intended to sell this Mercedes-Benz "
+        "and purchase another Mercedes-Benz, so we discussed the vehicle's resale "
+        "valuation. This was a discussion, not a mechanical intervention.\n\n"
+        "Please add these as historical context and show me the revised final draft. "
+        "Do not record anything yet."
+    )
+
+
+def test_labeled_context_wins_over_keyword_heuristics_and_preserves_bosch_detail(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=334, role="admin")
+    owner = _user(suffix=335)
+    car = _car(suffix=334, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=334)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def provider_failure(_self, **_kwargs):
+        raise RinaProviderError("test provider unavailable")
+
+    monkeypatch.setattr(HistoricalReviewInterpreter, "interpret", provider_failure)
+
+    initial = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_may_correction()},
+    )
+    assert initial.status_code == 200
+
+    grille = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_grille_context_correction()},
+    )
+    assert grille.status_code == 200
+
+    context = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_remaining_context_correction()},
+    )
+    assert context.status_code == 200
+    assert context.json["historical_review"]["phase"] == "awaiting_apply_confirmation"
+    reply = context.json["reply"].lower()
+    assert "reported concern" in reply
+    assert "assessment finding" in reply
+    assert "external event" in reply
+    assert "client advisor context" in reply
+    assert "hot" in reply and "would not restart" in reply
+    assert "burnt/faulty" in reply
+    assert "tyres blew out" in reply
+    assert "used tyre from a vulcaniser" in reply
+    assert "ajebo fix did not perform this tyre replacement" in reply
+    assert "resale valuation" in reply
+    assert "procurement" in reply  # grille procurement still remains
+    assert "client/advisor context" not in (
+        "\n".join(
+            line
+            for line in reply.splitlines()
+            if line.strip().startswith("- **procurement**")
+        )
+    )
+    assert "bosch starter motor" in reply
+    assert "· new" in reply
+
+    applied = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Confirm and record"},
+    )
+    assert applied.status_code == 200
+
+    plan = TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).one()
+    actions = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).all()
+    assert len(actions) == 3
+
+    starter = next(
+        action for action in actions if action.title.lower() == "starter motor replacement"
+    )
+    detail = TreatmentActionCompletionDetail.query.filter_by(
+        treatment_action_id=starter.id
+    ).one()
+    assert detail.component_name == "Bosch starter motor"
+    assert detail.component_condition == "new"
+
+    instructions = (plan.internal_instructions or "").lower()
+    assert "reported_concern" in instructions
+    assert "assessment_finding" in instructions
+    assert "external_event" in instructions
+    assert "client_advisor_context" in instructions
+    assert "resale valuation" in instructions

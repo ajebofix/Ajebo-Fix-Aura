@@ -579,6 +579,9 @@ def analysis_status(car_id: int, evidence_id: int):
         if analysis.status == "failed"
         else str((analysis.provenance or {}).get("background_stage") or "idle")
     )
+    failure_code = str(
+        (analysis.provenance or {}).get("failure_code") or ""
+    ).strip()
     return jsonify(
         {
             "status": analysis.status,
@@ -586,7 +589,16 @@ def analysis_status(car_id: int, evidence_id: int):
             "message": (
                 "Advisor-grade extraction is ready for review."
                 if analysis.status == "completed"
-                else "Rina could not complete this analysis. No vehicle history was changed."
+                else (
+                    "Rina's AI provider has no API credits available. Restore the "
+                    "configured API credit balance before retrying. The private "
+                    "source remains safe and no vehicle history was changed."
+                    if failure_code == "credit_balance_exhausted"
+                    else (
+                        "Rina could not complete this analysis. "
+                        "No vehicle history was changed."
+                    )
+                )
             ),
             "review_ready": has_completed_structured_extraction(evidence.id),
         }

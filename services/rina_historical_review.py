@@ -517,6 +517,132 @@ def _clip(value: object, limit: int) -> str | None:
     return text[:limit] if text else None
 
 
+_MONTH_NUMBERS = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+_EXPLICIT_DATE_RE = re.compile(
+    r"\\b(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+of)?\\s+"
+    r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\\s+(20\\d{2})\\b",
+    re.IGNORECASE,
+)
+
+_CORRECTION_LABEL_RE = re.compile(
+    r"\\b(?:please\\s+)?(?:correct|update|rewrite|replace)\\s+(?:the\\s+)?"
+    r"(?P<label>[^.!?\\n]{3,120}?\\bhistory)\\b",
+    re.IGNORECASE,
+)
+
+_COMPLETED_BLOCK_RE = re.compile(
+    r"\\b(?:(?:the\\s+)?work\\s+completed(?:\\s+by\\s+[^:,.]{1,60})?"
+    r"|(?:the\\s+)?completed\\s+work)\\s+"
+    r"(?:was|were|included|includes)\\s*:?\\s*",
+    re.IGNORECASE,
+)
+
+
+def _advisor_episode_title(message: str) -> str | None:
+    match = _CORRECTION_LABEL_RE.search(str(message or ""))
+    return _clip(match.group("label"), 255) if match else None
+
+
+def _nearest_explicit_date_before(message: str, offset: int) -> str | None:
+    matches = [
+        match
+        for match in _EXPLICIT_DATE_RE.finditer(str(message or ""))
+        if match.end() <= int(offset)
+    ]
+    if not matches:
+        return None
+
+    match = matches[-1]
+    if int(offset) - match.end() > 600:
+        return None
+
+    day = int(match.group(1))
+    month = _MONTH_NUMBERS[match.group(2).lower()]
+    year = int(match.group(3))
+    try:
+        return datetime(year, month, day).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _work_title_key(value: object) -> tuple[str, ...]:
+    text = str(value or "").lower()
+    text = re.sub(r"\\breplace(?:d|ment)?\\b", " replacement ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return tuple(sorted(token for token in text.split() if token))
+
+
+def _explicit_completed_additions(message: str) -> list[dict[str, Any]]:
+    text = str(message or "")
+    match = _COMPLETED_BLOCK_RE.search(text)
+    if not match:
+        return []
+
+    block = text[match.end() : match.end() + 900]
+    block = re.split(
+        r"\\b(?:Please\\s+show|Do\\s+not\\s+write|Before\\s+writing)\\b",
+        block,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    block = re.sub(r"^\\s*[-*•]\\s*", "", block)
+    parts = re.split(r"(?:\\s+\\*\\s+|\\n\\s*[-*•]\\s*|;\\s*)", block)
+    occurred_at = _nearest_explicit_date_before(text, match.start())
+
+    additions: list[dict[str, Any]] = []
+    for raw in parts:
+        title = re.sub(r"\\s+", " ", raw).strip(" \\t\\r\\n.,:;-")
+        if not title or len(title) < 3:
+            continue
+        title = title[:255]
+
+        is_replacement = bool(
+            re.search(r"\\breplace(?:d|ment)?\\b", title, re.IGNORECASE)
+        )
+        component_name = None
+        if is_replacement:
+            component_name = re.sub(
+                r"\\breplace(?:d|ment)?\\b",
+                " ",
+                title,
+                flags=re.IGNORECASE,
+            )
+            component_name = re.sub(r"\\s+", " ", component_name).strip(" -")
+            component_name = component_name[:255] or None
+
+        additions.append(
+            {
+                "title": title,
+                "kind": "component_replacement" if is_replacement else "service",
+                "component_name": component_name,
+                "component_location": None,
+                "component_condition": "unknown" if is_replacement else "not_applicable",
+                "occurred_at": occurred_at,
+                "advisor_note": (
+                    "Explicitly stated by the advisor in the current correction as "
+                    "completed work."
+                ),
+                "explicitly_completed": True,
+            }
+        )
+    return additions
+
+
 def _new_advisor_candidate_id(rows: list[dict[str, Any]]) -> str:
     used = {str(row.get("candidate_id") or "") for row in rows}
     for index in range(1, 1000):

@@ -1423,10 +1423,7 @@ def start_historical_source_chat_review():
                 {"type": "historical_reconciliation", "id": extraction.id},
                 {"type": "vehicle_evidence", "id": evidence_id},
             ],
-            metadata={
-                "channel": "advisor_workspace",
-                "handoff": "standalone_document",
-            },
+            metadata={"channel": "advisor_workspace"},
             commit=False,
         )
         db.session.commit()

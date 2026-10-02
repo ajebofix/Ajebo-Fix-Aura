@@ -1252,6 +1252,8 @@ def test_labeled_context_wins_over_keyword_heuristics_and_preserves_bosch_detail
     assert "hot" in reply and "would not restart" in reply
     assert "burnt/faulty" in reply
     assert "tyres blew out" in reply
+    assert "used tyre from a vulcaniser" in reply
+    assert "ajebo fix did not perform this tyre replacement" in reply
     assert "resale valuation" in reply
     assert "procurement" in reply  # grille procurement still remains
     assert "client/advisor context" not in (

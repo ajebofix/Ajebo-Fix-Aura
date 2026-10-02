@@ -865,12 +865,10 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
             default_date = None
 
     sentence_rows: list[tuple[int, str]] = []
-    cursor = 0
     for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
         sentence = re.sub(r"\s+", " ", match.group(0)).strip()
         if sentence:
             sentence_rows.append((match.start(), sentence))
-        cursor = match.end()
 
     notes: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -1135,6 +1133,50 @@ def update_review_from_interpretation(
         added_count += 1
         changed = True
 
+    context_rows = [
+        row
+        for row in payload.get("advisor_context_notes") or []
+        if isinstance(row, dict)
+    ]
+    context_keys = {
+        (
+            str(row.get("category") or ""),
+            str(row.get("occurred_at") or ""),
+            str(row.get("note") or "").strip().lower(),
+        )
+        for row in context_rows
+    }
+    for item in interpretation.get("context_notes") or []:
+        if not isinstance(item, dict):
+            continue
+        category = str(item.get("category") or "").strip()
+        note = _clip(item.get("note"), 1200)
+        occurred_at = _clip(item.get("occurred_at"), 64)
+        if category not in {
+            "procurement",
+            "recommendation",
+            "clarification",
+            "not_performed",
+            "other",
+        } or not note:
+            continue
+        key = (category, occurred_at or "", note.lower())
+        if key in context_keys:
+            continue
+        context_rows.append(
+            {
+                "category": category,
+                "occurred_at": occurred_at,
+                "note": note,
+                "advisor_supplied": True,
+            }
+        )
+        context_keys.add(key)
+        changed = True
+
+    if context_rows:
+        payload["advisor_context_notes"] = context_rows[:40]
+
     episode_outcome = interpretation.get("episode_outcome")
     if episode_outcome in {"no_completed_work", "still_uncertain"}:
         payload["advisor_intake_resolved"] = True
@@ -1305,6 +1347,20 @@ def review_preview(state: HistoricalReviewState) -> str:
         lines.extend(
             f"- {row.get('title') or 'Historical intervention'}" for row in unsure
         )
+
+    context_notes = [
+        row
+        for row in state.payload.get("advisor_context_notes") or []
+        if isinstance(row, dict)
+    ]
+    if context_notes:
+        lines.append("### Historical context — not completed work")
+        for row in context_notes:
+            detail = f"- **{str(row.get('category') or 'context').replace('_', ' ').title()}**"
+            if row.get("occurred_at"):
+                detail += f" — {row.get('occurred_at')}"
+            detail += f": {row.get('note') or ''}"
+            lines.append(detail)
 
     if state.intake_required:
         lines.append(

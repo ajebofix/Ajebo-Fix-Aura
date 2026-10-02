@@ -739,17 +739,30 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
     if interpreted.get("intent") in {"show_draft", "question", "no_change"} and not (
         interpreted.get("changes") or interpreted.get("additions")
     ):
-        reply = historical_review_preview(state)
+        if state.all_reviewed:
+            reply = historical_review_preview(state)
+            response_phase = "awaiting_apply_confirmation"
+            response_candidate_id = None
+        else:
+            reply = historical_candidate_prompt(
+                state,
+                current_candidate_id or state.next_candidate_id,
+            )
+            response_phase = (
+                "awaiting_date"
+                if state.pending_date_candidate_id == state.next_candidate_id
+                else "reviewing"
+            )
+            response_candidate_id = state.next_candidate_id
+
         note = str(interpreted.get("assistant_note") or "").strip()
         if note and interpreted.get("intent") == "question":
             reply = f"{note}\n\n{reply}"
         return {
             "reply": reply,
-            "phase": (
-                "awaiting_apply_confirmation" if state.all_reviewed else "reviewing"
-            ),
+            "phase": response_phase,
             "extraction_id": extraction_id,
-            "candidate_id": state.next_candidate_id,
+            "candidate_id": response_candidate_id,
             "provider_status": "ok",
             "provider": interpretation.provider,
             "provider_model": interpretation.model,

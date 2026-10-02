@@ -851,6 +851,43 @@ def _scope_guard_interpretation(
     )
 
 
+def _context_note_identity(value: Any) -> str:
+    """Normalize context text for safe correction/reclassification matching."""
+
+    text = re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    if not text:
+        return ""
+
+    month_names = "|".join(_MONTH_NUMBERS)
+    text = re.sub(
+        r"^(?:reported concern|workshop assessment|assessment finding|"
+        r"tyre incident|tire incident|client/advisor context|client advisor context)"
+        r"\s*(?:—|-|:)?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        rf"^\d{{1,2}}\s+(?:{month_names})\s+20\d{{2}}\s*:?[ ]*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text.strip()
+
+
+def _context_notes_match(left: Any, right: Any) -> bool:
+    left_key = _context_note_identity(left)
+    right_key = _context_note_identity(right)
+    if not left_key or not right_key:
+        return False
+    if left_key == right_key:
+        return True
+
+    shorter, longer = sorted((left_key, right_key), key=len)
+    return len(shorter) >= 64 and longer.startswith(shorter)
+
+
 def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
     """Preserve explicit advisor context that must not become completed work."""
 
@@ -862,40 +899,50 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
     seen: set[tuple[str, str]] = set()
     labeled_ranges: list[tuple[int, int]] = []
 
-    label_categories = (
-        ("reported concern", "reported_concern"),
-        ("workshop assessment", "assessment_finding"),
-        ("assessment finding", "assessment_finding"),
-        ("tyre incident", "external_event"),
-        ("tire incident", "external_event"),
-        ("client/advisor context", "client_advisor_context"),
-        ("client advisor context", "client_advisor_context"),
+    label_categories = {
+        "reported concern": "reported_concern",
+        "workshop assessment": "assessment_finding",
+        "assessment finding": "assessment_finding",
+        "tyre incident": "external_event",
+        "tire incident": "external_event",
+        "client/advisor context": "client_advisor_context",
+        "client advisor context": "client_advisor_context",
+    }
+    labels_pattern = "|".join(
+        re.escape(label) for label in sorted(label_categories, key=len, reverse=True)
+    )
+    label_re = re.compile(
+        rf"(?P<label>{labels_pattern})\s*(?:—|-|:)?\s*",
+        re.IGNORECASE,
+    )
+    matches = list(label_re.finditer(text))
+
+    request_boundary_re = re.compile(
+        r"\b(?:please\s+(?:add|update|show)|do\s+not\s+record|"
+        r"confirm\s+and\s+record)\b",
+        re.IGNORECASE,
     )
 
-    cursor = 0
-    for raw_block in re.split(r"\n\s*\n", text):
-        block = re.sub(r"\s+", " ", raw_block).strip()
-        if not block:
-            continue
-        offset = text.find(raw_block, cursor)
-        if offset < 0:
-            offset = cursor
-        cursor = offset + len(raw_block)
-        lowered = block.lower()
+    for index, match in enumerate(matches):
+        label = match.group("label").lower()
+        category = label_categories[label]
+        start = match.start()
+        content_start = match.end()
+        finish = matches[index + 1].start() if index + 1 < len(matches) else len(text)
 
-        category = next(
-            (
-                category_name
-                for label, category_name in label_categories
-                if lowered.startswith(label)
-            ),
-            None,
-        )
-        if category is None:
+        if index + 1 == len(matches):
+            boundary = request_boundary_re.search(text, content_start, finish)
+            if boundary is not None:
+                finish = boundary.start()
+
+        raw_content = text[content_start:finish].strip(" \n\t:;,.")
+        if not raw_content:
+            labeled_ranges.append((start, finish))
             continue
 
-        date_match = _EXPLICIT_DATE_RE.search(block)
+        date_match = _EXPLICIT_DATE_RE.match(raw_content)
         occurred_at = None
+        note_text = raw_content
         if date_match:
             try:
                 occurred_at = datetime(
@@ -905,10 +952,11 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
                 ).date().isoformat()
             except ValueError:
                 occurred_at = None
+            note_text = raw_content[date_match.end():].lstrip(" :—-")
 
-        note = _clip(block, 1200)
+        note = _clip(note_text, 1200)
         if note:
-            key = (category, note.lower())
+            key = (category, _context_note_identity(note))
             if key not in seen:
                 notes.append(
                     {
@@ -918,7 +966,7 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
                     }
                 )
                 seen.add(key)
-        labeled_ranges.append((offset, offset + len(raw_block)))
+        labeled_ranges.append((start, finish))
 
     sentence_rows: list[tuple[int, str]] = []
     for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
@@ -959,7 +1007,7 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
         note = _clip(sentence, 1200)
         if not note:
             continue
-        key = (category, note.lower())
+        key = (category, _context_note_identity(note))
         if key in seen:
             continue
         seen.add(key)
@@ -1303,9 +1351,9 @@ def update_review_from_interpretation(
         for row in context_rows
     }
     context_by_note = {
-        str(row.get("note") or "").strip().lower(): row
+        _context_note_identity(row.get("note")): row
         for row in context_rows
-        if str(row.get("note") or "").strip()
+        if _context_note_identity(row.get("note"))
     }
     for item in interpretation.get("context_notes") or []:
         if not isinstance(item, dict):
@@ -1326,15 +1374,34 @@ def update_review_from_interpretation(
         } or not note:
             continue
 
-        normalized_note = note.lower()
+        normalized_note = _context_note_identity(note)
         existing_note = context_by_note.get(normalized_note)
+        if existing_note is None:
+            existing_note = next(
+                (
+                    row
+                    for row in context_rows
+                    if _context_notes_match(row.get("note"), note)
+                ),
+                None,
+            )
         if existing_note is not None:
             existing_category = str(existing_note.get("category") or "")
             existing_date = _clip(existing_note.get("occurred_at"), 64)
-            if existing_category != category or existing_date != occurred_at:
+            existing_text = _clip(existing_note.get("note"), 1200)
+            if (
+                existing_category != category
+                or existing_date != occurred_at
+                or existing_text != note
+            ):
+                old_identity = _context_note_identity(existing_note.get("note"))
                 existing_note["category"] = category
                 existing_note["occurred_at"] = occurred_at
+                existing_note["note"] = note
                 existing_note["advisor_supplied"] = True
+                if old_identity:
+                    context_by_note.pop(old_identity, None)
+                context_by_note[normalized_note] = existing_note
                 changed = True
             continue
 

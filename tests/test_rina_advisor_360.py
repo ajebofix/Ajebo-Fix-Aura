@@ -1239,6 +1239,7 @@ def test_historical_recap_survives_transient_provider_failure(app, monkeypatch):
         audit = RinaAIAuditEvent.query.filter_by(
             request_id=response.request_id
         ).one()
-        assert audit.outcome == "answered_structured_fallback"
+        assert audit.outcome == "answered"
         assert audit.audit_metadata["failure_class"] == "transient"
+        assert audit.audit_metadata["fallback_kind"] == "reviewed_historical_recap"
         assert audit.audit_metadata["provider_attempted"] is True

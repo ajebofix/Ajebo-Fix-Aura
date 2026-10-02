@@ -101,7 +101,6 @@ def _audit_response(
     channel: str,
     context_version: int | None,
     failure_class: str | None = None,
-    fallback_kind: str | None = None,
     provider_attempted: bool,
     commit: bool,
 ) -> None:
@@ -113,8 +112,6 @@ def _audit_response(
     }
     if failure_class:
         metadata["failure_class"] = failure_class
-    if fallback_kind:
-        metadata["fallback_kind"] = fallback_kind
 
     record_rina_audit(
         request_id=response.request_id,
@@ -403,9 +400,6 @@ def orchestrate_rina(
                 channel=channel,
                 context_version=context.context_version,
                 failure_class=exc.failure_class,
-                fallback_kind=(
-                    "reviewed_historical_recap" if structured_fallback else None
-                ),
                 provider_attempted=False,
                 commit=audit_commit,
             )
@@ -487,9 +481,6 @@ def orchestrate_rina(
             channel=channel,
             context_version=context.context_version,
             failure_class=exc.failure_class,
-            fallback_kind=(
-                "reviewed_historical_recap" if structured_fallback else None
-            ),
             provider_attempted=True,
             commit=audit_commit,
         )

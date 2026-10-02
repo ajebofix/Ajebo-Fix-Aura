@@ -5,6 +5,10 @@ from test_rina_chat_cutover import _car, _own, _post_json, _sign_in, _user
 from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
 from historical_ingestion.models import HistoricalServiceEpisode
+from historical_ingestion.reconciliation import (
+    reconciliation_payload,
+    save_reconciliation_review,
+)
 from historical_ingestion.service import _payload_cipher
 from models import TreatmentPlan
 from rina.providers.base import RinaProviderError
@@ -1294,3 +1298,93 @@ def test_labeled_context_wins_over_keyword_heuristics_and_preserves_bosch_detail
     assert "external_event" in instructions
     assert "client_advisor_context" in instructions
     assert "resale valuation" in instructions
+
+
+def test_explicit_context_reclassifies_existing_persisted_wrong_category(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=336, role="admin")
+    owner = _user(suffix=337)
+    car = _car(suffix=336, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=336)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def provider_failure(_self, **_kwargs):
+        raise RinaProviderError("test provider unavailable")
+
+    monkeypatch.setattr(HistoricalReviewInterpreter, "interpret", provider_failure)
+
+    initial = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_may_correction()},
+    )
+    assert initial.status_code == 200
+
+    grille = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_grille_context_correction()},
+    )
+    assert grille.status_code == 200
+
+    extraction_id = grille.json["historical_review"]["extraction_id"]
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    reviewed = reconciliation_payload(extraction, reviewed=True)
+    bad_note = (
+        "Client/advisor context: Mr Demola said he intended to sell this Mercedes-Benz "
+        "and purchase another Mercedes-Benz, so we discussed the vehicle's resale "
+        "valuation. This was a discussion, not a mechanical intervention."
+    )
+    reviewed.setdefault("advisor_context_notes", []).append(
+        {
+            "category": "procurement",
+            "occurred_at": "2026-05-13",
+            "note": bad_note,
+            "advisor_supplied": True,
+        }
+    )
+    save_reconciliation_review(
+        extraction_id=extraction_id,
+        actor_user_id=admin.id,
+        reviewed_payload=reviewed,
+    )
+    db.session.commit()
+
+    corrected = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_remaining_context_correction()},
+    )
+    assert corrected.status_code == 200
+    reply = corrected.json["reply"].lower()
+
+    client_context_lines = [
+        line
+        for line in reply.splitlines()
+        if "client advisor context" in line or "client/advisor context" in line
+    ]
+    assert client_context_lines
+    assert any("client advisor context" in line for line in client_context_lines)
+
+    procurement_lines = [
+        line
+        for line in reply.splitlines()
+        if line.strip().startswith("- **procurement**")
+    ]
+    assert not any("resale valuation" in line for line in procurement_lines)
+
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    repaired = reconciliation_payload(extraction, reviewed=True)
+    matching = [
+        row
+        for row in repaired.get("advisor_context_notes") or []
+        if str(row.get("note") or "").strip().lower() == bad_note.lower()
+    ]
+    assert len(matching) == 1
+    assert matching[0]["category"] == "client_advisor_context"
+    assert matching[0]["occurred_at"] is None

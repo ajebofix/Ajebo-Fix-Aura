@@ -678,10 +678,45 @@ def _deterministic_non_mutating_interpretation(
     message: str,
     state: HistoricalReviewState,
 ) -> HistoricalReviewInterpretation | None:
-    text = " ".join(str(message or "").strip().lower().split()).strip(" .!?")
-    if not text:
+    lines = [
+        " ".join(raw.strip().lower().split()).strip(" .!?")
+        for raw in str(message or "").splitlines()
+        if raw.strip()
+    ]
+    if not lines:
         return None
 
+    benign_acknowledgements = {
+        "ok",
+        "okay",
+        "yes",
+        "alright",
+        "all right",
+        "got it",
+        "understood",
+    }
+    substantive_lines = [
+        line for line in lines if line not in benign_acknowledgements
+    ]
+
+    if not substantive_lines:
+        return HistoricalReviewInterpretation(
+            payload={
+                "intent": "question",
+                "changes": [],
+                "additions": [],
+                "episode_outcome": None,
+                "assistant_note": "Okay. The current historical draft is unchanged.",
+            },
+            provider="deterministic_review_navigation",
+            model="aura-history-navigation-v1",
+            provider_request_id=None,
+        )
+
+    if len(substantive_lines) != 1:
+        return None
+
+    text = substantive_lines[0]
     if text in {
         "show draft",
         "show the draft",

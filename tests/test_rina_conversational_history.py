@@ -1049,3 +1049,43 @@ def test_provider_no_change_does_not_show_final_review_while_intake_unresolved(
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+
+def test_multiline_scope_acknowledgement_ignores_benign_trailing_line(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=330, role="admin")
+    owner = _user(suffix=331)
+    car = _car(suffix=330, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=330)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def should_not_call_provider(_self, **_kwargs):
+        raise AssertionError("benign multiline acknowledgement must stay deterministic")
+
+    monkeypatch.setattr(
+        HistoricalReviewInterpreter,
+        "interpret",
+        should_not_call_provider,
+    )
+
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "We are reviewing the May history\nOkay",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json["historical_review"]["phase"] == "reviewing"
+    assert "This historical review is scoped to May 2026" in response.json["reply"]
+    assert "Historical clarification" in response.json["reply"]
+    assert "Ready for your final review" not in response.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0

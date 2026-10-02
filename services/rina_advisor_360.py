@@ -259,6 +259,23 @@ def _reconciliation_summary(
             }
         )
 
+    context_notes: list[dict[str, Any]] = []
+    for row in (payload.get("advisor_context_notes") or [])[:40]:
+        if not isinstance(row, dict):
+            continue
+        note = _clip(row.get("note"), limit=1200)
+        if not note:
+            continue
+        context_notes.append(
+            {
+                "category": _clip(row.get("category"), limit=48),
+                "occurred_at": _clip(row.get("occurred_at"), limit=64),
+                "note": note,
+                "advisor_supplied": row.get("advisor_supplied") is True,
+            }
+        )
+
+    applied_plan = applied_reconciliation_plan(extraction.id)
     counts = Counter(
         (
             str(item.get("advisor_decision") or "unsure")
@@ -277,6 +294,8 @@ def _reconciliation_summary(
         "advisor_review_note": _clip(payload.get("advisor_review_note"), limit=600),
         "decision_counts": dict(counts),
         "candidates": candidates,
+        "advisor_context_notes": context_notes,
+        "applied_treatment_plan_id": applied_plan.id if applied_plan is not None else None,
     }
 
 

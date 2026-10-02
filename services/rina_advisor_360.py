@@ -1450,6 +1450,66 @@ def _historical_recap_period(message: str) -> tuple[int, int, str] | None:
     )
 
 
+def direct_historical_recap_eligible(message: str) -> bool:
+    """Return True only for straightforward factual month/year history reads."""
+
+    if _historical_recap_period(message) is None:
+        return False
+
+    text = " ".join(str(message or "").lower().split())
+    complex_markers = (
+        "compare",
+        "versus",
+        " vs ",
+        "why ",
+        "why did",
+        "what caused",
+        "what should",
+        "should i",
+        "recommend",
+        "next step",
+        "next steps",
+        "safe to drive",
+        "diagnos",
+        "risk",
+        "predict",
+    )
+    return not any(marker in text for marker in complex_markers)
+
+
+def _display_component_name(value: object) -> str | None:
+    text = _clip(value, limit=220)
+    if not text:
+        return None
+    return text[:1].upper() + text[1:] if text == text.lower() else text
+
+
+def _component_is_redundant(*, action_title: object, component_name: object) -> bool:
+    title = re.sub(r"[^a-z0-9]+", " ", str(action_title or "").lower()).strip()
+    component = re.sub(r"[^a-z0-9]+", " ", str(component_name or "").lower()).strip()
+    return bool(component and component in title)
+
+
+def _context_note_sort_key(row: dict[str, Any]) -> tuple[int, str, str]:
+    category = str(row.get("category") or "other")
+    order = {
+        "reported_concern": 10,
+        "external_event": 20,
+        "assessment_finding": 30,
+        "procurement": 50,
+        "not_performed": 60,
+        "recommendation": 70,
+        "clarification": 80,
+        "client_advisor_context": 90,
+        "other": 100,
+    }
+    return (
+        order.get(category, 100),
+        str(row.get("occurred_at") or ""),
+        str(row.get("note") or ""),
+    )
+
+
 def _date_matches_period(value: object, *, year: int, month: int) -> bool:
     text = str(value or "").strip()
     match = re.match(r"^(?P<year>20\d{2})-(?P<month>\d{2})-", text)
@@ -1562,12 +1622,7 @@ def deterministic_historical_recap(
     if not matched:
         return None
 
-    lines = [
-        (
-            f"Rina's language service is temporarily unavailable, so this is a direct "
-            f"read of Aura's reviewed records for {month_name} {year}."
-        )
-    ]
+    lines = [f"Based on Aura's reviewed records for {month_name} {year}:"]
 
     for plan, payload in matched[:4]:
         actions = (
@@ -1580,15 +1635,45 @@ def deterministic_historical_recap(
             .all()
         )
         completed = [action for action in actions if action.status == "completed"]
-        context_notes = [
+        context_notes = sorted(
+            [
+                row
+                for row in (payload.get("advisor_context_notes") or [])
+                if isinstance(row, dict) and _clip(row.get("note"), limit=1200)
+            ],
+            key=_context_note_sort_key,
+        )
+        pre_work_context = [
             row
-            for row in (payload.get("advisor_context_notes") or [])
-            if isinstance(row, dict) and _clip(row.get("note"), limit=1200)
+            for row in context_notes
+            if str(row.get("category") or "")
+            in {"reported_concern", "external_event", "assessment_finding"}
+        ]
+        post_work_context = [
+            row
+            for row in context_notes
+            if row not in pre_work_context
         ]
 
         episode_title = _clip(payload.get("episode_title"), limit=255)
         if episode_title:
             lines.append(f"\n**{episode_title}**")
+
+        if pre_work_context:
+            lines.append("\n**What led to the workshop visit**")
+            for row in pre_work_context:
+                category = str(row.get("category") or "other")
+                label = _HISTORICAL_RECAP_LABELS.get(
+                    category,
+                    category.replace("_", " ").title(),
+                )
+                occurred_at = _clip(row.get("occurred_at"), limit=64)
+                note = _clip(row.get("note"), limit=1200)
+                item = f"- **{label}**"
+                if occurred_at:
+                    item += f" — {occurred_at}"
+                item += f": {note}"
+                lines.append(item)
 
         if completed:
             lines.append("\n**Recorded completed work**")
@@ -1600,17 +1685,20 @@ def deterministic_historical_recap(
                 item = f"- {action.title}"
                 if action_date:
                     item += f" — {action_date}"
-                component_name = detail.get("component_name")
+                component_name = _display_component_name(detail.get("component_name"))
                 component_condition = detail.get("component_condition")
-                if component_name:
+                if component_name and not _component_is_redundant(
+                    action_title=action.title,
+                    component_name=component_name,
+                ):
                     item += f" · {component_name}"
                 if component_condition not in {None, "", "unknown", "not_applicable"}:
                     item += f" · {component_condition}"
                 lines.append(item)
 
-        if context_notes:
-            lines.append("\n**Reviewed historical context — not additional completed work**")
-            for row in context_notes:
+        if post_work_context:
+            lines.append("\n**Additional reviewed context — not completed work**")
+            for row in post_work_context:
                 category = str(row.get("category") or "other")
                 label = _HISTORICAL_RECAP_LABELS.get(
                     category,
@@ -1625,8 +1713,8 @@ def deterministic_historical_recap(
                 lines.append(item)
 
     lines.append(
-        "\nThis recap distinguishes recorded completed work from contextual events, "
-        "recommendations, and items explicitly not performed by Ajebo Fix."
+        "\nAura separates recorded completed work from contextual events, "
+        "recommendations, discussions, and items not performed by Ajebo Fix."
     )
     return "\n".join(lines)
 

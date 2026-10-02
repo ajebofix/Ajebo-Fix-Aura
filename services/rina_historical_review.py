@@ -858,19 +858,6 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
     if not text:
         return []
 
-    dated_matches = list(_EXPLICIT_DATE_RE.finditer(text))
-    default_date = None
-    if dated_matches:
-        match = dated_matches[-1]
-        try:
-            default_date = datetime(
-                int(match.group(3)),
-                _MONTH_NUMBERS[match.group(2).lower()],
-                int(match.group(1)),
-            ).date().isoformat()
-        except ValueError:
-            default_date = None
-
     sentence_rows: list[tuple[int, str]] = []
     for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
         sentence = re.sub(r"\s+", " ", match.group(0)).strip()
@@ -882,9 +869,24 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
     for offset, sentence in sentence_rows:
         lowered = sentence.lower()
         category = None
+        explicit_label = False
 
-        if re.search(r"\b(?:purchas(?:e|ed)|bought|procured)\b", lowered):
-            category = "procurement"
+        if lowered.startswith("reported concern"):
+            category = "reported_concern"
+            explicit_label = True
+        elif lowered.startswith("workshop assessment") or lowered.startswith(
+            "assessment finding"
+        ):
+            category = "assessment_finding"
+            explicit_label = True
+        elif lowered.startswith("tyre incident") or lowered.startswith("tire incident"):
+            category = "external_event"
+            explicit_label = True
+        elif lowered.startswith("client/advisor context") or lowered.startswith(
+            "client advisor context"
+        ):
+            category = "client_advisor_context"
+            explicit_label = True
         elif re.search(
             r"\b(?:not|wasn't|was not|were not)\s+"
             r"(?:installed|fitted|replaced|performed|done|glued|bonded)\b",
@@ -899,11 +901,17 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
             category = "clarification"
         elif re.search(r"\b(?:advised|recommended|referred|told)\b", lowered):
             category = "recommendation"
+        elif re.search(r"\b(?:purchas(?:e|ed)|bought|procured)\b", lowered):
+            category = "procurement"
 
         if category is None:
             continue
 
-        occurred_at = _nearest_explicit_date_before(text, offset) or default_date
+        occurred_at = _nearest_explicit_date_before(text, offset)
+        if explicit_label and category == "client_advisor_context":
+            # Do not infer a date for an explicitly undated client/advisor discussion.
+            occurred_at = None
+
         note = _clip(sentence, 1200)
         if not note:
             continue
@@ -922,10 +930,65 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
     return notes[:20]
 
 
+def _explicit_existing_candidate_changes(
+    *,
+    message: str,
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Capture narrow, explicit detail corrections for already-reviewed work."""
+
+    text = re.sub(r"\s+", " ", str(message or "")).strip()
+    if not text:
+        return []
+
+    changes: list[dict[str, Any]] = []
+    starter_match = re.search(
+        r"\bbrand\s+new\s+(?P<brand>[A-Za-z0-9-]+)\s+starter\s+motor\b",
+        text,
+        re.IGNORECASE,
+    )
+    if starter_match:
+        row = next(
+            (
+                candidate
+                for candidate in candidates
+                if isinstance(candidate, dict)
+                and "starter motor" in str(
+                    candidate.get("title")
+                    or candidate.get("component_name")
+                    or ""
+                ).lower()
+            ),
+            None,
+        )
+        if row is not None and row.get("candidate_id"):
+            brand = starter_match.group("brand")
+            changes.append(
+                {
+                    "candidate_id": str(row["candidate_id"]),
+                    "mark_reviewed": False,
+                    "advisor_decision": None,
+                    "occurred_at": None,
+                    "component_condition": "new",
+                    "advisor_note": (
+                        f"Advisor explicitly confirmed the replacement was a brand new "
+                        f"{brand} starter motor."
+                    ),
+                    "title": None,
+                    "kind": "component_replacement",
+                    "component_name": f"{brand} starter motor",
+                    "component_location": None,
+                }
+            )
+
+    return changes
+
+
 def _enrich_interpretation_with_explicit_advisor_facts(
     *,
     message: str,
     interpretation: dict[str, Any],
+    candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload = deepcopy(interpretation)
     payload.setdefault("changes", [])
@@ -955,6 +1018,34 @@ def _enrich_interpretation_with_explicit_advisor_facts(
         payload["additions"].append(fallback)
         existing_by_key[key] = fallback
 
+    candidate_rows = [
+        row for row in (candidates or []) if isinstance(row, dict)
+    ]
+    deterministic_changes = _explicit_existing_candidate_changes(
+        message=message,
+        candidates=candidate_rows,
+    )
+    changes_by_id = {
+        str(row.get("candidate_id") or ""): row
+        for row in payload.get("changes") or []
+        if isinstance(row, dict)
+    }
+    for fallback in deterministic_changes:
+        candidate_id = str(fallback.get("candidate_id") or "")
+        existing = changes_by_id.get(candidate_id)
+        if existing is None:
+            payload["changes"].append(fallback)
+            changes_by_id[candidate_id] = fallback
+            continue
+        for field in (
+            "component_condition",
+            "advisor_note",
+            "kind",
+            "component_name",
+        ):
+            if not existing.get(field) and fallback.get(field) is not None:
+                existing[field] = fallback[field]
+
     explicit_context = _explicit_context_notes(message)
     existing_context_keys = {
         (str(row.get("category") or ""), str(row.get("note") or "").strip().lower())
@@ -972,7 +1063,7 @@ def _enrich_interpretation_with_explicit_advisor_facts(
             payload["intent"] = "update"
         if payload.get("episode_outcome") is None:
             payload["episode_outcome"] = "completed_work_described"
-    elif explicit_context:
+    elif explicit_context or deterministic_changes:
         if payload.get("intent") in {"show_draft", "question", "no_change", None}:
             payload["intent"] = "update"
     elif episode_title and payload.get("intent") in {"show_draft", "no_change", None}:

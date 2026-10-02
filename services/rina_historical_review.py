@@ -160,6 +160,10 @@ _REVIEW_SCHEMA: dict[str, Any] = {
                     "category": {
                         "type": "string",
                         "enum": [
+                            "reported_concern",
+                            "assessment_finding",
+                            "external_event",
+                            "client_advisor_context",
                             "procurement",
                             "recommendation",
                             "clarification",
@@ -230,9 +234,12 @@ Rules:
 - If an explicitly completed addition has no date, preserve it as an addition but
   leave its final confirmation pending; Aura will ask for the date.
 - Use context_notes for explicit episode facts that are not completed treatment work:
+  reported concerns, assessment findings, external incidents, client/advisor context,
   parts purchased/procured but not installed, recommendations/referrals, clarification
   of ambiguous source wording, and work the advisor explicitly says was not performed.
-  Never turn those context facts into completed additions.
+  Prefer the advisor's explicit labels (for example "Reported concern",
+  "Workshop assessment", "Tyre incident", or "Client/advisor context") over keyword
+  heuristics. Never turn those context facts into completed additions.
 - A final-review phase does not freeze the draft. If the advisor supplies substantive
   new facts or corrections while awaiting final confirmation, treat them as an update.
 - If the advisor explicitly lists completed work, every clearly listed completed item

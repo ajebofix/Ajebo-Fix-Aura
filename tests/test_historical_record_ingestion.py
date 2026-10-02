@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from reportlab.pdfgen import canvas
@@ -29,6 +30,7 @@ from historical_ingestion.service import (
 from models import Car, CarOwnership, TreatmentPlan, User
 from historical_ingestion.advisor_analyzer import (
     HistoricalAdvisorAnalysis,
+    HistoricalAdvisorAnalyzer,
     HistoricalBackgroundResponse,
 )
 from rina.providers.base import RinaProviderRejectedError
@@ -77,6 +79,64 @@ class RecordingStorageProvider:
 
     def exists(self, *, object_key: str) -> bool:
         return object_key in self.objects
+
+
+
+class _RecordingResponsesClient:
+    def __init__(self):
+        self.create_kwargs = None
+
+    def create(self, **kwargs):
+        self.create_kwargs = kwargs
+        return SimpleNamespace(
+            id="resp-recording",
+            status="queued",
+            model="fake-background-model",
+        )
+
+    def retrieve(self, response_id):
+        return SimpleNamespace(
+            id=response_id,
+            status="failed",
+            model="fake-background-model",
+            error=SimpleNamespace(
+                type="server_error",
+                code="pdf_processing_failed",
+                message="The PDF could not be processed.",
+            ),
+            incomplete_details=None,
+        )
+
+
+class _RecordingOpenAIClient:
+    def __init__(self):
+        self.responses = _RecordingResponsesClient()
+
+
+def test_background_analyzer_uses_low_pdf_detail_and_captures_terminal_error():
+    client = _RecordingOpenAIClient()
+    analyzer = HistoricalAdvisorAnalyzer(
+        client=client,
+        model="fake-background-model",
+        reasoning_effort="high",
+    )
+
+    started, direct_pdf_used = analyzer.start_understanding_background(
+        pdf_payload=b"%PDF-1.7 fake",
+        extracted_text="--- PAGE 1 ---\nHistorical service record",
+        trusted_vehicle_context={"audience": "Ajebo Fix professional advisor"},
+    )
+    assert direct_pdf_used is True
+    assert started.status == "queued"
+    content = client.responses.create_kwargs["input"][0]["content"]
+    pdf_item = next(item for item in content if item["type"] == "input_file")
+    assert pdf_item["detail"] == "low"
+
+    failed = analyzer.retrieve_background("resp-recording")
+    assert failed.status == "failed"
+    assert "type=server_error" in failed.failure_detail
+    assert "code=pdf_processing_failed" in failed.failure_detail
+    assert "The PDF could not be processed." in failed.failure_detail
 
 
 class FakeHistoricalProvider:

@@ -1400,6 +1400,237 @@ def _profile_audit_context(owner_user_id: int | None) -> list[dict[str, Any]]:
     ]
 
 
+_HISTORICAL_RECAP_MONTHS = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+_HISTORICAL_RECAP_LABELS = {
+    "reported_concern": "Reported concern",
+    "assessment_finding": "Assessment finding",
+    "external_event": "External event",
+    "client_advisor_context": "Client/advisor context",
+    "procurement": "Procurement",
+    "recommendation": "Recommendation",
+    "clarification": "Clarification",
+    "not_performed": "Not performed",
+    "other": "Historical context",
+}
+
+
+def _historical_recap_period(message: str) -> tuple[int, int, str] | None:
+    text = str(message or "").lower()
+    intent = re.search(
+        r"\b(?:what happened|history|historical|recap|summary|summari[sz]e|recorded)\b",
+        text,
+    )
+    if intent is None:
+        return None
+
+    months = "|".join(_HISTORICAL_RECAP_MONTHS)
+    match = re.search(rf"\b(?P<month>{months})\s+(?P<year>20\d{{2}})\b", text)
+    if match is None:
+        return None
+
+    month_name = match.group("month").lower()
+    return (
+        int(match.group("year")),
+        _HISTORICAL_RECAP_MONTHS[month_name],
+        month_name.title(),
+    )
+
+
+def _date_matches_period(value: object, *, year: int, month: int) -> bool:
+    text = str(value or "").strip()
+    match = re.match(r"^(?P<year>20\d{2})-(?P<month>\d{2})-", text)
+    if match is None:
+        return False
+    return int(match.group("year")) == year and int(match.group("month")) == month
+
+
+def _reviewed_reconciliation_payload(
+    extraction_id: int | None,
+) -> tuple[EvidenceExtraction | None, dict[str, Any] | None]:
+    if not extraction_id:
+        return None, None
+    extraction = db.session.get(EvidenceExtraction, int(extraction_id))
+    if extraction is None or extraction.review_status not in {"accepted", "corrected"}:
+        return extraction, None
+    try:
+        return extraction, decrypt_extraction_payload(extraction, reviewed=True)
+    except HistoricalIngestionError:
+        return extraction, None
+
+
+def deterministic_historical_recap(
+    context: RinaResolvedContext,
+    message: str,
+) -> str | None:
+    """Read reviewed durable history without a language-model dependency.
+
+    This is deliberately narrow: privileged users, the active vehicle only,
+    and an explicit month/year recap request.
+    """
+
+    if context.authority not in _PRIVILEGED:
+        return None
+
+    period = _historical_recap_period(message)
+    if period is None:
+        return None
+    year, month, month_name = period
+
+    plans = (
+        TreatmentPlan.query.filter_by(
+            car_id=context.car_id,
+            record_origin="historical_reconciliation",
+        )
+        .order_by(TreatmentPlan.created_at.desc(), TreatmentPlan.id.desc())
+        .limit(24)
+        .all()
+    )
+
+    matched: list[tuple[TreatmentPlan, dict[str, Any]]] = []
+    for plan in plans:
+        extraction, payload = _reviewed_reconciliation_payload(plan.source_extraction_id)
+        if extraction is None or payload is None:
+            continue
+
+        title_text = " ".join(
+            str(value or "")
+            for value in (
+                plan.title,
+                payload.get("episode_title"),
+                payload.get("source_episode_title"),
+                payload.get("summary"),
+            )
+        ).lower()
+        named_period = f"{month_name.lower()} {year}" in title_text
+
+        dated = any(
+            _date_matches_period(value, year=year, month=month)
+            for value in (
+                payload.get("episode_date_start"),
+                payload.get("episode_date_end"),
+            )
+        )
+        if not dated:
+            dated = any(
+                _date_matches_period(
+                    row.get("occurred_at") or row.get("suggested_occurred_at"),
+                    year=year,
+                    month=month,
+                )
+                for row in (payload.get("candidates") or [])
+                if isinstance(row, dict)
+            )
+        if not dated:
+            dated = any(
+                _date_matches_period(row.get("occurred_at"), year=year, month=month)
+                for row in (payload.get("advisor_context_notes") or [])
+                if isinstance(row, dict)
+            )
+
+        action_dates = (
+            TreatmentAction.query.filter_by(
+                treatment_plan_id=plan.id,
+                car_id=context.car_id,
+            )
+            .order_by(TreatmentAction.id.asc())
+            .limit(_MAX_ACTIONS_PER_PLAN)
+            .all()
+        )
+        if not dated:
+            dated = any(
+                _date_matches_period(action.completed_at, year=year, month=month)
+                for action in action_dates
+            )
+
+        if named_period or dated:
+            matched.append((plan, payload))
+
+    if not matched:
+        return None
+
+    lines = [
+        (
+            f"Rina's language service is temporarily unavailable, so this is a direct "
+            f"read of Aura's reviewed records for {month_name} {year}."
+        )
+    ]
+
+    for plan, payload in matched[:4]:
+        actions = (
+            TreatmentAction.query.filter_by(
+                treatment_plan_id=plan.id,
+                car_id=context.car_id,
+            )
+            .order_by(TreatmentAction.id.asc())
+            .limit(_MAX_ACTIONS_PER_PLAN)
+            .all()
+        )
+        completed = [action for action in actions if action.status == "completed"]
+        context_notes = [
+            row
+            for row in (payload.get("advisor_context_notes") or [])
+            if isinstance(row, dict) and _clip(row.get("note"), limit=1200)
+        ]
+
+        episode_title = _clip(payload.get("episode_title"), limit=255)
+        if episode_title:
+            lines.append(f"\n**{episode_title}**")
+
+        if completed:
+            lines.append("\n**Recorded completed work**")
+            for action in completed:
+                detail = _completion_detail(action) or {}
+                action_date = _iso(action.completed_at)
+                if action_date:
+                    action_date = action_date[:10]
+                item = f"- {action.title}"
+                if action_date:
+                    item += f" — {action_date}"
+                component_name = detail.get("component_name")
+                component_condition = detail.get("component_condition")
+                if component_name:
+                    item += f" · {component_name}"
+                if component_condition not in {None, "", "unknown", "not_applicable"}:
+                    item += f" · {component_condition}"
+                lines.append(item)
+
+        if context_notes:
+            lines.append("\n**Reviewed historical context — not additional completed work**")
+            for row in context_notes:
+                category = str(row.get("category") or "other")
+                label = _HISTORICAL_RECAP_LABELS.get(
+                    category,
+                    category.replace("_", " ").title(),
+                )
+                occurred_at = _clip(row.get("occurred_at"), limit=64)
+                note = _clip(row.get("note"), limit=1200)
+                item = f"- **{label}**"
+                if occurred_at:
+                    item += f" — {occurred_at}"
+                item += f": {note}"
+                lines.append(item)
+
+    lines.append(
+        "\nThis recap distinguishes recorded completed work from contextual events, "
+        "recommendations, and items explicitly not performed by Ajebo Fix."
+    )
+    return "\n".join(lines)
+
+
 def build_rina_advisor_360_context(
     context: RinaResolvedContext,
 ) -> dict[str, Any] | None:

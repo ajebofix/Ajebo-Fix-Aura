@@ -148,9 +148,32 @@ def _historical_review_start_requested(message: str) -> bool:
 
 def _explicit_historical_apply_confirmation(message: str) -> bool:
     text = _normalise_chat_command(message).strip(" .!?")
-    if text in {
+    if not text or len(text) > 120:
+        return False
+
+    # Final durable-write authorization must be a short, affirmative command.
+    # Never treat explanatory text such as "do not write until I confirm and
+    # record it" as authorization merely because it contains both words.
+    if any(
+        marker in text
+        for marker in (
+            "do not ",
+            "don't ",
+            "dont ",
+            "not yet",
+            "until i confirm",
+            "before i confirm",
+            "wait for",
+        )
+    ):
+        return False
+
+    return text in {
         "confirm and record",
         "confirm & record",
+        "confirm and record it",
+        "yes confirm and record",
+        "yes confirm and record it",
         "record it",
         "record them",
         "yes record it",
@@ -159,12 +182,7 @@ def _explicit_historical_apply_confirmation(message: str) -> bool:
         "go ahead and record them",
         "apply approved history",
         "apply the approved history",
-    }:
-        return True
-    return (
-        ("record" in text or "apply" in text)
-        and any(token in text for token in ("confirm", "yes", "go ahead", "approved"))
-    )
+    }
 
 
 def _historical_review_cancel_requested(message: str) -> bool:

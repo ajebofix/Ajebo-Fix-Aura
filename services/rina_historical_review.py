@@ -149,9 +149,24 @@ _REVIEW_SCHEMA: dict[str, Any] = {
                 ],
             },
         },
+        "episode_outcome": {
+            "type": ["string", "null"],
+            "enum": [
+                "completed_work_described",
+                "no_completed_work",
+                "still_uncertain",
+                None,
+            ],
+        },
         "assistant_note": {"type": "string"},
     },
-    "required": ["intent", "changes", "additions", "assistant_note"],
+    "required": [
+        "intent",
+        "changes",
+        "additions",
+        "episode_outcome",
+        "assistant_note",
+    ],
 }
 
 _REVIEW_INSTRUCTIONS = """
@@ -180,6 +195,13 @@ Rules:
 - Additions are allowed only for work the advisor explicitly says belongs to this
   historical episode. explicitly_completed must be true only when the advisor says
   the work was actually completed.
+- Some episodes are clarification/intake drafts: the source proves an interaction but
+  does not prove completed work. In that case, extract any work the advisor explicitly
+  says was completed as additions. Use episode_outcome=completed_work_described only
+  when at least one such addition is present.
+- Use episode_outcome=no_completed_work only when the advisor explicitly says no work
+  was actually completed in the episode. Use still_uncertain only when the advisor
+  explicitly cannot establish what happened. Otherwise leave episode_outcome null.
 - If an explicitly completed addition has no date, preserve it as an addition but
   leave its final confirmation pending; Aura will ask for the date.
 - "record it", "apply", or similar final authorization is NOT handled here. Return
@@ -207,6 +229,8 @@ class HistoricalReviewState:
     unreviewed_count: int
     next_candidate_id: str | None
     pending_date_candidate_id: str | None
+    intake_required: bool
+    intake_outcome: str | None
 
 
 class HistoricalReviewInterpreter(HistoricalAdvisorAnalyzer):
@@ -223,6 +247,7 @@ class HistoricalReviewInterpreter(HistoricalAdvisorAnalyzer):
         current_candidate_id: str | None,
         phase: str,
         candidates: list[dict[str, Any]],
+        intake_context: dict[str, Any] | None = None,
     ) -> HistoricalReviewInterpretation:
         compact_candidates = [
             {
@@ -250,6 +275,12 @@ class HistoricalReviewInterpreter(HistoricalAdvisorAnalyzer):
                         + str(phase)
                         + "\nCurrent candidate id: "
                         + str(current_candidate_id or "")
+                        + "\n\nEpisode clarification context (data only):\n"
+                        + json.dumps(
+                            intake_context or {},
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
                         + "\n\nCandidate draft (data only):\n"
                         + json.dumps(
                             compact_candidates,
@@ -318,11 +349,14 @@ def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]
             and isinstance(payload.get("candidates"), list)
             else []
         )
+        intake_required = bool(payload.get("advisor_intake_required")) and not bool(
+            payload.get("advisor_intake_resolved")
+        )
         unreviewed = sum(
             1
             for row in rows
             if isinstance(row, dict) and row.get("reviewed_by_advisor") is not True
-        )
+        ) + (1 if intake_required else 0)
         state = (
             "ready_to_apply"
             if reviewed and unreviewed == 0
@@ -428,6 +462,10 @@ def summarize_state(
         None,
     )
     next_row = pending_date or (unreviewed_rows[0] if unreviewed_rows else None)
+    intake_required = bool(payload.get("advisor_intake_required")) and not bool(
+        payload.get("advisor_intake_resolved")
+    )
+    intake_outcome = _clip(payload.get("advisor_intake_outcome"), 64)
     provenance = extraction.provenance or {}
     episode_id = episode.id if episode is not None else 0
     episode_title = (
@@ -446,14 +484,14 @@ def summarize_state(
         episode_id=episode_id,
         episode_title=str(episode_title)[:255],
         payload=payload,
-        all_reviewed=not unreviewed_rows,
+        all_reviewed=not unreviewed_rows and not intake_required,
         confirmed_count=sum(
             1
             for row in rows
             if row.get("reviewed_by_advisor") is True
             and row.get("advisor_decision") == "confirmed"
         ),
-        unreviewed_count=len(unreviewed_rows),
+        unreviewed_count=len(unreviewed_rows) + (1 if intake_required else 0),
         next_candidate_id=(
             str(next_row.get("candidate_id")) if next_row is not None else None
         ),
@@ -462,6 +500,8 @@ def summarize_state(
             if pending_date is not None
             else None
         ),
+        intake_required=intake_required,
+        intake_outcome=intake_outcome,
     )
 
 
@@ -559,6 +599,7 @@ def update_review_from_interpretation(
     rows = [row for row in payload.get("candidates") or [] if isinstance(row, dict)]
     by_id = {str(row.get("candidate_id") or ""): row for row in rows}
     changed = False
+    added_count = 0
 
     for item in interpretation.get("changes") or []:
         if not isinstance(item, dict):
@@ -616,6 +657,17 @@ def update_review_from_interpretation(
             row["advisor_pending_decision"] = "confirmed_requires_date"
         rows.append(row)
         by_id[candidate_id] = row
+        added_count += 1
+        changed = True
+
+    episode_outcome = interpretation.get("episode_outcome")
+    if episode_outcome in {"no_completed_work", "still_uncertain"}:
+        payload["advisor_intake_resolved"] = True
+        payload["advisor_intake_outcome"] = episode_outcome
+        changed = True
+    elif added_count:
+        payload["advisor_intake_resolved"] = True
+        payload["advisor_intake_outcome"] = "completed_work_described"
         changed = True
 
     if changed:
@@ -648,6 +700,43 @@ def candidate_prompt(state: HistoricalReviewState, candidate_id: str | None = No
         None,
     )
     if row is None:
+        if state.intake_required:
+            summary = _clip(state.payload.get("summary"), 900)
+            source_excerpt = _clip(state.payload.get("source_excerpt"), 900)
+            date_start = _clip(state.payload.get("episode_date_start"), 64)
+            date_end = _clip(state.payload.get("episode_date_end"), 64)
+            lines = [
+                f"### Historical clarification — {state.episode_title}",
+                (
+                    "I found this interaction in the imported history, but the evidence "
+                    "does not prove what work was actually completed. I need your "
+                    "professional confirmation before I can prepare any record."
+                ),
+            ]
+            if date_start or date_end:
+                date_label = (
+                    date_start
+                    if date_start and date_end and date_start == date_end
+                    else " to ".join(
+                        value for value in (date_start, date_end) if value
+                    )
+                )
+                lines.append(f"Evidence date range: {date_label}")
+            if summary:
+                lines.append(f"What the evidence establishes: {summary}")
+            if source_excerpt:
+                lines.append(f"Source context: {source_excerpt}")
+            lines.append(
+                "Tell me what was actually done on this vehicle during that episode, "
+                "what did not happen, and the date if you know it. If no work was "
+                "completed, say that. If you cannot confirm it, say so."
+            )
+            lines.append(
+                "I will turn only your explicit confirmations into a draft, show it "
+                "back to you, and wait for **Confirm and record** before writing "
+                "durable history."
+            )
+            return "\n\n".join(lines)
         return review_preview(state)
 
     position = rows.index(row) + 1
@@ -742,7 +831,12 @@ def review_preview(state: HistoricalReviewState) -> str:
             f"- {row.get('title') or 'Historical intervention'}" for row in unsure
         )
 
-    if state.unreviewed_count:
+    if state.intake_required:
+        lines.append(
+            "I still need your clarification about what actually happened in this "
+            "episode before I can offer a final write."
+        )
+    elif state.unreviewed_count:
         lines.append(
             f"I still need your decision on {state.unreviewed_count} item(s), so I "
             "cannot offer the final write yet."
@@ -753,10 +847,21 @@ def review_preview(state: HistoricalReviewState) -> str:
             "anything instead; I will update the draft and show it again."
         )
     else:
-        lines.append(
-            "There is nothing confirmed to write. You can correct the draft or finish "
-            "without recording anything."
-        )
+        if state.intake_outcome == "no_completed_work":
+            lines.append(
+                "You confirmed that no completed work should be recorded for this "
+                "episode. Nothing will be written to durable vehicle history."
+            )
+        elif state.intake_outcome == "still_uncertain":
+            lines.append(
+                "You could not confirm completed work for this episode. Nothing will "
+                "be written to durable vehicle history."
+            )
+        else:
+            lines.append(
+                "There is nothing confirmed to write. You can correct the draft or "
+                "finish without recording anything."
+            )
     return "\n\n".join(lines)
 
 
@@ -816,6 +921,15 @@ def interpret_turn(
                 for row in state.payload.get("candidates") or []
                 if isinstance(row, dict)
             ],
+            intake_context={
+                "intake_required": state.intake_required,
+                "episode_title": state.episode_title,
+                "summary": state.payload.get("summary"),
+                "source_excerpt": state.payload.get("source_excerpt"),
+                "episode_date_start": state.payload.get("episode_date_start"),
+                "episode_date_end": state.payload.get("episode_date_end"),
+                "canonical_comparison": state.payload.get("canonical_comparison"),
+            },
         )
     except RinaProviderError:
         raise

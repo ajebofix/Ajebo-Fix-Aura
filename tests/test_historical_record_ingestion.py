@@ -462,6 +462,23 @@ class TerminalPdfFailureRecoveryProvider(FakeBackgroundHistoricalProvider):
         )
 
 
+
+class CreditExhaustedBackgroundProvider(TerminalPdfFailureRecoveryProvider):
+    def retrieve_background(self, response_id: str):
+        self.retrieve_calls.append(response_id)
+        if response_id == "resp-understanding":
+            return HistoricalBackgroundResponse(
+                response_id=response_id,
+                status="failed",
+                model=self.model,
+                failure_detail=(
+                    "code=credit_balance_exhausted "
+                    "message=You have no credits remaining."
+                ),
+            )
+        raise AssertionError(f"unexpected response id {response_id}")
+
+
 class FailingHistoricalProvider:
     provider_name = "failing-history"
 
@@ -890,6 +907,51 @@ def test_direct_pdf_terminal_failure_recovers_via_text_only_background(app):
         assert usable is not None
         assert usable.id == background.id
         assert usable.status == "completed"
+        assert TreatmentPlan.query.count() == 0
+        assert TreatmentAction.query.count() == 0
+
+
+
+def test_credit_exhaustion_skips_text_fallback_and_surfaces_actionable_message(app):
+    with app.app_context():
+        owner = _user(suffix=18)
+        advisor = _user(suffix=19, role="admin")
+        car = _owned_car(owner, suffix=18)
+        analyzer = CreditExhaustedBackgroundProvider()
+        storage = RecordingStorageProvider()
+        payload = _pdf_bytes(
+            "JOB-2026-003\n"
+            "Historical electrical concern"
+        )
+
+        started = ingest_pdf_document_background(
+            user_id=advisor.id,
+            car_id=car.id,
+            file_stream=BytesIO(payload),
+            declared_content_type="application/pdf",
+            purpose="service_document",
+            visibility="advisor",
+            retention_days=RETENTION_DAYS,
+            storage_provider=storage,
+            language_provider=analyzer,
+        )
+        background = latest_background_extraction(started.evidence_id)
+        assert background is not None
+
+        failed = advance_historical_background_analysis(
+            extraction_id=background.id,
+            actor_user_id=advisor.id,
+            language_provider=analyzer,
+        )
+
+        assert failed.status == "failed"
+        assert failed.phase == "failed"
+        assert analyzer.started_text_recovery == 0
+        assert "no API credits available" in failed.message
+
+        db.session.refresh(background)
+        assert background.provenance["failure_code"] == "credit_balance_exhausted"
+        assert "credit_balance_exhausted" in background.provenance["failure_detail"]
         assert TreatmentPlan.query.count() == 0
         assert TreatmentAction.query.count() == 0
 

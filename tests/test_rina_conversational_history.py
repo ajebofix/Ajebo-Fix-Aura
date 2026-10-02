@@ -7,7 +7,11 @@ from extensions import db
 from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.service import _payload_cipher
 from models import TreatmentPlan
-from services.rina_historical_review import HistoricalReviewInterpretation
+from rina.providers.base import RinaProviderError
+from services.rina_historical_review import (
+    HistoricalReviewInterpretation,
+    HistoricalReviewInterpreter,
+)
 from treatment.models import TreatmentAction
 
 
@@ -794,3 +798,170 @@ def test_historical_intelligence_bridge_rejects_other_vehicle_candidates(app, cl
         .all()
     )
     assert direct == []
+
+
+def _demola_may_correction() -> str:
+    return (
+        "Please correct the May 2026 workshop history for Mr Demola’s Mercedes. "
+        "On 12 May 2026, Mr Demola reported that after driving the vehicle for a "
+        "while, if the engine was switched off while hot, the vehicle would not "
+        "restart until it had cooled for a few hours. I asked him to bring the "
+        "vehicle to the workshop for assessment, and he came on 13 May 2026. "
+        "During the workshop assessment, we found the starter motor was burnt/faulty "
+        "and was the cause identified for the hard-start condition. The work completed "
+        "by Ajebo Fix was: * starter motor replacement * engine oil change * engine "
+        "oil filter replacement Please show me the structured historical draft first. "
+        "Do not write this to durable history until I confirm and record it."
+    )
+
+
+def _start_uncertain_may_review(client, *, admin, car) -> None:
+    _sign_in(client, admin)
+    _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
+    started = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": "Let's record the previous jobs on this Mercedes.",
+        },
+    )
+    assert started.status_code == 200
+    assert started.json["historical_review"]["phase"] == "reviewing"
+
+
+def test_explicit_may_correction_survives_provider_under_extraction(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=320, role="admin")
+    owner = _user(suffix=321)
+    car = _car(suffix=320, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=320)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def under_extract(_self, **_kwargs):
+        return HistoricalReviewInterpretation(
+            payload={
+                "intent": "no_change",
+                "changes": [],
+                "additions": [],
+                "episode_outcome": None,
+                "assistant_note": "",
+            },
+            provider="test-provider",
+            model="test-model",
+            provider_request_id="req-under-extracted",
+        )
+
+    monkeypatch.setattr(HistoricalReviewInterpreter, "interpret", under_extract)
+
+    corrected = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_may_correction()},
+    )
+    assert corrected.status_code == 200
+    assert "Ready for your final review" in corrected.json["reply"]
+    assert "May 2026 workshop history" in corrected.json["reply"]
+    assert "tyre incident and resale discussion" not in corrected.json["reply"]
+    assert "starter motor replacement" in corrected.json["reply"].lower()
+    assert "engine oil change" in corrected.json["reply"].lower()
+    assert "engine oil filter replacement" in corrected.json["reply"].lower()
+    assert "2026-05-13" in corrected.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    applied = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Confirm and record"},
+    )
+    assert applied.status_code == 200
+    plan = TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).one()
+    actions = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).all()
+    assert {action.title.lower() for action in actions} == {
+        "starter motor replacement",
+        "engine oil change",
+        "engine oil filter replacement",
+    }
+
+
+def test_explicit_completed_work_has_safe_fallback_when_provider_fails(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=322, role="admin")
+    owner = _user(suffix=323)
+    car = _car(suffix=322, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=322)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def provider_failure(_self, **_kwargs):
+        raise RinaProviderError("test provider unavailable")
+
+    monkeypatch.setattr(HistoricalReviewInterpreter, "interpret", provider_failure)
+
+    corrected = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_may_correction()},
+    )
+    assert corrected.status_code == 200
+    assert corrected.json["state"] == "answered"
+    assert "starter motor replacement" in corrected.json["reply"].lower()
+    assert "engine oil change" in corrected.json["reply"].lower()
+    assert "engine oil filter replacement" in corrected.json["reply"].lower()
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+
+def test_historical_correction_does_not_cross_month_scopes(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=324, role="admin")
+    owner = _user(suffix=325)
+    car = _car(suffix=324, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=324)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def should_not_call_provider(_self, **_kwargs):
+        raise AssertionError("scope mismatch should stop before provider interpretation")
+
+    monkeypatch.setattr(
+        HistoricalReviewInterpreter,
+        "interpret",
+        should_not_call_provider,
+    )
+
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": (
+                "Please correct the June 2026 workshop history. "
+                "The work completed was: * brake fluid service"
+            ),
+        },
+    )
+    assert response.status_code == 200
+    assert "refers to June 2026" in response.json["reply"]
+    assert "active historical draft is scoped to May 2026" in response.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0

@@ -1166,8 +1166,8 @@ def interpret_turn(
     if scope_guard is not None:
         return scope_guard
 
-    active = interpreter or HistoricalReviewInterpreter()
     try:
+        active = interpreter or HistoricalReviewInterpreter()
         parsed = active.interpret(
             message=message,
             current_candidate_id=current_candidate_id,

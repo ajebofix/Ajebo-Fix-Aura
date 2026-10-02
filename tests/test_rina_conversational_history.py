@@ -1089,3 +1089,93 @@ def test_multiline_scope_acknowledgement_ignores_benign_trailing_line(
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+
+def _demola_grille_context_correction() -> str:
+    return (
+        "I need to add one more correction to the May 2026 workshop history before "
+        "I confirm it.\n\n"
+        "Later that night on 13 May 2026, we remembered that one of the chrome trim "
+        "pieces on the front grille had fallen off in the past. A replacement chrome "
+        "trim piece purchased.\n\n"
+        "Because it was already late and the panel beaters had closed, the replacement "
+        "chrome was not installed by Ajebo Fix that night. I advised Mr Demola to keep "
+        "the chrome trim in the vehicle and take it to a panel beater close to his house "
+        "the following day to have it properly bonded in place.\n\n"
+        "The 'windscreen adhesive' mentioned in the WhatsApp history referred to the "
+        "black adhesive commonly used by panel beaters for bonding windscreens, which I "
+        "recommended for securing the grille chrome trim because other type of glues "
+        "and adhesives didn't keep the chrome trim and that's why it fell off. It did "
+        "not mean that the vehicle required windscreen repair or that windscreen work "
+        "was performed.\n\n"
+        "Please update the historical draft to reflect this distinction and show me the "
+        "revised draft. Do not record anything yet."
+    )
+
+
+def test_noncompleted_grille_context_survives_provider_failure_without_extra_action(
+    app,
+    client,
+    monkeypatch,
+):
+    admin = _user(suffix=332, role="admin")
+    owner = _user(suffix=333)
+    car = _car(suffix=332, model="GL 450")
+    car.year = 2014
+    _own(owner=owner, car=car, suffix=332)
+    _uncertain_historical_intelligence_source(admin=admin, car=car)
+    _start_uncertain_may_review(client, admin=admin, car=car)
+
+    def provider_failure(_self, **_kwargs):
+        raise RinaProviderError("test provider unavailable")
+
+    monkeypatch.setattr(HistoricalReviewInterpreter, "interpret", provider_failure)
+
+    initial = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_may_correction()},
+    )
+    assert initial.status_code == 200
+    assert initial.json["historical_review"]["phase"] == "awaiting_apply_confirmation"
+    assert "starter motor replacement" in initial.json["reply"].lower()
+
+    corrected = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": _demola_grille_context_correction()},
+    )
+    assert corrected.status_code == 200
+    assert corrected.json["historical_review"]["phase"] == "awaiting_apply_confirmation"
+    reply = corrected.json["reply"].lower()
+    assert "historical context — not completed work" in reply
+    assert "replacement chrome trim piece purchased" in reply
+    assert "not installed by ajebo fix" in reply
+    assert "windscreen adhesive" in reply
+    assert "windscreen repair" in reply
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    applied = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Confirm and record"},
+    )
+    assert applied.status_code == 200
+
+    plan = TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).one()
+    actions = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).all()
+    assert len(actions) == 3
+    assert {action.title.lower() for action in actions} == {
+        "starter motor replacement",
+        "engine oil change",
+        "engine oil filter replacement",
+    }
+    assert "not completed treatment work" in (plan.internal_instructions or "").lower()
+    assert "replacement chrome trim piece purchased" in (
+        plan.internal_instructions or ""
+    ).lower()
+    assert "windscreen adhesive" in (plan.internal_instructions or "").lower()

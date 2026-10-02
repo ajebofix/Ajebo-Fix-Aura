@@ -1302,6 +1302,11 @@ def update_review_from_interpretation(
         )
         for row in context_rows
     }
+    context_by_note = {
+        str(row.get("note") or "").strip().lower(): row
+        for row in context_rows
+        if str(row.get("note") or "").strip()
+    }
     for item in interpretation.get("context_notes") or []:
         if not isinstance(item, dict):
             continue
@@ -1320,17 +1325,30 @@ def update_review_from_interpretation(
             "other",
         } or not note:
             continue
-        key = (category, occurred_at or "", note.lower())
+
+        normalized_note = note.lower()
+        existing_note = context_by_note.get(normalized_note)
+        if existing_note is not None:
+            existing_category = str(existing_note.get("category") or "")
+            existing_date = _clip(existing_note.get("occurred_at"), 64)
+            if existing_category != category or existing_date != occurred_at:
+                existing_note["category"] = category
+                existing_note["occurred_at"] = occurred_at
+                existing_note["advisor_supplied"] = True
+                changed = True
+            continue
+
+        key = (category, occurred_at or "", normalized_note)
         if key in context_keys:
             continue
-        context_rows.append(
-            {
-                "category": category,
-                "occurred_at": occurred_at,
-                "note": note,
-                "advisor_supplied": True,
-            }
-        )
+        new_row = {
+            "category": category,
+            "occurred_at": occurred_at,
+            "note": note,
+            "advisor_supplied": True,
+        }
+        context_rows.append(new_row)
+        context_by_note[normalized_note] = new_row
         context_keys.add(key)
         changed = True
 

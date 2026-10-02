@@ -858,36 +858,81 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
     if not text:
         return []
 
+    notes: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    labeled_ranges: list[tuple[int, int]] = []
+
+    label_categories = (
+        ("reported concern", "reported_concern"),
+        ("workshop assessment", "assessment_finding"),
+        ("assessment finding", "assessment_finding"),
+        ("tyre incident", "external_event"),
+        ("tire incident", "external_event"),
+        ("client/advisor context", "client_advisor_context"),
+        ("client advisor context", "client_advisor_context"),
+    )
+
+    cursor = 0
+    for raw_block in re.split(r"\n\s*\n", text):
+        block = re.sub(r"\s+", " ", raw_block).strip()
+        if not block:
+            continue
+        offset = text.find(raw_block, cursor)
+        if offset < 0:
+            offset = cursor
+        cursor = offset + len(raw_block)
+        lowered = block.lower()
+
+        category = next(
+            (
+                category_name
+                for label, category_name in label_categories
+                if lowered.startswith(label)
+            ),
+            None,
+        )
+        if category is None:
+            continue
+
+        date_match = _EXPLICIT_DATE_RE.search(block)
+        occurred_at = None
+        if date_match:
+            try:
+                occurred_at = datetime(
+                    int(date_match.group(3)),
+                    _MONTH_NUMBERS[date_match.group(2).lower()],
+                    int(date_match.group(1)),
+                ).date().isoformat()
+            except ValueError:
+                occurred_at = None
+
+        note = _clip(block, 1200)
+        if note:
+            key = (category, note.lower())
+            if key not in seen:
+                notes.append(
+                    {
+                        "category": category,
+                        "occurred_at": occurred_at,
+                        "note": note,
+                    }
+                )
+                seen.add(key)
+        labeled_ranges.append((offset, offset + len(raw_block)))
+
     sentence_rows: list[tuple[int, str]] = []
     for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
+        if any(start <= match.start() < finish for start, finish in labeled_ranges):
+            continue
         sentence = re.sub(r"\s+", " ", match.group(0)).strip()
         if sentence:
             sentence_rows.append((match.start(), sentence))
 
-    notes: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
     for offset, sentence in sentence_rows:
         lowered = sentence.lower()
         category = None
-        explicit_label = False
 
-        if lowered.startswith("reported concern"):
-            category = "reported_concern"
-            explicit_label = True
-        elif lowered.startswith("workshop assessment") or lowered.startswith(
-            "assessment finding"
-        ):
-            category = "assessment_finding"
-            explicit_label = True
-        elif lowered.startswith("tyre incident") or lowered.startswith("tire incident"):
-            category = "external_event"
-            explicit_label = True
-        elif lowered.startswith("client/advisor context") or lowered.startswith(
-            "client advisor context"
-        ):
-            category = "client_advisor_context"
-            explicit_label = True
-        elif re.search(
+        if re.search(
             r"\b(?:not|wasn't|was not|were not)\s+"
             r"(?:installed|fitted|replaced|performed|done|glued|bonded)\b",
             lowered,
@@ -908,10 +953,6 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
             continue
 
         occurred_at = _nearest_explicit_date_before(text, offset)
-        if explicit_label and category == "client_advisor_context":
-            # Do not infer a date for an explicitly undated client/advisor discussion.
-            occurred_at = None
-
         note = _clip(sentence, 1200)
         if not note:
             continue
@@ -928,7 +969,6 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
         )
 
     return notes[:20]
-
 
 def _explicit_existing_candidate_changes(
     *,

@@ -15,7 +15,10 @@ from rina.providers.base import (
     RinaProviderError,
 )
 from rina.providers.openai_provider import OpenAIRinaProvider
-from services.rina_advisor_360 import deterministic_historical_recap
+from services.rina_advisor_360 import (
+    deterministic_historical_recap,
+    direct_historical_recap_eligible,
+)
 from services.rina_audit import record_rina_audit
 from services.rina_authority import RinaAuthorityError
 from services.rina_context_resolver import (
@@ -298,6 +301,39 @@ def orchestrate_rina(
             commit=audit_commit,
         )
         return response
+
+    if direct_historical_recap_eligible(clean_message):
+        direct_recap = deterministic_historical_recap(
+            context,
+            clean_message,
+        )
+        if direct_recap:
+            response = RinaResponse(
+                request_id=resolved_request_id,
+                car_id=context.car_id,
+                authority=context.authority,
+                state=RINA_STATE_ANSWERED,
+                message=direct_recap,
+                uncertainty=None,
+                escalation=None,
+                actions=(),
+                evidence_refs=(),
+                provider_status=PROVIDER_STATUS_NOT_CALLED,
+            )
+            _audit_response(
+                response=response,
+                user_id=user_id,
+                outcome="answered",
+                provider=None,
+                provider_model=None,
+                provider_request_id=None,
+                evidence_refs=(),
+                channel=channel,
+                context_version=context.context_version,
+                provider_attempted=False,
+                commit=audit_commit,
+            )
+            return response
 
     rina_request = RinaRequest(
         request_id=resolved_request_id,

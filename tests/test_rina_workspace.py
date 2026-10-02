@@ -29,6 +29,10 @@ def test_admin_can_open_workspace_and_search_client_vehicle(app, client):
     page = client.get("/chat/workspace")
     assert page.status_code == 200
     assert b'id="rina-chat-shell"' in page.data
+    assert b'<textarea' in page.data
+    assert b'id="rina-input"' in page.data
+    assert b'enterkeyhint="enter"' in page.data
+    assert b"mobileMultilineEnter" in page.data
     assert car.vin.encode()[-6:] not in page.data
     result = client.get("/chat/vehicle-search", query_string={"q": owner.name})
     assert result.status_code == 200

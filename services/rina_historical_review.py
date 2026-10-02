@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 import json
+import re
 from typing import Any
 
 from evidence.models import EvidenceExtraction
@@ -204,6 +206,11 @@ Rules:
   explicitly cannot establish what happened. Otherwise leave episode_outcome null.
 - If an explicitly completed addition has no date, preserve it as an addition but
   leave its final confirmation pending; Aura will ask for the date.
+- A final-review phase does not freeze the draft. If the advisor supplies substantive
+  new facts or corrections while awaiting final confirmation, treat them as an update.
+- If the advisor explicitly lists completed work, every clearly listed completed item
+  must be represented as an addition unless it already maps to an existing candidate.
+  Never return no_change merely because a final draft already exists.
 - "record it", "apply", or similar final authorization is NOT handled here. Return
   no_change for final-write language; the deterministic Aura authority layer owns
   the final confirmation step.
@@ -510,6 +517,242 @@ def _clip(value: object, limit: int) -> str | None:
     return text[:limit] if text else None
 
 
+_MONTH_NUMBERS = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+_EXPLICIT_DATE_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+"
+    r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\s+(20\d{2})\b",
+    re.IGNORECASE,
+)
+
+_CORRECTION_LABEL_RE = re.compile(
+    r"\b(?:please\s+)?(?:correct|update|rewrite|replace)\s+(?:the\s+)?"
+    r"(?P<label>[^.!?\n]{3,120}?\bhistory)\b",
+    re.IGNORECASE,
+)
+
+_COMPLETED_BLOCK_RE = re.compile(
+    r"\b(?:(?:the\s+)?work\s+completed(?:\s+by\s+[^:,.]{1,60})?"
+    r"|(?:the\s+)?completed\s+work)\s+"
+    r"(?:was|were|included|includes)\s*:?\s*",
+    re.IGNORECASE,
+)
+
+_MONTH_YEAR_RE = re.compile(
+    r"\b(January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\s+(20\d{2})\b",
+    re.IGNORECASE,
+)
+
+
+def _advisor_episode_title(message: str) -> str | None:
+    match = _CORRECTION_LABEL_RE.search(str(message or ""))
+    return _clip(match.group("label"), 255) if match else None
+
+
+def _nearest_explicit_date_before(message: str, offset: int) -> str | None:
+    matches = [
+        match
+        for match in _EXPLICIT_DATE_RE.finditer(str(message or ""))
+        if match.end() <= int(offset)
+    ]
+    if not matches:
+        return None
+
+    match = matches[-1]
+    if int(offset) - match.end() > 600:
+        return None
+
+    day = int(match.group(1))
+    month = _MONTH_NUMBERS[match.group(2).lower()]
+    year = int(match.group(3))
+    try:
+        return datetime(year, month, day).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _work_title_key(value: object) -> tuple[str, ...]:
+    text = str(value or "").lower()
+    text = re.sub(r"\breplace(?:d|ment)?\b", " replacement ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return tuple(sorted(token for token in text.split() if token))
+
+
+def _explicit_completed_additions(message: str) -> list[dict[str, Any]]:
+    text = str(message or "")
+    match = _COMPLETED_BLOCK_RE.search(text)
+    if not match:
+        return []
+
+    block = text[match.end() : match.end() + 900]
+    block = re.split(
+        r"\b(?:Please\s+show|Do\s+not\s+write|Before\s+writing)\b",
+        block,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    block = re.sub(r"^\s*[-*•]\s*", "", block)
+    parts = re.split(r"(?:\s+\*\s+|\n\s*[-*•]\s*|;\s*)", block)
+    occurred_at = _nearest_explicit_date_before(text, match.start())
+
+    additions: list[dict[str, Any]] = []
+    for raw in parts:
+        title = re.sub(r"\s+", " ", raw).strip(" \t\r\n.,:;-")
+        if not title or len(title) < 3:
+            continue
+        title = title[:255]
+
+        is_replacement = bool(
+            re.search(r"\breplace(?:d|ment)?\b", title, re.IGNORECASE)
+        )
+        component_name = None
+        if is_replacement:
+            component_name = re.sub(
+                r"\breplace(?:d|ment)?\b",
+                " ",
+                title,
+                flags=re.IGNORECASE,
+            )
+            component_name = re.sub(r"\s+", " ", component_name).strip(" -")
+            component_name = component_name[:255] or None
+
+        additions.append(
+            {
+                "title": title,
+                "kind": "component_replacement" if is_replacement else "service",
+                "component_name": component_name,
+                "component_location": None,
+                "component_condition": "unknown" if is_replacement else "not_applicable",
+                "occurred_at": occurred_at,
+                "advisor_note": (
+                    "Explicitly stated by the advisor in the current correction as "
+                    "completed work."
+                ),
+                "explicitly_completed": True,
+            }
+        )
+    return additions
+
+
+def _message_episode_month(message: str) -> tuple[int, int] | None:
+    values = {
+        (int(year), _MONTH_NUMBERS[month.lower()])
+        for month, year in _MONTH_YEAR_RE.findall(str(message or ""))
+    }
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _state_episode_month(state: HistoricalReviewState) -> tuple[int, int] | None:
+    values: set[tuple[int, int]] = set()
+    for field in ("episode_date_start", "episode_date_end"):
+        value = str(state.payload.get(field) or "").strip()
+        match = re.match(r"^(20\d{2})-(\d{2})-", value)
+        if match:
+            values.add((int(match.group(1)), int(match.group(2))))
+    if len(values) == 1:
+        return next(iter(values))
+
+    match = _MONTH_YEAR_RE.search(state.episode_title)
+    if match:
+        return (int(match.group(2)), _MONTH_NUMBERS[match.group(1).lower()])
+    return None
+
+
+def _scope_guard_interpretation(
+    *,
+    message: str,
+    state: HistoricalReviewState,
+) -> HistoricalReviewInterpretation | None:
+    target = _message_episode_month(message)
+    active = _state_episode_month(state)
+    if target is None or active is None or target == active:
+        return None
+
+    target_year, target_month = target
+    active_year, active_month = active
+    target_name = next(
+        name.title() for name, number in _MONTH_NUMBERS.items() if number == target_month
+    )
+    active_name = next(
+        name.title() for name, number in _MONTH_NUMBERS.items() if number == active_month
+    )
+    return HistoricalReviewInterpretation(
+        payload={
+            "intent": "question",
+            "changes": [],
+            "additions": [],
+            "episode_outcome": None,
+            "assistant_note": (
+                f"Your correction refers to {target_name} {target_year}, but the active "
+                f"historical draft is scoped to {active_name} {active_year}. I did not "
+                "mix those episodes or change the draft. Close this review or select "
+                "the matching historical episode first."
+            ),
+        },
+        provider="deterministic_scope_guard",
+        model="aura-history-scope-v1",
+        provider_request_id=None,
+    )
+
+
+def _enrich_interpretation_with_explicit_advisor_facts(
+    *,
+    message: str,
+    interpretation: dict[str, Any],
+) -> dict[str, Any]:
+    payload = deepcopy(interpretation)
+    payload.setdefault("changes", [])
+    payload.setdefault("additions", [])
+    payload.setdefault("episode_outcome", None)
+    payload.setdefault("assistant_note", "")
+
+    episode_title = _advisor_episode_title(message)
+    if episode_title:
+        payload["episode_title"] = episode_title
+
+    existing_by_key = {
+        _work_title_key(row.get("title")): row
+        for row in payload.get("additions") or []
+        if isinstance(row, dict) and _work_title_key(row.get("title"))
+    }
+    explicit_additions = _explicit_completed_additions(message)
+    for fallback in explicit_additions:
+        key = _work_title_key(fallback.get("title"))
+        existing = existing_by_key.get(key)
+        if existing is not None:
+            existing["explicitly_completed"] = True
+            if not existing.get("occurred_at") and fallback.get("occurred_at"):
+                existing["occurred_at"] = fallback["occurred_at"]
+            continue
+        payload["additions"].append(fallback)
+        existing_by_key[key] = fallback
+
+    if explicit_additions:
+        if payload.get("intent") in {"show_draft", "question", "no_change", None}:
+            payload["intent"] = "update"
+        if payload.get("episode_outcome") is None:
+            payload["episode_outcome"] = "completed_work_described"
+    elif episode_title and payload.get("intent") in {"show_draft", "no_change", None}:
+        payload["intent"] = "update"
+
+    return payload
+
+
 def _new_advisor_candidate_id(rows: list[dict[str, Any]]) -> str:
     used = {str(row.get("candidate_id") or "") for row in rows}
     for index in range(1, 1000):
@@ -600,6 +843,15 @@ def update_review_from_interpretation(
     by_id = {str(row.get("candidate_id") or ""): row for row in rows}
     changed = False
     added_count = 0
+
+    advisor_episode_title = _clip(interpretation.get("episode_title"), 255)
+    if advisor_episode_title:
+        source_episode_title = _clip(payload.get("episode_title"), 255)
+        if source_episode_title and not payload.get("source_episode_title"):
+            payload["source_episode_title"] = source_episode_title
+        payload["episode_title"] = advisor_episode_title
+        payload["advisor_episode_title"] = advisor_episode_title
+        changed = True
 
     for item in interpretation.get("changes") or []:
         if not isinstance(item, dict):
@@ -910,9 +1162,13 @@ def interpret_turn(
     phase: str,
     interpreter: HistoricalReviewInterpreter | None = None,
 ) -> HistoricalReviewInterpretation:
-    active = interpreter or HistoricalReviewInterpreter()
+    scope_guard = _scope_guard_interpretation(message=message, state=state)
+    if scope_guard is not None:
+        return scope_guard
+
     try:
-        return active.interpret(
+        active = interpreter or HistoricalReviewInterpreter()
+        parsed = active.interpret(
             message=message,
             current_candidate_id=current_candidate_id,
             phase=phase,
@@ -931,5 +1187,31 @@ def interpret_turn(
                 "canonical_comparison": state.payload.get("canonical_comparison"),
             },
         )
+        return HistoricalReviewInterpretation(
+            payload=_enrich_interpretation_with_explicit_advisor_facts(
+                message=message,
+                interpretation=parsed.payload,
+            ),
+            provider=parsed.provider,
+            model=parsed.model,
+            provider_request_id=parsed.provider_request_id,
+        )
     except RinaProviderError:
+        deterministic = _enrich_interpretation_with_explicit_advisor_facts(
+            message=message,
+            interpretation={
+                "intent": "no_change",
+                "changes": [],
+                "additions": [],
+                "episode_outcome": None,
+                "assistant_note": "",
+            },
+        )
+        if deterministic.get("additions"):
+            return HistoricalReviewInterpretation(
+                payload=deterministic,
+                provider="deterministic_advisor_fact_guard",
+                model="aura-explicit-completion-v1",
+                provider_request_id=None,
+            )
         raise

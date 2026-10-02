@@ -147,15 +147,16 @@
 
     <div class="rina-input-row">
 
-        <input
-            type="text"
+        <textarea
             id="rina-input"
             aria-label="Message to Rina"
             class="rina-input"
+            rows="1"
+            enterkeyhint="enter"
             placeholder="Choose a vehicle to start..."
             autocomplete="off"
             disabled
-        >
+        ></textarea>
 
         <button
             type="button"
@@ -210,6 +211,10 @@
     let loading = false;
     let accountWelcome = null;
     let rinaVoice = null;
+    const mobileMultilineEnter = (
+        (window.matchMedia?.("(pointer: coarse)")?.matches ?? false)
+        || (navigator.maxTouchPoints || 0) > 0
+    );
 
     function authorityPresentation(authority) {
         if (authority === "driver") {
@@ -1342,6 +1347,7 @@
         setChatEnabled(true);
         appendMessage("user", text);
         inputEl.value = "";
+        inputEl.style.height = "";
         const loadingNode = appendLoading();
 
         try {
@@ -1483,11 +1489,19 @@
         }
 
         sendEl.addEventListener("click", sendToRina);
+        inputEl.addEventListener("input", () => {
+            inputEl.style.height = "auto";
+            inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
+        });
         inputEl.addEventListener("keydown", event => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                sendToRina();
-            }
+            if (event.key !== "Enter" || event.isComposing) return;
+
+            // Mobile/touch keyboards use Enter as a real paragraph break.
+            // Desktop keeps Enter-to-send and Shift+Enter for a newline.
+            if (mobileMultilineEnter || event.shiftKey) return;
+
+            event.preventDefault();
+            sendToRina();
         });
 
         setChatEnabled(false);

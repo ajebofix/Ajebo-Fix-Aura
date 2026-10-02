@@ -185,6 +185,17 @@ def _explicit_historical_apply_confirmation(message: str) -> bool:
     }
 
 
+def _historical_review_restart_requested(message: str) -> bool:
+    text = _normalise_chat_command(message).strip(" .!?")
+    return text in {
+        "restart review",
+        "restart historical review",
+        "start historical review over",
+        "start the historical review over",
+        "start over",
+    }
+
+
 def _historical_review_cancel_requested(message: str) -> bool:
     text = _normalise_chat_command(message).strip(" .!?")
     return text in {
@@ -509,6 +520,10 @@ def _history_review_choice_prompt(context) -> dict[str, object]:
 
 
 def _handle_historical_review_turn(*, context, message: str) -> dict[str, object]:
+    if _historical_review_restart_requested(message):
+        _clear_historical_review_binding()
+        return _history_review_choice_prompt(context)
+
     if _historical_review_cancel_requested(message):
         _clear_historical_review_binding()
         return {

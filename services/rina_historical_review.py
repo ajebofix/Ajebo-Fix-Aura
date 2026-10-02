@@ -1097,7 +1097,7 @@ def interpret_turn(
 ) -> HistoricalReviewInterpretation:
     active = interpreter or HistoricalReviewInterpreter()
     try:
-        return active.interpret(
+        parsed = active.interpret(
             message=message,
             current_candidate_id=current_candidate_id,
             phase=phase,
@@ -1116,5 +1116,31 @@ def interpret_turn(
                 "canonical_comparison": state.payload.get("canonical_comparison"),
             },
         )
+        return HistoricalReviewInterpretation(
+            payload=_enrich_interpretation_with_explicit_advisor_facts(
+                message=message,
+                interpretation=parsed.payload,
+            ),
+            provider=parsed.provider,
+            model=parsed.model,
+            provider_request_id=parsed.provider_request_id,
+        )
     except RinaProviderError:
+        deterministic = _enrich_interpretation_with_explicit_advisor_facts(
+            message=message,
+            interpretation={
+                "intent": "no_change",
+                "changes": [],
+                "additions": [],
+                "episode_outcome": None,
+                "assistant_note": "",
+            },
+        )
+        if deterministic.get("additions"):
+            return HistoricalReviewInterpretation(
+                payload=deterministic,
+                provider="deterministic_advisor_fact_guard",
+                model="aura-explicit-completion-v1",
+                provider_request_id=None,
+            )
         raise

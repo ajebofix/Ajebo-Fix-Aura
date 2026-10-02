@@ -781,6 +781,18 @@ def _text_from_extraction(
     return text, page_count
 
 
+def _is_credit_balance_exhausted(detail: object) -> bool:
+    return "credit_balance_exhausted" in str(detail or "").lower()
+
+
+def _credit_balance_message() -> str:
+    return (
+        "Rina's AI provider has no API credits available. Restore the configured "
+        "API credit balance before retrying. The private source remains safe and "
+        "no vehicle history was changed."
+    )
+
+
 def _background_message(phase: str) -> str:
     if phase == "understanding":
         return (
@@ -808,10 +820,16 @@ def _mark_background_failed(
     safe_detail = str(exc).replace("\n", " ").strip()[:900]
     extraction.status = "failed"
     extraction.completed_at = _utcnow_naive()
+    failure_code = (
+        "credit_balance_exhausted"
+        if _is_credit_balance_exhausted(safe_detail)
+        else None
+    )
     extraction.provenance = {
         **(extraction.provenance or {}),
         "background_stage": "failed",
         "failure_class": type(exc).__name__ if isinstance(exc, Exception) else "ProviderFailure",
+        "failure_code": failure_code,
         "failure_detail": safe_detail,
     }
     db.session.commit()
@@ -826,7 +844,11 @@ def _mark_background_failed(
         extraction_id=extraction.id,
         status="failed",
         phase="failed",
-        message=_background_message("failed"),
+        message=(
+            _credit_balance_message()
+            if failure_code == "credit_balance_exhausted"
+            else _background_message("failed")
+        ),
         review_ready=has_completed_structured_extraction(extraction.evidence_id),
     )
 
@@ -1240,6 +1262,7 @@ def advance_historical_background_analysis(
             stage == "understanding"
             and bool(provenance.get("direct_pdf_input"))
             and not bool(provenance.get("pdf_text_fallback_attempted"))
+            and not _is_credit_balance_exhausted(terminal_detail)
             and hasattr(analyzer, "start_understanding_text_background")
         )
         if can_retry_text_only:

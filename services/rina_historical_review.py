@@ -643,6 +643,49 @@ def _explicit_completed_additions(message: str) -> list[dict[str, Any]]:
     return additions
 
 
+def _enrich_interpretation_with_explicit_advisor_facts(
+    *,
+    message: str,
+    interpretation: dict[str, Any],
+) -> dict[str, Any]:
+    payload = deepcopy(interpretation)
+    payload.setdefault("changes", [])
+    payload.setdefault("additions", [])
+    payload.setdefault("episode_outcome", None)
+    payload.setdefault("assistant_note", "")
+
+    episode_title = _advisor_episode_title(message)
+    if episode_title:
+        payload["episode_title"] = episode_title
+
+    existing_by_key = {
+        _work_title_key(row.get("title")): row
+        for row in payload.get("additions") or []
+        if isinstance(row, dict) and _work_title_key(row.get("title"))
+    }
+    explicit_additions = _explicit_completed_additions(message)
+    for fallback in explicit_additions:
+        key = _work_title_key(fallback.get("title"))
+        existing = existing_by_key.get(key)
+        if existing is not None:
+            existing["explicitly_completed"] = True
+            if not existing.get("occurred_at") and fallback.get("occurred_at"):
+                existing["occurred_at"] = fallback["occurred_at"]
+            continue
+        payload["additions"].append(fallback)
+        existing_by_key[key] = fallback
+
+    if explicit_additions:
+        if payload.get("intent") in {"show_draft", "question", "no_change", None}:
+            payload["intent"] = "update"
+        if payload.get("episode_outcome") is None:
+            payload["episode_outcome"] = "completed_work_described"
+    elif episode_title and payload.get("intent") in {"show_draft", "no_change", None}:
+        payload["intent"] = "update"
+
+    return payload
+
+
 def _new_advisor_candidate_id(rows: list[dict[str, Any]]) -> str:
     used = {str(row.get("candidate_id") or "") for row in rows}
     for index in range(1, 1000):
@@ -733,6 +776,15 @@ def update_review_from_interpretation(
     by_id = {str(row.get("candidate_id") or ""): row for row in rows}
     changed = False
     added_count = 0
+
+    advisor_episode_title = _clip(interpretation.get("episode_title"), 255)
+    if advisor_episode_title:
+        source_episode_title = _clip(payload.get("episode_title"), 255)
+        if source_episode_title and not payload.get("source_episode_title"):
+            payload["source_episode_title"] = source_episode_title
+        payload["episode_title"] = advisor_episode_title
+        payload["advisor_episode_title"] = advisor_episode_title
+        changed = True
 
     for item in interpretation.get("changes") or []:
         if not isinstance(item, dict):

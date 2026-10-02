@@ -204,6 +204,11 @@ Rules:
   explicitly cannot establish what happened. Otherwise leave episode_outcome null.
 - If an explicitly completed addition has no date, preserve it as an addition but
   leave its final confirmation pending; Aura will ask for the date.
+- A final-review phase does not freeze the draft. If the advisor supplies substantive
+  new facts or corrections while awaiting final confirmation, treat them as an update.
+- If the advisor explicitly lists completed work, every clearly listed completed item
+  must be represented as an addition unless it already maps to an existing candidate.
+  Never return no_change merely because a final draft already exists.
 - "record it", "apply", or similar final authorization is NOT handled here. Return
   no_change for final-write language; the deterministic Aura authority layer owns
   the final confirmation step.

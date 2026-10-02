@@ -884,14 +884,14 @@ def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
             lowered,
         ):
             category = "not_performed"
-        elif re.search(r"\b(?:advised|recommended|referred|told)\b", lowered):
-            category = "recommendation"
         elif re.search(
             r"\b(?:referred to|meant|did not mean|does not mean|"
             r"was not referring to|were not referring to)\b",
             lowered,
         ):
             category = "clarification"
+        elif re.search(r"\b(?:advised|recommended|referred|told)\b", lowered):
+            category = "recommendation"
 
         if category is None:
             continue

@@ -151,6 +151,28 @@ _REVIEW_SCHEMA: dict[str, Any] = {
                 ],
             },
         },
+        "context_notes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "procurement",
+                            "recommendation",
+                            "clarification",
+                            "not_performed",
+                            "other",
+                        ],
+                    },
+                    "occurred_at": {"type": ["string", "null"]},
+                    "note": {"type": "string"},
+                },
+                "required": ["category", "occurred_at", "note"],
+            },
+        },
         "episode_outcome": {
             "type": ["string", "null"],
             "enum": [
@@ -166,6 +188,7 @@ _REVIEW_SCHEMA: dict[str, Any] = {
         "intent",
         "changes",
         "additions",
+        "context_notes",
         "episode_outcome",
         "assistant_note",
     ],
@@ -206,6 +229,10 @@ Rules:
   explicitly cannot establish what happened. Otherwise leave episode_outcome null.
 - If an explicitly completed addition has no date, preserve it as an addition but
   leave its final confirmation pending; Aura will ask for the date.
+- Use context_notes for explicit episode facts that are not completed treatment work:
+  parts purchased/procured but not installed, recommendations/referrals, clarification
+  of ambiguous source wording, and work the advisor explicitly says was not performed.
+  Never turn those context facts into completed additions.
 - A final-review phase does not freeze the draft. If the advisor supplies substantive
   new facts or corrections while awaiting final confirmation, treat them as an update.
 - If the advisor explicitly lists completed work, every clearly listed completed item
@@ -817,6 +844,77 @@ def _scope_guard_interpretation(
     )
 
 
+def _explicit_context_notes(message: str) -> list[dict[str, Any]]:
+    """Preserve explicit advisor context that must not become completed work."""
+
+    text = str(message or "").strip()
+    if not text:
+        return []
+
+    dated_matches = list(_EXPLICIT_DATE_RE.finditer(text))
+    default_date = None
+    if dated_matches:
+        match = dated_matches[-1]
+        try:
+            default_date = datetime(
+                int(match.group(3)),
+                _MONTH_NUMBERS[match.group(2).lower()],
+                int(match.group(1)),
+            ).date().isoformat()
+        except ValueError:
+            default_date = None
+
+    sentence_rows: list[tuple[int, str]] = []
+    for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text, re.DOTALL):
+        sentence = re.sub(r"\s+", " ", match.group(0)).strip()
+        if sentence:
+            sentence_rows.append((match.start(), sentence))
+
+    notes: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for offset, sentence in sentence_rows:
+        lowered = sentence.lower()
+        category = None
+
+        if re.search(r"\b(?:purchas(?:e|ed)|bought|procured)\b", lowered):
+            category = "procurement"
+        elif re.search(
+            r"\b(?:not|wasn't|was not|were not)\s+"
+            r"(?:installed|fitted|replaced|performed|done|glued|bonded)\b",
+            lowered,
+        ):
+            category = "not_performed"
+        elif re.search(
+            r"\b(?:referred to|meant|did not mean|does not mean|"
+            r"was not referring to|were not referring to)\b",
+            lowered,
+        ):
+            category = "clarification"
+        elif re.search(r"\b(?:advised|recommended|referred|told)\b", lowered):
+            category = "recommendation"
+
+        if category is None:
+            continue
+
+        occurred_at = _nearest_explicit_date_before(text, offset) or default_date
+        note = _clip(sentence, 1200)
+        if not note:
+            continue
+        key = (category, note.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        notes.append(
+            {
+                "category": category,
+                "occurred_at": occurred_at,
+                "note": note,
+            }
+        )
+
+    return notes[:20]
+
+
 def _enrich_interpretation_with_explicit_advisor_facts(
     *,
     message: str,
@@ -825,6 +923,7 @@ def _enrich_interpretation_with_explicit_advisor_facts(
     payload = deepcopy(interpretation)
     payload.setdefault("changes", [])
     payload.setdefault("additions", [])
+    payload.setdefault("context_notes", [])
     payload.setdefault("episode_outcome", None)
     payload.setdefault("assistant_note", "")
 
@@ -849,11 +948,26 @@ def _enrich_interpretation_with_explicit_advisor_facts(
         payload["additions"].append(fallback)
         existing_by_key[key] = fallback
 
+    explicit_context = _explicit_context_notes(message)
+    existing_context_keys = {
+        (str(row.get("category") or ""), str(row.get("note") or "").strip().lower())
+        for row in payload.get("context_notes") or []
+        if isinstance(row, dict)
+    }
+    for note in explicit_context:
+        key = (note["category"], note["note"].strip().lower())
+        if key not in existing_context_keys:
+            payload["context_notes"].append(note)
+            existing_context_keys.add(key)
+
     if explicit_additions:
         if payload.get("intent") in {"show_draft", "question", "no_change", None}:
             payload["intent"] = "update"
         if payload.get("episode_outcome") is None:
             payload["episode_outcome"] = "completed_work_described"
+    elif explicit_context:
+        if payload.get("intent") in {"show_draft", "question", "no_change", None}:
+            payload["intent"] = "update"
     elif episode_title and payload.get("intent") in {"show_draft", "no_change", None}:
         payload["intent"] = "update"
 
@@ -1018,6 +1132,50 @@ def update_review_from_interpretation(
         by_id[candidate_id] = row
         added_count += 1
         changed = True
+
+    context_rows = [
+        row
+        for row in payload.get("advisor_context_notes") or []
+        if isinstance(row, dict)
+    ]
+    context_keys = {
+        (
+            str(row.get("category") or ""),
+            str(row.get("occurred_at") or ""),
+            str(row.get("note") or "").strip().lower(),
+        )
+        for row in context_rows
+    }
+    for item in interpretation.get("context_notes") or []:
+        if not isinstance(item, dict):
+            continue
+        category = str(item.get("category") or "").strip()
+        note = _clip(item.get("note"), 1200)
+        occurred_at = _clip(item.get("occurred_at"), 64)
+        if category not in {
+            "procurement",
+            "recommendation",
+            "clarification",
+            "not_performed",
+            "other",
+        } or not note:
+            continue
+        key = (category, occurred_at or "", note.lower())
+        if key in context_keys:
+            continue
+        context_rows.append(
+            {
+                "category": category,
+                "occurred_at": occurred_at,
+                "note": note,
+                "advisor_supplied": True,
+            }
+        )
+        context_keys.add(key)
+        changed = True
+
+    if context_rows:
+        payload["advisor_context_notes"] = context_rows[:40]
 
     episode_outcome = interpretation.get("episode_outcome")
     if episode_outcome in {"no_completed_work", "still_uncertain"}:
@@ -1190,6 +1348,20 @@ def review_preview(state: HistoricalReviewState) -> str:
             f"- {row.get('title') or 'Historical intervention'}" for row in unsure
         )
 
+    context_notes = [
+        row
+        for row in state.payload.get("advisor_context_notes") or []
+        if isinstance(row, dict)
+    ]
+    if context_notes:
+        lines.append("### Historical context — not completed work")
+        for row in context_notes:
+            detail = f"- **{str(row.get('category') or 'context').replace('_', ' ').title()}**"
+            if row.get("occurred_at"):
+                detail += f" — {row.get('occurred_at')}"
+            detail += f": {row.get('note') or ''}"
+            lines.append(detail)
+
     if state.intake_required:
         lines.append(
             "I still need your clarification about what actually happened in this "
@@ -1321,7 +1493,7 @@ def interpret_turn(
                 "assistant_note": "",
             },
         )
-        if deterministic.get("additions"):
+        if deterministic.get("additions") or deterministic.get("context_notes"):
             return HistoricalReviewInterpretation(
                 payload=deterministic,
                 provider="deterministic_advisor_fact_guard",

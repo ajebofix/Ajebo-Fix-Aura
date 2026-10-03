@@ -12,9 +12,11 @@ from typing import Any
 
 from rina.audit_models import RinaAIAuditEvent
 from services.rina_runtime_flags import (
+    rina_openai_max_output_tokens,
     rina_openai_max_retries,
     rina_openai_model,
     rina_openai_provider_enabled,
+    rina_openai_reasoning_effort,
     rina_openai_timeout_seconds,
     rina_orchestration_enabled,
 )
@@ -151,12 +153,44 @@ def _diagnosis(
             "next_action": "Verify OPENAI_API_KEY is present on the live web service and the provider flag is not forcing an invalid state.",
         }
 
+    if failure_class == "timeout":
+        return {
+            "status": "degraded",
+            "code": "provider_timeout",
+            "summary": "The latest OpenAI request exceeded Aura's configured provider timeout.",
+            "next_action": "Review request size and provider latency before increasing the timeout again.",
+        }
+
+    if failure_class == "quota_exhausted":
+        return {
+            "status": "blocked",
+            "code": "provider_quota_exhausted",
+            "summary": "OpenAI rejected the request because the API project had no usable quota or credit balance.",
+            "next_action": "Restore API project billing/credits before retrying Rina.",
+        }
+
+    if failure_class == "rate_limit":
+        return {
+            "status": "degraded",
+            "code": "provider_rate_limited",
+            "summary": "OpenAI rate-limited the latest Rina request.",
+            "next_action": "Review API project rate limits and recent traffic before retrying.",
+        }
+
+    if failure_class == "connection":
+        return {
+            "status": "degraded",
+            "code": "provider_connection_failure",
+            "summary": "Aura could not complete the network connection to OpenAI.",
+            "next_action": "Check Railway outbound connectivity and retry after transient network recovery.",
+        }
+
     if failure_class == "transient":
         return {
             "status": "degraded",
             "code": "provider_transient_failure",
-            "summary": "OpenAI was attempted but returned a transient availability, connection, timeout, rate-limit, or quota-class failure.",
-            "next_action": "Check OpenAI API project billing/credits and usage limits first, then Railway outbound connectivity if billing is healthy.",
+            "summary": "OpenAI was attempted but returned an unclassified transient provider failure.",
+            "next_action": "Check the latest provider audit and Railway logs before changing credentials.",
         }
 
     if failure_class == "rejected":
@@ -227,6 +261,8 @@ def build_rina_provider_diagnostics(*, limit: int = 10) -> dict[str, Any]:
             "model": rina_openai_model(),
             "timeout_seconds": rina_openai_timeout_seconds(),
             "max_retries": rina_openai_max_retries(),
+            "reasoning_effort": rina_openai_reasoning_effort(),
+            "max_output_tokens": rina_openai_max_output_tokens(),
         },
         "diagnosis": _diagnosis(
             orchestration_enabled=orchestration_enabled,

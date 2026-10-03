@@ -16,14 +16,20 @@ from openai import OpenAI
 
 from rina.providers.base import (
     RinaProviderConfigurationError,
+    RinaProviderConnectionError,
+    RinaProviderQuotaError,
+    RinaProviderRateLimitError,
     RinaProviderRejectedError,
     RinaProviderRequest,
     RinaProviderResult,
+    RinaProviderTimeoutError,
     RinaProviderTransientError,
 )
 from services.rina_runtime_flags import (
+    rina_openai_max_output_tokens,
     rina_openai_max_retries,
     rina_openai_model,
+    rina_openai_reasoning_effort,
     rina_openai_timeout_seconds,
 )
 
@@ -48,6 +54,8 @@ class OpenAIRinaProvider:
         self.max_retries = (
             max_retries if max_retries is not None else rina_openai_max_retries()
         )
+        self.reasoning_effort = rina_openai_reasoning_effort()
+        self.max_output_tokens = rina_openai_max_output_tokens()
 
         if client is not None:
             self._client = client
@@ -76,16 +84,47 @@ class OpenAIRinaProvider:
         )
 
     def generate(self, request: RinaProviderRequest) -> RinaProviderResult:
+        selected_model = request.model_hint or self.model
+        create_kwargs: dict[str, Any] = {
+            "model": selected_model,
+            "instructions": request.instructions,
+            "input": list(request.input_messages),
+            "store": False,
+            "max_output_tokens": self.max_output_tokens,
+        }
+        if selected_model.startswith(("gpt-5", "gpt-6", "o")):
+            create_kwargs["reasoning"] = {"effort": self.reasoning_effort}
+
         try:
-            response = self._client.responses.create(
-                model=request.model_hint or self.model,
-                instructions=request.instructions,
-                input=list(request.input_messages),
-                store=False,
-            )
-        except (openai.APITimeoutError, openai.APIConnectionError, openai.RateLimitError) as exc:
-            raise RinaProviderTransientError(
-                "OpenAI provider is temporarily unavailable"
+            response = self._client.responses.create(**create_kwargs)
+        except openai.APITimeoutError as exc:
+            raise RinaProviderTimeoutError(
+                "OpenAI provider request timed out"
+            ) from exc
+        except openai.APIConnectionError as exc:
+            raise RinaProviderConnectionError(
+                "OpenAI provider connection failed"
+            ) from exc
+        except openai.RateLimitError as exc:
+            code = str(
+                getattr(exc, "code", None)
+                or (
+                    (getattr(exc, "body", None) or {}).get("error", {}).get("code")
+                    if isinstance(getattr(exc, "body", None), dict)
+                    else ""
+                )
+                or ""
+            ).strip().lower()
+            if code in {
+                "insufficient_quota",
+                "billing_hard_limit_reached",
+                "credit_balance_exhausted",
+            }:
+                raise RinaProviderQuotaError(
+                    "OpenAI provider quota or credit balance is unavailable"
+                ) from exc
+            raise RinaProviderRateLimitError(
+                "OpenAI provider rate limit was reached"
             ) from exc
         except (openai.AuthenticationError, openai.PermissionDeniedError) as exc:
             raise RinaProviderConfigurationError(

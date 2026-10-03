@@ -312,6 +312,28 @@ def test_transient_provider_failure_returns_safe_fallback_and_metadata_only_audi
         assert secret_phrase not in repr(audit.to_safe_dict())
 
 
+def test_admin_provider_failure_does_not_redirect_admin_to_an_advisor(app, monkeypatch):
+    _enable_orchestration(monkeypatch)
+    with app.app_context():
+        admin = _user(suffix=70, role="admin")
+        car = _car(suffix=70)
+        db.session.commit()
+        provider = TransientFailureProvider()
+
+        response = orchestrate_rina(
+            user_id=admin.id,
+            car_id=car.id,
+            message="Give me a complete picture of what Aura knows about this vehicle.",
+            provider=provider,
+        )
+
+        assert response.state == RINA_STATE_PROVIDER_UNAVAILABLE
+        assert response.authority == "administrator"
+        assert "read-only Advisor Console access remains available" in response.message
+        assert "go through advisor review" not in response.message
+        assert "reach out to an advisor" not in response.message
+
+
 def test_rejected_provider_failure_does_not_trigger_action_or_permission_change(app, monkeypatch):
     _enable_orchestration(monkeypatch)
     with app.app_context():

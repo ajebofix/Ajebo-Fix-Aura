@@ -47,7 +47,7 @@ PIPELINE = "historical_episode_reconciliation_v1"
 DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE = (
     "historical_intelligence_candidate_reconciliation_v1"
 )
-DIRECT_STANDALONE_SOURCE_PIPELINE = "standalone_document_conversational_review_v1"
+DIRECT_STANDALONE_SOURCE_PIPELINE = "standalone_document_conversational_review_v2"
 _ALLOWED_KINDS = {
     "component_replacement",
     "service",

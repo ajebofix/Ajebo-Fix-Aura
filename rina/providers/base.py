@@ -39,6 +39,22 @@ class RinaProviderTransientError(RinaProviderError):
     provider_status = "unavailable"
 
 
+class RinaProviderTimeoutError(RinaProviderTransientError):
+    failure_class = "timeout"
+
+
+class RinaProviderConnectionError(RinaProviderTransientError):
+    failure_class = "connection"
+
+
+class RinaProviderRateLimitError(RinaProviderTransientError):
+    failure_class = "rate_limit"
+
+
+class RinaProviderQuotaError(RinaProviderTransientError):
+    failure_class = "quota_exhausted"
+
+
 class RinaProviderRejectedError(RinaProviderError):
     failure_class = "rejected"
     provider_status = "rejected"

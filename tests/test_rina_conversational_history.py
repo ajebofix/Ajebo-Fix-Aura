@@ -973,8 +973,8 @@ def test_historical_correction_does_not_cross_month_scopes(
         },
     )
     assert response.status_code == 200
-    assert "now talking about" in response.json["reply"]
-    assert "Should I switch to that episode?" in response.json["reply"]
+    assert "That sounds like June 2026" in response.json["reply"]
+    assert "switch to June 2026" in response.json["reply"]
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
@@ -982,7 +982,7 @@ def test_historical_correction_does_not_cross_month_scopes(
     switched = _post_json(
         client,
         "/chat",
-        {"car_id": car.id, "message": "Yes"},
+        {"car_id": car.id, "message": "Switch to June 2026"},
     )
     assert switched.status_code == 200
     assert "June" in switched.json["reply"]

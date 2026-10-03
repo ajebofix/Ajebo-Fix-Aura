@@ -1736,3 +1736,181 @@ def test_ready_standalone_analysis_hands_off_into_supervised_rina_chat(
     ).one()
     assert detail.component_name == "Bosch starter motor"
     assert detail.component_condition == "new"
+
+
+def test_whatsapp_ready_review_handoff_lists_only_selected_vehicle_episodes(
+    app,
+    client,
+):
+    admin = _user(suffix=350, role="admin")
+    owner = _user(suffix=351)
+    car = _car(suffix=350, model="GLK 350")
+    car.year = 2013
+    _own(owner=owner, car=car, suffix=350)
+    evidence, extraction = _historical_intelligence_source(admin=admin, car=car)
+
+    payload = {
+        "historical_intelligence_version": 2,
+        "rina_summary": "Longitudinal WhatsApp history across two vehicles.",
+        "priority_threads": [],
+        "candidates": [],
+        "vehicle_candidates": [
+            {
+                "candidate_id": "V001",
+                "identity_state": "selected_vehicle_match",
+                "make_model_year": "2013 Mercedes-Benz GLK 350",
+            },
+            {
+                "candidate_id": "V002",
+                "identity_state": "possible_other_vehicle",
+                "make_model_year": "Geely Azkarra",
+            },
+        ],
+        "service_episode_candidates": [
+            {
+                "episode_candidate_id": "E001",
+                "vehicle_candidate_id": "V001",
+                "title": "Damaged belt replacement",
+                "date_start": "2026-07-25",
+                "date_end": "2026-07-25",
+                "episode_state": "completed_work",
+                "summary": "The bundle supports completed belt replacement.",
+                "reported_concerns": ["Damaged belt"],
+                "observations": [],
+                "recommended_interventions": ["Replace belt"],
+                "authorized_interventions": ["Replace belt"],
+                "completed_interventions": ["Damaged belt replacement"],
+                "outcomes": [],
+                "source_refs": ["CHAT m000120", "IMAGE evidence:102"],
+                "source_excerpt": "[CHAT m000120] Belt changed and vehicle handed over.",
+                "confidence": 0.95,
+                "separation_reason": "Distinct July GLK service episode.",
+            },
+            {
+                "episode_candidate_id": "E002",
+                "vehicle_candidate_id": "V001",
+                "title": "Suspension work",
+                "date_start": "2026-08-10",
+                "date_end": "2026-08-10",
+                "episode_state": "uncertain",
+                "summary": "Suspension work needs advisor clarification.",
+                "reported_concerns": ["Suspension noise"],
+                "observations": [],
+                "recommended_interventions": ["Suspension repair"],
+                "authorized_interventions": [],
+                "completed_interventions": [],
+                "outcomes": [],
+                "source_refs": ["CHAT m000240"],
+                "source_excerpt": "[CHAT m000240] Suspension discussion continued.",
+                "confidence": 0.76,
+                "separation_reason": "Distinct August GLK episode.",
+            },
+            {
+                "episode_candidate_id": "E999",
+                "vehicle_candidate_id": "V002",
+                "title": "Geely collision repair",
+                "date_start": "2026-08-17",
+                "date_end": "2026-08-30",
+                "episode_state": "mixed",
+                "summary": "Repair/payment discussion for the other vehicle.",
+                "reported_concerns": [],
+                "observations": [],
+                "recommended_interventions": ["Collision repair"],
+                "authorized_interventions": [],
+                "completed_interventions": [],
+                "outcomes": [],
+                "source_refs": ["CHAT m000500"],
+                "source_excerpt": "[CHAT m000500] Geely repair discussion.",
+                "confidence": 0.92,
+                "separation_reason": "Different vehicle identity.",
+            },
+        ],
+        "canonical_comparisons": [
+            {
+                "episode_candidate_id": "E001",
+                "comparison": "missing_from_durable_history",
+                "matched_car_id": car.id,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": ["Damaged belt replacement"],
+                "conflicts": [],
+                "reason": "No equivalent durable action exists.",
+                "advisor_confirmation_required": True,
+            },
+            {
+                "episode_candidate_id": "E002",
+                "comparison": "uncertain",
+                "matched_car_id": car.id,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": [],
+                "conflicts": [],
+                "reason": "Completion is not established.",
+                "advisor_confirmation_required": True,
+            },
+            {
+                "episode_candidate_id": "E999",
+                "comparison": "belongs_to_other_vehicle",
+                "matched_car_id": None,
+                "matched_historical_episode_ids": [],
+                "matched_treatment_action_ids": [],
+                "already_represented_facts": [],
+                "missing_facts": [],
+                "conflicts": [],
+                "reason": "This episode belongs to the Geely, not the selected GLK.",
+                "advisor_confirmation_required": True,
+            },
+        ],
+    }
+    cipher, version, digest = _payload_cipher(payload)
+    extraction.result_ciphertext = cipher
+    extraction.result_key_version = version
+    extraction.result_sha256 = digest
+    extraction.reviewed_result_ciphertext = cipher
+    extraction.reviewed_result_key_version = version
+    extraction.reviewed_result_sha256 = digest
+    db.session.commit()
+
+    _sign_in(client, admin)
+    response = client.post(
+        "/chat/historical-review/from-whatsapp-source",
+        data={
+            "csrf_token": _csrf_token(client),
+            "car_id": car.id,
+            "evidence_id": evidence.id,
+        },
+    )
+    assert response.status_code == 302
+    assert f"/chat/workspace?car_id={car.id}" in response.headers["Location"]
+
+    prompt = (
+        ChatMessage.query.filter_by(
+            user_id=admin.id,
+            car_id=car.id,
+            role="assistant",
+        )
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    assert prompt is not None
+    assert "Damaged belt replacement" in prompt.message
+    assert "Suspension work" in prompt.message
+    assert "Geely collision repair" not in prompt.message
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    chosen = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "2"},
+    )
+    assert chosen.status_code == 200
+    assert chosen.json["intent"] == "historical_review"
+    assert "Suspension work" in chosen.json["reply"]
+    assert chosen.json["historical_review"]["phase"] == "reviewing"
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0

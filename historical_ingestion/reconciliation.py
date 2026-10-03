@@ -598,6 +598,56 @@ def advance_episode_reconciliation(
     )
 
 
+def ensure_direct_reconciliation_vehicle_provenance(
+    extraction: EvidenceExtraction,
+) -> bool:
+    """Backfill only missing direct-review vehicle provenance when independently provable.
+
+    Legacy direct-review drafts may predate the explicit selected_car_id field. Repair
+    that omission only when the draft and its completed structured source extraction
+    are attached to the same VehicleEvidence. Never overwrite a conflicting vehicle id.
+    """
+
+    if extraction.evidence is None:
+        return False
+
+    provenance = dict(extraction.provenance or {})
+    if provenance.get("analysis_pipeline") not in {
+        DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
+        DIRECT_STANDALONE_SOURCE_PIPELINE,
+    }:
+        return False
+
+    evidence_car_id = int(extraction.evidence.car_id or 0)
+    selected_car_id = int(provenance.get("selected_car_id") or 0)
+    if selected_car_id:
+        return selected_car_id == evidence_car_id
+
+    source_structured_id = int(
+        provenance.get("source_structured_extraction_id") or 0
+    )
+    if source_structured_id <= 0:
+        return False
+
+    source = db.session.get(EvidenceExtraction, source_structured_id)
+    if (
+        source is None
+        or source.evidence_id != extraction.evidence_id
+        or source.extraction_type != "structured_fields"
+        or source.status != "completed"
+    ):
+        return False
+
+    provenance["selected_car_id"] = evidence_car_id
+    provenance["vehicle_provenance_repaired"] = True
+    provenance["vehicle_provenance_repair_basis"] = (
+        "same_evidence_completed_structured_fields"
+    )
+    extraction.provenance = provenance
+    db.session.flush()
+    return True
+
+
 def reconciliation_payload(
     extraction: EvidenceExtraction,
     *,
@@ -634,10 +684,11 @@ def save_reconciliation_review(
             "Historical reconciliation provenance is incomplete."
         )
     if direct_intelligence:
-        if int(provenance.get("selected_car_id") or 0) != extraction.evidence.car_id:
+        if not ensure_direct_reconciliation_vehicle_provenance(extraction):
             raise HistoricalReconciliationError(
                 "Historical Intelligence reconciliation vehicle provenance is incomplete."
             )
+        provenance = extraction.provenance or {}
         _authority(actor_user_id, extraction.evidence.car_id)
     else:
         if episode is None or episode.car_id != extraction.evidence.car_id:
@@ -716,10 +767,11 @@ def apply_reconciliation(
         int(provenance.get("episode_id") or 0),
     )
     if direct_intelligence:
-        if int(provenance.get("selected_car_id") or 0) != extraction.evidence.car_id:
+        if not ensure_direct_reconciliation_vehicle_provenance(extraction):
             raise HistoricalReconciliationError(
                 "Historical Intelligence reconciliation vehicle provenance is incomplete."
             )
+        provenance = extraction.provenance or {}
         car_id = extraction.evidence.car_id
         _authority(actor_user_id, car_id)
     else:

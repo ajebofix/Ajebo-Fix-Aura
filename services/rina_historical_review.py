@@ -23,6 +23,7 @@ from historical_ingestion.models import HistoricalServiceEpisode
 from historical_ingestion.reconciliation import (
     HistoricalReconciliationError,
     applied_reconciliation_plan,
+    ensure_direct_reconciliation_vehicle_provenance,
     reconciliation_payload,
     save_reconciliation_review,
 )
@@ -498,6 +499,11 @@ def _load_state(
     }
     episode: HistoricalServiceEpisode | None = None
     if direct_intelligence:
+        if not ensure_direct_reconciliation_vehicle_provenance(extraction):
+            raise HistoricalReconciliationError(
+                "Direct historical review provenance is incomplete."
+            )
+        provenance = extraction.provenance or {}
         if int(provenance.get("selected_car_id") or 0) != int(car_id):
             raise HistoricalReconciliationError(
                 "Direct historical review provenance is incomplete."

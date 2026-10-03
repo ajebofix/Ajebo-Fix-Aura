@@ -1949,6 +1949,21 @@ def test_whatsapp_ready_review_handoff_lists_only_selected_vehicle_episodes(
     extraction.reviewed_result_sha256 = digest
     db.session.commit()
 
+    saved_draft = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="historical_reconciliation",
+            status="completed",
+        )
+        .order_by(EvidenceExtraction.id.desc())
+        .first()
+    )
+    assert saved_draft is not None
+    legacy_provenance = dict(saved_draft.provenance or {})
+    legacy_provenance.pop("selected_car_id", None)
+    saved_draft.provenance = legacy_provenance
+    db.session.commit()
+
     # Generic vehicle-wide discovery may legitimately omit this exact source
     # (for example because its capped list already contains other drafts).
     # Exact-source continuation must still resume the saved draft.
@@ -1979,3 +1994,10 @@ def test_whatsapp_ready_review_handoff_lists_only_selected_vehicle_episodes(
     )
     assert resumed_prompt is not None
     assert "Suspension work" in resumed_prompt.message
+
+    db.session.refresh(saved_draft)
+    assert saved_draft.provenance["selected_car_id"] == car.id
+    assert saved_draft.provenance["vehicle_provenance_repaired"] is True
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0

@@ -282,6 +282,20 @@ def _existing_direct_draft(
     return None
 
 
+def discover_intelligence_episode_choices_for_source(
+    context: RinaResolvedContext,
+    *,
+    evidence_id: int,
+) -> list[HistoricalIntelligenceEpisodeChoice]:
+    """Return eligible episode choices from one exact imported source only."""
+
+    return [
+        item
+        for item in discover_intelligence_episode_choices(context)
+        if item.evidence_id == int(evidence_id)
+    ]
+
+
 def stage_intelligence_episode_candidate(
     *,
     context: RinaResolvedContext,

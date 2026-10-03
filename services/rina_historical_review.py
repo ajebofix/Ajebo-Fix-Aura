@@ -846,10 +846,11 @@ def _scope_guard_interpretation(
             "additions": [],
             "episode_outcome": None,
             "assistant_note": (
-                f"Your correction refers to {target_name} {target_year}, but the active "
-                f"historical draft is scoped to {active_name} {active_year}. I did not "
-                "mix those episodes or change the draft. Close this review or select "
-                "the matching historical episode first."
+                f"That sounds like {target_name} {target_year}, while I currently have "
+                f"{active_name} {active_year} open. I kept the episodes separate and "
+                "changed nothing. If you want to move to the other episode, say "
+                f"**switch to {target_name} {target_year}**; if you were only referring "
+                "to it as context, tell me to keep working on the current episode."
             ),
         },
         provider="deterministic_scope_guard",

@@ -1090,6 +1090,9 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
         assert "historical_copilot is candidate-only" in instructions
         assert "You may prepare and explain proposed historical records" in instructions
         assert "historical_source_retrieval contains query-relevant excerpts" in instructions
+        assert "READ-ONLY RECORD EXPLANATION IS NOT A TREATMENT DECISION" in instructions
+        assert "never tell the speaker to \"reach out to an advisor\"" in instructions.lower()
+        assert "never tell this speaker to contact an advisor" in instructions.lower()
         assert "Never report bundle-child counts as the number of historical sources" in instructions
         serialized = json.dumps(payload)
         assert "Private home address" not in serialized

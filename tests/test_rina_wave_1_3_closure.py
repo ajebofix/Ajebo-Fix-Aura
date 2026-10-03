@@ -107,8 +107,9 @@ def test_openai_adapter_uses_responses_without_tools_or_provider_storage():
     source = _source("rina/providers/openai_provider.py")
 
     assert ".responses.create(" in source
-    assert "store=False" in source
+    assert "\"store\": False" in source
     assert "tools=" not in source
+    assert "max_output_tokens" in source
     assert "timeout=self.timeout_seconds" in source
     assert "max_retries=self.max_retries" in source
 

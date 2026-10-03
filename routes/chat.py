@@ -102,6 +102,7 @@ _SESSION_HISTORY_REVIEW_CANDIDATE_KEY = "rina_history_review_candidate_id"
 _SESSION_HISTORY_REVIEW_PHASE_KEY = "rina_history_review_phase"
 _SESSION_HISTORY_REVIEW_CHOICES_KEY = "rina_history_review_choices"
 _SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY = "rina_history_intelligence_choices"
+_SESSION_HISTORY_PENDING_SWITCH_KEY = "rina_history_pending_switch_choice_key"
 _BOOKING_PATTERN = re.compile(
     r"\b(book|consult|consultation|appointment|schedule|reserve|assessment)\b",
     re.IGNORECASE,
@@ -287,6 +288,154 @@ def _historical_intelligence_choice_index(message: str, choices) -> int | None:
             matched.append(index)
 
     return matched[0] if len(matched) == 1 else None
+
+
+_EVIDENCE_REFERENCE_RE = re.compile(
+    r"\bevidence\s*#?\s*(?P<evidence_id>\d+)\b",
+    re.IGNORECASE,
+)
+
+
+def _explicit_historical_intelligence_switch_choice(*, context, message: str):
+    """Resolve an explicit natural-language request to switch historical episodes."""
+
+    text = str(message or "").strip()
+    if not text:
+        return None
+    if not re.search(
+        r"\b(?:review|open|select|switch(?:\s+to)?|work\s+on|go\s+to)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return None
+    if not (
+        "episode" in text.lower()
+        or _EVIDENCE_REFERENCE_RE.search(text)
+        or re.search(r"\b20\d{2}\b", text)
+        or re.search(
+            r"\b(?:january|february|march|april|may|june|july|august|"
+            r"september|october|november|december)\b",
+            text,
+            re.IGNORECASE,
+        )
+    ):
+        return None
+
+    choices = discover_intelligence_episode_choices(context)
+    evidence_match = _EVIDENCE_REFERENCE_RE.search(text)
+    if evidence_match is not None:
+        evidence_id = int(evidence_match.group("evidence_id"))
+        choices = [
+            item for item in choices if int(getattr(item, "evidence_id", 0)) == evidence_id
+        ]
+
+    if not choices:
+        return None
+
+    index = _historical_intelligence_choice_index(text, choices)
+    return choices[index] if index is not None else None
+
+
+def _cross_episode_reference_only(message: str) -> bool:
+    text = _normalise_chat_command(message)
+    return any(
+        marker in text
+        for marker in (
+            "keep this episode separate",
+            "keep them separate",
+            "do not merge",
+            "don't merge",
+            "dont merge",
+            "must not be merged",
+            "separate from the earlier",
+            "separate from the later",
+            "not the same episode",
+        )
+    )
+
+
+def _current_intelligence_choice_matches(choice) -> bool:
+    extraction_id = _coerce_car_id(
+        session.get(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY)
+    )
+    if extraction_id is None:
+        return False
+    extraction = db.session.get(EvidenceExtraction, extraction_id)
+    if extraction is None:
+        return False
+    provenance = extraction.provenance or {}
+    return (
+        int(extraction.evidence_id or 0) == int(getattr(choice, "evidence_id", 0))
+        and str(provenance.get("episode_candidate_id") or "")
+        == str(getattr(choice, "episode_candidate_id", "") or "")
+    )
+
+
+def _implicit_historical_intelligence_switch_choice(*, context, message: str):
+    """Find a unique different episode mentioned naturally in the advisor turn."""
+
+    if _cross_episode_reference_only(message):
+        return None
+
+    text = str(message or "").strip()
+    if not text:
+        return None
+    if not (
+        re.search(r"\b20\d{2}\b", text)
+        or re.search(
+            r"\b(?:january|february|march|april|may|june|july|august|"
+            r"september|october|november|december)\b",
+            text,
+            re.IGNORECASE,
+        )
+    ):
+        return None
+
+    choices = discover_intelligence_episode_choices(context)
+    evidence_match = _EVIDENCE_REFERENCE_RE.search(text)
+    if evidence_match is not None:
+        evidence_id = int(evidence_match.group("evidence_id"))
+        choices = [
+            item
+            for item in choices
+            if int(getattr(item, "evidence_id", 0)) == evidence_id
+        ]
+    if not choices:
+        return None
+
+    index = _historical_intelligence_choice_index(text, choices)
+    if index is None:
+        return None
+    choice = choices[index]
+    return None if _current_intelligence_choice_matches(choice) else choice
+
+
+def _pending_history_switch_confirmation(message: str) -> bool:
+    text = _normalise_chat_command(message).strip(" .!?")
+    return text in {
+        "yes",
+        "yes switch",
+        "switch",
+        "switch to it",
+        "go there",
+        "go to it",
+        "that one",
+        "yes that one",
+        "move to it",
+    } or text.startswith("switch to ")
+
+
+def _pending_history_switch_rejection(message: str) -> bool:
+    text = _normalise_chat_command(message).strip(" .!?")
+    return text in {
+        "no",
+        "no stay here",
+        "stay here",
+        "keep this one",
+        "continue here",
+        "continue this episode",
+        "keep working here",
+    }
 
 
 def _historical_intelligence_choices_prompt(choices) -> str:
@@ -539,6 +688,69 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             "phase": None,
             "extraction_id": None,
             "candidate_id": None,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
+
+    pending_choice_key = str(
+        session.get(_SESSION_HISTORY_PENDING_SWITCH_KEY) or ""
+    ).strip()
+    if pending_choice_key:
+        if _pending_history_switch_confirmation(message):
+            session.pop(_SESSION_HISTORY_PENDING_SWITCH_KEY, None)
+            _clear_historical_review_binding()
+            return _start_staged_intelligence_review(
+                context=context,
+                choice_key=pending_choice_key,
+            )
+        if _pending_history_switch_rejection(message):
+            session.pop(_SESSION_HISTORY_PENDING_SWITCH_KEY, None)
+            return {
+                "reply": (
+                    "Okay. I’ll keep the current episode active and leave the other "
+                    "episode untouched."
+                ),
+                "phase": str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "") or None,
+                "extraction_id": _coerce_car_id(
+                    session.get(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY)
+                ),
+                "candidate_id": session.get(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY),
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
+
+    switch_choice = _explicit_historical_intelligence_switch_choice(
+        context=context,
+        message=message,
+    )
+    if switch_choice is not None:
+        _clear_historical_review_binding()
+        return _start_staged_intelligence_review(
+            context=context,
+            choice_key=switch_choice.choice_key,
+        )
+
+    implicit_choice = _implicit_historical_intelligence_switch_choice(
+        context=context,
+        message=message,
+    )
+    if implicit_choice is not None:
+        session[_SESSION_HISTORY_PENDING_SWITCH_KEY] = implicit_choice.choice_key
+        return {
+            "reply": (
+                f"It sounds like you’re now talking about **{implicit_choice.title}** "
+                "rather than the episode I currently have open. I’ll keep both records "
+                "separate. Should I switch to that episode?"
+            ),
+            "phase": str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "") or None,
+            "extraction_id": _coerce_car_id(
+                session.get(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY)
+            ),
+            "candidate_id": session.get(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY),
             "provider_status": "not_called",
             "provider": None,
             "provider_model": None,
@@ -840,6 +1052,7 @@ def _clear_historical_review_binding() -> None:
     session.pop(_SESSION_HISTORY_REVIEW_PHASE_KEY, None)
     session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
     session.pop(_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY, None)
+    session.pop(_SESSION_HISTORY_PENDING_SWITCH_KEY, None)
 
 
 def _clear_rina_binding() -> None:

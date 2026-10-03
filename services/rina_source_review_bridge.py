@@ -107,10 +107,18 @@ def _work_candidates(
         if not isinstance(source, dict) or source.get("category") != "work_item":
             continue
 
+        # A standalone source may describe paid/authorised/recommended scope without
+        # proving completion. Those rows are valuable intake context, but they must
+        # never be shaped like completed work merely because the advisor is reviewing
+        # the source. Only source-classified completed work can seed a recordable
+        # candidate; otherwise Rina enters clarification/intake mode.
+        if _clip(source.get("state"), 40) != "completed":
+            continue
+
         action = source.get("action") if isinstance(source.get("action"), dict) else {}
         kind = _clip(action.get("kind"), 40)
         if kind not in _ALLOWED_KINDS:
-            kind = "other_intervention"
+            continue
 
         condition = _clip(action.get("component_condition"), 40)
         if condition not in _ALLOWED_CONDITIONS:

@@ -973,8 +973,19 @@ def test_historical_correction_does_not_cross_month_scopes(
         },
     )
     assert response.status_code == 200
-    assert "refers to June 2026" in response.json["reply"]
-    assert "active historical draft is scoped to May 2026" in response.json["reply"]
+    assert "That sounds like June 2026" in response.json["reply"]
+    assert "switch to June 2026" in response.json["reply"]
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    switched = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Switch to June 2026"},
+    )
+    assert switched.status_code == 200
+    assert "June" in switched.json["reply"]
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0

@@ -300,12 +300,24 @@ def _explicit_historical_intelligence_switch_choice(*, context, message: str):
     """Resolve an explicit natural-language request to switch historical episodes."""
 
     text = str(message or "").strip()
-    if not text or "episode" not in text.lower():
+    if not text:
         return None
     if not re.search(
         r"\b(?:review|open|select|switch(?:\s+to)?|work\s+on|go\s+to)\b",
         text,
         re.IGNORECASE,
+    ):
+        return None
+    if not (
+        "episode" in text.lower()
+        or _EVIDENCE_REFERENCE_RE.search(text)
+        or re.search(r"\b20\d{2}\b", text)
+        or re.search(
+            r"\b(?:january|february|march|april|may|june|july|august|"
+            r"september|october|november|december)\b",
+            text,
+            re.IGNORECASE,
+        )
     ):
         return None
 

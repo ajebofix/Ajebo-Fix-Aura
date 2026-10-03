@@ -289,6 +289,40 @@ def _historical_intelligence_choice_index(message: str, choices) -> int | None:
     return matched[0] if len(matched) == 1 else None
 
 
+_EVIDENCE_REFERENCE_RE = re.compile(
+    r"\bevidence\s*#?\s*(?P<evidence_id>\d+)\b",
+    re.IGNORECASE,
+)
+
+
+def _explicit_historical_intelligence_switch_choice(*, context, message: str):
+    """Resolve an explicit natural-language request to switch historical episodes."""
+
+    text = str(message or "").strip()
+    if not text or "episode" not in text.lower():
+        return None
+    if not re.search(
+        r"\b(?:review|open|select|switch(?:\s+to)?|work\s+on|go\s+to)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return None
+
+    choices = discover_intelligence_episode_choices(context)
+    evidence_match = _EVIDENCE_REFERENCE_RE.search(text)
+    if evidence_match is not None:
+        evidence_id = int(evidence_match.group("evidence_id"))
+        choices = [
+            item for item in choices if int(getattr(item, "evidence_id", 0)) == evidence_id
+        ]
+
+    if not choices:
+        return None
+
+    index = _historical_intelligence_choice_index(text, choices)
+    return choices[index] if index is not None else None
+
+
 def _historical_intelligence_choices_prompt(choices) -> str:
     lines = [
         "I found historical episodes for this vehicle that need advisor review or "
@@ -544,6 +578,17 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             "provider_model": None,
             "provider_request_id": None,
         }
+
+    switch_choice = _explicit_historical_intelligence_switch_choice(
+        context=context,
+        message=message,
+    )
+    if switch_choice is not None:
+        _clear_historical_review_binding()
+        return _start_staged_intelligence_review(
+            context=context,
+            choice_key=switch_choice.choice_key,
+        )
 
     phase = str(session.get(_SESSION_HISTORY_REVIEW_PHASE_KEY) or "")
     if phase == "choose_intelligence_episode":

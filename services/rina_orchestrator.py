@@ -7,6 +7,8 @@ provider call and remain authoritative when the provider is unavailable.
 
 from __future__ import annotations
 
+import logging
+import time
 import uuid
 from typing import Final
 
@@ -49,6 +51,7 @@ from services.rina_speaker import describe_speaker, identity_question
 
 _PROVIDER_STATUS_DISABLED: Final = "disabled"
 _DEFAULT_MEMORY_POLICY: Final = "vehicle_scoped_minimized_v1"
+logger = logging.getLogger(__name__)
 
 _DRIVING_SAFETY_QUESTIONS: Final = (
     "safe to drive",
@@ -84,11 +87,19 @@ def _fallback_message(authority: str) -> str:
         "administrator": "the administrator",
     }.get(authority, "an authorised Aura user")
 
+    if authority in {"advisor", "administrator"}:
+        return (
+            f"I recognise this session as {relationship} for the selected vehicle. "
+            "Rina's language service did not complete this request, so I won't invent "
+            "a summary. No Aura record changed. Please retry the question; your "
+            "read-only Advisor Console access remains available."
+        )
+
     return (
         f"I recognise this session as {relationship} for the selected vehicle, "
-        "but I can't use Rina's language service right now. The Aura vehicle "
-        "record is still intact; anything time-sensitive should go through "
-        "advisor review."
+        "but Rina's language service did not complete this request. The Aura vehicle "
+        "record is still intact; anything requiring professional judgement should go "
+        "through advisor review."
     )
 
 
@@ -473,9 +484,22 @@ def orchestrate_rina(
     provider_name = getattr(active_provider, "provider_name", "provider")
     provider_model = getattr(active_provider, "model", None)
 
+    provider_started_at = time.monotonic()
     try:
         result = active_provider.generate(provider_context.request)
     except RinaProviderError as exc:
+        elapsed_ms = int((time.monotonic() - provider_started_at) * 1000)
+        logger.warning(
+            "rina_provider_failed request_id=%s car_id=%s authority=%s provider=%s "
+            "model=%s failure_class=%s elapsed_ms=%s",
+            resolved_request_id,
+            context.car_id,
+            context.authority,
+            provider_name,
+            provider_model,
+            exc.failure_class,
+            elapsed_ms,
+        )
         provider_status = (
             PROVIDER_STATUS_REJECTED
             if exc.provider_status == PROVIDER_STATUS_REJECTED
@@ -521,6 +545,18 @@ def orchestrate_rina(
             commit=audit_commit,
         )
         return response
+
+    elapsed_ms = int((time.monotonic() - provider_started_at) * 1000)
+    logger.info(
+        "rina_provider_succeeded request_id=%s car_id=%s authority=%s provider=%s "
+        "model=%s elapsed_ms=%s",
+        resolved_request_id,
+        context.car_id,
+        context.authority,
+        result.provider,
+        result.model,
+        elapsed_ms,
+    )
 
     response = RinaResponse(
         request_id=resolved_request_id,

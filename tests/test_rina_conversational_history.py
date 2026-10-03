@@ -1925,3 +1925,48 @@ def test_whatsapp_ready_review_handoff_lists_only_selected_vehicle_episodes(
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+    closed = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "cancel review"},
+    )
+    assert closed.status_code == 200
+    assert closed.json["historical_review"]["phase"] is None
+
+    # Simulate a later source rebuild whose latest candidate set no longer emits
+    # the already-staged episode. The saved governed draft must still be resumable
+    # from the exact WhatsApp-source button.
+    payload["service_episode_candidates"] = []
+    payload["canonical_comparisons"] = []
+    cipher, version, digest = _payload_cipher(payload)
+    extraction.result_ciphertext = cipher
+    extraction.result_key_version = version
+    extraction.result_sha256 = digest
+    extraction.reviewed_result_ciphertext = cipher
+    extraction.reviewed_result_key_version = version
+    extraction.reviewed_result_sha256 = digest
+    db.session.commit()
+
+    resumed = client.post(
+        "/chat/historical-review/from-whatsapp-source",
+        data={
+            "csrf_token": _csrf_token(client),
+            "car_id": car.id,
+            "evidence_id": evidence.id,
+        },
+    )
+    assert resumed.status_code == 302
+    assert f"/chat/workspace?car_id={car.id}" in resumed.headers["Location"]
+
+    resumed_prompt = (
+        ChatMessage.query.filter_by(
+            user_id=admin.id,
+            car_id=car.id,
+            role="assistant",
+        )
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    assert resumed_prompt is not None
+    assert "Suspension work" in resumed_prompt.message

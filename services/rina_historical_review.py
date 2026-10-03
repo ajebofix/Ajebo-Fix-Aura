@@ -349,6 +349,34 @@ class HistoricalReviewInterpreter(HistoricalAdvisorAnalyzer):
         )
 
 
+def _review_choice_provenance_valid(
+    *,
+    context: RinaResolvedContext,
+    extraction: EvidenceExtraction | None,
+) -> bool:
+    """Reject stale/malformed drafts before they can become an active chat review."""
+
+    if (
+        extraction is None
+        or extraction.evidence is None
+        or extraction.evidence.car_id != int(context.car_id)
+        or extraction.extraction_type != "historical_reconciliation"
+        or extraction.status != "completed"
+    ):
+        return False
+
+    provenance = extraction.provenance or {}
+    if provenance.get("analysis_pipeline") in {
+        DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
+        DIRECT_STANDALONE_SOURCE_PIPELINE,
+    }:
+        return int(provenance.get("selected_car_id") or 0) == int(context.car_id)
+
+    episode_id = int(provenance.get("episode_id") or 0)
+    episode = db.session.get(HistoricalServiceEpisode, episode_id)
+    return episode is not None and int(episode.car_id) == int(context.car_id)
+
+
 def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]]:
     """Return reviewable prepared reconciliations without exposing raw payloads."""
 
@@ -370,6 +398,12 @@ def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]
         }:
             continue
         numeric_extraction_id = int(extraction_id)
+        extraction = db.session.get(EvidenceExtraction, numeric_extraction_id)
+        if not _review_choice_provenance_valid(
+            context=context,
+            extraction=extraction,
+        ):
+            continue
         seen_extraction_ids.add(numeric_extraction_id)
         choices.append(
             {
@@ -386,6 +420,11 @@ def discover_review_choices(context: RinaResolvedContext) -> list[dict[str, Any]
         *direct_source_review_drafts_for_car(context.car_id),
     ]:
         if extraction.id in seen_extraction_ids:
+            continue
+        if not _review_choice_provenance_valid(
+            context=context,
+            extraction=extraction,
+        ):
             continue
         if applied_reconciliation_plan(extraction.id) is not None:
             continue

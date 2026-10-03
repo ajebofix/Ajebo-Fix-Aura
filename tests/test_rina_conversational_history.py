@@ -1752,6 +1752,7 @@ def test_ready_standalone_analysis_hands_off_into_supervised_rina_chat(
 def test_whatsapp_ready_review_handoff_lists_only_selected_vehicle_episodes(
     app,
     client,
+    monkeypatch,
 ):
     admin = _user(suffix=350, role="admin")
     owner = _user(suffix=351)
@@ -1947,6 +1948,14 @@ def test_whatsapp_ready_review_handoff_lists_only_selected_vehicle_episodes(
     extraction.reviewed_result_key_version = version
     extraction.reviewed_result_sha256 = digest
     db.session.commit()
+
+    # Generic vehicle-wide discovery may legitimately omit this exact source
+    # (for example because its capped list already contains other drafts).
+    # Exact-source continuation must still resume the saved draft.
+    monkeypatch.setattr(
+        "routes.chat.discover_review_choices",
+        lambda _context: [],
+    )
 
     resumed = client.post(
         "/chat/historical-review/from-whatsapp-source",

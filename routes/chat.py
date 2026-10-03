@@ -45,6 +45,7 @@ from models import (
 )
 from services.rina_advisor_360 import build_rina_historical_copilot_context
 from services.rina_historical_intelligence_bridge import (
+    DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE,
     discover_intelligence_episode_choices,
     discover_intelligence_episode_choices_for_source,
     stage_intelligence_episode_candidate,
@@ -546,26 +547,57 @@ def _history_review_bind(
 
 
 def _prepared_source_review_choices(*, context, evidence_id: int) -> list[dict[str, object]]:
-    """Return valid saved review drafts tied to one exact historical source."""
+    """Return valid saved direct-review drafts tied to one exact historical source.
+
+    Exact-source continuation must not depend on the generic review chooser, which
+    intentionally caps its vehicle-wide result set. A source button is a stronger
+    scope signal, so inspect that source's saved direct drafts first.
+    """
+
+    rows = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=int(evidence_id),
+            extraction_type="historical_reconciliation",
+            status="completed",
+        )
+        .order_by(EvidenceExtraction.id.desc())
+        .limit(120)
+        .all()
+    )
 
     prepared: list[dict[str, object]] = []
-    for item in discover_review_choices(context):
-        extraction_id = _coerce_car_id(item.get("extraction_id"))
-        if extraction_id is None:
+    for extraction in rows:
+        provenance = extraction.provenance or {}
+        if provenance.get("analysis_pipeline") != DIRECT_HISTORICAL_INTELLIGENCE_PIPELINE:
             continue
-        extraction = db.session.get(EvidenceExtraction, extraction_id)
-        if extraction is None or int(extraction.evidence_id or 0) != int(evidence_id):
+        if historical_review_already_applied(extraction.id) is not None:
             continue
         try:
-            summarize_historical_review(
-                extraction_id=extraction_id,
+            state = summarize_historical_review(
+                extraction_id=extraction.id,
                 actor_user_id=current_user.id,
                 car_id=context.car_id,
             )
         except HistoricalReconciliationError:
             continue
-        prepared.append(item)
-    return prepared
+
+        reviewed = extraction.review_status in {"accepted", "corrected"}
+        prepared.append(
+            {
+                "episode_id": state.episode_id,
+                "extraction_id": extraction.id,
+                "title": state.episode_title,
+                "state": (
+                    "ready_to_apply"
+                    if reviewed and state.all_reviewed
+                    else "candidate_decisions_incomplete"
+                    if reviewed
+                    else "advisor_review_required"
+                ),
+                "unreviewed_candidates": state.unreviewed_count,
+            }
+        )
+    return prepared[:40]
 
 
 def _history_review_choice_prompt(context) -> dict[str, object]:
@@ -1748,16 +1780,41 @@ def start_whatsapp_source_chat_review():
         abort(404)
 
     try:
-        choices = discover_intelligence_episode_choices_for_source(
-            context,
+        prepared_choices = _prepared_source_review_choices(
+            context=context,
             evidence_id=evidence_id,
         )
-        prepared_choices = (
-            _prepared_source_review_choices(context=context, evidence_id=evidence_id)
-            if not choices
-            else []
+        choices = (
+            []
+            if prepared_choices
+            else discover_intelligence_episode_choices_for_source(
+                context,
+                evidence_id=evidence_id,
+            )
         )
         if not choices and not prepared_choices:
+            direct_rows = (
+                EvidenceExtraction.query.filter_by(
+                    evidence_id=evidence_id,
+                    extraction_type="historical_reconciliation",
+                    status="completed",
+                )
+                .order_by(EvidenceExtraction.id.desc())
+                .limit(120)
+                .all()
+            )
+            current_app.logger.warning(
+                "rina_whatsapp_history_no_resumable_draft car_id=%s evidence_id=%s "
+                "actor_id=%s exact_drafts=%s pipelines=%s",
+                car_id,
+                evidence_id,
+                current_user.id,
+                len(direct_rows),
+                [
+                    str((row.provenance or {}).get("analysis_pipeline") or "")
+                    for row in direct_rows[:20]
+                ],
+            )
             flash(
                 "Rina did not find a new or saved source-supported episode from this "
                 "WhatsApp bundle that is eligible for review on the selected vehicle.",

@@ -93,8 +93,8 @@ def test_explicit_whatsapp_episode_request_switches_active_draft(app, client):
         {
             "car_id": car.id,
             "message": (
-                "Review the 25 July 2026 power-steering episode from "
-                f"WhatsApp Evidence #{whatsapp_evidence.id}."
+                "Let's continue with the 25 July 2026 power-steering episode. "
+                "I want to correct and complete that history."
             ),
         },
     )
@@ -105,6 +105,25 @@ def test_explicit_whatsapp_episode_request_switches_active_draft(app, client):
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+
+def test_exact_continue_phrase_is_recognised_as_historical_review_request():
+    from routes.chat import _historical_review_start_requested
+
+    assert _historical_review_start_requested(
+        "Let's continue with the 25 July 2026 power-steering episode. "
+        "I want to correct and complete that history."
+    )
+
+
+def test_legacy_chat_get_redirects_to_canonical_workspace(app, client):
+    admin = _user(suffix=369, role="admin")
+    _sign_in(client, admin)
+
+    response = client.get("/chat")
+
+    assert response.status_code == 302
+    assert "/chat/workspace" in response.headers["Location"]
 
 
 def test_unproven_standalone_scope_enters_intake(app, client):

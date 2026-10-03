@@ -21,7 +21,7 @@ from historical_ingestion.service import (
 from services.rina_context_resolver import RinaResolvedContext
 
 
-DIRECT_STANDALONE_SOURCE_PIPELINE = "standalone_document_conversational_review_v1"
+DIRECT_STANDALONE_SOURCE_PIPELINE = "standalone_document_conversational_review_v2"
 
 _ALLOWED_KINDS = {"service", "component_replacement", "other_intervention"}
 _ALLOWED_CONDITIONS = {

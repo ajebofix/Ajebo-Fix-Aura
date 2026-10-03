@@ -1668,7 +1668,7 @@ def test_ready_standalone_analysis_hands_off_into_supervised_rina_chat(
     assert draft.status == "completed"
     assert draft.review_status == "unreviewed"
     assert draft.provenance["analysis_pipeline"] == (
-        "standalone_document_conversational_review_v1"
+        "standalone_document_conversational_review_v2"
     )
     assert draft.provenance["source_structured_extraction_id"] == structured.id
 

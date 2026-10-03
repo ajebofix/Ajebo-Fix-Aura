@@ -46,6 +46,7 @@ from models import (
 from services.rina_advisor_360 import build_rina_historical_copilot_context
 from services.rina_historical_intelligence_bridge import (
     discover_intelligence_episode_choices,
+    discover_intelligence_episode_choices_for_source,
     stage_intelligence_episode_candidate,
 )
 from services.rina_source_review_bridge import stage_standalone_source_review
@@ -1449,6 +1450,138 @@ def start_historical_source_chat_review():
         )
         flash(
             "Aura could not open this historical source in Rina review.",
+            "error",
+        )
+        return redirect(fallback_url)
+
+    return redirect(url_for("chat.rina_workspace", car_id=car_id))
+
+
+@chat_bp.post("/chat/historical-review/from-whatsapp-source")
+@login_required
+def start_whatsapp_source_chat_review():
+    """Open one exact WhatsApp source as a supervised episode-by-episode review."""
+
+    data = request.get_json(silent=True) or request.form
+    car_id = _coerce_car_id(data.get("car_id"))
+    evidence_id = _coerce_car_id(data.get("evidence_id"))
+    if car_id is None or evidence_id is None:
+        abort(400)
+
+    fallback_url = url_for(
+        "historical_ingestion.review_document",
+        car_id=car_id,
+        evidence_id=evidence_id,
+    )
+
+    try:
+        context = resolve_rina_vehicle_context(
+            user_id=current_user.id,
+            car_id=car_id,
+        )
+    except (RinaAuthorityError, RinaContextResolutionError):
+        abort(403)
+
+    if (
+        context.authority not in {"advisor", "administrator"}
+        or ACTION_PREPARE_HISTORICAL_RECORDS not in context.allowed_actions
+    ):
+        abort(403)
+
+    evidence = db.session.get(VehicleEvidence, evidence_id)
+    if (
+        evidence is None
+        or evidence.car_id != car_id
+        or evidence.deleted_at is not None
+        or evidence.historical_source_type != "whatsapp_conversation"
+    ):
+        abort(404)
+
+    try:
+        choices = discover_intelligence_episode_choices_for_source(
+            context,
+            evidence_id=evidence_id,
+        )
+        if not choices:
+            flash(
+                "Rina did not find a source-supported episode from this WhatsApp bundle "
+                "that is eligible for durable-history review on the selected vehicle.",
+                "info",
+            )
+            return redirect(fallback_url)
+
+        conversation_id = _bind_rina_vehicle(
+            car_id=car_id,
+            conversation_id=_conversation_id_for(car_id),
+        )
+
+        if len(choices) == 1:
+            started = _start_staged_intelligence_review(
+                context=context,
+                choice_key=choices[0].choice_key,
+            )
+            prompt = str(started["reply"])
+            extraction_id = started.get("extraction_id")
+        else:
+            session[_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY] = [
+                item.choice_key for item in choices
+            ]
+            session[_SESSION_HISTORY_REVIEW_PHASE_KEY] = "choose_intelligence_episode"
+            session.pop(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY, None)
+            session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
+            session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
+            prompt = _historical_intelligence_choices_prompt(choices)
+            extraction_id = None
+
+        save_rina_chat_turn(
+            user_id=current_user.id,
+            car_id=car_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=prompt,
+            commit=False,
+        )
+        evidence_refs = [{"type": "vehicle_evidence", "id": evidence_id}]
+        if extraction_id is not None:
+            evidence_refs.append(
+                {"type": "historical_reconciliation", "id": int(extraction_id)}
+            )
+        record_rina_audit(
+            request_id=_new_conversation_id(),
+            user_id=current_user.id,
+            car_id=car_id,
+            authority=context.authority,
+            state="answered",
+            outcome="answered",
+            action_family="historical_chat_review",
+            provider_status="not_called",
+            evidence_refs=evidence_refs,
+            metadata={"channel": "advisor_workspace"},
+            commit=False,
+        )
+        db.session.commit()
+    except (ValueError, HistoricalReconciliationError) as exc:
+        db.session.rollback()
+        current_app.logger.warning(
+            "rina_whatsapp_history_handoff_rejected car_id=%s evidence_id=%s "
+            "actor_id=%s detail=%s",
+            car_id,
+            evidence_id,
+            current_user.id,
+            str(exc).replace("\n", " ").strip()[:500],
+        )
+        flash(str(exc), "error")
+        return redirect(fallback_url)
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "rina_whatsapp_history_handoff_failed car_id=%s evidence_id=%s actor_id=%s",
+            car_id,
+            evidence_id,
+            current_user.id,
+        )
+        flash(
+            "Aura could not open this WhatsApp history in Rina review.",
             "error",
         )
         return redirect(fallback_url)

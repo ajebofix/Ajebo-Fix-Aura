@@ -142,6 +142,20 @@ def _historical_review_start_requested(message: str) -> bool:
     )
     if any(phrase in text for phrase in direct_phrases):
         return True
+    if (
+        any(
+            marker in text
+            for marker in (
+                "continue with",
+                "continue the",
+                "resume",
+                "return to",
+                "go back to",
+            )
+        )
+        and ("episode" in text or "history" in text)
+    ):
+        return True
     action_words = ("record", "review", "reconcile", "add", "clean up")
     history_words = ("previous", "historical", "past", "history")
     work_words = ("job", "jobs", "service", "services", "work", "repair", "repairs")
@@ -303,7 +317,7 @@ def _explicit_historical_intelligence_switch_choice(*, context, message: str):
     if not text:
         return None
     if not re.search(
-        r"\b(?:review|open|select|switch(?:\s+to)?|work\s+on|go\s+to)\b",
+        r"\b(?:review|open|select|switch(?:\s+to)?|continue(?:\s+with)?|resume|work\s+on|go\s+to)\b",
         text,
         re.IGNORECASE,
     ):
@@ -529,6 +543,29 @@ def _history_review_bind(
     session[_SESSION_HISTORY_REVIEW_PHASE_KEY] = str(phase)[:40]
     session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
     session.pop(_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY, None)
+
+
+def _prepared_source_review_choices(*, context, evidence_id: int) -> list[dict[str, object]]:
+    """Return valid saved review drafts tied to one exact historical source."""
+
+    prepared: list[dict[str, object]] = []
+    for item in discover_review_choices(context):
+        extraction_id = _coerce_car_id(item.get("extraction_id"))
+        if extraction_id is None:
+            continue
+        extraction = db.session.get(EvidenceExtraction, extraction_id)
+        if extraction is None or int(extraction.evidence_id or 0) != int(evidence_id):
+            continue
+        try:
+            summarize_historical_review(
+                extraction_id=extraction_id,
+                actor_user_id=current_user.id,
+                car_id=context.car_id,
+            )
+        except HistoricalReconciliationError:
+            continue
+        prepared.append(item)
+    return prepared
 
 
 def _history_review_choice_prompt(context) -> dict[str, object]:
@@ -1715,10 +1752,15 @@ def start_whatsapp_source_chat_review():
             context,
             evidence_id=evidence_id,
         )
-        if not choices:
+        prepared_choices = (
+            _prepared_source_review_choices(context=context, evidence_id=evidence_id)
+            if not choices
+            else []
+        )
+        if not choices and not prepared_choices:
             flash(
-                "Rina did not find a source-supported episode from this WhatsApp bundle "
-                "that is eligible for durable-history review on the selected vehicle.",
+                "Rina did not find a new or saved source-supported episode from this "
+                "WhatsApp bundle that is eligible for review on the selected vehicle.",
                 "info",
             )
             return redirect(fallback_url)
@@ -1735,7 +1777,7 @@ def start_whatsapp_source_chat_review():
             )
             prompt = str(started["reply"])
             extraction_id = started.get("extraction_id")
-        else:
+        elif len(choices) > 1:
             session[_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY] = [
                 item.choice_key for item in choices
             ]
@@ -1744,6 +1786,36 @@ def start_whatsapp_source_chat_review():
             session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
             session.pop(_SESSION_HISTORY_REVIEW_CHOICES_KEY, None)
             prompt = _historical_intelligence_choices_prompt(choices)
+            extraction_id = None
+        elif len(prepared_choices) == 1:
+            extraction_id = int(prepared_choices[0]["extraction_id"])
+            state = summarize_historical_review(
+                extraction_id=extraction_id,
+                actor_user_id=current_user.id,
+                car_id=car_id,
+            )
+            if state.all_reviewed:
+                phase = "awaiting_apply_confirmation"
+                candidate_id = None
+                prompt = historical_review_preview(state)
+            else:
+                phase = "reviewing"
+                candidate_id = state.next_candidate_id
+                prompt = historical_candidate_prompt(state, candidate_id)
+            _history_review_bind(
+                extraction_id=extraction_id,
+                candidate_id=candidate_id,
+                phase=phase,
+            )
+        else:
+            session[_SESSION_HISTORY_REVIEW_CHOICES_KEY] = [
+                int(item["extraction_id"]) for item in prepared_choices
+            ]
+            session[_SESSION_HISTORY_REVIEW_PHASE_KEY] = "choose_episode"
+            session.pop(_SESSION_HISTORY_REVIEW_EXTRACTION_KEY, None)
+            session.pop(_SESSION_HISTORY_REVIEW_CANDIDATE_KEY, None)
+            session.pop(_SESSION_HISTORY_INTELLIGENCE_CHOICES_KEY, None)
+            prompt = review_choices_prompt(prepared_choices)
             extraction_id = None
 
         save_rina_chat_turn(
@@ -1850,6 +1922,14 @@ def select_chat_vehicle():
         ),
         200,
     )
+
+
+@chat_bp.get("/chat")
+@login_required
+def legacy_chat_entry():
+    """Keep old bookmarks/navigation working while the workspace is canonical."""
+
+    return redirect(url_for("chat.rina_workspace"))
 
 
 @chat_bp.post("/chat")

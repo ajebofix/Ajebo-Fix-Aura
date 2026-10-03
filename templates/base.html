@@ -101,7 +101,7 @@ rel="stylesheet">
 
             <a href="/dashboard" class="nav-item">Dashboard</a>
             {% if current_user.is_authenticated %}
-            <a href="{{ url_for('chat.rina_workspace') }}" class="nav-item">Ask Rina</a>
+            <a href="{{ url_for('chat.rina_workspace') }}" class="nav-item">A.J. Rina</a>
             {% endif %}
 
             {% if current_user.is_authenticated and current_user.role == 'driver' %}
@@ -112,8 +112,6 @@ rel="stylesheet">
                 Treatment Plans
             </a>
             {% endif %}
-
-            <a href="/chat" class="nav-item">A.J. Rina</a>
 
             {% if current_user.is_authenticated and current_user.is_admin %}
             <a href="/admin/dashboard" class="nav-item">

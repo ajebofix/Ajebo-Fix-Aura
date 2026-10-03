@@ -72,22 +72,37 @@ def rina_openai_provider_enabled() -> bool:
 
 
 def rina_openai_model() -> str:
-    return (os.getenv("RINA_OPENAI_MODEL") or "gpt-4o-mini").strip()
+    return (os.getenv("RINA_OPENAI_MODEL") or "gpt-5.6-terra").strip()
 
 
 def rina_openai_timeout_seconds() -> float:
-    raw = (os.getenv("RINA_OPENAI_TIMEOUT_SECONDS") or "8").strip()
+    raw = (os.getenv("RINA_OPENAI_TIMEOUT_SECONDS") or "30").strip()
     try:
         value = float(raw)
     except ValueError:
-        return 8.0
-    return min(max(value, 2.0), 30.0)
+        return 30.0
+    return min(max(value, 5.0), 45.0)
 
 
 def rina_openai_max_retries() -> int:
-    raw = (os.getenv("RINA_OPENAI_MAX_RETRIES") or "1").strip()
+    raw = (os.getenv("RINA_OPENAI_MAX_RETRIES") or "0").strip()
     try:
         value = int(raw)
     except ValueError:
-        return 1
-    return min(max(value, 0), 2)
+        return 0
+    return min(max(value, 0), 1)
+
+
+def rina_openai_reasoning_effort() -> str:
+    raw = (os.getenv("RINA_OPENAI_REASONING_EFFORT") or "low").strip().lower()
+    allowed = {"none", "minimal", "low", "medium", "high", "xhigh"}
+    return raw if raw in allowed else "low"
+
+
+def rina_openai_max_output_tokens() -> int:
+    raw = (os.getenv("RINA_OPENAI_MAX_OUTPUT_TOKENS") or "1800").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 1800
+    return min(max(value, 256), 5000)

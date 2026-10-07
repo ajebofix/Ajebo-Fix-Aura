@@ -19,9 +19,12 @@ from services.rina_advisor_360 import (
 )
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_contracts import RinaRequest
-from services.rina_memory_service import RinaMemoryBundle
+from services.rina_memory_service import RinaChatTurn, RinaMemoryBundle
 from services.rina_orchestrator import orchestrate_rina
-from services.rina_provider_context import build_rina_provider_context
+from services.rina_provider_context import (
+    _chat_continuity_messages,
+    build_rina_provider_context,
+)
 from services.rina_runtime_flags import rina_advisor_360_enabled
 from treatment.models import (
     TreatmentAction,
@@ -908,6 +911,51 @@ def _provider_json(provider_context) -> dict:
     first = provider_context.request.input_messages[0]["content"]
     marker = "instructions:\n"
     return json.loads(first.split(marker, 1)[1])
+
+
+def test_prior_answer_review_preserves_long_latest_assistant_turn():
+    long_answer = "START-" + ("evidence classification detail " * 260) + "-END"
+    memory = RinaMemoryBundle(
+        user_id=1,
+        car_id=3,
+        authority="administrator",
+        chat_history=(
+            RinaChatTurn(
+                message_id=1,
+                role="user",
+                content="Give me a complete vehicle picture.",
+                timestamp=None,
+                conversation_id="continuity",
+                channel="in_app",
+                visibility="advisor",
+            ),
+            RinaChatTurn(
+                message_id=2,
+                role="assistant",
+                content=long_answer,
+                timestamp=None,
+                conversation_id="continuity",
+                channel="in_app",
+                visibility="advisor",
+            ),
+        ),
+        summaries=(),
+        advisor_memory=(),
+    )
+
+    self_review = _chat_continuity_messages(
+        memory=memory,
+        current_message="Review your previous answer critically.",
+    )
+    ordinary = _chat_continuity_messages(
+        memory=memory,
+        current_message="What should I watch next?",
+    )
+
+    assert self_review[-1]["content"].endswith("-END")
+    assert len(self_review[-1]["content"]) > 1500
+    assert len(ordinary[-1]["content"]) <= 1500
+    assert ordinary[-1]["content"].endswith("…")
 
 
 def test_advisor_360_defaults_off(monkeypatch):

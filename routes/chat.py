@@ -2093,7 +2093,7 @@ def chat():
                 car_id=context.car_id,
                 authority=context.authority,
                 state=RINA_STATE_ANSWERED,
-                outcome="recorded",
+                outcome="answered",
                 action_family="repair_progress_record",
                 provider_status="not_called",
                 evidence_refs=(

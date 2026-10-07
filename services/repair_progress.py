@@ -88,14 +88,37 @@ def classify_repair_progress(summary: str) -> tuple[str, tuple[str, ...]]:
     rules = (
         ("delivered", ("delivered", "handed over", "returned to client", "client collected")),
         ("ready_for_delivery", ("ready for delivery", "ready for handover", "ready for pickup")),
+        (
+            "custody",
+            (
+                "police custody",
+                "released from police",
+                "released by police",
+                "received into ajebo fix",
+                "came back into ajebo fix",
+                "took possession",
+                "vehicle arrived",
+                "car arrived",
+            ),
+        ),
         ("testing", ("road test", "testing", "tested", "quality check", "final inspection")),
         ("reassembly", ("reassembly", "reassembled", "assembly", "fitted back")),
         ("paint", ("paint", "painting", "spray", "refinish")),
-        ("bodywork", ("panel beater", "panel beating", "bodywork", "body work", "straightening")),
+        (
+            "bodywork",
+            (
+                "panel beating started",
+                "panel beating commenced",
+                "panel work started",
+                "bodywork started",
+                "body work started",
+                "straightening started",
+                "straightening",
+            ),
+        ),
         ("dismantling", ("dismantl", "strip down", "strip-down", "stripped")),
         ("parts", ("parts", "part ", "headlamp", "bumper", "bonnet", "condenser", "radiator", "procure", "source")),
         ("inspection", ("inspect", "assessment", "check damage", "pre-repair")),
-        ("custody", ("custody", "police", "released", "received", "possession", "vehicle arrived", "car arrived")),
     )
     tags = tuple(name for name, needles in rules if any(needle in text for needle in needles))
     primary = tags[0] if tags else "general"
@@ -113,6 +136,47 @@ def _normalise_milestone(value: str | None, *, summary: str) -> tuple[str, tuple
     return milestone, tuple(dict.fromkeys(tags))
 
 
+_MONTHS = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+
+def _explicit_date_from_summary(summary: str) -> str | None:
+    """Return an explicit calendar date without inventing a clock time."""
+
+    match = re.search(
+        r"\b(?:on\s+)?(?P<day>[0-3]?\d)\s+"
+        r"(?P<month>january|february|march|april|may|june|july|august|"
+        r"september|october|november|december)\s+"
+        r"(?P<year>20\d{2})\b",
+        str(summary or ""),
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+
+    try:
+        dt = datetime(
+            int(match.group("year")),
+            _MONTHS[match.group("month").lower()],
+            int(match.group("day")),
+        )
+    except (TypeError, ValueError):
+        return None
+    return dt.date().isoformat()
+
+
 def _normalise_occurred_at(value: str | datetime | None) -> str | None:
     if value in (None, ""):
         return None
@@ -120,6 +184,11 @@ def _normalise_occurred_at(value: str | datetime | None) -> str | None:
         dt = value
     else:
         raw = str(value).strip()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            try:
+                return datetime.fromisoformat(raw).date().isoformat()
+            except ValueError as exc:
+                raise RepairProgressError("Enter a valid progress date/time.") from exc
         try:
             dt = datetime.fromisoformat(raw)
         except ValueError as exc:
@@ -152,6 +221,8 @@ def record_repair_progress(
     normalized_source = str(source or "manual").strip().lower()
     if normalized_source not in {"manual", "rina"}:
         normalized_source = "manual"
+    if occurred_at in (None, "") and normalized_source == "rina":
+        occurred_at = _explicit_date_from_summary(normalized_summary)
     normalized_occurred_at = _normalise_occurred_at(occurred_at)
 
     payload = {

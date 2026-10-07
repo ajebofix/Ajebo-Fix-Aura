@@ -12,7 +12,7 @@ from admin.routes import admin_bp
 from admin.utils import advisor_required
 from evidence.models import VehicleEvidence
 from extensions import db
-from models import TreatmentPlan
+from models import Car, TreatmentPlan
 from security.access import resolve_vehicle_authority
 from services.treatment_action_lifecycle import (
     TreatmentActionLifecycleError,
@@ -29,6 +29,12 @@ from services.treatment_outcome_recording import (
 from services.treatment_plan_lifecycle import (
     TreatmentPlanLifecycleError,
     TreatmentPlanLifecycleService,
+)
+from services.repair_progress import (
+    MILESTONES,
+    RepairProgressError,
+    record_repair_progress,
+    repair_progress_for_car,
 )
 from treatment.models import TreatmentAction
 
@@ -63,6 +69,58 @@ def _parse_datetime(value: str | None, *, required: bool = False) -> datetime | 
         return datetime.fromisoformat(text)
     except ValueError as exc:
         raise ValueError("Enter a valid date and time.") from exc
+
+
+@admin_bp.get("/cars/<int:car_id>/repair-progress")
+@login_required
+@advisor_required
+def repair_progress_console(car_id: int):
+    car = Car.query.get_or_404(car_id)
+    authority = resolve_vehicle_authority(current_user.id, car.id)
+    if authority not in {"advisor", "administrator"}:
+        abort(403)
+
+    plans = (
+        TreatmentPlan.query.filter_by(car_id=car.id)
+        .order_by(TreatmentPlan.updated_at.desc(), TreatmentPlan.id.desc())
+        .limit(30)
+        .all()
+    )
+    return render_template(
+        "treatment_actions/repair_progress.html",
+        car=car,
+        progress_entries=repair_progress_for_car(car_id=car.id, limit=150),
+        milestones=MILESTONES,
+        treatment_plans=plans,
+    )
+
+
+@admin_bp.post("/cars/<int:car_id>/repair-progress")
+@login_required
+@advisor_required
+def record_repair_progress_manual(car_id: int):
+    car = Car.query.get_or_404(car_id)
+    authority = resolve_vehicle_authority(current_user.id, car.id)
+    if authority not in {"advisor", "administrator"}:
+        abort(403)
+
+    try:
+        record_repair_progress(
+            actor_user_id=current_user.id,
+            car_id=car.id,
+            milestone=request.form.get("milestone"),
+            summary=request.form.get("summary", ""),
+            occurred_at=request.form.get("occurred_at") or None,
+            source="manual",
+        )
+        flash("Repair progress recorded. Rina can use it in this vehicle's live context.", "success")
+    except RepairProgressError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    except Exception:
+        db.session.rollback()
+        raise
+    return redirect(url_for("admin.repair_progress_console", car_id=car.id))
 
 
 @admin_bp.get("/treatment-actions")

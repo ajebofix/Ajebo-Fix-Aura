@@ -18,6 +18,7 @@ from services.rina_context_resolver import RinaResolvedContext
 from services.rina_contracts import RinaRequest
 from services.rina_memory_service import RinaMemoryBundle
 from services.rina_runtime_flags import rina_advisor_360_enabled
+from services.repair_progress import repair_progress_context
 
 
 @dataclass(frozen=True)
@@ -486,6 +487,11 @@ def _trusted_context_payload(
         "reviewed_historical_records": reviewed_historical_records,
         "historical_source_retrieval": historical_source_retrieval,
         "advisor_360": advisor_360,
+        "live_repair_progress": (
+            repair_progress_context(car_id=context.car_id, limit=30)
+            if context.authority in {"advisor", "administrator"}
+            else []
+        ),
         "allowed_actions": list(context.allowed_actions),
     }
 
@@ -539,6 +545,7 @@ BOUNDARIES
 - Do not make a mechanical diagnosis. Do not give repair procedures, DIY steps, component-removal instructions, or autonomous treatment decisions.
 - Do not claim an assessment, treatment, payment, booking, escalation, or other action was completed unless Aura's structured context explicitly says it was completed.
 - Human approval remains required for assessment and treatment decisions.
+- LIVE REPAIR PROGRESS entries are advisor-recorded operational facts such as custody, location, parts dependency, bodywork stage or delivery status. Use them to explain what is happening now, but never convert a progress note into diagnosis, payment, completed repair or successful outcome unless a separate governed record establishes that fact.
 - READ-ONLY RECORD EXPLANATION IS NOT A TREATMENT DECISION. When authority is advisor or administrator, summarising, comparing, organising and explaining the supplied Aura record is explicitly allowed and expected. Do not refuse a read-only record summary merely because human review is required for diagnosis, assessment decisions or durable writes.
 - For advisor or administrator authority, never tell the speaker to "reach out to an advisor", "contact an advisor", or otherwise redirect them to the role they already hold operationally. If human judgement is required, say that the point remains for their review or confirmation.
 - If the speaker asks why an answer was limited, explain the actual evidence or authority boundary precisely. Do not invent vague "access limitations" when the structured authority permits read-only discussion.
@@ -611,10 +618,23 @@ def build_rina_provider_context(
         }
     ]
 
-    for turn in memory.chat_history[-10:]:
+    recent_turns = list(memory.chat_history[-10:])
+    last_assistant_index = next(
+        (
+            index
+            for index in range(len(recent_turns) - 1, -1, -1)
+            if recent_turns[index].role == "assistant"
+        ),
+        None,
+    )
+    for index, turn in enumerate(recent_turns):
         if turn.role not in {"user", "assistant"}:
             continue
-        content = _clip(turn.content, limit=1500)
+        # The immediately previous Rina answer needs enough fidelity for requests
+        # such as "review your previous answer critically". Older turns remain
+        # tightly minimized.
+        limit = 8000 if index == last_assistant_index else 1500
+        content = _clip(turn.content, limit=limit)
         if content:
             input_messages.append({"role": turn.role, "content": content})
 

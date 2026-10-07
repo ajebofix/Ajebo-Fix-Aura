@@ -576,6 +576,61 @@ AUTHORITY-SPECIFIC POLICY
 """.strip()
 
 
+_PRIOR_ANSWER_REFERENCE_RE = re.compile(
+    r"\b(?:previous|prior|last)\s+(?:answer|response|reply)\b|"
+    r"\b(?:what|something)\s+you\s+(?:said|wrote)\s+(?:earlier|before)\b",
+    re.IGNORECASE,
+)
+
+
+def _chat_continuity_messages(
+    *,
+    memory: RinaMemoryBundle,
+    current_message: str,
+) -> list[dict[str, str]]:
+    """Return bounded continuity, preserving the last answer for explicit self-review.
+
+    Most turns remain aggressively minimized. When the user explicitly asks Rina
+    to inspect her previous answer, the latest assistant turn gets a larger bounded
+    window so the visible conversation and provider continuity do not disagree.
+    """
+
+    turns = [
+        turn
+        for turn in memory.chat_history[-10:]
+        if turn.role in {"user", "assistant"}
+    ]
+    preserve_latest_assistant = bool(
+        _PRIOR_ANSWER_REFERENCE_RE.search(str(current_message or ""))
+    )
+    latest_assistant_index = next(
+        (
+            index
+            for index in range(len(turns) - 1, -1, -1)
+            if turns[index].role == "assistant"
+        ),
+        None,
+    )
+
+    messages: list[dict[str, str]] = []
+    for index, turn in enumerate(turns):
+        limit = 1500
+        if preserve_latest_assistant and index == latest_assistant_index:
+            limit = 12000
+        elif (
+            preserve_latest_assistant
+            and latest_assistant_index is not None
+            and index == latest_assistant_index - 1
+            and turn.role == "user"
+        ):
+            limit = 4000
+
+        content = _clip(turn.content, limit=limit)
+        if content:
+            messages.append({"role": turn.role, "content": content})
+    return messages
+
+
 def build_rina_provider_context(
     *,
     rina_request: RinaRequest,
@@ -611,12 +666,12 @@ def build_rina_provider_context(
         }
     ]
 
-    for turn in memory.chat_history[-10:]:
-        if turn.role not in {"user", "assistant"}:
-            continue
-        content = _clip(turn.content, limit=1500)
-        if content:
-            input_messages.append({"role": turn.role, "content": content})
+    input_messages.extend(
+        _chat_continuity_messages(
+            memory=memory,
+            current_message=rina_request.message,
+        )
+    )
 
     input_messages.append({"role": "user", "content": rina_request.message})
 

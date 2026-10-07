@@ -15,9 +15,10 @@ from test_rina_chat_cutover import (
 
 from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
-from models import AdvisorNote, ChatMessage, VehicleProfile
+from models import AdvisorNote, ChatMessage, TreatmentPlan, VehicleEvent, VehicleProfile
 from rina.audit_models import RinaAIAuditEvent
 from services.repair_progress import PREFIX, repair_progress_for_car
+from treatment.models import TreatmentAction
 
 
 def test_admin_can_open_workspace_and_search_client_vehicle(app, client):
@@ -50,6 +51,96 @@ def test_admin_can_open_workspace_and_search_client_vehicle(app, client):
     assert context["speaker"] == {"display_name": admin.name, "account_role": "admin"}
     _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
     assert client.get("/chat/context").json["active_car_id"] == car.id
+
+
+def _service_document(*, car, uploader, suffix: int) -> VehicleEvidence:
+    evidence = VehicleEvidence(
+        car_id=car.id,
+        uploaded_by_user_id=uploader.id,
+        evidence_type="document",
+        purpose="service_document",
+        source_channel="web",
+        historical_source_type="standalone_document",
+        visibility="advisor",
+        review_status="pending_review",
+        storage_provider="r2",
+        storage_state="available",
+        object_key=f"tests/live-collision/{suffix}.pdf",
+        safe_display_name=f"collision-job-{suffix}.pdf",
+        content_type="application/pdf",
+        byte_size=2048,
+        sha256=(f"{suffix:064d}")[-64:],
+        consent_basis="advisor_operational_record",
+        lawful_purpose="vehicle_care_history",
+    )
+    db.session.add(evidence)
+    db.session.flush()
+    return evidence
+
+
+def test_rina_can_propose_idempotent_live_collision_plan_without_authorizing(app, client, monkeypatch):
+    admin = _user(suffix=281, role="admin")
+    owner = _user(suffix=282)
+    car = _car(suffix=281)
+    _own(owner=owner, car=car, suffix=281)
+    evidence = _service_document(car=car, uploader=admin, suffix=281)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    provider = _fake_provider(monkeypatch, text="provider should not be needed")
+    message = (
+        f"Create collision repair treatment plan from Evidence #{evidence.id} "
+        "JOB-2026-003"
+    )
+    first = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": message},
+    )
+
+    assert first.status_code == 200
+    assert first.json["intent"] == "collision_treatment_plan"
+    assert first.json["treatment_plan"]["status"] == "proposed"
+    assert first.json["treatment_plan"]["action_count"] == 11
+    assert provider.calls == []
+
+    plan_id = first.json["treatment_plan"]["id"]
+    plan = db.session.get(TreatmentPlan, plan_id)
+    assert plan is not None
+    assert plan.car_id == car.id
+    assert plan.source_evidence_id == evidence.id
+    assert plan.title == "Collision Repair & Body Restoration — JOB-2026-003"
+    assert plan.status == "proposed"
+    assert "CLIENT-SUPPLIED PARTS" in plan.internal_instructions
+
+    actions = TreatmentAction.query.filter_by(treatment_plan_id=plan.id).all()
+    assert len(actions) == 11
+    assert {action.status for action in actions} == {"planned"}
+    assert any("Cooling-area inspection" in action.title for action in actions)
+    assert VehicleEvent.query.filter_by(
+        subject_type="treatment_plan",
+        subject_id=plan.id,
+        event_type="treatment.proposed",
+    ).count() == 1
+
+    second = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": message},
+    )
+    assert second.status_code == 200
+    assert second.json["treatment_plan"]["id"] == plan.id
+    assert TreatmentPlan.query.filter_by(
+        car_id=car.id,
+        title=plan.title,
+        record_origin="live",
+    ).count() == 1
+    assert TreatmentAction.query.filter_by(treatment_plan_id=plan.id).count() == 11
+    assert VehicleEvent.query.filter_by(
+        subject_type="treatment_plan",
+        subject_id=plan.id,
+        event_type="treatment.proposed",
+    ).count() == 1
 
 
 def test_admin_can_record_live_repair_progress_through_rina(app, client, monkeypatch):

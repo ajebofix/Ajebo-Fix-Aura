@@ -979,6 +979,247 @@ def test_advisor_360_is_not_available_to_owner(app):
         assert build_rina_advisor_360_context(context) is None
 
 
+def test_provider_context_prioritizes_latest_whatsapp_snapshot(app, monkeypatch):
+    with app.app_context():
+        _owner, admin, car, _action = _setup_longitudinal_case()
+        older_whatsapp = (
+            VehicleEvidence.query.filter_by(
+                car_id=car.id,
+                historical_source_type="whatsapp_conversation",
+                evidence_type="archive",
+            )
+            .order_by(VehicleEvidence.uploaded_at.asc(), VehicleEvidence.id.asc())
+            .first()
+        )
+        assert older_whatsapp is not None
+
+        newest = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=admin.id,
+            evidence_type="archive",
+            purpose="vehicle_history_context",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider="test-private",
+            storage_state="available",
+            object_key="advisor360/latest-whatsapp.zip",
+            safe_display_name="WhatsApp Chat - current repair.zip",
+            content_type="application/zip",
+            byte_size=4096,
+            sha256="8" * 64,
+            uploaded_at=datetime(2026, 10, 7, 21, 30, 0),
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        transcript = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=admin.id,
+            evidence_type="document",
+            purpose="vehicle_history_context",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider="test-private",
+            storage_state="available",
+            object_key="advisor360/latest-chat.txt",
+            safe_display_name="_chat.txt",
+            content_type="text/plain",
+            byte_size=2048,
+            sha256="9" * 64,
+            uploaded_at=datetime(2026, 10, 7, 21, 30, 1),
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        photo = VehicleEvidence(
+            car_id=car.id,
+            uploaded_by_user_id=admin.id,
+            evidence_type="image",
+            purpose="vehicle_history_context",
+            source_channel="whatsapp",
+            historical_source_type="whatsapp_conversation",
+            visibility="advisor",
+            review_status="pending_review",
+            storage_provider="test-private",
+            storage_state="available",
+            object_key="advisor360/latest-damage.jpg",
+            safe_display_name="PHOTO-2026-10-07-16-51-20.jpg",
+            content_type="image/jpeg",
+            byte_size=1024,
+            sha256="a" * 64,
+            uploaded_at=datetime(2026, 10, 7, 21, 30, 2),
+            consent_basis="advisor_whatsapp_case_import",
+            lawful_purpose="vehicle_care_recordkeeping",
+        )
+        db.session.add_all([newest, transcript, photo])
+        db.session.flush()
+        db.session.add_all(
+            [
+                EvidenceBundleItem(
+                    bundle_evidence_id=newest.id,
+                    child_evidence_id=transcript.id,
+                    member_index=100,
+                    member_kind="transcript",
+                    member_sha256="9" * 64,
+                ),
+                EvidenceBundleItem(
+                    bundle_evidence_id=newest.id,
+                    child_evidence_id=photo.id,
+                    member_index=101,
+                    member_kind="image",
+                    member_sha256="a" * 64,
+                ),
+            ]
+        )
+
+        transcript_payload = {
+            "schema_version": 1,
+            "text": (
+                "[06/10/2026, 12:42] Ryan: Call the towing van\n"
+                "[07/10/2026, 16:52] Ajebo Fix: This is the headlight's broken handles.\n"
+                "[07/10/2026, 16:54] Ajebo Fix: This is the bumper bracket. This one is not good.\n"
+                "[07/10/2026, 16:55] Ajebo Fix: This wiper reservoir is broken.\n"
+                "[07/10/2026, 17:08] Ajebo Fix: The panel beater wants to collect 250k. Painter 180k.\n"
+                "[07/10/2026, 17:20] Ryan: Front bumper, Bonnet, Condenser, Radiator, Left headlight."
+            ),
+        }
+        tc, tv, td = _payload_cipher(transcript_payload)
+        photo_payload = {
+            "schema_version": 1,
+            "summary": "Image shows collision damage around the exposed front structure.",
+            "observations": [
+                "Damaged/corroded front bracket area is visible.",
+            ],
+            "visible_text": "",
+            "uncertainties": [
+                "Image alone does not establish which components require replacement.",
+            ],
+        }
+        pc, pv, pd = _payload_cipher(photo_payload)
+        structured_payload = {
+            "schema_version": 2,
+            "rina_summary": (
+                "Newest WhatsApp export extends the collision-repair timeline through "
+                "7 October and contains new parts, damage and commercial discussion."
+            ),
+            "priority_threads": [
+                {
+                    "title": "Current collision repair",
+                    "status": "active_repair_context",
+                    "reason": "New inspection and procurement discussion appears on 7 October.",
+                    "source_refs": ["CHAT latest"],
+                }
+            ],
+            "source_coverage": {
+                "coverage_complete": True,
+                "supported_media_complete": True,
+                "claim": "complete_supported_evidence",
+            },
+        }
+        sc, sv, sd = _payload_cipher(structured_payload)
+        db.session.add_all(
+            [
+                EvidenceExtraction(
+                    evidence_id=transcript.id,
+                    extraction_type="document_text",
+                    provider="aura_text",
+                    provider_model=None,
+                    status="completed",
+                    result_ciphertext=tc,
+                    result_key_version=tv,
+                    result_sha256=td,
+                    review_status="unreviewed",
+                    completed_at=datetime(2026, 10, 7, 21, 31, 0),
+                ),
+                EvidenceExtraction(
+                    evidence_id=photo.id,
+                    extraction_type="image_observation",
+                    provider="test",
+                    provider_model="vision",
+                    status="completed",
+                    result_ciphertext=pc,
+                    result_key_version=pv,
+                    result_sha256=pd,
+                    review_status="unreviewed",
+                    completed_at=datetime(2026, 10, 7, 21, 31, 1),
+                ),
+                EvidenceExtraction(
+                    evidence_id=newest.id,
+                    extraction_type="structured_fields",
+                    provider="test",
+                    provider_model="test-model",
+                    status="completed",
+                    result_ciphertext=sc,
+                    result_key_version=sv,
+                    result_sha256=sd,
+                    review_status="unreviewed",
+                    provenance={
+                        "analysis_pipeline": "whatsapp_bundle_v1",
+                        "background_stage": "completed",
+                        "semantic_authority": "candidate_only",
+                    },
+                    completed_at=datetime(2026, 10, 7, 21, 32, 0),
+                ),
+            ]
+        )
+        db.session.commit()
+
+        context = resolve_rina_vehicle_context(user_id=admin.id, car_id=car.id)
+        monkeypatch.setenv("RINA_ADVISOR_360_ENABLED", "true")
+        request = RinaRequest(
+            request_id="latest-whatsapp-context",
+            user_id=context.user_id,
+            car_id=context.car_id,
+            authority=context.authority,
+            channel="in_app",
+            message="What changed with this collision repair and what parts is the client getting?",
+            conversation_id="latest-whatsapp-conversation",
+            context_version=context.context_version,
+            memory_policy="vehicle_scoped_minimized_v1",
+            allowed_actions=context.allowed_actions,
+            denied_actions=context.denied_actions,
+        )
+        provider = build_rina_provider_context(
+            rina_request=request,
+            context=context,
+            memory=_memory(
+                user_id=admin.id,
+                car_id=car.id,
+                authority=context.authority,
+            ),
+        )
+        payload = _provider_json(provider)
+        snapshot = payload["latest_whatsapp_snapshot"]
+
+        assert snapshot["evidence_id"] == newest.id
+        assert snapshot["snapshot_policy"]["newest_active_export"] is True
+        assert snapshot["snapshot_policy"][
+            "older_exports_are_not_independent_corroboration"
+        ] is True
+        assert snapshot["analysis"]["latest_status"] == "completed"
+        assert "wiper reservoir is broken" in snapshot["recent_transcript"]["tail"]
+        assert "Front bumper, Bonnet, Condenser, Radiator, Left headlight" in (
+            snapshot["recent_transcript"]["tail"]
+        )
+        assert any(
+            "front bracket" in str(item.get("content_excerpt") or "").lower()
+            for item in snapshot["recent_media_evidence"]
+        )
+        assert all(
+            not (
+                item.get("source_type") == "whatsapp_conversation"
+                and item.get("parent_source_id") == older_whatsapp.id
+            )
+            for item in payload["historical_source_retrieval"]
+        )
+        assert "newest active cumulative WhatsApp export" in provider.request.instructions
+        assert "Never count repeated messages across cumulative exports" in (
+            provider.request.instructions
+        )
+
+
 def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatch):
     with app.app_context():
         _owner, admin, car, _action = _setup_longitudinal_case()

@@ -37,6 +37,15 @@ def _clip(value: str | None, *, limit: int) -> str | None:
     return clean[: limit - 1].rstrip() + "…"
 
 
+def _tail_clip(value: str | None, *, limit: int) -> str | None:
+    if value is None:
+        return None
+    clean = str(value).strip()
+    if len(clean) <= limit:
+        return clean
+    return "…" + clean[-(limit - 1):].lstrip()
+
+
 def _evidence_refs(context: RinaResolvedContext) -> tuple[dict[str, int], ...]:
     refs: list[dict[str, int]] = []
 
@@ -171,6 +180,19 @@ def _historical_source_retrieval(
         return []
 
     terms = _historical_query_terms(message)
+    latest_whatsapp_root = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == context.car_id,
+            VehicleEvidence.evidence_type == "archive",
+            VehicleEvidence.historical_source_type == "whatsapp_conversation",
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+            VehicleEvidence.review_status != "superseded",
+            ~VehicleEvidence.bundle_parent_items.any(),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .first()
+    )
     roots = (
         VehicleEvidence.query.filter(
             VehicleEvidence.car_id == context.car_id,
@@ -180,12 +202,21 @@ def _historical_source_retrieval(
             ~VehicleEvidence.bundle_parent_items.any(),
         )
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
-        .limit(8)
+        .limit(20)
         .all()
     )
 
     candidates: list[tuple[int, int, dict[str, Any]]] = []
     for root in roots:
+        if (
+            root.historical_source_type == "whatsapp_conversation"
+            and latest_whatsapp_root is not None
+            and root.id != latest_whatsapp_root.id
+        ):
+            # WhatsApp exports are cumulative snapshots. Query-level source
+            # retrieval uses the newest active export only so repeated messages
+            # from older snapshots are not double-counted as corroboration.
+            continue
         evidence_rows: list[tuple[VehicleEvidence, str]] = [(root, "root_source")]
         if root.historical_source_type == "whatsapp_conversation":
             bundle_rows = (
@@ -270,6 +301,215 @@ def _historical_source_retrieval(
     else:
         selected = candidates[:8]
     return [item[2] for item in selected]
+
+
+def _latest_whatsapp_snapshot_context(
+    context: RinaResolvedContext,
+) -> dict[str, Any] | None:
+    """Return a bounded newest-export snapshot for privileged Rina turns.
+
+    WhatsApp exports are cumulative snapshots. The newest active archive is
+    preferred for current conversational/repair context so repeated messages in
+    older exports are not accidentally treated as independent corroboration.
+    """
+
+    if context.authority not in {"advisor", "administrator"}:
+        return None
+
+    root = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == context.car_id,
+            VehicleEvidence.evidence_type == "archive",
+            VehicleEvidence.historical_source_type == "whatsapp_conversation",
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+            VehicleEvidence.review_status != "superseded",
+            ~VehicleEvidence.bundle_parent_items.any(),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .first()
+    )
+    if root is None:
+        return None
+
+    structured_rows = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=root.id,
+            extraction_type="structured_fields",
+        )
+        .order_by(EvidenceExtraction.id.desc())
+        .limit(20)
+        .all()
+    )
+    latest_run = structured_rows[0] if structured_rows else None
+    completed = next(
+        (row for row in structured_rows if row.status == "completed"),
+        None,
+    )
+
+    structured_payload: dict[str, Any] = {}
+    if completed is not None:
+        try:
+            structured_payload = decrypt_extraction_payload(completed)
+        except HistoricalIngestionError:
+            structured_payload = {}
+
+    transcript_tail = None
+    transcript_evidence_id = None
+    transcript_rows = (
+        EvidenceBundleItem.query.filter_by(
+            bundle_evidence_id=root.id,
+            member_kind="transcript",
+        )
+        .order_by(EvidenceBundleItem.member_index.desc())
+        .limit(4)
+        .all()
+    )
+    for bundle_item in transcript_rows:
+        child = bundle_item.child
+        if child is None:
+            continue
+        extraction = (
+            EvidenceExtraction.query.filter_by(
+                evidence_id=child.id,
+                extraction_type="document_text",
+                status="completed",
+            )
+            .order_by(EvidenceExtraction.id.desc())
+            .first()
+        )
+        if extraction is None:
+            continue
+        try:
+            payload = decrypt_extraction_payload(extraction)
+        except HistoricalIngestionError:
+            continue
+        value = str(payload.get("text") or "").strip()
+        if not value:
+            continue
+        transcript_tail = _tail_clip(value, limit=18000)
+        transcript_evidence_id = child.id
+        break
+
+    recent_media: list[dict[str, Any]] = []
+    media_rows = (
+        EvidenceBundleItem.query.filter(
+            EvidenceBundleItem.bundle_evidence_id == root.id,
+            EvidenceBundleItem.member_kind.in_(("image", "audio", "video", "document")),
+        )
+        .order_by(EvidenceBundleItem.member_index.desc())
+        .limit(28)
+        .all()
+    )
+    for bundle_item in media_rows:
+        child = bundle_item.child
+        if child is None:
+            continue
+        requested_types = {
+            "image": ("image_observation",),
+            "audio": ("transcription",),
+            "video": ("transcription", "image_observation"),
+            "document": ("document_text",),
+        }.get(str(bundle_item.member_kind), ())
+        for extraction_type in requested_types:
+            extraction = (
+                EvidenceExtraction.query.filter_by(
+                    evidence_id=child.id,
+                    extraction_type=extraction_type,
+                    status="completed",
+                )
+                .order_by(EvidenceExtraction.id.desc())
+                .first()
+            )
+            if extraction is None:
+                continue
+            try:
+                payload = decrypt_extraction_payload(extraction)
+            except HistoricalIngestionError:
+                continue
+            text_value = _historical_payload_text(extraction_type, payload)
+            if not text_value:
+                continue
+            recent_media.append(
+                {
+                    "member_index": bundle_item.member_index,
+                    "member_kind": str(bundle_item.member_kind),
+                    "evidence_id": child.id,
+                    "safe_display_name": _clip(child.safe_display_name, limit=160),
+                    "extraction_type": extraction_type,
+                    "content_excerpt": _clip(text_value, limit=1000),
+                    "semantic_authority": "source_content_not_durable_truth",
+                }
+            )
+            if len(recent_media) >= 16:
+                break
+        if len(recent_media) >= 16:
+            break
+
+    source_coverage = (
+        structured_payload.get("source_coverage")
+        if isinstance(structured_payload.get("source_coverage"), dict)
+        else {}
+    )
+    priority_threads = (
+        structured_payload.get("priority_threads")
+        if isinstance(structured_payload.get("priority_threads"), list)
+        else []
+    )
+
+    return {
+        "evidence_id": root.id,
+        "safe_display_name": _clip(root.safe_display_name, limit=160),
+        "uploaded_at": (
+            root.uploaded_at.isoformat() if root.uploaded_at is not None else None
+        ),
+        "review_status": root.review_status,
+        "analysis": {
+            "latest_extraction_id": latest_run.id if latest_run is not None else None,
+            "latest_status": latest_run.status if latest_run is not None else "not_started",
+            "latest_phase": (
+                _clip((latest_run.provenance or {}).get("background_stage"), limit=80)
+                if latest_run is not None
+                else None
+            ),
+            "completed_extraction_id": completed.id if completed is not None else None,
+            "analysis_pipeline": (
+                _clip((completed.provenance or {}).get("analysis_pipeline"), limit=100)
+                if completed is not None
+                else None
+            ),
+        },
+        "whole_bundle_summary": _clip(
+            str(
+                structured_payload.get("rina_summary")
+                or structured_payload.get("case_focus")
+                or ""
+            ),
+            limit=2600,
+        ),
+        "priority_threads": [
+            {
+                "title": _clip(str(item.get("title") or ""), limit=220),
+                "status": _clip(str(item.get("status") or ""), limit=80),
+                "reason": _clip(str(item.get("reason") or ""), limit=700),
+                "source_refs": list(item.get("source_refs") or [])[:8],
+            }
+            for item in priority_threads[:12]
+            if isinstance(item, dict)
+        ],
+        "source_coverage": source_coverage,
+        "recent_transcript": {
+            "evidence_id": transcript_evidence_id,
+            "tail": transcript_tail,
+            "semantic_authority": "source_content_not_durable_truth",
+        },
+        "recent_media_evidence": recent_media,
+        "snapshot_policy": {
+            "newest_active_export": True,
+            "cumulative_export": True,
+            "older_exports_are_not_independent_corroboration": True,
+        },
+    }
 
 
 def _reviewed_historical_records(
@@ -434,6 +674,7 @@ def _trusted_context_payload(
         )
 
     reviewed_historical_records = _reviewed_historical_records(context)
+    latest_whatsapp_snapshot = _latest_whatsapp_snapshot_context(context)
     if advisor_360 is not None:
         for record in reviewed_historical_records:
             record["record_role"] = "supporting_provenance"
@@ -486,6 +727,7 @@ def _trusted_context_payload(
         "reviewed_summaries": summaries,
         "reviewed_historical_records": reviewed_historical_records,
         "historical_source_retrieval": historical_source_retrieval,
+        "latest_whatsapp_snapshot": latest_whatsapp_snapshot,
         "advisor_360": advisor_360,
         "live_repair_progress": (
             repair_progress_context(car_id=context.car_id, limit=30)
@@ -558,6 +800,11 @@ BOUNDARIES
 - For questions about another/second vehicle, answer from vehicle_candidates and vehicle_identity_proposals. Do not give a hypothetical checklist such as "if there is another VIN..." when the user asked what this corpus actually contains. If no v2 vehicle census exists yet, say that the full multi-vehicle reconstruction has not been run rather than concluding that no other vehicle exists.
 - source_coverage is the completeness contract. Claim the full WhatsApp bundle was reviewed only when coverage_complete is true. If it is partial, explicitly identify the failed/unprocessed media classes supplied in coverage.
 - historical_source_retrieval contains query-relevant excerpts from imported PDF text, WhatsApp transcript material, voice-note/video transcriptions and image observations. Use those excerpts when the advisor asks what a source or media item contains. Source content is evidence, not durable professional truth, unless separately advisor-reviewed/canonicalised.
+- latest_whatsapp_snapshot is the newest active cumulative WhatsApp export for this vehicle. For advisor/admin questions about current repair progress, custody/location, client decisions, parts procurement, repair scope, authorization, commercial discussion or next steps, consult this newest snapshot before relying on older WhatsApp exports.
+- The newest WhatsApp export may repeat the same messages contained in older exports. Never count repeated messages across cumulative exports as independent corroboration or as multiple client decisions.
+- latest_whatsapp_snapshot.recent_transcript is direct conversation evidence and recent_media_evidence contains processed image/audio/video/document evidence. Use them together when they materially change the answer, but preserve their source-level status: a message proves that it was said; an image observation proves only what is visibly supported; neither becomes diagnosis, completed work, payment or successful outcome without the appropriate governed record.
+- If latest_whatsapp_snapshot.analysis.latest_status is not completed, or source_coverage says processing/coverage is partial, state that the newest export is still being processed and do not claim full media review.
+- If the newest WhatsApp evidence conflicts with or expands a live Treatment Plan, identify the mismatch for advisor review. Do not silently rewrite, authorize, start or complete the plan from source evidence alone.
 - WhatsApp bundle child evidence is content inside one parent historical source, not dozens of independent pending sources. Never report bundle-child counts as the number of historical sources.
 - historical_copilot is candidate-only. Never turn an uncertain, other_episode, unassigned, or possible-unregistered-vehicle item into durable vehicle truth merely because it appears in the copilot backlog.
 - You may prepare and explain proposed historical records for an advisor, but the advisor must review/edit and explicitly authorize any durable write. You may never approve your own proposal.

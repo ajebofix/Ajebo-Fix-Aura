@@ -50,6 +50,20 @@ def test_admin_can_open_workspace_and_search_client_vehicle(app, client):
     assert client.get("/chat/context").json["active_car_id"] == car.id
 
 
+def test_workspace_has_jump_to_latest_control(app, client):
+    admin = _user(suffix=270, role="admin")
+    db.session.commit()
+    _sign_in(client, admin)
+
+    page = client.get("/chat/workspace")
+
+    assert page.status_code == 200
+    assert b'id="rina-jump-latest"' in page.data
+    assert b"Jump to latest Rina message" in page.data
+    assert b"scrollIntoView" in page.data
+    assert b"updateJumpLatestVisibility" in page.data
+
+
 def test_account_help_does_not_read_vehicle_or_provider_even_with_stale_binding(
     app, client, monkeypatch
 ):

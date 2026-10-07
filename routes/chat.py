@@ -94,6 +94,10 @@ from rina.providers.base import RinaProviderError
 from services.rina_orchestrator import orchestrate_rina
 from services.rina_speaker import account_help, describe_speaker, speaker_identity
 from services.repair_progress import RepairProgressError, record_repair_progress
+from services.live_collision_plan import (
+    LiveCollisionPlanError,
+    propose_live_collision_plan,
+)
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -138,6 +142,34 @@ def _repair_progress_command(message: str) -> str | None:
         return None
     summary = " ".join(str(match.group("summary") or "").strip().split())
     return summary or None
+
+
+_COLLISION_PLAN_COMMAND_RE = re.compile(
+    r"^\s*(?:rina\s*[,,:-]?\s*)?"
+    r"(?:prepare|create|propose|set\s+up|build)\s+"
+    r"(?:(?:the|a)\s+)?(?:(?:live|current)\s+)?"
+    r"(?:collision(?:-repair)?|collision\s+repair|body\s+repair)"
+    r"\s+(?:treatment\s+)?plan\b(?P<rest>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _collision_plan_command(message: str) -> dict[str, object] | None:
+    match = _COLLISION_PLAN_COMMAND_RE.match(str(message or "").strip())
+    if match is None:
+        return None
+
+    rest = str(match.group("rest") or "")
+    evidence_match = re.search(r"\bevidence\s*#?\s*(\d+)\b", rest, re.IGNORECASE)
+    job_match = re.search(r"\b(JOB-\d{4}-\d{3,})\b", rest, re.IGNORECASE)
+    return {
+        "source_evidence_id": (
+            int(evidence_match.group(1)) if evidence_match is not None else None
+        ),
+        "job_reference": (
+            job_match.group(1).upper() if job_match is not None else None
+        ),
+    }
 
 
 def _historical_review_start_requested(message: str) -> bool:
@@ -2021,6 +2053,167 @@ def chat():
     conversation_id = (
         _conversation_id_for(car_id) if car_id is not None else _new_conversation_id()
     )
+
+    collision_plan_request = _collision_plan_command(message)
+    if collision_plan_request is not None:
+        if car_id is None:
+            return (
+                jsonify(
+                    {
+                        "reply": "Select the vehicle first, then tell me to prepare the collision Treatment Plan.",
+                        "intent": "collision_treatment_plan",
+                        "car_id": None,
+                        "authority": None,
+                        "state": RINA_STATE_VEHICLE_REQUIRED,
+                        "conversation_id": None,
+                        "uncertainty": "no vehicle is selected",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                400,
+            )
+
+        try:
+            context = resolve_rina_vehicle_context(
+                user_id=current_user.id,
+                car_id=car_id,
+            )
+            if context.authority not in {"advisor", "administrator"}:
+                raise LiveCollisionPlanError(
+                    "Preparing a live collision Treatment Plan requires advisor access."
+                )
+
+            plan = propose_live_collision_plan(
+                car_id=context.car_id,
+                actor_user_id=current_user.id,
+                source_evidence_id=collision_plan_request["source_evidence_id"],
+                job_reference=collision_plan_request["job_reference"],
+                client_supplies_parts=True,
+                source="rina.live_collision_plan",
+            )
+            conversation_id = _bind_rina_vehicle(
+                car_id=context.car_id,
+                conversation_id=conversation_id,
+            )
+            action_count = len(list(plan.actions))
+            reply = (
+                f"Prepared the live collision Treatment Plan '{plan.title}' with "
+                f"{action_count} planned Treatment Actions. The client-supplied-parts "
+                "responsibility is recorded separately from Ajebo Fix billing and from "
+                "proof of fitment. This is a proposed care pathway only; owner authorization "
+                "remains separate and no action has been marked started or completed."
+            )
+            save_rina_chat_turn(
+                user_id=current_user.id,
+                car_id=context.car_id,
+                conversation_id=conversation_id,
+                role="user",
+                content=message,
+                channel="in_app",
+                commit=False,
+            )
+            save_rina_chat_turn(
+                user_id=current_user.id,
+                car_id=context.car_id,
+                conversation_id=conversation_id,
+                role="assistant",
+                content=reply,
+                channel="in_app",
+                commit=False,
+            )
+            record_rina_audit(
+                request_id=_new_conversation_id(),
+                user_id=current_user.id,
+                car_id=context.car_id,
+                authority=context.authority,
+                state=RINA_STATE_ANSWERED,
+                outcome="answered",
+                action_family="collision_treatment_plan_proposed",
+                provider_status="not_called",
+                evidence_refs=(
+                    [{"type": "vehicle_evidence", "id": collision_plan_request["source_evidence_id"]}]
+                    if collision_plan_request["source_evidence_id"] is not None
+                    else []
+                ),
+                metadata={
+                    "channel": "in_app",
+                    "provider_attempted": False,
+                },
+                commit=False,
+            )
+            db.session.commit()
+            return (
+                jsonify(
+                    {
+                        "reply": reply,
+                        "intent": "collision_treatment_plan",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_ANSWERED,
+                        "conversation_id": conversation_id,
+                        "uncertainty": None,
+                        "escalation": None,
+                        "evidence_refs": (
+                            [{"type": "vehicle_evidence", "id": collision_plan_request["source_evidence_id"]}]
+                            if collision_plan_request["source_evidence_id"] is not None
+                            else []
+                        ),
+                        "treatment_plan": {
+                            "id": plan.id,
+                            "title": plan.title,
+                            "status": plan.status,
+                            "action_count": action_count,
+                        },
+                    }
+                ),
+                200,
+            )
+        except (
+            LiveCollisionPlanError,
+            RinaAuthorityError,
+            RinaContextResolutionError,
+        ) as exc:
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "reply": str(exc),
+                        "intent": "collision_treatment_plan",
+                        "car_id": car_id,
+                        "authority": None,
+                        "state": RINA_STATE_AUTHORITY_DENIED,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "collision Treatment Plan could not be prepared",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                403,
+            )
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "Rina collision Treatment Plan preparation failed user_id=%s car_id=%s",
+                current_user.id,
+                car_id,
+            )
+            return (
+                jsonify(
+                    {
+                        "reply": "I couldn't prepare that Treatment Plan safely. Nothing was added.",
+                        "intent": "collision_treatment_plan",
+                        "car_id": car_id,
+                        "authority": None,
+                        "state": RINA_STATE_PROVIDER_UNAVAILABLE,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "treatment plan creation failed",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                500,
+            )
 
     progress_summary = _repair_progress_command(message)
     if progress_summary is not None:

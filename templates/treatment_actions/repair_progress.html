@@ -72,6 +72,76 @@
 </section>
 
 <section class="card fade-up">
+    <div class="section-head">
+        <div>
+            <h2>Collision Repair Treatment Plan</h2>
+            <p class="muted">
+                Keep the live journey separate from the professional care pathway.
+                The plan may be proposed by an advisor; owner authorization remains a separate step.
+            </p>
+        </div>
+        {% if active_collision_plan %}
+        <span class="pill">{{ active_collision_plan.status|replace("_", " ")|title }}</span>
+        {% endif %}
+    </div>
+
+    {% if active_collision_plan %}
+    <p>
+        <strong>{{ active_collision_plan.title }}</strong>
+    </p>
+    <p class="muted">
+        {{ active_collision_plan.client_summary }}
+    </p>
+    <a class="btn btn-primary" href="{{ url_for('admin.treatment_plan_actions', plan_id=active_collision_plan.id) }}">
+        Open Collision Treatment Plan
+    </a>
+    {% else %}
+    <form method="POST" action="{{ url_for('admin.create_live_collision_plan', car_id=car.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="client_supplies_parts" value="1">
+
+        <div class="form-group">
+            <label class="label">Job reference</label>
+            <input
+                class="input"
+                type="text"
+                name="job_reference"
+                maxlength="80"
+                value="JOB-2026-003"
+                placeholder="Example: JOB-2026-003"
+            >
+        </div>
+
+        <div class="form-group">
+            <label class="label">Source service document</label>
+            <select class="input" name="source_evidence_id">
+                <option value="">No source document selected</option>
+                {% for evidence in service_documents %}
+                <option value="{{ evidence.id }}" {% if evidence.id == 225 %}selected{% endif %}>
+                    Evidence #{{ evidence.id }} · {{ evidence.safe_display_name }}
+                </option>
+                {% endfor %}
+            </select>
+            <p class="muted">
+                The source document is provenance for the proposed pathway. It is not proof that
+                any listed part was purchased, fitted or completed.
+            </p>
+        </div>
+
+        <p class="muted">
+            This pilot plan will record that the client is supplying the agreed replacement
+            parts directly. Aura will scaffold planned actions for inspection, dismantling,
+            body repair, component decisions, reassembly, testing and delivery preparation.
+        </p>
+
+        <button class="btn btn-primary" type="submit">
+            Propose Collision Treatment Plan
+        </button>
+    </form>
+    {% endif %}
+</section>
+
+<section class="card fade-up">
     <h2>Progress timeline</h2>
     {% if progress_entries %}
         {% for entry in progress_entries %}

@@ -180,6 +180,19 @@ def _historical_source_retrieval(
         return []
 
     terms = _historical_query_terms(message)
+    latest_whatsapp_root = (
+        VehicleEvidence.query.filter(
+            VehicleEvidence.car_id == context.car_id,
+            VehicleEvidence.evidence_type == "archive",
+            VehicleEvidence.historical_source_type == "whatsapp_conversation",
+            VehicleEvidence.storage_state == "available",
+            VehicleEvidence.deleted_at.is_(None),
+            VehicleEvidence.review_status != "superseded",
+            ~VehicleEvidence.bundle_parent_items.any(),
+        )
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .first()
+    )
     roots = (
         VehicleEvidence.query.filter(
             VehicleEvidence.car_id == context.car_id,
@@ -189,12 +202,21 @@ def _historical_source_retrieval(
             ~VehicleEvidence.bundle_parent_items.any(),
         )
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
-        .limit(8)
+        .limit(20)
         .all()
     )
 
     candidates: list[tuple[int, int, dict[str, Any]]] = []
     for root in roots:
+        if (
+            root.historical_source_type == "whatsapp_conversation"
+            and latest_whatsapp_root is not None
+            and root.id != latest_whatsapp_root.id
+        ):
+            # WhatsApp exports are cumulative snapshots. Query-level source
+            # retrieval uses the newest active export only so repeated messages
+            # from older snapshots are not double-counted as corroboration.
+            continue
         evidence_rows: list[tuple[VehicleEvidence, str]] = [(root, "root_source")]
         if root.historical_source_type == "whatsapp_conversation":
             bundle_rows = (

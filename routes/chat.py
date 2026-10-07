@@ -2095,12 +2095,12 @@ def chat():
                 outcome="recorded",
                 action_family="repair_progress_record",
                 provider_status="not_called",
-                evidence_refs=(),
+                evidence_refs=(
+                    {"type": "advisor_note", "id": progress.note_id},
+                ),
                 metadata={
                     "channel": "in_app",
                     "provider_attempted": False,
-                    "repair_progress_note_id": progress.note_id,
-                    "milestone": progress.milestone,
                 },
                 commit=False,
             )

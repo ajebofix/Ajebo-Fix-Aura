@@ -39,6 +39,7 @@
 <section class="card fade-up">
     <h2>Record progress manually</h2>
     <form method="POST" action="{{ url_for('admin.record_repair_progress_manual', car_id=car.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
             <label class="label">Milestone</label>
             <select class="input" name="milestone">

@@ -107,6 +107,76 @@ def test_admin_can_record_live_repair_progress_through_rina(app, client, monkeyp
     assert "police custody" in payload["live_repair_progress"][0]["summary"]
 
 
+
+def test_rina_pre_repair_baseline_is_inspection_not_started_work(app, client, monkeypatch):
+    admin = _user(suffix=275, role="admin")
+    owner = _user(suffix=276)
+    car = _car(suffix=275)
+    _own(owner=owner, car=car, suffix=275)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    provider = _fake_provider(monkeypatch, text="provider should not be needed")
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": (
+                "Record repair progress: Pre-repair baseline documentation has started. "
+                "The vehicle is currently at the panel beater. No collision-repair work "
+                "has yet been recorded as started. Existing visible damage is being "
+                "documented before dismantling."
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert provider.calls == []
+    entries = repair_progress_for_car(car_id=car.id)
+    assert len(entries) == 1
+    assert entries[0].milestone == "inspection"
+    assert entries[0].tags == ("inspection",)
+    assert entries[0].occurred_at is None
+
+
+def test_rina_v1_progress_is_reclassified_on_read_without_mutating_source(app):
+    admin = _user(suffix=277, role="admin")
+    owner = _user(suffix=278)
+    car = _car(suffix=277)
+    _own(owner=owner, car=car, suffix=277)
+    db.session.commit()
+
+    payload = {
+        "schema_version": 1,
+        "milestone": "bodywork",
+        "tags": ["bodywork", "parts", "custody"],
+        "summary": (
+            "On 6 October 2026, the vehicle was released from police custody and "
+            "came back into Ajebo Fix's care. The vehicle is currently at the panel "
+            "beater. The client will procure the agreed replacement parts himself."
+        ),
+        "source": "rina",
+        "occurred_at": None,
+    }
+    note = AdvisorNote(
+        user_id=owner.id,
+        car_id=car.id,
+        advisor_id=admin.id,
+        note=PREFIX + json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+    )
+    db.session.add(note)
+    db.session.commit()
+    original_note = note.note
+
+    entry = repair_progress_for_car(car_id=car.id)[0]
+
+    assert entry.milestone == "custody"
+    assert entry.tags == ("custody", "parts")
+    assert entry.occurred_at == "2026-10-06"
+    db.session.refresh(note)
+    assert note.note == original_note
+
 def test_rina_workspace_has_jump_to_latest_control(app, client):
     admin = _user(suffix=272, role="admin")
     db.session.commit()

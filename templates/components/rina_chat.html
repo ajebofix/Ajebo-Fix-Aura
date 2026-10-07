@@ -144,6 +144,19 @@
         aria-label="A.J. Rina conversation"
     ></div>
 
+    <div style="display:flex; justify-content:flex-end; min-height:0;">
+        <button
+            id="rina-jump-latest"
+            class="btn btn-secondary"
+            type="button"
+            aria-label="Jump to latest message"
+            title="Jump to latest message"
+            style="display:none; width:42px; height:42px; min-width:42px; padding:0; border-radius:999px; margin:-52px 12px 10px 0; position:relative; z-index:3; font-size:22px;"
+        >
+            ↓
+        </button>
+    </div>
+
 
     <div class="rina-input-row">
 
@@ -186,6 +199,7 @@
     if (!shell) return;
 
     const messagesEl = document.getElementById("rina-messages");
+    const jumpLatestEl = document.getElementById("rina-jump-latest");
     const inputEl = document.getElementById("rina-input");
     const sendEl = document.getElementById("rina-send");
     const vehicleSelectEl = document.getElementById("rina-vehicle-select");
@@ -385,11 +399,38 @@
         return wrapper;
     }
 
+    function isNearLatest() {
+        const distance = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+        return distance < 140;
+    }
+
+    function updateJumpLatest() {
+        if (!jumpLatestEl) return;
+        jumpLatestEl.style.display = isNearLatest() ? "none" : "inline-flex";
+        jumpLatestEl.style.alignItems = "center";
+        jumpLatestEl.style.justifyContent = "center";
+    }
+
+    function scrollToLatest(behavior = "smooth") {
+        messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior });
+        window.setTimeout(updateJumpLatest, behavior === "smooth" ? 220 : 0);
+    }
+
     function appendMessage(role, text) {
+        const shouldFollow = isNearLatest() || role === "user";
         const node = createMessage(role, text);
         messagesEl.appendChild(node);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (shouldFollow) {
+            scrollToLatest("auto");
+        } else {
+            updateJumpLatest();
+        }
         return node;
+    }
+
+    messagesEl.addEventListener("scroll", updateJumpLatest, { passive: true });
+    if (jumpLatestEl) {
+        jumpLatestEl.addEventListener("click", () => scrollToLatest("smooth"));
     }
 
     function showWelcome() {

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from test_rina_chat_cutover import (
     _car,
+    _csrf_token,
     _fake_provider,
     _own,
     _post_json,
@@ -127,20 +128,20 @@ def test_manual_repair_progress_console_records_same_vehicle_log(app, client):
     assert b"Live Repair Journey" in page.data
     assert b"Import latest WhatsApp export" in page.data
 
-    csrf = client.get("/chat/workspace").text
-    # The app's global CSRF layer accepts the authenticated form surface exactly
-    # as the other advisor POST forms do; use the normal client POST here.
     result = client.post(
         f"/admin/cars/{car.id}/repair-progress",
         data={
+            "csrf_token": _csrf_token(client),
             "milestone": "custody",
             "summary": "Vehicle is now in Ajebo Fix possession.",
         },
         follow_redirects=False,
     )
-    # Depending on the test CSRF fixture this is either accepted directly or
-    # blocked before route execution; the GET surface remains the regression.
-    assert result.status_code in {302, 400}
+    assert result.status_code == 302
+    entries = repair_progress_for_car(car_id=car.id)
+    assert len(entries) == 1
+    assert entries[0].milestone == "custody"
+    assert "Ajebo Fix possession" in entries[0].summary
 
 
 def test_account_help_does_not_read_vehicle_or_provider_even_with_stale_binding(

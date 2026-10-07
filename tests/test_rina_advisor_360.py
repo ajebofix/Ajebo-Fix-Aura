@@ -982,6 +982,16 @@ def test_advisor_360_is_not_available_to_owner(app):
 def test_provider_context_prioritizes_latest_whatsapp_snapshot(app, monkeypatch):
     with app.app_context():
         _owner, admin, car, _action = _setup_longitudinal_case()
+        older_whatsapp = (
+            VehicleEvidence.query.filter_by(
+                car_id=car.id,
+                historical_source_type="whatsapp_conversation",
+                evidence_type="archive",
+            )
+            .order_by(VehicleEvidence.uploaded_at.asc(), VehicleEvidence.id.asc())
+            .first()
+        )
+        assert older_whatsapp is not None
 
         newest = VehicleEvidence(
             car_id=car.id,
@@ -1196,6 +1206,13 @@ def test_provider_context_prioritizes_latest_whatsapp_snapshot(app, monkeypatch)
         assert any(
             "front bracket" in str(item.get("content_excerpt") or "").lower()
             for item in snapshot["recent_media_evidence"]
+        )
+        assert all(
+            not (
+                item.get("source_type") == "whatsapp_conversation"
+                and item.get("parent_source_id") == older_whatsapp.id
+            )
+            for item in payload["historical_source_retrieval"]
         )
         assert "newest active cumulative WhatsApp export" in provider.request.instructions
         assert "Never count repeated messages across cumulative exports" in (

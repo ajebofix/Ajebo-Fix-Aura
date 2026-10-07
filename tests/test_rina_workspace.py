@@ -280,6 +280,57 @@ def test_rina_workspace_has_jump_to_latest_control(app, client):
     assert b"Jump to latest message" in page.data
 
 
+def test_live_plan_source_review_escapes_stale_historical_session(
+    app, client, monkeypatch
+):
+    admin = _user(suffix=287, role="admin")
+    owner = _user(suffix=288)
+    car = _car(suffix=287, model="GLK 350")
+    car.year = 2013
+    _own(owner=owner, car=car, suffix=287)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    provider = _fake_provider(
+        monkeypatch,
+        text=(
+            "I compared the current Treatment Plan with the newest WhatsApp "
+            "source and recent processed evidence."
+        ),
+    )
+    with client.session_transaction() as flask_session:
+        flask_session["rina_active_car_id"] = car.id
+        flask_session["rina_conversation_id"] = "stale-history-conversation"
+        flask_session["rina_history_review_phase"] = "choose_episode"
+
+    message = (
+        "Review the current Collision Repair & Body Restoration — JOB-2026-003 "
+        "Treatment Plan against the latest WhatsApp conversation and all newly "
+        "processed media evidence. Tell me what new facts, client decisions, "
+        "observations, parts discussions or possible scope changes appeared after "
+        "the previous record. Separate direct client statements, advisor statements, "
+        "visual/media observations, commercial discussions and unresolved inferences. "
+        "Then identify which existing Treatment Actions are still appropriate, which "
+        "need clarification and which new actions may need to be proposed. "
+        "Do not change the Treatment Plan yet."
+    )
+    response = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": message},
+    )
+
+    assert response.status_code == 200
+    assert response.json["intent"] == "general"
+    assert "compared the current Treatment Plan" in response.json["reply"]
+    assert len(provider.calls) == 1
+    assert "source-supported completed-work episode" not in response.json["reply"]
+
+    with client.session_transaction() as flask_session:
+        assert flask_session.get("rina_history_review_phase") is None
+        assert flask_session.get("rina_history_review_extraction_id") is None
+
+
 def test_manual_repair_progress_console_records_same_vehicle_log(app, client):
     admin = _user(suffix=273, role="admin")
     owner = _user(suffix=274)

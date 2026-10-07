@@ -85,42 +85,112 @@ def classify_repair_progress(summary: str) -> tuple[str, tuple[str, ...]]:
     """Conservative deterministic tagging; never infers repair completion."""
 
     text = str(summary or "").lower()
-    rules = (
-        ("delivered", ("delivered", "handed over", "returned to client", "client collected")),
-        ("ready_for_delivery", ("ready for delivery", "ready for handover", "ready for pickup")),
-        (
-            "custody",
-            (
-                "police custody",
-                "released from police",
-                "released by police",
-                "received into ajebo fix",
-                "came back into ajebo fix",
-                "took possession",
-                "vehicle arrived",
-                "car arrived",
-            ),
-        ),
-        ("testing", ("road test", "testing", "tested", "quality check", "final inspection")),
-        ("reassembly", ("reassembly", "reassembled", "assembly", "fitted back")),
-        ("paint", ("paint", "painting", "spray", "refinish")),
-        (
-            "bodywork",
-            (
-                "panel beating started",
-                "panel beating commenced",
-                "panel work started",
-                "bodywork started",
-                "body work started",
-                "straightening started",
-                "straightening",
-            ),
-        ),
-        ("dismantling", ("dismantl", "strip down", "strip-down", "stripped")),
-        ("parts", ("parts", "part ", "headlamp", "bumper", "bonnet", "condenser", "radiator", "procure", "source")),
-        ("inspection", ("inspect", "assessment", "check damage", "pre-repair")),
+
+    inspection_signal = any(
+        needle in text
+        for needle in (
+            "pre-repair",
+            "pre repair",
+            "baseline documentation",
+            "baseline photos",
+            "documenting visible damage",
+            "inspect",
+            "inspection",
+            "assessment",
+            "check damage",
+        )
     )
-    tags = tuple(name for name, needles in rules if any(needle in text for needle in needles))
+    dismantling_signal = any(
+        needle in text
+        for needle in ("dismantl", "strip down", "strip-down", "stripped")
+    )
+    if any(
+        phrase in text
+        for phrase in (
+            "before dismantling",
+            "before strip down",
+            "before strip-down",
+            "dismantling has not started",
+            "dismantling hasn't started",
+            "dismantling not started",
+            "not yet dismantled",
+        )
+    ):
+        dismantling_signal = False
+
+    bodywork_signal = any(
+        needle in text
+        for needle in (
+            "panel beating started",
+            "panel beating commenced",
+            "panel work started",
+            "bodywork started",
+            "body work started",
+            "straightening started",
+        )
+    )
+    if any(
+        phrase in text
+        for phrase in (
+            "repair work has not yet been recorded as started",
+            "repair work has not started",
+            "repair work hasn't started",
+            "bodywork has not started",
+            "bodywork hasn't started",
+            "panel beating has not started",
+            "panel beating hasn't started",
+        )
+    ):
+        bodywork_signal = False
+
+    tagged: list[str] = []
+    if any(needle in text for needle in ("delivered", "handed over", "returned to client", "client collected")):
+        tagged.append("delivered")
+    if any(needle in text for needle in ("ready for delivery", "ready for handover", "ready for pickup")):
+        tagged.append("ready_for_delivery")
+    if any(
+        needle in text
+        for needle in (
+            "police custody",
+            "released from police",
+            "released by police",
+            "received into ajebo fix",
+            "came back into ajebo fix",
+            "took possession",
+            "vehicle arrived",
+            "car arrived",
+        )
+    ):
+        tagged.append("custody")
+    if inspection_signal:
+        tagged.append("inspection")
+    if any(needle in text for needle in ("road test", "testing", "tested", "quality check", "final inspection")):
+        tagged.append("testing")
+    if any(needle in text for needle in ("reassembly", "reassembled", "assembly", "fitted back")):
+        tagged.append("reassembly")
+    if any(needle in text for needle in ("paint", "painting", "spray", "refinish")):
+        tagged.append("paint")
+    if bodywork_signal:
+        tagged.append("bodywork")
+    if dismantling_signal:
+        tagged.append("dismantling")
+    if any(
+        needle in text
+        for needle in (
+            "parts",
+            "part ",
+            "headlamp",
+            "bumper",
+            "bonnet",
+            "condenser",
+            "radiator",
+            "procure",
+            "source",
+        )
+    ):
+        tagged.append("parts")
+
+    tags = tuple(dict.fromkeys(tagged))
     primary = tags[0] if tags else "general"
     return primary, tags
 
@@ -279,6 +349,21 @@ def _parse(note: AdvisorNote) -> RepairProgressEntry | None:
         for item in tags
         if str(item).strip().lower() in MILESTONES
     )
+    source = str(payload.get("source") or "manual").strip().lower()
+
+    # Rina V1 records preserve the advisor's verbatim statement. Re-run the
+    # conservative classifier at read time so early pilot taxonomy bugs can be
+    # corrected without mutating the original durable note. Manual milestone
+    # choices remain authoritative.
+    if source == "rina":
+        milestone, clean_tags = classify_repair_progress(summary)
+
+    occurred_at = (
+        str(payload.get("occurred_at"))
+        if payload.get("occurred_at")
+        else (_explicit_date_from_summary(summary) if source == "rina" else None)
+    )
+
     return RepairProgressEntry(
         note_id=note.id,
         car_id=int(note.car_id),
@@ -286,8 +371,8 @@ def _parse(note: AdvisorNote) -> RepairProgressEntry | None:
         milestone=milestone,
         tags=clean_tags,
         summary=summary,
-        source=str(payload.get("source") or "manual"),
-        occurred_at=(str(payload.get("occurred_at")) if payload.get("occurred_at") else None),
+        source=source,
+        occurred_at=occurred_at,
         recorded_at=note.created_at,
     )
 

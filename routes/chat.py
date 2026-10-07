@@ -123,7 +123,8 @@ def _normalise_chat_command(message: str) -> str:
 
 _REPAIR_PROGRESS_COMMAND_RE = re.compile(
     r"^\s*(?:rina\s*[,,:-]?\s*)?"
-    r"(?:record|log|add|update)\s+"
+    r"(?:record|log|add|update|note)\s+"
+    r"(?:(?:this|the)\s+)?"
     r"(?:(?:repair|job|vehicle)\s+)?"
     r"(?:progress|update|milestone)"
     r"(?:\s+(?:that|as))?\s*[:\-]?\s*(?P<summary>.+)$",

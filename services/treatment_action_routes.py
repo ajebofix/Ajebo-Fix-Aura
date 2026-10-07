@@ -26,6 +26,10 @@ from services.treatment_outcome_recording import (
     TreatmentOutcomeRecordingError,
     TreatmentOutcomeRecordingService,
 )
+from services.live_collision_plan import (
+    LiveCollisionPlanError,
+    propose_live_collision_plan,
+)
 from services.treatment_plan_lifecycle import (
     TreatmentPlanLifecycleError,
     TreatmentPlanLifecycleService,
@@ -86,13 +90,72 @@ def repair_progress_console(car_id: int):
         .limit(30)
         .all()
     )
+    service_documents = (
+        VehicleEvidence.query.filter_by(
+            car_id=car.id,
+            purpose="service_document",
+            storage_state="available",
+        )
+        .filter(VehicleEvidence.deleted_at.is_(None))
+        .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
+        .limit(40)
+        .all()
+    )
+    active_collision_plan = next(
+        (
+            plan
+            for plan in plans
+            if plan.record_origin == "live"
+            and plan.title.startswith("Collision Repair & Body Restoration")
+            and plan.status not in {"completed", "cancelled"}
+        ),
+        None,
+    )
     return render_template(
         "treatment_actions/repair_progress.html",
         car=car,
         progress_entries=repair_progress_for_car(car_id=car.id, limit=150),
         milestones=MILESTONES,
         treatment_plans=plans,
+        service_documents=service_documents,
+        active_collision_plan=active_collision_plan,
     )
+
+
+@admin_bp.post("/cars/<int:car_id>/repair-progress/collision-plan")
+@login_required
+@advisor_required
+def create_live_collision_plan(car_id: int):
+    car = Car.query.get_or_404(car_id)
+    authority = resolve_vehicle_authority(current_user.id, car.id)
+    if authority not in {"advisor", "administrator"}:
+        abort(403)
+
+    raw_evidence_id = (request.form.get("source_evidence_id") or "").strip()
+    try:
+        evidence_id = int(raw_evidence_id) if raw_evidence_id else None
+        plan = propose_live_collision_plan(
+            car_id=car.id,
+            actor_user_id=current_user.id,
+            source_evidence_id=evidence_id,
+            job_reference=request.form.get("job_reference"),
+            client_supplies_parts=(request.form.get("client_supplies_parts") == "1"),
+            source="admin.repair_progress.collision_plan",
+        )
+        db.session.commit()
+        flash(
+            "Live collision Treatment Plan proposed with planned actions. "
+            "Owner authorization remains separate.",
+            "success",
+        )
+        return redirect(url_for("admin.treatment_plan_actions", plan_id=plan.id))
+    except (LiveCollisionPlanError, TypeError, ValueError) as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    except Exception:
+        db.session.rollback()
+        raise
+    return redirect(url_for("admin.repair_progress_console", car_id=car.id))
 
 
 @admin_bp.post("/cars/<int:car_id>/repair-progress")

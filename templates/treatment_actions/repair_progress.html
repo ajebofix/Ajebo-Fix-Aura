@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Repair Progress · Aura{% endblock %}
+{% block page_title %}Repair Progress{% endblock %}
+{% block page_subtitle %}{{ car.decoded_display_name }} — live operational journey from custody to delivery.{% endblock %}
+
+{% block content %}
+<section class="card fade-up">
+    <div class="section-head">
+        <div>
+            <h2>Live Repair Journey</h2>
+            <p class="muted">
+                Record what is happening to this vehicle now. Progress updates do not
+                imply diagnosis, payment, completed repair or successful outcome unless
+                those facts are recorded separately.
+            </p>
+        </div>
+        <span class="pill">Advisor record</span>
+    </div>
+
+    <div class="button-grid">
+        <a class="btn btn-primary" href="{{ url_for('chat.rina_workspace', car_id=car.id) }}">
+            Tell Rina
+        </a>
+        <a
+            class="btn btn-secondary"
+            href="{{ url_for('historical_ingestion.import_document', car_id=car.id, source_type='whatsapp_conversation', purpose='vehicle_history_context') }}"
+        >
+            Import latest WhatsApp export
+        </a>
+    </div>
+
+    <p class="muted" style="margin-top:10px;">
+        In Rina, use a direct instruction such as:
+        <strong>Record repair progress: vehicle received from police custody and moved to the panel beater.</strong>
+    </p>
+</section>
+
+<section class="card fade-up">
+    <h2>Record progress manually</h2>
+    <form method="POST" action="{{ url_for('admin.record_repair_progress_manual', car_id=car.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label class="label">Milestone</label>
+            <select class="input" name="milestone">
+                {% for milestone in milestones %}
+                <option value="{{ milestone }}">{{ milestone|replace("_", " ")|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="label">When it happened</label>
+            <input class="input" type="datetime-local" name="occurred_at">
+            <p class="muted">Leave blank if the exact time is not important or not known.</p>
+        </div>
+
+        <div class="form-group">
+            <label class="label">What happened</label>
+            <textarea
+                class="input"
+                name="summary"
+                rows="5"
+                maxlength="3000"
+                required
+                placeholder="Example: Vehicle released from police custody and received into Ajebo Fix care. It is now at the panel beater. Client will procure the agreed replacement parts directly."
+            ></textarea>
+        </div>
+
+        <button class="btn btn-primary" type="submit">Record Progress</button>
+    </form>
+</section>
+
+<section class="card fade-up">
+    <h2>Progress timeline</h2>
+    {% if progress_entries %}
+        {% for entry in progress_entries %}
+        <div class="list-item">
+            <div class="section-head">
+                <strong>{{ entry.milestone|replace("_", " ")|title }}</strong>
+                <span class="pill">{{ entry.source|title }}</span>
+            </div>
+            <p>{{ entry.summary }}</p>
+            <p class="muted">
+                {% if entry.occurred_at %}
+                    Happened {{ entry.occurred_at }}
+                {% else %}
+                    Exact occurrence time not separately recorded
+                {% endif %}
+                {% if entry.recorded_at %}
+                    · recorded {{ entry.recorded_at.strftime("%Y-%m-%d %H:%M") }}
+                {% endif %}
+            </p>
+            {% if entry.tags %}
+            <p class="muted">
+                Tags:
+                {% for tag in entry.tags %}
+                    {{ tag|replace("_", " ") }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="muted">
+            No live repair progress has been recorded yet. Start with vehicle custody/current location
+            before dismantling or repair work begins.
+        </p>
+    {% endif %}
+</section>
+
+{% if treatment_plans %}
+<section class="card fade-up">
+    <h2>Related Treatment Records</h2>
+    <p class="muted">
+        Repair progress describes operational movement. Treatment Actions separately record
+        concrete professional interventions and Treatment Outcomes record what inspection/testing showed.
+    </p>
+    {% for plan in treatment_plans %}
+    <div class="list-item">
+        <div class="section-head">
+            <strong>{{ plan.title }}</strong>
+            <span class="pill">{{ plan.status|replace("_", " ")|title }}</span>
+        </div>
+        <a class="btn btn-secondary" href="{{ url_for('admin.treatment_plan_actions', plan_id=plan.id) }}">
+            Manage Treatment Record
+        </a>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

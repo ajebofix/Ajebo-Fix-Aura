@@ -300,7 +300,23 @@ def source_library(car_id: int):
 def import_document(car_id: int):
     car = Car.query.get_or_404(car_id)
     if request.method == "GET":
-        return render_template("historical_ingestion/upload.html", car=car)
+        preselected_source_type = request.args.get("source_type", "").strip().lower()
+        if preselected_source_type not in SUPPORTED_HISTORICAL_IMPORT_SOURCE_TYPES:
+            preselected_source_type = ""
+        preselected_purpose = request.args.get("purpose", "").strip().lower()
+        if preselected_purpose not in {
+            "service_document",
+            "diagnostic_document",
+            "treatment_evidence",
+            "vehicle_history_context",
+        }:
+            preselected_purpose = "service_document"
+        return render_template(
+            "historical_ingestion/upload.html",
+            car=car,
+            preselected_source_type=preselected_source_type,
+            preselected_purpose=preselected_purpose,
+        )
 
     source_type = request.form.get("source_type", "").strip().lower()
 

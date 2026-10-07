@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from test_rina_chat_cutover import (
     _car,
+    _csrf_token,
     _fake_provider,
     _own,
     _post_json,
@@ -16,6 +17,7 @@ from evidence.models import EvidenceExtraction, VehicleEvidence
 from extensions import db
 from models import AdvisorNote, ChatMessage, VehicleProfile
 from rina.audit_models import RinaAIAuditEvent
+from services.repair_progress import PREFIX, repair_progress_for_car
 
 
 def test_admin_can_open_workspace_and_search_client_vehicle(app, client):
@@ -48,6 +50,98 @@ def test_admin_can_open_workspace_and_search_client_vehicle(app, client):
     assert context["speaker"] == {"display_name": admin.name, "account_role": "admin"}
     _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
     assert client.get("/chat/context").json["active_car_id"] == car.id
+
+
+def test_admin_can_record_live_repair_progress_through_rina(app, client, monkeypatch):
+    admin = _user(suffix=270, role="admin")
+    owner = _user(suffix=271)
+    car = _car(suffix=270)
+    _own(owner=owner, car=car, suffix=270)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    provider = _fake_provider(monkeypatch, text="provider should not be needed")
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": (
+                "Record repair progress: vehicle released from police custody and "
+                "received at the panel beater. Client will source the replacement parts."
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json["intent"] == "repair_progress"
+    assert response.json["repair_progress"]["record_id"] > 0
+    assert provider.calls == []
+
+    entries = repair_progress_for_car(car_id=car.id)
+    assert len(entries) == 1
+    assert "police custody" in entries[0].summary
+    assert "parts" in entries[0].tags
+    assert AdvisorNote.query.filter(AdvisorNote.note.like(f"{PREFIX}%")).count() == 1
+
+    audit = RinaAIAuditEvent.query.filter_by(
+        action_family="repair_progress_record"
+    ).one()
+    assert audit.provider_status == "not_called"
+
+    provider = _fake_provider(monkeypatch, text="I can see the current repair journey.")
+    follow_up = _post_json(
+        client,
+        "/chat",
+        {"car_id": car.id, "message": "Where is the vehicle now?"},
+    )
+    assert follow_up.status_code == 200
+    payload = json.loads(
+        provider.calls[-1].input_messages[0]["content"].split("\n", 1)[1]
+    )
+    assert payload["live_repair_progress"][0]["record_id"] == entries[0].note_id
+    assert "police custody" in payload["live_repair_progress"][0]["summary"]
+
+
+def test_rina_workspace_has_jump_to_latest_control(app, client):
+    admin = _user(suffix=272, role="admin")
+    db.session.commit()
+    _sign_in(client, admin)
+
+    page = client.get("/chat/workspace")
+
+    assert page.status_code == 200
+    assert b'id="rina-jump-latest"' in page.data
+    assert b"Jump to latest message" in page.data
+
+
+def test_manual_repair_progress_console_records_same_vehicle_log(app, client):
+    admin = _user(suffix=273, role="admin")
+    owner = _user(suffix=274)
+    car = _car(suffix=273)
+    _own(owner=owner, car=car, suffix=273)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    page = client.get(f"/admin/cars/{car.id}/repair-progress")
+    assert page.status_code == 200
+    assert b"Live Repair Journey" in page.data
+    assert b"Import latest WhatsApp export" in page.data
+
+    result = client.post(
+        f"/admin/cars/{car.id}/repair-progress",
+        data={
+            "csrf_token": _csrf_token(client),
+            "milestone": "custody",
+            "summary": "Vehicle is now in Ajebo Fix possession.",
+        },
+        follow_redirects=False,
+    )
+    assert result.status_code == 302
+    entries = repair_progress_for_car(car_id=car.id)
+    assert len(entries) == 1
+    assert entries[0].milestone == "custody"
+    assert "Ajebo Fix possession" in entries[0].summary
 
 
 def test_account_help_does_not_read_vehicle_or_provider_even_with_stale_binding(

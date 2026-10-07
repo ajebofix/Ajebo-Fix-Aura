@@ -15,9 +15,9 @@
     <form id="historical-upload-form" method="POST" enctype="multipart/form-data">
         <label for="source_type">Historical source type</label>
         <select id="source_type" name="source_type" required>
-            <option value="" selected disabled>Select source type</option>
-            <option value="standalone_document">Standalone document / PDF</option>
-            <option value="whatsapp_conversation">WhatsApp conversation export</option>
+            <option value="" {% if not preselected_source_type|default('') %}selected{% endif %} disabled>Select source type</option>
+            <option value="standalone_document" {% if preselected_source_type|default('') == 'standalone_document' %}selected{% endif %}>Standalone document / PDF</option>
+            <option value="whatsapp_conversation" {% if preselected_source_type|default('') == 'whatsapp_conversation' %}selected{% endif %}>WhatsApp conversation export</option>
             <optgroup label="Coming later">
                 <option value="instagram_conversation" disabled>Instagram conversation</option>
                 <option value="tiktok_conversation" disabled>TikTok conversation</option>
@@ -45,10 +45,10 @@
 
         <label for="purpose">Record purpose</label>
         <select id="purpose" name="purpose">
-            <option value="service_document">Service / job record</option>
-            <option value="diagnostic_document">Diagnostic record</option>
-            <option value="treatment_evidence">Treatment / completed-work evidence</option>
-            <option value="vehicle_history_context">General vehicle-history context</option>
+            <option value="service_document" {% if preselected_purpose|default('service_document') == 'service_document' %}selected{% endif %}>Service / job record</option>
+            <option value="diagnostic_document" {% if preselected_purpose|default('') == 'diagnostic_document' %}selected{% endif %}>Diagnostic record</option>
+            <option value="treatment_evidence" {% if preselected_purpose|default('') == 'treatment_evidence' %}selected{% endif %}>Treatment / completed-work evidence</option>
+            <option value="vehicle_history_context" {% if preselected_purpose|default('') == 'vehicle_history_context' %}selected{% endif %}>General vehicle-history context</option>
         </select>
         <p class="muted">
             Purpose describes why this source matters to the vehicle. It does not change
@@ -115,7 +115,7 @@
             fileHelp.textContent =
                 "Upload the original WhatsApp export ZIP with media included. Rina will reconstruct the chat chronology and analyse supported images, PDFs, voice notes/audio and video in context.";
             sourceHelp.textContent =
-                "WhatsApp tells Rina to interpret senders, message order, attachments, voice notes and conversational context as one case bundle.";
+                "WhatsApp tells Rina to interpret senders, message order, attachments, voice notes and conversational context as one case bundle. You can upload a newer export whenever the client conversation changes; Aura stores it as a new source snapshot without overwriting previously approved vehicle history.";
             visibility.value = "advisor";
             if (clientVisibility) clientVisibility.disabled = true;
             visibilityHelp.textContent =

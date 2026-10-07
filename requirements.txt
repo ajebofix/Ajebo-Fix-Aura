@@ -5,7 +5,7 @@ Flask-Migrate==4.1.0
 Flask-SQLAlchemy==3.1.1
 Flask-Limiter>=3.12,<5
 SQLAlchemy==2.0.46
-Werkzeug==3.1.6
+Werkzeug==3.1.9
 Jinja2==3.1.6
 itsdangerous==2.2.0
 python-dotenv==1.2.2

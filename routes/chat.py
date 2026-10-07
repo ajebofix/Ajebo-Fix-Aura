@@ -93,6 +93,7 @@ from services.rina_memory_service import (
 from rina.providers.base import RinaProviderError
 from services.rina_orchestrator import orchestrate_rina
 from services.rina_speaker import account_help, describe_speaker, speaker_identity
+from services.repair_progress import RepairProgressError, record_repair_progress
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -118,6 +119,25 @@ def detect_intent(message: str) -> str:
 
 def _normalise_chat_command(message: str) -> str:
     return " ".join(str(message or "").strip().lower().split())
+
+
+_REPAIR_PROGRESS_COMMAND_RE = re.compile(
+    r"^\s*(?:rina\s*[,,:-]?\s*)?"
+    r"(?:record|log|add|update|note)\s+"
+    r"(?:(?:this|the)\s+)?"
+    r"(?:(?:repair|job|vehicle)\s+)?"
+    r"(?:progress|update|milestone)"
+    r"(?:\s+(?:that|as))?\s*[:\-]?\s*(?P<summary>.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _repair_progress_command(message: str) -> str | None:
+    match = _REPAIR_PROGRESS_COMMAND_RE.match(str(message or "").strip())
+    if match is None:
+        return None
+    summary = " ".join(str(match.group("summary") or "").strip().split())
+    return summary or None
 
 
 def _historical_review_start_requested(message: str) -> bool:
@@ -2001,6 +2021,153 @@ def chat():
     conversation_id = (
         _conversation_id_for(car_id) if car_id is not None else _new_conversation_id()
     )
+
+    progress_summary = _repair_progress_command(message)
+    if progress_summary is not None:
+        if car_id is None:
+            return (
+                jsonify(
+                    {
+                        "reply": "Select the vehicle first, then tell me the repair progress to record.",
+                        "intent": "repair_progress",
+                        "car_id": None,
+                        "authority": None,
+                        "state": RINA_STATE_VEHICLE_REQUIRED,
+                        "conversation_id": None,
+                        "uncertainty": "no vehicle is selected",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                400,
+            )
+
+        try:
+            context = resolve_rina_vehicle_context(
+                user_id=current_user.id,
+                car_id=car_id,
+            )
+            if context.authority not in {"advisor", "administrator"}:
+                raise RepairProgressError(
+                    "Repair progress recording requires advisor access to this vehicle."
+                )
+
+            progress = record_repair_progress(
+                actor_user_id=current_user.id,
+                car_id=context.car_id,
+                summary=progress_summary,
+                source="rina",
+                commit=False,
+            )
+            conversation_id = _bind_rina_vehicle(
+                car_id=context.car_id,
+                conversation_id=conversation_id,
+            )
+            reply = (
+                f"Recorded in this vehicle's live Repair Journey as "
+                f"{progress.milestone.replace('_', ' ')} progress. "
+                "This records the operational update only; it does not by itself mark "
+                "a Treatment Action complete, prove payment, or establish a repair outcome."
+            )
+            save_rina_chat_turn(
+                user_id=current_user.id,
+                car_id=context.car_id,
+                conversation_id=conversation_id,
+                role="user",
+                content=message,
+                channel="in_app",
+                commit=False,
+            )
+            save_rina_chat_turn(
+                user_id=current_user.id,
+                car_id=context.car_id,
+                conversation_id=conversation_id,
+                role="assistant",
+                content=reply,
+                channel="in_app",
+                commit=False,
+            )
+            record_rina_audit(
+                request_id=_new_conversation_id(),
+                user_id=current_user.id,
+                car_id=context.car_id,
+                authority=context.authority,
+                state=RINA_STATE_ANSWERED,
+                outcome="answered",
+                action_family="repair_progress_record",
+                provider_status="not_called",
+                evidence_refs=(
+                    {"type": "advisor_note", "id": progress.note_id},
+                ),
+                metadata={
+                    "channel": "in_app",
+                    "provider_attempted": False,
+                },
+                commit=False,
+            )
+            db.session.commit()
+            return (
+                jsonify(
+                    {
+                        "reply": reply,
+                        "intent": "repair_progress",
+                        "car_id": context.car_id,
+                        "authority": context.authority,
+                        "state": RINA_STATE_ANSWERED,
+                        "conversation_id": conversation_id,
+                        "uncertainty": None,
+                        "escalation": None,
+                        "evidence_refs": [],
+                        "repair_progress": {
+                            "record_id": progress.note_id,
+                            "milestone": progress.milestone,
+                            "tags": list(progress.tags),
+                        },
+                    }
+                ),
+                200,
+            )
+        except (RepairProgressError, RinaAuthorityError, RinaContextResolutionError) as exc:
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "reply": str(exc),
+                        "intent": "repair_progress",
+                        "car_id": car_id,
+                        "authority": None,
+                        "state": RINA_STATE_AUTHORITY_DENIED,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "repair progress could not be recorded",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                403,
+            )
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "Rina repair progress recording failed user_id=%s car_id=%s",
+                current_user.id,
+                car_id,
+            )
+            return (
+                jsonify(
+                    {
+                        "reply": "I couldn't record that progress safely. Nothing was added.",
+                        "intent": "repair_progress",
+                        "car_id": car_id,
+                        "authority": None,
+                        "state": RINA_STATE_PROVIDER_UNAVAILABLE,
+                        "conversation_id": conversation_id,
+                        "uncertainty": "the repair progress transaction did not complete",
+                        "escalation": None,
+                        "evidence_refs": [],
+                    }
+                ),
+                503,
+            )
 
     historical_review_requested = (
         car_id is not None

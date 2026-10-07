@@ -51,8 +51,20 @@ Vehicle Health Record
     </div>
     <div class="button-stack">
         <a
-            href="{{ url_for('historical_ingestion.import_document', car_id=car.id) }}"
+            href="{{ url_for('admin.repair_progress_console', car_id=car.id) }}"
             class="btn btn-primary"
+        >
+            Live Repair Progress
+        </a>
+        <a
+            href="{{ url_for('chat.rina_workspace', car_id=car.id) }}"
+            class="btn btn-secondary"
+        >
+            Tell Rina
+        </a>
+        <a
+            href="{{ url_for('historical_ingestion.import_document', car_id=car.id) }}"
+            class="btn btn-secondary"
         >
             Import Historical Source
         </a>

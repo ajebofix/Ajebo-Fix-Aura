@@ -417,3 +417,167 @@ def _prevent_treatment_outcome_delete(_mapper, _connection, _target) -> None:
     raise ValueError(
         "Published Treatment Outcomes cannot be deleted; preserve longitudinal history"
     )
+
+
+REPAIR_PROGRESS_CATEGORIES = (
+    "custody",
+    "inspection",
+    "work_progress",
+    "parts",
+    "location",
+    "quality_check",
+    "handover",
+    "client_decision",
+    "general",
+)
+REPAIR_PROGRESS_STAGES = (
+    "received",
+    "inspection",
+    "dismantling",
+    "awaiting_parts",
+    "bodywork",
+    "paint",
+    "reassembly",
+    "testing",
+    "ready_for_delivery",
+    "delivered",
+    "paused",
+    "general",
+)
+REPAIR_PROGRESS_VISIBILITIES = ("client", "advisor")
+REPAIR_PROGRESS_SOURCES = ("manual", "rina", "whatsapp")
+
+
+class RepairProgressEntry(db.Model):
+    """Append-only operational milestone inside a live vehicle repair journey.
+
+    This record is deliberately distinct from TreatmentAction completion and
+    TreatmentOutcome. It answers "what is happening operationally right now"
+    without implying that a repair was completed, successful, paid for, or
+    mechanically diagnostic.
+    """
+
+    __tablename__ = "repair_progress_entries"
+
+    id = db.Column(db.Integer, primary_key=True)
+    car_id = db.Column(
+        db.Integer,
+        db.ForeignKey("cars.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    treatment_plan_id = db.Column(
+        db.Integer,
+        db.ForeignKey("treatment_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    treatment_action_id = db.Column(
+        db.Integer,
+        db.ForeignKey("treatment_actions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    recorded_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    entry_key = db.Column(db.String(128), nullable=False, unique=True)
+    category = db.Column(db.String(32), nullable=False)
+    stage = db.Column(db.String(40), nullable=False)
+    title = db.Column(db.String(255), nullable=False)
+    detail = db.Column(db.Text, nullable=True)
+    location_text = db.Column(db.String(255), nullable=True)
+    progress_percent = db.Column(db.Integer, nullable=True)
+    visibility = db.Column(
+        db.String(20),
+        nullable=False,
+        default="advisor",
+        server_default="advisor",
+    )
+    source = db.Column(
+        db.String(20),
+        nullable=False,
+        default="manual",
+        server_default="manual",
+    )
+    structured_data = db.Column(db.JSON, nullable=True)
+    evidence_refs = db.Column(db.JSON, nullable=True)
+    occurred_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    car = db.relationship("Car", foreign_keys=[car_id])
+    plan = db.relationship(
+        "TreatmentPlan",
+        backref=db.backref(
+            "repair_progress_entries",
+            order_by="RepairProgressEntry.occurred_at, RepairProgressEntry.id",
+        ),
+    )
+    action = db.relationship(
+        "TreatmentAction",
+        backref=db.backref(
+            "repair_progress_entries",
+            order_by="RepairProgressEntry.occurred_at, RepairProgressEntry.id",
+        ),
+    )
+    recorded_by = db.relationship("User", foreign_keys=[recorded_by_user_id])
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "category IN ('custody','inspection','work_progress','parts','location','quality_check','handover','client_decision','general')",
+            name="ck_repair_progress_category",
+        ),
+        db.CheckConstraint(
+            "stage IN ('received','inspection','dismantling','awaiting_parts','bodywork','paint','reassembly','testing','ready_for_delivery','delivered','paused','general')",
+            name="ck_repair_progress_stage",
+        ),
+        db.CheckConstraint(
+            "visibility IN ('client','advisor')",
+            name="ck_repair_progress_visibility",
+        ),
+        db.CheckConstraint(
+            "source IN ('manual','rina','whatsapp')",
+            name="ck_repair_progress_source",
+        ),
+        db.CheckConstraint(
+            "progress_percent IS NULL OR (progress_percent >= 0 AND progress_percent <= 100)",
+            name="ck_repair_progress_percent",
+        ),
+        db.CheckConstraint(
+            "length(trim(entry_key)) > 0",
+            name="ck_repair_progress_entry_key_nonblank",
+        ),
+        db.CheckConstraint(
+            "length(trim(title)) > 0",
+            name="ck_repair_progress_title_nonblank",
+        ),
+        db.Index(
+            "ix_repair_progress_car_time",
+            "car_id",
+            "occurred_at",
+            "id",
+        ),
+        db.Index(
+            "ix_repair_progress_plan_time",
+            "treatment_plan_id",
+            "occurred_at",
+            "id",
+        ),
+    )
+
+
+@event.listens_for(RepairProgressEntry, "before_update")
+def _prevent_repair_progress_update(_mapper, _connection, _target) -> None:
+    raise ValueError(
+        "Repair Progress entries are append-only; record a later correction or update instead"
+    )
+
+
+@event.listens_for(RepairProgressEntry, "before_delete")
+def _prevent_repair_progress_delete(_mapper, _connection, _target) -> None:
+    raise ValueError(
+        "Repair Progress entries cannot be deleted; preserve the operational audit trail"
+    )

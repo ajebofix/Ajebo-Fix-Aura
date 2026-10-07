@@ -6,6 +6,14 @@
 
 {% block content %}
 <section class="card fade-up">
+    <div class="button-grid" style="margin-bottom:14px;">
+        <a class="btn btn-primary" href="{{ url_for('admin.repair_progress_console', car_id=plan.car_id) }}">
+            Live Repair Progress
+        </a>
+        <a class="btn btn-secondary" href="{{ url_for('chat.rina_workspace', car_id=plan.car_id) }}">
+            Tell Rina
+        </a>
+    </div>
     <div class="section-head">
         <div>
             <h2>{{ plan.title }}</h2>

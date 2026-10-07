@@ -116,6 +116,28 @@ def test_exact_continue_phrase_is_recognised_as_historical_review_request():
     )
 
 
+def test_live_plan_source_review_is_not_misclassified_as_historical_recording():
+    from routes.chat import (
+        _current_plan_source_review_requested,
+        _historical_review_start_requested,
+    )
+
+    message = (
+        "Review the current Collision Repair & Body Restoration — JOB-2026-003 "
+        "Treatment Plan against the latest WhatsApp conversation and all newly "
+        "processed media evidence. Tell me what new facts, client decisions, "
+        "observations, parts discussions or possible scope changes appeared after "
+        "the previous record. Separate direct client statements, advisor statements, "
+        "visual/media observations, commercial discussions and unresolved inferences. "
+        "Then identify which existing Treatment Actions are still appropriate, which "
+        "need clarification and which new actions may need to be proposed. "
+        "Do not change the Treatment Plan yet."
+    )
+
+    assert _current_plan_source_review_requested(message) is True
+    assert _historical_review_start_requested(message) is False
+
+
 def test_legacy_chat_get_redirects_to_canonical_workspace(app, client):
     admin = _user(suffix=369, role="admin")
     _sign_in(client, admin)

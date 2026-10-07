@@ -172,6 +172,60 @@ def _collision_plan_command(message: str) -> dict[str, object] | None:
     }
 
 
+def _current_plan_source_review_requested(message: str) -> bool:
+    """Keep read-only live-plan/source analysis out of historical write mode."""
+
+    text = _normalise_chat_command(message)
+    if not text:
+        return False
+
+    plan_scope = (
+        "treatment plan" in text
+        or "treatment actions" in text
+        or "treatment action" in text
+    )
+    if not plan_scope:
+        return False
+
+    current_scope = any(
+        marker in text
+        for marker in (
+            "current treatment plan",
+            "current collision repair",
+            "live treatment plan",
+            "live collision",
+            "job-",
+        )
+    )
+    source_comparison = any(
+        marker in text
+        for marker in (
+            "latest whatsapp",
+            "whatsapp conversation",
+            "whatsapp evidence",
+            "media evidence",
+            "processed media",
+            "newly processed",
+            "against the latest",
+            "against latest",
+        )
+    )
+    analysis_intent = any(
+        marker in text
+        for marker in (
+            "review",
+            "compare",
+            "identify",
+            "tell me what",
+            "what changed",
+            "which existing",
+            "scope change",
+        )
+    )
+
+    return current_scope and source_comparison and analysis_intent
+
+
 def _historical_review_start_requested(message: str) -> bool:
     text = _normalise_chat_command(message)
     if not text:
@@ -210,11 +264,20 @@ def _historical_review_start_requested(message: str) -> bool:
     ):
         return True
     action_words = ("record", "review", "reconcile", "add", "clean up")
-    history_words = ("previous", "historical", "past", "history")
     work_words = ("job", "jobs", "service", "services", "work", "repair", "repairs")
+    historical_scope = (
+        "historical" in text
+        or "history" in text
+        or "past " in text
+        or re.search(
+            r"\bprevious\s+(?:job|jobs|service|services|work|repair|repairs)\b",
+            text,
+        )
+        is not None
+    )
     return (
         any(word in text for word in action_words)
-        and any(word in text for word in history_words)
+        and historical_scope
         and any(word in text for word in work_words)
     )
 
@@ -2362,8 +2425,16 @@ def chat():
                 503,
             )
 
+    current_plan_source_review = _current_plan_source_review_requested(message)
+    if current_plan_source_review and _history_review_session_active():
+        # The advisor has moved from a supervised historical-write flow to a
+        # read-only review of the current/live care plan against fresh source
+        # evidence. Do not let stale historical session state hijack the turn.
+        _clear_historical_review_binding()
+
     historical_review_requested = (
         car_id is not None
+        and not current_plan_source_review
         and (
             _history_review_session_active()
             or _historical_review_start_requested(message)

@@ -589,11 +589,11 @@ def build_rina_provider_context(
     context: RinaResolvedContext,
     memory: RinaMemoryBundle,
 ) -> RinaProviderContext:
-    """Create provider input without advisor-note/raw-domain dumping.
+    """Create minimized provider input without broad advisor-note/raw-domain dumping.
 
-    Raw advisor notes are intentionally excluded from this first provider
-    boundary even when privileged memory retrieval could access them. They may
-    be introduced later only behind a task-specific minimization rule.
+    Ordinary raw advisor notes remain excluded. Only namespaced live Repair
+    Journey records are admitted for advisor/administrator vehicle context,
+    through a task-specific minimization rule.
     """
 
     trusted_payload = _trusted_context_payload(

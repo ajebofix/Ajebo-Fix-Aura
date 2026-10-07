@@ -67,8 +67,9 @@ def test_admin_can_record_live_repair_progress_through_rina(app, client, monkeyp
         {
             "car_id": car.id,
             "message": (
-                "Record repair progress: vehicle released from police custody and "
-                "received at the panel beater. Client will source the replacement parts."
+                "Record repair progress: On 6 October 2026, the vehicle was released "
+                "from police custody and received at the panel beater. Client will "
+                "source the replacement parts."
             ),
         },
     )
@@ -81,7 +82,10 @@ def test_admin_can_record_live_repair_progress_through_rina(app, client, monkeyp
     entries = repair_progress_for_car(car_id=car.id)
     assert len(entries) == 1
     assert "police custody" in entries[0].summary
+    assert entries[0].milestone == "custody"
     assert "parts" in entries[0].tags
+    assert "bodywork" not in entries[0].tags
+    assert entries[0].occurred_at == "2026-10-06"
     assert AdvisorNote.query.filter(AdvisorNote.note.like(f"{PREFIX}%")).count() == 1
 
     audit = RinaAIAuditEvent.query.filter_by(

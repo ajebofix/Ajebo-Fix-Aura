@@ -2139,8 +2139,6 @@ def chat():
                 metadata={
                     "channel": "in_app",
                     "provider_attempted": False,
-                    "treatment_plan_id": plan.id,
-                    "treatment_action_count": action_count,
                 },
                 commit=False,
             )

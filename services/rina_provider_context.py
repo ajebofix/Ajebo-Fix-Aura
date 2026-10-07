@@ -556,6 +556,7 @@ BOUNDARIES
 - You may prepare and explain proposed historical records for an advisor, but the advisor must review/edit and explicitly authorize any durable write. You may never approve your own proposal.
 - If evidence suggests another vehicle that is not yet registered in Aura, say that it is a possible vehicle identity and explain what must be confirmed (for example VIN, plate, make/model/year) before a new vehicle record is created.
 - Prefer doing the clerical synthesis for the advisor: group evidence into likely jobs, distinguish completed/recommended/authorised/outcome facts, preserve provenance, and state exactly what still needs human confirmation.
+- Use an epistemic hierarchy when summarising mixed records: (1) durable/canonical Aura facts, (2) source observations and transaction records, (3) client/technician/source claims, (4) recommendations/intent/authorisations, and (5) inference/unknown. A source can confirm that a statement, image, payment or recommendation exists without confirming the mechanical claim or outcome behind it. Do not place all of these under a generic "confirmed facts" heading.
 - When Advisor 360 context is present, treat it as a read-only longitudinal care graph. Relate client, vehicle, episode, evidence, reconciliation, Treatment Action, addendum and audit facts by their supplied IDs/provenance; never invent missing links.
 - For intervention/action status, Advisor 360's canonical_treatment_action_index and treatment_history have precedence over historical extraction, reconciliation candidates, reviewed summaries and narrative source text.
 - When two records describe the same or semantically equivalent intervention, collapse them into one action in the answer. Use the canonical Treatment Action status and use historical/reconciliation material only to explain provenance, evidence limits or why the action was reviewed.
@@ -574,6 +575,61 @@ BOUNDARIES
 AUTHORITY-SPECIFIC POLICY
 {_authority_instructions(context.authority)}
 """.strip()
+
+
+_PRIOR_ANSWER_REFERENCE_RE = re.compile(
+    r"\b(?:previous|prior|last)\s+(?:answer|response|reply)\b|"
+    r"\b(?:what|something)\s+you\s+(?:said|wrote)\s+(?:earlier|before)\b",
+    re.IGNORECASE,
+)
+
+
+def _chat_continuity_messages(
+    *,
+    memory: RinaMemoryBundle,
+    current_message: str,
+) -> list[dict[str, str]]:
+    """Return bounded continuity, preserving the last answer for explicit self-review.
+
+    Most turns remain aggressively minimized. When the user explicitly asks Rina
+    to inspect her previous answer, the latest assistant turn gets a larger bounded
+    window so the visible conversation and provider continuity do not disagree.
+    """
+
+    turns = [
+        turn
+        for turn in memory.chat_history[-10:]
+        if turn.role in {"user", "assistant"}
+    ]
+    preserve_latest_assistant = bool(
+        _PRIOR_ANSWER_REFERENCE_RE.search(str(current_message or ""))
+    )
+    latest_assistant_index = next(
+        (
+            index
+            for index in range(len(turns) - 1, -1, -1)
+            if turns[index].role == "assistant"
+        ),
+        None,
+    )
+
+    messages: list[dict[str, str]] = []
+    for index, turn in enumerate(turns):
+        limit = 1500
+        if preserve_latest_assistant and index == latest_assistant_index:
+            limit = 12000
+        elif (
+            preserve_latest_assistant
+            and latest_assistant_index is not None
+            and index == latest_assistant_index - 1
+            and turn.role == "user"
+        ):
+            limit = 4000
+
+        content = _clip(turn.content, limit=limit)
+        if content:
+            messages.append({"role": turn.role, "content": content})
+    return messages
 
 
 def build_rina_provider_context(
@@ -611,12 +667,12 @@ def build_rina_provider_context(
         }
     ]
 
-    for turn in memory.chat_history[-10:]:
-        if turn.role not in {"user", "assistant"}:
-            continue
-        content = _clip(turn.content, limit=1500)
-        if content:
-            input_messages.append({"role": turn.role, "content": content})
+    input_messages.extend(
+        _chat_continuity_messages(
+            memory=memory,
+            current_message=rina_request.message,
+        )
+    )
 
     input_messages.append({"role": "user", "content": rina_request.message})
 

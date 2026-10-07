@@ -19,9 +19,12 @@ from services.rina_advisor_360 import (
 )
 from services.rina_context_resolver import resolve_rina_vehicle_context
 from services.rina_contracts import RinaRequest
-from services.rina_memory_service import RinaMemoryBundle
+from services.rina_memory_service import RinaChatTurn, RinaMemoryBundle
 from services.rina_orchestrator import orchestrate_rina
-from services.rina_provider_context import build_rina_provider_context
+from services.rina_provider_context import (
+    _chat_continuity_messages,
+    build_rina_provider_context,
+)
 from services.rina_runtime_flags import rina_advisor_360_enabled
 from treatment.models import (
     TreatmentAction,
@@ -910,6 +913,51 @@ def _provider_json(provider_context) -> dict:
     return json.loads(first.split(marker, 1)[1])
 
 
+def test_prior_answer_review_preserves_long_latest_assistant_turn():
+    long_answer = "START-" + ("evidence classification detail " * 260) + "-END"
+    memory = RinaMemoryBundle(
+        user_id=1,
+        car_id=3,
+        authority="administrator",
+        chat_history=(
+            RinaChatTurn(
+                message_id=1,
+                role="user",
+                content="Give me a complete vehicle picture.",
+                timestamp=None,
+                conversation_id="continuity",
+                channel="in_app",
+                visibility="advisor",
+            ),
+            RinaChatTurn(
+                message_id=2,
+                role="assistant",
+                content=long_answer,
+                timestamp=None,
+                conversation_id="continuity",
+                channel="in_app",
+                visibility="advisor",
+            ),
+        ),
+        summaries=(),
+        advisor_memory=(),
+    )
+
+    self_review = _chat_continuity_messages(
+        memory=memory,
+        current_message="Review your previous answer critically.",
+    )
+    ordinary = _chat_continuity_messages(
+        memory=memory,
+        current_message="What should I watch next?",
+    )
+
+    assert self_review[-1]["content"].endswith("-END")
+    assert len(self_review[-1]["content"]) > 1500
+    assert len(ordinary[-1]["content"]) <= 1500
+    assert ordinary[-1]["content"].endswith("…")
+
+
 def test_advisor_360_defaults_off(monkeypatch):
     monkeypatch.delenv("RINA_ADVISOR_360_ENABLED", raising=False)
     assert rina_advisor_360_enabled() is False
@@ -1091,6 +1139,8 @@ def test_provider_context_includes_advisor_360_only_when_enabled(app, monkeypatc
         assert "You may prepare and explain proposed historical records" in instructions
         assert "historical_source_retrieval contains query-relevant excerpts" in instructions
         assert "READ-ONLY RECORD EXPLANATION IS NOT A TREATMENT DECISION" in instructions
+        assert "Use an epistemic hierarchy when summarising mixed records" in instructions
+        assert "Do not place all of these under a generic \"confirmed facts\" heading" in instructions
         assert "never tell the speaker to \"reach out to an advisor\"" in instructions.lower()
         assert "never tell this speaker to contact an advisor" in instructions.lower()
         assert "Never report bundle-child counts as the number of historical sources" in instructions

@@ -144,6 +144,33 @@
         aria-label="A.J. Rina conversation"
     ></div>
 
+    <button
+        type="button"
+        id="rina-jump-latest"
+        aria-label="Jump to latest Rina message"
+        title="Jump to latest message"
+        style="
+            position: fixed;
+            right: max(18px, env(safe-area-inset-right));
+            bottom: calc(104px + env(safe-area-inset-bottom));
+            z-index: 40;
+            display: none;
+            min-width: 44px;
+            min-height: 44px;
+            padding: 9px 13px;
+            border: 1px solid rgba(37, 99, 235, .22);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .96);
+            box-shadow: 0 10px 30px rgba(15, 23, 42, .16);
+            color: #1d4ed8;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        "
+    >
+        ↓ Latest
+    </button>
+
 
     <div class="rina-input-row">
 
@@ -200,6 +227,7 @@
     const authorityBannerEl = document.getElementById("rina-authority-banner");
     const authorityLabelEl = document.getElementById("rina-authority-label");
     const authorityCopyEl = document.getElementById("rina-authority-copy");
+    const jumpLatestEl = document.getElementById("rina-jump-latest");
 
     const csrfToken = shell.dataset.csrfToken || "";
     const isProfessional = shell.dataset.professional === "true";
@@ -215,6 +243,46 @@
         (window.matchMedia?.("(pointer: coarse)")?.matches ?? false)
         || (navigator.maxTouchPoints || 0) > 0
     );
+
+    let jumpLatestFrame = null;
+
+    function latestChatAnchor() {
+        return inputEl || messagesEl.lastElementChild || messagesEl;
+    }
+
+    function updateJumpLatestVisibility() {
+        if (!jumpLatestEl || !messagesEl.children.length) {
+            if (jumpLatestEl) jumpLatestEl.style.display = "none";
+            return;
+        }
+
+        const shellRect = shell.getBoundingClientRect();
+        const anchor = latestChatAnchor();
+        const anchorRect = anchor.getBoundingClientRect();
+        const latestIsBelowViewport = anchorRect.top > (window.innerHeight - 96);
+        const chatHasNotBeenPassed = shellRect.bottom > 96;
+
+        jumpLatestEl.style.display = (
+            latestIsBelowViewport && chatHasNotBeenPassed
+        ) ? "inline-flex" : "none";
+    }
+
+    function scheduleJumpLatestVisibility() {
+        if (jumpLatestFrame !== null) return;
+        jumpLatestFrame = window.requestAnimationFrame(() => {
+            jumpLatestFrame = null;
+            updateJumpLatestVisibility();
+        });
+    }
+
+    function jumpToLatest({ smooth = true } = {}) {
+        const anchor = latestChatAnchor();
+        anchor.scrollIntoView({
+            behavior: smooth ? "smooth" : "auto",
+            block: "center",
+        });
+        window.setTimeout(updateJumpLatestVisibility, smooth ? 350 : 0);
+    }
 
     function authorityPresentation(authority) {
         if (authority === "driver") {
@@ -387,8 +455,15 @@
 
     function appendMessage(role, text) {
         const node = createMessage(role, text);
+        const shouldFollowLatest = (
+            !messagesEl.children.length
+            || latestChatAnchor().getBoundingClientRect().top <= window.innerHeight + 120
+        );
         messagesEl.appendChild(node);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (shouldFollowLatest) {
+            node.scrollIntoView({ behavior: "smooth", block: "end" });
+        }
+        scheduleJumpLatestVisibility();
         return node;
     }
 
@@ -1286,6 +1361,7 @@
             for (const message of data.messages) {
                 appendMessage(message.role, message.message);
             }
+            scheduleJumpLatestVisibility();
         } catch (error) {
             if (error.status === 403) {
                 selectedCarId = null;
@@ -1451,6 +1527,11 @@
     }
 
     function init() {
+        if (jumpLatestEl) {
+            jumpLatestEl.addEventListener("click", () => jumpToLatest({ smooth: true }));
+        }
+        window.addEventListener("scroll", scheduleJumpLatestVisibility, { passive: true });
+        window.addEventListener("resize", scheduleJumpLatestVisibility, { passive: true });
         if (vehicleSelectEl) {
             vehicleSelectEl.addEventListener("change", () => {
                 const value = vehicleSelectEl.value;

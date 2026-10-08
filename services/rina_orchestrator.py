@@ -124,7 +124,7 @@ def _audit_response(
         "context_version": context_version,
         "memory_policy": _DEFAULT_MEMORY_POLICY,
         "provider_attempted": provider_attempted,
-        "response_incomplete": response_incomplete,
+        "output_incomplete": response_incomplete,
     }
     if failure_class:
         metadata["failure_class"] = failure_class

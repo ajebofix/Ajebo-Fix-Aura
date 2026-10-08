@@ -39,6 +39,7 @@ class PartnerPilotGuardTests(unittest.TestCase):
                     product_received_and_accepted=True,
                     capacity_reserved=True,
                     technician_confirmed_for_window=True,
+                    technician_commission_agreed=True,
                     customer_confirmed=True,
                 )
             ),

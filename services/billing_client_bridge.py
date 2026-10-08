@@ -90,6 +90,7 @@ class _BillingReadGateway:
     def get(self, table: str, *, select: str, filters: dict[str, str]) -> list[dict]:
         if table not in {
             "billing_vehicles",
+            "billing_jobs",
             "billing_clients",
             "billing_documents",
             "billing_payments",
@@ -229,3 +230,75 @@ def client_billing_snapshot(*, car_id: int, vin: str, owner_email: str | None) -
             })
 
     return {"state": "linked", "documents": documents, "payments": payments}
+
+
+def advisor_job_link_preflight(
+    *, car_id: int, vin: str, owner_email: str | None, job_uuid: str
+) -> dict:
+    """Non-mutating advisor inspection. No link, publication or customer access.
+
+    Job UUID is selected explicitly by the advisor. The same number or
+    similar vehicle details alone are never sufficient to bind accounts.
+    """
+    job_id = _valid_uuid(job_uuid)
+    aura_vin = _normalise_vin(vin)
+    if not job_id or car_id <= 0 or len(aura_vin) != 17:
+        return {"status": "invalid_input"}
+    gateway = _BillingReadGateway()
+    jobs = gateway.get(
+        "billing_jobs",
+        select="id,job_number,sow_number,status,vehicle_id,client_id",
+        filters={"id": f"eq.{job_id}"},
+    )
+    if len(jobs) != 1 or _valid_uuid(jobs[0].get("id")) != job_id:
+        return {"status": "not_found"}
+    job = jobs[0]
+    vehicle_id = _valid_uuid(job.get("vehicle_id"))
+    client_id = _valid_uuid(job.get("client_id"))
+    if not vehicle_id or not client_id:
+        return {"status": "incomplete_reference"}
+
+    vehicles = gateway.get(
+        "billing_vehicles",
+        select="id,client_id,vin,aura_vehicle_ref,make,model,year",
+        filters={"id": f"eq.{vehicle_id}"},
+    )
+    if len(vehicles) != 1 or _valid_uuid(vehicles[0].get("id")) != vehicle_id:
+        return {"status": "incomplete_reference"}
+    vehicle = vehicles[0]
+    if _valid_uuid(vehicle.get("client_id")) != client_id:
+        return {"status": "client_mismatch"}
+    if _normalise_vin(vehicle.get("vin")) != aura_vin:
+        return {"status": "vin_mismatch"}
+    existing_ref = str(vehicle.get("aura_vehicle_ref") or "").strip()
+    if existing_ref and existing_ref != str(car_id):
+        return {"status": "linked_elsewhere"}
+
+    clients = gateway.get(
+        "billing_clients",
+        select="id,name,email",
+        filters={"id": f"eq.{client_id}"},
+    )
+    if len(clients) != 1 or _valid_uuid(clients[0].get("id")) != client_id:
+        return {"status": "incomplete_reference"}
+    email = str(clients[0].get("email") or "").strip().casefold()
+    match = bool(email and email == str(owner_email or "").strip().casefold())
+
+    return {
+        "status": "requires_advisor_identity_confirmation",
+        "job_uuid": job_id,
+        "job_reference": str(job.get("job_number") or "")[:80],
+        "sow_reference": str(job.get("sow_number") or "")[:80],
+        "commercial_status": str(job.get("status") or "")[:35],
+        "vehicle": " ".join(
+            str(vehicle.get(key) or "")[:35]
+            for key in ("make", "model", "year")
+        ).strip(),
+        "vin_tail": aura_vin[-6:],
+        "billing_client_name": str(clients[0].get("name") or "")[:100],
+        "billing_email_status": (
+            "matches" if match else "different" if email else "missing"
+        ),
+        "aura_ref_state": "already_set" if existing_ref else "not_linked",
+        "decision": "manual_owner_identity_check_required",
+    }

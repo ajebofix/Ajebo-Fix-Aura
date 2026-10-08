@@ -17,8 +17,8 @@ Vehicle Health Record
 {% if not is_admin_view %}
 <p><a class="btn btn-secondary" href="{{ url_for('client_billing.owner_repair_progress', car_id=car.id) }}">Repair Journey</a></p>
 {% endif %}
-{% if not is_admin_view and billing_portal_enabled|default(false) %}
-<p><a class="btn btn-secondary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Care &amp; Billing</a></p>
+{% if not is_admin_view and current_user.role == 'user' %}
+<p><a class="btn btn-primary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Financial Records · Estimates, Invoices &amp; Receipts</a></p>
 {% endif %}
 
 <!-- ========================= -->
@@ -61,6 +61,14 @@ Vehicle Health Record
             class="btn btn-primary"
         >
             Live Repair Progress
+        </a>
+        <a href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}"
+           class="btn btn-primary">
+            Billing &amp; Accounts
+        </a>
+        <a href="{{ url_for('client_billing.advisor_client_finance_preview',car_id=car.id) }}"
+           class="btn btn-secondary">
+            Preview Client Financial Records
         </a>
         <a
             href="{{ url_for('chat.rina_workspace', car_id=car.id) }}"

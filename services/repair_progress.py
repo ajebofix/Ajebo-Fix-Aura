@@ -144,7 +144,17 @@ def classify_repair_progress(summary: str) -> tuple[str, tuple[str, ...]]:
         bodywork_signal = False
 
     tagged: list[str] = []
-    if any(needle in text for needle in ("delivered", "handed over", "returned to client", "client collected")):
+    handover_confirmed = any(needle in text for needle in (
+        "vehicle delivered to client", "car delivered to client",
+        "vehicle handed over to client", "car handed over to client",
+        "client collected the vehicle", "client collected the car",
+        "vehicle returned to client", "car returned to client",
+    ))
+    handover_negated = any(needle in text for needle in (
+        "not delivered", "has not been delivered", "hasn't been delivered",
+        "handover not completed", "delivery pending",
+    ))
+    if handover_confirmed and not handover_negated:
         tagged.append("delivered")
     if any(needle in text for needle in ("ready for delivery", "ready for handover", "ready for pickup")):
         tagged.append("ready_for_delivery")
@@ -357,6 +367,12 @@ def _parse(note: AdvisorNote) -> RepairProgressEntry | None:
     # choices remain authoritative.
     if source == "rina":
         milestone, clean_tags = classify_repair_progress(summary)
+    else:
+        # Preserve the advisor-selected milestone but suppress historical
+        # keyword-derived vehicle-delivery tags if only *parts* arrived.
+        _, verified_tags = classify_repair_progress(summary)
+        if "delivered" not in verified_tags:
+            clean_tags = tuple(tag for tag in clean_tags if tag != "delivered")
 
     occurred_at = (
         str(payload.get("occurred_at"))

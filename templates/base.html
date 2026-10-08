@@ -111,6 +111,11 @@ rel="stylesheet">
             <a href="{{ url_for('cars.owner_treatment_plans') }}" class="nav-item">
                 Treatment Plans
             </a>
+            {% if current_user.role == 'user' %}
+            <a href="{{ url_for('client_billing.owner_financial_records_index') }}" class="nav-item">
+                Financial Records
+            </a>
+            {% endif %}
             {% endif %}
 
             {% if current_user.is_authenticated and current_user.is_admin %}
@@ -120,6 +125,9 @@ rel="stylesheet">
 
             <a href="{{ url_for('admin.admin_clients') }}" class="nav-item">
                 Clients
+            </a>
+            <a href="{{ url_for('client_billing.advisor_billing_index') }}" class="nav-item">
+                Billing &amp; Accounts
             </a>
 
             <a href="{{ url_for('owner_onboarding.create_client') }}" class="nav-item">

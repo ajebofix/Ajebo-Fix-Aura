@@ -529,3 +529,141 @@ def test_client_cannot_enter_advisor_financial_preview(app, client, monkeypatch)
     monkeypatch.setattr("services.billing_client_bridge.requests.post", forbidden)
     _sign_in(client, owner)
     assert client.get(f"/admin/cars/{car.id}/billing/preview").status_code == 403
+
+
+def test_owner_finance_navigation_is_vehicle_scoped(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner = _user(suffix=831)
+    other_owner = _user(suffix=832)
+    first_car = _car(suffix=831)
+    other_car = _car(suffix=832)
+    _own(owner=owner, car=first_car, suffix=831)
+    _own(owner=other_owner, car=other_car, suffix=832)
+    db.session.commit()
+    _sign_in(client, owner)
+    response = client.get("/my-financial-records")
+    assert response.status_code == 200
+    assert b"Financial Records" in response.data
+    assert f"/cars/{first_car.id}/billing".encode() in response.data
+    assert f"/cars/{other_car.id}/billing".encode() not in response.data
+    assert b"Billing &amp; Accounts" not in response.data
+    assert "no-store" in response.headers.get("Cache-Control", "")
+
+
+def test_advisor_billing_hub_has_working_vehicle_buttons(app, client, monkeypatch):
+    _configure(monkeypatch)
+    admin = _user(suffix=835, role="admin")
+    owner = _user(suffix=836)
+    car = _car(suffix=836)
+    _own(owner=owner, car=car, suffix=836)
+    db.session.commit()
+    _sign_in(client, admin)
+    response = client.get("/admin/billing")
+    assert response.status_code == 200
+    assert b"Billing &amp; Accounts" in response.data
+    assert f"/admin/cars/{car.id}/billing/workspace".encode() in response.data
+    assert f"/admin/cars/{car.id}/billing/preview".encode() in response.data
+    assert b'href="/my-financial-records"' not in response.data
+    assert "no-store" in response.headers.get("Cache-Control", "")
+    query_response = client.get(f"/admin/billing?q={car.vin}")
+    assert query_response.status_code == 200
+    assert f"/admin/cars/{car.id}/billing/workspace".encode() in query_response.data
+
+
+def test_advisor_vehicle_workspace_links_to_real_delivery_and_source(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    admin = _user(suffix=840, role="admin")
+    owner = _user(suffix=841)
+    car = _car(suffix=841)
+    _own(owner=owner, car=car, suffix=841)
+    db.session.commit()
+    doc_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    observed = []
+
+    def provider(url, *, data, headers, timeout, allow_redirects):
+        payload = json.loads(data)
+        observed.append(payload)
+        assert payload["action"] == "advisor_documents"
+        assert payload["advisor_user_id"] == admin.id
+        assert payload["owner_user_id"] == owner.id
+        assert payload["vin"] == car.vin
+        assert headers["X-Aura-Signature"]
+        assert allow_redirects is False
+        return FakeResponse({"state":"linked","documents":[{
+            "id": doc_id,
+            "kind":"estimate","number":"AJF-EST-NATIVE-001",
+            "status":"sent","issued":"2026-10-08",
+            "currency":"₦","amount":"650000",
+            "native_created":True,"job_linked":True,"published":True,
+        }]})
+
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", provider)
+    _sign_in(client, admin)
+    response = client.get(f"/admin/cars/{car.id}/billing/workspace")
+    assert response.status_code == 200
+    assert b"AJF-EST-NATIVE-001" in response.data
+    assert b"650,000" in response.data
+    assert f"/admin/cars/{car.id}/billing/preview/{doc_id}".encode() in response.data
+    assert (
+        f"/admin/cars/{car.id}/billing/estimate/{doc_id}/send"
+    ).encode() in response.data
+    assert b"Review &amp; Send via Resend" in response.data
+    assert len(observed) == 1
+
+
+def test_owner_and_driver_cannot_enter_advisor_billing(app,client,monkeypatch):
+    _configure(monkeypatch)
+    owner = _user(suffix=844)
+    car = _car(suffix=844)
+    _own(owner=owner,car=car,suffix=844)
+    db.session.commit()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Denied role must not contact Billing provider")
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", forbidden)
+    _sign_in(client,owner)
+    assert client.get("/admin/billing").status_code == 403
+    assert client.get(f"/admin/cars/{car.id}/billing/workspace").status_code == 403
+
+
+
+def test_non_native_draft_has_no_resend_button(app,client,monkeypatch):
+    _configure(monkeypatch)
+    admin = _user(suffix=847,role="admin")
+    owner = _user(suffix=848)
+    car = _car(suffix=848)
+    _own(owner=owner,car=car,suffix=848)
+    db.session.commit()
+
+    def mock_response(*args,**kwargs):
+        return FakeResponse({"state":"linked","documents":[{
+            "id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "kind":"estimate","number":"AJF-EST-DRAFT",
+            "status":"draft","issued":"2026-10-08","currency":"₦",
+            "amount":"250000","native_created":True,
+            "job_linked":True,"published":False,
+        }]})
+
+    monkeypatch.setattr("services.billing_client_bridge.requests.post",mock_response)
+    _sign_in(client,admin)
+    response=client.get(f"/admin/cars/{car.id}/billing/workspace")
+    assert response.status_code == 200
+    assert b"AJF-EST-DRAFT" in response.data
+    assert b"Review &amp; Send via Resend" not in response.data
+    assert b"Complete and issue this draft" in response.data
+
+
+def test_driver_denied_owner_and_advisor_finance_indexes(app,client,monkeypatch):
+    _configure(monkeypatch)
+    driver = _user(suffix=849,role="driver")
+    car = _car(suffix=849)
+    _own(owner=driver,car=car,suffix=849)
+    db.session.commit()
+    def forbidden(*args,**kwargs):
+        raise AssertionError("Driver financial request reached provider")
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", forbidden)
+    _sign_in(client,driver)
+    assert client.get("/my-financial-records").status_code == 403
+    assert client.get("/admin/billing").status_code == 403
+    assert client.get(f"/admin/cars/{car.id}/billing/workspace").status_code == 403

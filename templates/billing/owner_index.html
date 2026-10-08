@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Financial Records | Aura{% endblock %}
+{% block page_title %}Financial Records{% endblock %}
+{% block page_subtitle %}Private vehicle accounts · Ajebo Fix Billing{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Your financial records</h2>
+  <p class="muted">Choose a vehicle to review its published estimates, invoices, receipts and payment history. Financial documents are maintained by Ajebo Fix Billing and displayed securely here.</p>
+</section>
+{% if ownerships %}
+<section class="stack-list">
+  {% for ownership in ownerships %}
+  <div class="card">
+    <div class="section-head">
+      <div>
+        <h3>{{ ownership.car.rina_display_name }}</h3>
+        <p class="muted">VIN {{ ownership.car.vin }}{% if ownership.plate_number %} · {{ ownership.plate_number }}{% endif %}</p>
+      </div>
+    </div>
+    <div class="button-stack">
+      <a class="btn btn-primary" href="{{ url_for('client_billing.owner_vehicle_billing',car_id=ownership.car_id) }}">Open Financial Records</a>
+      <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_repair_progress',car_id=ownership.car_id) }}">Repair Journey</a>
+      <a class="btn btn-secondary" href="{{ url_for('cars.car_detail',car_id=ownership.car_id) }}">Vehicle Record</a>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% else %}
+<section class="card">
+  <h2>No linked vehicles yet</h2>
+  <p class="muted">Financial documents will appear here when a vehicle is linked to your account and Ajebo Fix has approved its financial records for release.</p>
+  <a class="btn btn-secondary" href="{{ url_for('cars.my_vehicles') }}">My Vehicles</a>
+</section>
+{% endif %}
+{% endblock %}

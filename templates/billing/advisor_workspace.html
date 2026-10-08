@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Vehicle Billing Workspace | Aura{% endblock %}
+{% block page_title %}Vehicle Billing Workspace{% endblock %}
+{% block page_subtitle %}Advisor only · Authoritative Billing documents{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="section-head">
+    <div>
+      <h2>{{ car.rina_display_name }}</h2>
+      <p class="muted">{{ ownership.user.name or 'Registered client' }} · VIN {{ car.vin }}</p>
+    </div>
+    <span class="pill">Advisor</span>
+  </div>
+  <p class="muted">Prepare or revise documents in the original Billing application. Review what the owner can see in Aura and explicitly approve delivery through Resend.</p>
+  <div class="button-stack">
+    <a class="btn btn-primary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open Original Billing Application</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_client_finance_preview',car_id=car.id) }}">Preview Client's Published Records</a>
+    <a class="btn btn-secondary" href="{{ url_for('admin.repair_progress_console',car_id=car.id) }}">Repair Journey Management</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_index') }}">All Client Billing</a>
+  </div>
+</section>
+{% if inventory.state == 'not_enabled' %}
+<section class="card"><h2>Billing connection disabled</h2><p class="muted">The authenticated Billing document connection is not currently enabled. No client documents are changed.</p></section>
+{% elif inventory.state in ['not_published','not_linked'] %}
+<section class="card"><h2>Billing account not linked</h2><p class="muted">This owner and vehicle do not have an approved, verified Billing mapping yet. No financial data can be released until it is verified.</p></section>
+{% elif inventory.state == 'unavailable' %}
+<section class="card"><h2>Billing temporarily unavailable</h2><p class="muted">The Billing document list cannot be reached right now. No documents or payment records have been changed.</p></section>
+{% else %}
+<section class="card">
+  <h2>Document register</h2>
+  <p class="muted">This register includes native Billing drafts for advisor review, as well as published documents. Drafts are never visible to owners. An email submission is not evidence of acceptance or payment.</p>
+  {% if documents %}
+    {% for document in documents %}
+    <div class="list-item" style="display:block;padding:16px 0;border-bottom:1px solid var(--border,#e5e7eb)">
+      <div class="section-head">
+        <div>
+          <h3>{{ document.kind|title }} · {{ document.number }}</h3>
+          <p class="muted">{{ document.status|replace('_',' ')|title }} · {{ document.issued }} · {% if document.published %}Published to owner{% else %}Not published{% endif %}</p>
+        </div>
+        <strong>{{ document.currency }}{{ "{:,.2f}".format(document.amount|float) }}</strong>
+      </div>
+      {% if not document.native_created %}
+        <p class="muted">Older or imported source: confirm provenance in Billing before issuing or sending.</p>
+      {% endif %}
+      {% if document.submitted_to_resend %}
+        <p class="muted">Resend submission recorded. This does not confirm the owner opened or accepted the document.</p>
+      {% endif %}
+      <div class="button-stack">
+        {% if document.status not in ['draft'] %}
+          <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_document_preview',car_id=car.id,document_id=document.id) }}">Preview Document</a>
+        {% endif %}
+        {% if document.kind == 'estimate' and document.native_created and document.job_linked and document.status in ['issued','sent'] %}
+          <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_issue_estimate_email',car_id=car.id,document_id=document.id) }}">
+          {% if document.submitted_to_resend %}Review Resend Submission{% else %}Review &amp; Send via Resend{% endif %}
+          </a>
+        {% elif document.kind == 'estimate' and document.status == 'draft' %}
+          <span class="muted">Complete and issue this draft in the original Billing application before sending.</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No active estimates, invoices or receipts were found for this verified vehicle. Create a document in the original Billing application.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

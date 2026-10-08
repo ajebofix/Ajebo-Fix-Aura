@@ -4,12 +4,14 @@ from __future__ import annotations
 from flask import Blueprint, abort, current_app, render_template, request, flash, redirect, url_for
 from flask_login import current_user, login_required
 
-from models import CarOwnership, AdvisorNote
+from models import CarOwnership, AdvisorNote, User, Car
 from extensions import db
+from sqlalchemy import or_
 from services.billing_client_bridge import (
     BillingBridgeUnavailable,
     client_billing_snapshot,
     client_billing_document,
+    advisor_billing_inventory,
 )
 from services.client_repair_progress import client_published_progress
 from services.billing_accounts_delivery import (
@@ -20,6 +22,110 @@ import json
 
 
 client_billing_bp = Blueprint("client_billing", __name__)
+
+
+
+@client_billing_bp.get("/my-financial-records")
+@login_required
+def owner_financial_records_index():
+    """Vehicle-first access to only the signed-in, verified owner's accounts."""
+    if current_user.role != "user" or not getattr(current_user, "email_verified_at", None):
+        abort(403)
+    ownerships = (
+        CarOwnership.query.filter_by(
+            user_id=current_user.id, is_active=True,
+        )
+        .order_by(CarOwnership.start_date.desc())
+        .all()
+    )
+    from flask import make_response
+    response = make_response(render_template(
+        "billing/owner_index.html", ownerships=ownerships,
+    ))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@client_billing_bp.get("/admin/billing")
+@login_required
+def advisor_billing_index():
+    """Advisor Billing & Accounts hub: clients selected by current ownership."""
+    if current_user.role != "admin":
+        abort(403)
+    query = request.args.get("q", "").strip()[:80]
+    ownerships_query = (
+        CarOwnership.query
+        .join(CarOwnership.car)
+        .join(CarOwnership.user)
+        .filter(
+            CarOwnership.is_active.is_(True),
+            User.is_active.is_(True),
+            User.role == "user",
+        )
+    )
+    if query:
+        term = f"%{query}%"
+        ownerships_query = ownerships_query.filter(or_(
+            User.name.ilike(term),
+            User.email.ilike(term),
+            Car.vin.ilike(term),
+            Car.brand.ilike(term),
+            Car.model.ilike(term),
+            CarOwnership.plate_number.ilike(term),
+        ))
+    ownerships = ownerships_query.order_by(
+        CarOwnership.id.desc(),
+    ).limit(100).all()
+    from flask import make_response
+    response = make_response(render_template(
+        "billing/advisor_index.html",
+        ownerships=ownerships, query=query,
+    ))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@client_billing_bp.get("/admin/cars/<int:car_id>/billing/workspace")
+@login_required
+def advisor_billing_workspace(car_id: int):
+    """Admin-only vehicle workspace with actionable Billing document links."""
+    if current_user.role != "admin":
+        abort(403)
+    ownerships = CarOwnership.query.filter_by(
+        car_id=car_id, is_active=True,
+    ).all()
+    if len(ownerships) != 1 or ownerships[0].user is None:
+        abort(404)
+    ownership = ownerships[0]
+    if ownership.user.role != "user" or not ownership.user.is_active:
+        abort(404)
+    try:
+        inventory = advisor_billing_inventory(
+            car_id=car_id,
+            owner_user_id=ownership.user_id,
+            advisor_user_id=current_user.id,
+            vin=ownership.car.vin,
+        )
+    except BillingBridgeUnavailable:
+        current_app.logger.warning("Advisor Billing inventory unavailable car=%s",car_id)
+        inventory = {"state": "unavailable", "documents": []}
+    documents = inventory["documents"]
+    for item in documents:
+        item["submitted_to_resend"] = (
+            item["kind"] == "estimate"
+            and already_delivered(
+                car_id=car_id, owner_user_id=ownership.user_id,
+                document_id=item["id"],
+            )
+        )
+    from flask import make_response
+    response = make_response(render_template(
+        "billing/advisor_workspace.html",
+        car=ownership.car, ownership=ownership, inventory=inventory,
+        documents=documents,
+    ))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @client_billing_bp.get("/cars/<int:car_id>/billing")

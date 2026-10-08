@@ -283,3 +283,96 @@ def client_billing_document(
             ) else "",
         },
     }
+
+
+def advisor_billing_inventory(
+    *, car_id: int, owner_user_id: int, advisor_user_id: int, vin: str
+) -> dict:
+    """List native Billing document references for one admin-verified vehicle.
+
+    This is a distinct privileged action; owner/driver routes cannot invoke it.
+    The restricted Billing service verifies the active owner/vehicle mapping,
+    full VIN and signer before returning a bounded whitelisted inventory.
+    """
+    empty = {"state": "not_published", "documents": []}
+    if not client_billing_feature_enabled():
+        return {"state": "not_enabled", "documents": []}
+    if (
+        type(car_id) is not int or car_id < 1
+        or type(owner_user_id) is not int or owner_user_id < 1
+        or type(advisor_user_id) is not int or advisor_user_id < 1
+    ):
+        return empty
+    vin_value = _normalise_vin(vin)
+    if len(vin_value) != 17:
+        return empty
+    endpoint = os.getenv("AURA_BILLING_BRIDGE_URL", "").strip()
+    parsed = urlparse(endpoint)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "odtctmjhkcphyaozpcup.supabase.co"
+        or parsed.path != "/functions/v1/aura-billing-bridge"
+        or parsed.username or parsed.password or parsed.query or parsed.fragment
+    ):
+        raise BillingBridgeUnavailable("Invalid restricted Billing gateway")
+
+    body, signature_headers = sign_billing_request({
+        "action": "advisor_documents",
+        "car_id": car_id,
+        "owner_user_id": owner_user_id,
+        "advisor_user_id": advisor_user_id,
+        "vin": vin_value,
+    })
+    try:
+        resp = requests.post(
+            endpoint, data=body,
+            headers={
+                **signature_headers,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            timeout=(3.05, 12), allow_redirects=False,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise BillingBridgeUnavailable("Billing document inventory unavailable") from exc
+    if not isinstance(data, dict) or data.get("state") not in {
+        "linked", "not_linked", "not_published",
+    }:
+        raise BillingBridgeUnavailable("Invalid document inventory state")
+    if data["state"] != "linked":
+        return {"state": data["state"], "documents": []}
+    docs = data.get("documents")
+    if not isinstance(docs, list) or len(docs) > 75:
+        raise BillingBridgeUnavailable("Invalid document inventory")
+    clean_docs = []
+    for item in docs:
+        if not isinstance(item, dict):
+            raise BillingBridgeUnavailable("Invalid inventory entry")
+        try:
+            doc_id = str(uuid.UUID(item.get("id", "")))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise BillingBridgeUnavailable("Invalid inventory identity") from exc
+        kind = item.get("kind")
+        status = item.get("status")
+        if kind not in {"estimate", "invoice", "receipt"} or status not in {
+            "draft", "issued", "sent", "accepted", "paid",
+            "partially_paid", "overdue",
+        }:
+            raise BillingBridgeUnavailable("Invalid inventory status")
+        if type(item.get("native_created")) is not bool or type(item.get("published")) is not bool or type(item.get("job_linked")) is not bool:
+            raise BillingBridgeUnavailable("Invalid document provenance")
+        clean_docs.append({
+            "id": doc_id,
+            "kind": kind,
+            "number": str(item.get("number") or "")[:80],
+            "status": status,
+            "issued": str(item.get("issued") or "")[:10],
+            "amount": str(_money(item.get("amount"))),
+            "currency": str(item.get("currency") or "₦")[:5],
+            "native_created": item["native_created"],
+            "job_linked": item["job_linked"],
+            "published": item["published"],
+        })
+    return {"state": "linked", "documents": clean_docs}

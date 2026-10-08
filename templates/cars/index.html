@@ -53,6 +53,16 @@
                class="btn btn-primary">
                 Open vehicle
             </a>
+            {% if current_user.role == 'user' %}
+            <a href="{{ url_for('client_billing.owner_vehicle_billing',car_id=ownership.car.id) }}"
+               class="btn btn-secondary">
+                Financial Records
+            </a>
+            <a href="{{ url_for('client_billing.owner_repair_progress',car_id=ownership.car.id) }}"
+               class="btn btn-secondary">
+                Repair Journey
+            </a>
+            {% endif %}
         </div>
     </div>
     {% endfor %}

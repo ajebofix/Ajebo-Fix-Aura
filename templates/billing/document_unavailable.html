@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Financial Document Unavailable | Ajebo Fix{% endblock %}
+{% block page_title %}Financial Document{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Document temporarily unavailable</h2>
+  <p>This financial record cannot be displayed at the moment. It has not been changed. Please try again shortly or contact Ajebo Fix Accounts.</p>
+  <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Return to vehicle financial records</a>
+</section>
+{% endblock %}

@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import requests
+import json
+
+from services.billing_bridge_signing import public_key_document
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+import base64
 
 from extensions import db
 from services.billing_client_bridge import client_billing_snapshot
@@ -27,7 +32,7 @@ def _configure(monkeypatch):
         "AURA_BILLING_BRIDGE_URL",
         "https://odtctmjhkcphyaozpcup.supabase.co/functions/v1/aura-billing-bridge",
     )
-    monkeypatch.setenv("AURA_BILLING_BRIDGE_TOKEN", "a" * 64)
+    monkeypatch.delenv("AURA_BILLING_BRIDGE_TOKEN", raising=False)
     # It is critical that Aura needs neither Supabase admin keys nor client email.
     monkeypatch.delenv("AURA_BILLING_SUPABASE_SERVICE_ROLE_KEY", raising=False)
 
@@ -35,20 +40,30 @@ def _configure(monkeypatch):
 def _mock_gateway(monkeypatch, *, state="linked", documents=None, payments=None):
     seen = []
 
-    def mock_post(url, *, headers, json, timeout, allow_redirects):
+    def mock_post(url, *, headers, data, timeout, allow_redirects):
         assert url == (
             "https://odtctmjhkcphyaozpcup.supabase.co"
             "/functions/v1/aura-billing-bridge"
         )
-        assert headers["Authorization"] == "Bearer " + "a" * 64
+        assert "Authorization" not in headers
         assert "service_role" not in str(headers).lower()
-        assert "email" not in json
-        assert json["car_id"] > 0
-        assert json["owner_user_id"] > 0
-        assert len(json["vin"]) == 17
+        assert headers["X-Aura-Key-Id"] == "aura-billing-v1"
+        payload = json.loads(data)
+        assert "email" not in payload
+        assert payload["car_id"] > 0
+        assert payload["owner_user_id"] > 0
+        assert len(payload["vin"]) == 17
+        doc = public_key_document()
+        keybytes = base64.urlsafe_b64decode(doc["x"] + "==")
+        sig = base64.urlsafe_b64decode(headers["X-Aura-Signature"] + "==")
+        signed_bytes = (
+            headers["X-Aura-Timestamp"] + "." +
+            headers["X-Aura-Nonce"] + "."
+        ).encode("ascii") + data
+        Ed25519PublicKey.from_public_bytes(keybytes).verify(sig, signed_bytes)
         assert allow_redirects is False
         assert timeout[1] <= 12
-        seen.append(json)
+        seen.append(payload)
         return FakeResponse({
             "state": state,
             "documents": documents if documents is not None else [],

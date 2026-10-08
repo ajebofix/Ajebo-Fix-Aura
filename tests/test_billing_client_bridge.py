@@ -427,3 +427,56 @@ def test_invalid_document_id_requires_no_remote_call(app, client, monkeypatch):
     )
     _sign_in(client, owner)
     assert client.get(f"/cars/{car.id}/billing/documents/not-a-document").status_code == 404
+
+
+def test_advisor_previews_source_without_releasing_to_owner(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=792)
+    advisor = _user(suffix=793, role="admin")
+    car = _car(suffix=792)
+    _own(owner=owner, car=car, suffix=792)
+    db.session.commit()
+    doc_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+    def provider(_endpoint, *, data, headers, timeout, allow_redirects):
+        payload = json.loads(data)
+        assert payload["action"] == "advisor_preview"
+        assert payload["owner_user_id"] == owner.id
+        assert payload["advisor_user_id"] == advisor.id
+        assert payload["document_id"] == doc_id
+        assert headers["X-Aura-Signature"]
+        return FakeResponse({
+            "state":"linked", "preview":True,
+            "brand":{"name":"Ajebo Fix Ltd", "tagline":"Luxury",
+                     "footer":"Discretion. Precision. Excellence.",
+                     "website":"", "logo":""},
+            "document":{
+                "id":doc_id, "kind":"estimate", "group":"job_record",
+                "number":"AJF-EST-TEST", "status":"issued",
+                "issued":"2026-10-08", "valid_until":"2026-10-15",
+                "due":"", "revision":1, "currency":"₦",
+                "total":"650000", "paid":"0", "balance":"650000",
+                "scope":"Body restoration",
+                "terms":"90 percent upfront", "sections":[]
+            }
+        })
+    monkeypatch.setattr("services.billing_client_bridge.requests.post",provider)
+    _sign_in(client, advisor)
+    response=client.get(f"/admin/cars/{car.id}/billing/preview/{doc_id}")
+    assert response.status_code == 200
+    assert b"Advisor-only document preview" in response.data
+    assert b"not</strong> a native Billing PDF" in response.data
+    assert b"AJF-EST-TEST" in response.data
+    assert b"Print / Save as PDF" not in response.data
+
+def test_owner_cannot_access_advisor_unpublished_preview(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner=_user(suffix=795)
+    car=_car(suffix=795)
+    _own(owner=owner,car=car,suffix=795)
+    db.session.commit()
+    _sign_in(client,owner)
+    doc_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assert client.get(f"/admin/cars/{car.id}/billing/preview/{doc_id}").status_code == 403

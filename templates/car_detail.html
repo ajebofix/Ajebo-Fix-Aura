@@ -17,9 +17,9 @@ Vehicle Health Record
 {% if not is_admin_view %}
 <p><a class="btn btn-secondary" href="{{ url_for('client_billing.owner_repair_progress', car_id=car.id) }}">Repair Journey</a></p>
 {% endif %}
-{% if not is_admin_view and current_user.role == 'user' %}
+{% if not is_admin_view and current_user.role == 'user' and billing_portal_enabled|default(false) %}
 <p><a class="btn btn-primary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Financial Records · Estimates, Invoices &amp; Receipts</a></p>
-{% endif %}
+{% endif %>
 
 <!-- ========================= -->
 <!-- HERO HEADER -->

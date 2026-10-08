@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ document.kind|title }} {{ document.number }} | Ajebo Fix{% endblock %}
+{% block page_title %}Financial Document{% endblock %}
+{% block page_subtitle %}Private · Authorised owner record{% endblock %}
+{% block content %}
+<style>
+.af-billing-document{background:#fff;color:#0a1628;border:1px solid #e5e8ef;border-radius:14px;overflow:hidden}
+.af-billing-head{background:#0a1628;color:#fff;padding:26px 22px}
+.af-billing-heading{display:flex;align-items:center;gap:18px;justify-content:space-between;flex-wrap:wrap}
+.af-billing-logo{width:56px;max-height:56px;object-fit:contain;background:#fff;padding:6px;border-radius:8px}
+.af-billing-gold{color:#d4a017}
+.af-billing-body{padding:24px 22px}
+.af-billing-kv{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:22px}
+.af-billing-kv span{display:block;font-size:.78rem;color:#59667a;margin-bottom:4px}
+.af-billing-row{display:flex;gap:12px;justify-content:space-between;padding:14px 0;border-bottom:1px solid #e3e8f0}
+.af-billing-label{font-size:.83rem;color:#64748b}
+.af-billing-total{background:#f4f6fa;padding:18px;border-radius:9px;margin-top:18px}
+.af-billing-terms{white-space:pre-wrap;line-height:1.7}
+.af-billing-footer{background:#142236;padding:16px 22px;text-align:center;color:#fff;font-size:.82rem}
+.af-billing-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 18px}
+@media(max-width:600px){.af-billing-kv{grid-template-columns:1fr}.af-billing-body{padding:19px}}
+@media print{
+  nav,header,.sidebar,.af-billing-actions,footer,.app-header,.topbar{display:none!important}
+  .af-billing-document{border:0;box-shadow:none;border-radius:0}
+  body{background:#fff!important}
+  .af-billing-head,.af-billing-footer{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+
+<div class="af-billing-actions">
+  <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Back to financial records</a>
+  <button type="button" class="btn btn-secondary" onclick="window.print()">Print / Save as PDF</button>
+</div>
+<article class="af-billing-document">
+  <header class="af-billing-head">
+    <div class="af-billing-heading">
+      <div style="display:flex;align-items:center;gap:15px">
+        {% if brand.logo %}<img class="af-billing-logo" src="{{ brand.logo }}" alt="{{ brand.name }} logo">{% endif %}
+        <div>
+          <div style="font-size:1.22rem;font-weight:750">{{ brand.name }}</div>
+          <div style="font-size:.86rem;opacity:.82">{{ brand.tagline }}</div>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="af-billing-gold" style="font-size:.83rem;letter-spacing:.12em;text-transform:uppercase">{{ document.kind }}</div>
+        <div style="font-weight:700">{{ document.number }}</div>
+      </div>
+    </div>
+  </header>
+  <div class="af-billing-body">
+    <div class="af-billing-kv">
+      <div><span>Vehicle</span><strong>{{ car.rina_display_name }}</strong></div>
+      <div><span>Document status</span><strong>{{ document.status|replace('_',' ')|title }}</strong></div>
+      <div><span>Issued</span><strong>{{ document.issued }}</strong></div>
+      <div><span>Revision</span><strong>{{ document.revision }}</strong></div>
+      {% if document.valid_until %}<div><span>Valid until</span><strong>{{ document.valid_until }}</strong></div>{% endif %}
+      {% if document.due %}<div><span>Due</span><strong>{{ document.due }}</strong></div>{% endif %}
+    </div>
+    <p class="af-billing-label">{% if document.group == 'vehicle_history' %}Earlier vehicle financial record. Not a charge for the current collision repair.{% else %}Document linked to a vehicle service job.{% endif %}</p>
+    {% if document.scope %}
+      <h3>Scope of Services</h3>
+      <p style="line-height:1.7;white-space:pre-wrap">{{ document.scope }}</p>
+    {% endif %}
+    <h3>Itemised Charges</h3>
+    {% for section in document.sections %}
+      {% if section.title %}<h4 style="margin:16px 0 2px">{{ section.title }}</h4>{% endif %}
+      {% for line in section.rows %}
+      <div class="af-billing-row">
+        <div style="flex:1;min-width:0">
+          <strong>{{ line.description }}</strong>
+          <div class="af-billing-label">Qty {{ line.quantity }} · {{ document.currency }}{{ "{:,.2f}".format(line.unit_price|float) }} each</div>
+        </div>
+        <strong>{{ document.currency }}{{ "{:,.2f}".format(line.amount|float) }}</strong>
+      </div>
+      {% endfor %}
+    {% endfor %}
+    <div class="af-billing-total">
+      <div class="af-billing-row" style="padding-top:0"><strong>Total</strong><strong style="font-size:1.4rem">{{ document.currency }}{{ "{:,.2f}".format(document.total|float) }}</strong></div>
+      {% if document.kind == 'invoice' %}
+        <div class="af-billing-row"><span>Recorded payments</span><strong>{{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }}</strong></div>
+        <div class="af-billing-row"><strong>Outstanding</strong><strong>{{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</strong></div>
+      {% endif %}
+    </div>
+    {% if document.terms %}
+      <h3 style="margin-top:24px">Terms and Conditions</h3>
+      <p class="af-billing-terms">{{ document.terms }}</p>
+    {% endif %}
+    <p class="af-billing-label" style="margin-top:20px">This is a live, owner-authorised view of the existing Ajebo Fix Billing record. An issued estimate is not a receipt or confirmation that payment was received. Downloaded copies may not reflect later amendments or revocation; confirm the current version in Aura.</p>
+  </div>
+  <footer class="af-billing-footer">{{ brand.footer }}{% if brand.website %} · {{ brand.website }}{% endif %}</footer>
+</article>
+{% endblock %}

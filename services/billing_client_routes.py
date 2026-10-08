@@ -56,5 +56,7 @@ def owner_repair_progress(car_id: int):
     return render_template(
         "treatment_actions/owner_repair_progress.html",
         car=ownership.car,
-        updates=client_published_progress(car_id=car_id),
+        updates=client_published_progress(
+            car_id=car_id, owner_user_id=current_user.id
+        ),
     )

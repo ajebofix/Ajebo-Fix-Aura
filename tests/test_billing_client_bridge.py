@@ -625,14 +625,7 @@ def test_owner_and_driver_cannot_enter_advisor_billing(app,client,monkeypatch):
     _sign_in(client,owner)
     assert client.get("/admin/billing").status_code == 403
     assert client.get(f"/admin/cars/{car.id}/billing/workspace").status_code == 403
-    driver = _user(suffix=845,role="driver")
-    db.session.commit()
-    with client.session_transaction() as browser_session:
-        browser_session.clear()
-    _sign_in(client,driver)
-    assert client.get("/my-financial-records").status_code == 403
-    assert client.get("/admin/billing").status_code == 403
-    assert client.get(f"/admin/cars/{car.id}/billing/workspace").status_code == 403
+
 
 
 def test_non_native_draft_has_no_resend_button(app,client,monkeypatch):
@@ -659,3 +652,18 @@ def test_non_native_draft_has_no_resend_button(app,client,monkeypatch):
     assert b"AJF-EST-DRAFT" in response.data
     assert b"Review &amp; Send via Resend" not in response.data
     assert b"Complete and issue this draft" in response.data
+
+
+def test_driver_denied_owner_and_advisor_finance_indexes(app,client,monkeypatch):
+    _configure(monkeypatch)
+    driver = _user(suffix=849,role="driver")
+    car = _car(suffix=849)
+    _own(owner=driver,car=car,suffix=849)
+    db.session.commit()
+    def forbidden(*args,**kwargs):
+        raise AssertionError("Driver financial request reached provider")
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", forbidden)
+    _sign_in(client,driver)
+    assert client.get("/my-financial-records").status_code == 403
+    assert client.get("/admin/billing").status_code == 403
+    assert client.get(f"/admin/cars/{car.id}/billing/workspace").status_code == 403

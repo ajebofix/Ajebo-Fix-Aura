@@ -12,7 +12,7 @@ from admin.routes import admin_bp
 from admin.utils import advisor_required
 from evidence.models import VehicleEvidence
 from extensions import db
-from models import Car, TreatmentPlan
+from models import Car, CarOwnership, TreatmentPlan
 from security.access import resolve_vehicle_authority
 from services.treatment_action_lifecycle import (
     TreatmentActionLifecycleError,
@@ -117,12 +117,21 @@ def repair_progress_console(car_id: int):
         ),
         None,
     )
+    active_owners = CarOwnership.query.filter_by(
+        car_id=car.id, is_active=True
+    ).all()
+    currently_published = (
+        client_published_progress(
+            car_id=car.id, owner_user_id=active_owners[0].user_id
+        )
+        if len(active_owners) == 1 else []
+    )
     return render_template(
         "treatment_actions/repair_progress.html",
         car=car,
         progress_entries=repair_progress_for_car(car_id=car.id, limit=150),
         client_published_note_ids={
-            p.source_note_id for p in client_published_progress(car_id=car.id)
+            p.source_note_id for p in currently_published
         },
         milestones=MILESTONES,
         treatment_plans=plans,

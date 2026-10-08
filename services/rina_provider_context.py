@@ -830,6 +830,18 @@ AUTHORITY-SPECIFIC POLICY
 """.strip()
 
 
+def _advisor_source_comparison_budget(*, authority: str, message: str) -> int | None:
+    """Allocate a larger, still bounded budget for evidence-heavy advisor reviews."""
+
+    if authority not in {"advisor", "administrator"}:
+        return None
+    clean = str(message or "").lower()
+    treatment_context = "treatment plan" in clean or "treatment actions" in clean
+    source_context = "whatsapp" in clean or "processed media" in clean
+    comparison = any(phrase in clean for phrase in ("review", "compare", "against"))
+    return 4800 if treatment_context and source_context and comparison else None
+
+
 def build_rina_provider_context(
     *,
     rina_request: RinaRequest,
@@ -892,6 +904,10 @@ def build_rina_provider_context(
             request_id=rina_request.request_id,
             instructions=_instructions(context=context),
             input_messages=tuple(input_messages),
+            max_output_tokens=_advisor_source_comparison_budget(
+                authority=context.authority,
+                message=rina_request.message,
+            ),
         ),
         evidence_refs=_evidence_refs(context),
         uncertainty=_uncertainty(context),

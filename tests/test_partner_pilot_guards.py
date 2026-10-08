@@ -46,6 +46,22 @@ class PartnerPilotGuardTests(unittest.TestCase):
             (),
         )
 
+    def test_accepted_technician_without_agreed_commission_cannot_confirm(self):
+        ready = AppointmentReadiness(
+            campaign_active=True,
+            voucher_verified=True,
+            human_technical_approval=True,
+            product_received_and_accepted=True,
+            capacity_reserved=True,
+            technician_confirmed_for_window=True,
+            technician_commission_agreed=False,
+            customer_confirmed=True,
+        )
+        self.assertEqual(
+            appointment_blockers(ready),
+            ("technician_commission_not_agreed",),
+        )
+
     def test_cannot_start_service_without_voucher_bay_and_vehicle_recheck(self):
         blockers = service_start_blockers(
             ServiceStartReadiness(appointment_confirmed=True)

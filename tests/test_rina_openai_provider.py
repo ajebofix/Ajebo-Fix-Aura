@@ -74,6 +74,69 @@ def test_request_model_hint_overrides_adapter_default():
     assert client.responses.calls[0]["model"] == "explicit-model"
 
 
+def test_advisor_plan_source_comparison_gets_a_larger_bounded_budget(monkeypatch):
+    from services.rina_provider_context import _advisor_source_comparison_budget
+
+    message = (
+        "Review the current Collision Repair Treatment Plan against the latest "
+        "WhatsApp conversation and all newly processed media evidence. Do not edit."
+    )
+    assert _advisor_source_comparison_budget(
+        authority="administrator", message=message
+    ) == 4800
+    assert _advisor_source_comparison_budget(
+        authority="owner", message=message
+    ) is None
+    assert _advisor_source_comparison_budget(
+        authority="administrator", message="Where is the vehicle?"
+    ) is None
+
+    monkeypatch.setenv("RINA_OPENAI_MAX_OUTPUT_TOKENS", "1800")
+    client = FakeClient()
+    provider = OpenAIRinaProvider(client=client, model="gpt-5.6-terra")
+    request = RinaProviderRequest(
+        request_id="complex-comparison",
+        instructions="Stay within scoped vehicle evidence.",
+        input_messages=({"role": "user", "content": message},),
+        max_output_tokens=4800,
+    )
+    provider.generate(request)
+    assert client.responses.calls[0]["max_output_tokens"] == 4800
+
+
+def test_incomplete_provider_output_is_explicitly_flagged_and_preserved():
+    client = FakeClient()
+    client.responses.create = lambda **kwargs: SimpleNamespace(
+        output_text="1. **Washer reservoir",
+        status="incomplete",
+        incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+        model="gpt-5.6-terra",
+        _request_id="req-incomplete",
+    )
+    provider = OpenAIRinaProvider(client=client, model="gpt-5.6-terra")
+    request = RinaProviderRequest(
+        request_id="incomplete",
+        instructions="Be evidence-led",
+        input_messages=({"role": "user", "content": "Review the plan"},),
+    )
+    result = provider.generate(request)
+    assert result.incomplete is True
+    assert result.text.startswith("1. **Washer reservoir")
+    assert "Review incomplete" in result.text
+    assert "Ask Rina to continue" in result.text
+
+
+def test_completed_provider_output_does_not_claim_incomplete():
+    client = FakeClient()
+    provider = OpenAIRinaProvider(client=client, model="gpt-5.6-terra")
+    request = RinaProviderRequest(
+        request_id="complete",
+        instructions="Be evidence-led",
+        input_messages=({"role": "user", "content": "Hello"},),
+    )
+    assert provider.generate(request).incomplete is False
+
+
 def test_frontier_model_uses_bounded_reasoning_and_output_budget(monkeypatch):
     monkeypatch.setenv("RINA_OPENAI_REASONING_EFFORT", "low")
     monkeypatch.setenv("RINA_OPENAI_MAX_OUTPUT_TOKENS", "1800")

@@ -9,7 +9,10 @@
 <section class="card" style="border-left:4px solid #d4a017">
   <h2>Preview as Client · Published Financial Records</h2>
   <p class="muted">This is a read-only view of the documents currently authorised for the active vehicle owner. You have not signed into the owner's account. Unpublished drafts and withdrawn documents are excluded.</p>
-  <a class="btn btn-secondary" href="{{ url_for('admin.repair_progress_console',car_id=car.id) }}">Back to advisor vehicle</a>
+  <div class="button-stack">
+    <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}">Billing Workspace &amp; Delivery</a>
+    <a class="btn btn-secondary" href="{{ url_for('admin.repair_progress_console',car_id=car.id) }}">Back to advisor vehicle</a>
+  </div>
 </section>
 {% endif %}
 <section class="card">

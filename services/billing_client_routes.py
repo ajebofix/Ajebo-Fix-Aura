@@ -151,3 +151,46 @@ def advisor_billing_document_preview(car_id: int, document_id: str):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+
+@client_billing_bp.get("/admin/cars/<int:car_id>/billing/preview")
+@login_required
+def advisor_client_finance_preview(car_id: int):
+    """Read-only advisor preview of the *published owner* financial projection.
+
+    This never logs into or impersonates a client's session. Owner access is
+    evaluated by the same server-to-server publication gates used for clients.
+    """
+    if current_user.role != "admin":
+        abort(403)
+    active_owners = CarOwnership.query.filter_by(
+        car_id=car_id, is_active=True
+    ).all()
+    if len(active_owners) != 1 or not active_owners[0].user:
+        abort(404)
+    ownership = active_owners[0]
+    try:
+        snapshot = client_billing_snapshot(
+            car_id=car_id,
+            owner_user_id=ownership.user_id,
+            vin=ownership.car.vin,
+        )
+    except BillingBridgeUnavailable:
+        current_app.logger.warning(
+            "Advisor read-only published-finance preview unavailable car=%s",
+            car_id,
+        )
+        snapshot = {"state": "unavailable", "documents": [], "payments": []}
+    current_app.logger.info(
+        "Advisor client-finance preview actor=%s car=%s owner=%s state=%s",
+        current_user.id, car_id, ownership.user_id, snapshot["state"],
+    )
+    from flask import make_response
+    response = make_response(render_template(
+        "billing/owner_vehicle.html",
+        car=ownership.car,
+        snapshot=snapshot,
+        advisor_preview=True,
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    return response

@@ -38,6 +38,7 @@ from services.feature_gateways import (
     FEATURE_PREVENTIVE_TRACKING,
 )
 from services.vehicle_intelligence import calculate_vehicle_health
+from services.billing_client_bridge import client_billing_feature_enabled
 from services.report_builder import build_vehicle_report
 from services.consultation_guard import require_active_consultation
 from services.assessment_report_builder import build_assessment_report
@@ -289,6 +290,7 @@ def car_detail(car_id):
         active_driver=None,
         conversation_records=[],
         CARE_PLAN_LABELS=CARE_PLAN_LABELS,
+        billing_portal_enabled=client_billing_feature_enabled(),
 
         has_feature=has_feature,
 

@@ -12,6 +12,7 @@ class RinaProviderRequest:
     instructions: str
     input_messages: tuple[dict[str, str], ...]
     model_hint: str | None = None
+    max_output_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class RinaProviderResult:
     provider: str
     model: str
     provider_request_id: str | None = None
+    incomplete: bool = False
 
 
 class RinaProviderError(RuntimeError):

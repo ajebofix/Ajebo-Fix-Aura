@@ -318,7 +318,9 @@
             const line = rawLine.trim();
 
             if (!line) {
-                closeList();
+                // Markdown often puts a blank line between a numbered item
+                // and its explanation. Keep the list until its next item or
+                // section; otherwise every item restarts at number one.
                 continue;
             }
 
@@ -365,6 +367,22 @@
                 item.style.margin = "4px 0";
                 appendInlineMarkdown(item, ordered ? ordered[2] : unordered[1]);
                 activeList.appendChild(item);
+                continue;
+            }
+
+            if (
+                activeList
+                && activeList.lastElementChild
+                && !activeList.lastElementChild.dataset.rinaHasDetail
+                && !/^\*\*[^*]+\*\*$/.test(line)
+            ) {
+                // One explanatory paragraph belongs to the preceding list
+                // item; the next item continues the same ordered list.
+                const detail = document.createElement("p");
+                detail.style.margin = "6px 0";
+                appendInlineMarkdown(detail, line);
+                activeList.lastElementChild.appendChild(detail);
+                activeList.lastElementChild.dataset.rinaHasDetail = "true";
                 continue;
             }
 

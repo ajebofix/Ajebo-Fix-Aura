@@ -117,6 +117,7 @@ def _audit_response(
     failure_class: str | None = None,
     provider_attempted: bool,
     commit: bool,
+    response_incomplete: bool = False,
 ) -> None:
     metadata = {
         "channel": channel,
@@ -124,6 +125,8 @@ def _audit_response(
         "memory_policy": _DEFAULT_MEMORY_POLICY,
         "provider_attempted": provider_attempted,
     }
+    if response_incomplete:
+        metadata["output_incomplete"] = True
     if failure_class:
         metadata["failure_class"] = failure_class
 
@@ -547,6 +550,13 @@ def orchestrate_rina(
         return response
 
     elapsed_ms = int((time.monotonic() - provider_started_at) * 1000)
+    if result.incomplete:
+        logger.warning(
+            "rina_provider_output_incomplete request_id=%s car_id=%s model=%s",
+            resolved_request_id,
+            context.car_id,
+            result.model,
+        )
     logger.info(
         "rina_provider_succeeded request_id=%s car_id=%s authority=%s provider=%s "
         "model=%s elapsed_ms=%s",
@@ -564,7 +574,11 @@ def orchestrate_rina(
         authority=context.authority,
         state=RINA_STATE_ANSWERED,
         message=result.text,
-        uncertainty=provider_context.uncertainty,
+        uncertainty=(
+            "The provider reached its output limit before finishing this response."
+            if result.incomplete
+            else provider_context.uncertainty
+        ),
         escalation=None,
         actions=(),
         evidence_refs=provider_context.evidence_refs,
@@ -581,6 +595,7 @@ def orchestrate_rina(
         channel=channel,
         context_version=context.context_version,
         provider_attempted=True,
+        response_incomplete=result.incomplete,
         commit=audit_commit,
     )
     return response

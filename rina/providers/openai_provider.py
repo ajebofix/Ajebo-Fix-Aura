@@ -85,12 +85,16 @@ class OpenAIRinaProvider:
 
     def generate(self, request: RinaProviderRequest) -> RinaProviderResult:
         selected_model = request.model_hint or self.model
+        # Detailed advisor comparisons may need more room than everyday chats.
+        # Keep both paths bounded so one message cannot request unlimited output.
+        requested_budget = request.max_output_tokens or self.max_output_tokens
+        output_budget = min(5000, max(self.max_output_tokens, int(requested_budget)))
         create_kwargs: dict[str, Any] = {
             "model": selected_model,
             "instructions": request.instructions,
             "input": list(request.input_messages),
             "store": False,
-            "max_output_tokens": self.max_output_tokens,
+            "max_output_tokens": output_budget,
         }
         if selected_model.startswith(("gpt-5", "gpt-6", "o")):
             create_kwargs["reasoning"] = {"effort": self.reasoning_effort}
@@ -153,6 +157,31 @@ class OpenAIRinaProvider:
                 "OpenAI provider returned no usable text output"
             )
 
+        status = str(getattr(response, "status", "") or "").lower()
+        incomplete = status == "incomplete"
+        if incomplete:
+            details = getattr(response, "incomplete_details", None)
+            reason = (
+                details.get("reason")
+                if isinstance(details, dict)
+                else getattr(details, "reason", None)
+            )
+            if reason != "max_output_tokens":
+                raise RinaProviderRejectedError(
+                    "OpenAI provider did not finish its response"
+                )
+            # Never misrepresent an unfinished analysis as a complete review.
+            text += (
+                "\n\n**Review incomplete — response limit reached.** "
+                "The remaining analysis was not generated. Ask Rina to continue "
+                "from the last unfinished section before relying on the full review. "
+                "Nothing was changed in the vehicle record by this read-only answer."
+            )
+        elif status not in {"", "completed"}:
+            raise RinaProviderRejectedError(
+                "OpenAI provider returned a non-final response"
+            )
+
         response_model = str(getattr(response, "model", "") or self.model)
         provider_request_id = getattr(response, "_request_id", None)
 
@@ -163,4 +192,5 @@ class OpenAIRinaProvider:
             provider_request_id=(
                 str(provider_request_id) if provider_request_id else None
             ),
+            incomplete=incomplete,
         )

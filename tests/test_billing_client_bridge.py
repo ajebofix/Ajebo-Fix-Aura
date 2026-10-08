@@ -242,3 +242,45 @@ def test_navigation_only_appears_when_bridge_configured(app, client, monkeypatch
     assert f"/cars/{car.id}/billing".encode() in client.get(f"/cars/{car.id}").data
     monkeypatch.setenv("AURA_BILLING_CLIENT_VIEW_ENABLED", "false")
     assert f"/cars/{car.id}/billing".encode() not in client.get(f"/cars/{car.id}").data
+
+
+def test_public_verification_key_contains_no_private_material(app, client):
+    response = client.get("/.well-known/aura-billing-public-key")
+    assert response.status_code == 200
+    document = response.get_json()
+    assert document["kty"] == "OKP"
+    assert document["crv"] == "Ed25519"
+    assert document["kid"] == "aura-billing-v1"
+    assert len(base64.urlsafe_b64decode(document["x"] + "==")) == 32
+    assert "private" not in str(document).lower()
+    assert "seed" not in str(document).lower()
+    assert "secret" not in str(document).lower()
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_signature_is_body_bound_and_non_reusable(app):
+    from services.billing_bridge_signing import sign_billing_request
+
+    public = public_key_document()
+    pub = Ed25519PublicKey.from_public_bytes(
+        base64.urlsafe_b64decode(public["x"] + "==")
+    )
+    body, headers = sign_billing_request({
+        "car_id": 3, "owner_user_id": 1, "vin": "WDCGG5HB1EG276273"
+    })
+    message = (
+        headers["X-Aura-Timestamp"] + "." +
+        headers["X-Aura-Nonce"] + "."
+    ).encode() + body
+    signature = base64.urlsafe_b64decode(headers["X-Aura-Signature"] + "==")
+    pub.verify(signature, message)
+    try:
+        pub.verify(signature, message.replace(b'"car_id":3', b'"car_id":4'))
+    except Exception:
+        pass
+    else:
+        raise AssertionError("Tampering with vehicle ID must invalidate signature")
+    _, other = sign_billing_request({
+        "car_id": 3, "owner_user_id": 1, "vin": "WDCGG5HB1EG276273"
+    })
+    assert other["X-Aura-Nonce"] != headers["X-Aura-Nonce"]

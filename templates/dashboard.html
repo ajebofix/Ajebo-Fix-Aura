@@ -133,6 +133,14 @@ Your vehicle is under professional care.
             >
                 {{ 'Open Driver Vehicle View' if dashboard_mode == 'driver' else 'View Full Record' }}
             </a>
+            {% if current_user.is_authenticated and current_user.role == 'user' and v.authority == 'owner' %}
+            <a
+                href="{{ url_for('client_billing.owner_vehicle_billing',car_id=v.vehicle_id) }}"
+                class="btn btn-primary btn-block"
+            >
+                Financial Records
+            </a>
+            {% endif %}
 
         </div>
 

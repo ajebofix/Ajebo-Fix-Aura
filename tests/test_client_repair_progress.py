@@ -8,7 +8,11 @@ from services.client_repair_progress import (
     client_published_progress,
     publish_client_progress,
 )
-from services.repair_progress import record_repair_progress
+from services.repair_progress import (
+    classify_repair_progress,
+    record_repair_progress,
+    repair_progress_for_car,
+)
 from test_rina_chat_cutover import _car, _own, _sign_in, _user, _csrf_token
 
 
@@ -194,3 +198,28 @@ def test_ownership_transfer_does_not_leak_previous_owners_progress(
     assert response.status_code == 200
     assert b"Earlier owner" not in response.data
     assert b"No repair-progress statements have been published" in response.data
+
+
+def test_parts_delivered_is_not_vehicle_delivery_status(app):
+    milestone, tags = classify_repair_progress(
+        "The parts have been delivered and dismantling has commenced."
+    )
+    assert milestone == "dismantling"
+    assert "dismantling" in tags
+    assert "parts" in tags
+    assert "delivered" not in tags
+    confirmed, safe_tags = classify_repair_progress(
+        "The vehicle delivered to client after handover."
+    )
+    assert confirmed == "delivered"
+    assert "delivered" in safe_tags
+
+
+def test_existing_manual_parts_arrival_is_reclassified_without_source_rewrite(app):
+    owner, advisor, stranger, driver, car = _setup(671)
+    note_id = _private_note(advisor, car)
+    raw_before = db.session.get(AdvisorNote, note_id).note
+    timeline = repair_progress_for_car(car_id=car.id)
+    assert timeline[0].milestone == "dismantling"
+    assert "delivered" not in timeline[0].tags
+    assert db.session.get(AdvisorNote, note_id).note == raw_before

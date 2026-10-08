@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 
 from services.billing_bridge_signing import sign_billing_request
 from decimal import Decimal, InvalidOperation
@@ -119,7 +120,13 @@ def client_billing_snapshot(
             raise BillingBridgeUnavailable("Missing commercial document provenance")
         total = _money(item.get("total"))
         paid = _money(item.get("paid"))
+        document_id = str(item.get("id") or "")
+        try:
+            document_id = str(uuid.UUID(document_id))
+        except (ValueError, AttributeError):
+            raise BillingBridgeUnavailable("Invalid published document ID")
         safe_docs.append({
+            "id": document_id,
             "kind": kind,
             "group": group,
             "number": str(item.get("number") or "")[:80],
@@ -141,3 +148,134 @@ def client_billing_snapshot(
             "paid_at": str(payment.get("paid_at") or "")[:10],
         })
     return {"state": "linked", "documents": safe_docs, "payments": safe_payments}
+
+
+def client_billing_document(
+    *, car_id: int, owner_user_id: int, vin: str, document_id: str,
+    advisor_user_id: int | None = None,
+) -> dict | None:
+    """Read one previously published document from Billing's authoritative record.
+
+    The Billing gateway independently verifies account + vehicle + VIN, active
+    per-document publication, non-revoked current revision and document status.
+    Returns no unreviewed files, share tokens, bank accounts or internal notes.
+    """
+    if not client_billing_feature_enabled():
+        return None
+    try:
+        normalized_id = str(uuid.UUID(document_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    vin_value = _normalise_vin(vin)
+    if (
+        type(car_id) is not int or car_id < 1
+        or type(owner_user_id) is not int or owner_user_id < 1
+        or len(vin_value) != 17
+    ):
+        return None
+    endpoint = os.getenv("AURA_BILLING_BRIDGE_URL", "").strip()
+    parsed = urlparse(endpoint)
+    if (
+        parsed.scheme != "https" or parsed.hostname !=
+        "odtctmjhkcphyaozpcup.supabase.co"
+        or parsed.path != "/functions/v1/aura-billing-bridge"
+        or parsed.username or parsed.password or parsed.query or parsed.fragment
+    ):
+        raise BillingBridgeUnavailable("Invalid document gateway")
+    payload = {
+        "action": "advisor_preview" if advisor_user_id else "document",
+        "car_id": car_id,
+        "owner_user_id": owner_user_id,
+        "vin": vin_value,
+        "document_id": normalized_id,
+    }
+    if advisor_user_id is not None:
+        if type(advisor_user_id) is not int or advisor_user_id < 1:
+            return None
+        payload["advisor_user_id"] = advisor_user_id
+    body, signed_headers = sign_billing_request(payload)
+    try:
+        response = requests.post(
+            endpoint,
+            data=body,
+            headers={
+                **signed_headers,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            timeout=(3.05, 12),
+            allow_redirects=False,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise BillingBridgeUnavailable("Document retrieval unavailable") from exc
+    if not isinstance(data, dict) or data.get("state") != "linked":
+        return None
+    doc = data.get("document")
+    brand = data.get("brand")
+    if not isinstance(doc, dict) or not isinstance(brand, dict):
+        raise BillingBridgeUnavailable("Invalid document detail")
+    if doc.get("id") != normalized_id:
+        raise BillingBridgeUnavailable("Document identity mismatch")
+    if doc.get("kind") not in {"estimate", "invoice", "receipt"}:
+        raise BillingBridgeUnavailable("Invalid document type")
+    if doc.get("group") not in {"vehicle_history", "job_record"}:
+        raise BillingBridgeUnavailable("Invalid document provenance")
+    sections = doc.get("sections")
+    if not isinstance(sections, list) or len(sections) > 25:
+        raise BillingBridgeUnavailable("Invalid document sections")
+    clean_sections = []
+    for section in sections:
+        if not isinstance(section, dict):
+            raise BillingBridgeUnavailable("Invalid source section")
+        lines = section.get("rows")
+        if not isinstance(lines, list) or len(lines) > 100:
+            raise BillingBridgeUnavailable("Invalid line items")
+        safe_lines = []
+        for line in lines:
+            if not isinstance(line, dict):
+                raise BillingBridgeUnavailable("Invalid line")
+            safe_lines.append({
+                "description": str(line.get("description") or "")[:220],
+                "quantity": str(_money(line.get("quantity"))),
+                "unit_price": str(_money(line.get("unit_price"))),
+                "amount": str(_money(line.get("amount"))),
+            })
+        clean_sections.append({
+            "title": str(section.get("title") or "")[:160],
+            "rows": safe_lines,
+        })
+    clean_doc = {
+        "id": normalized_id,
+        "kind": doc["kind"],
+        "group": doc["group"],
+        "number": str(doc.get("number") or "")[:80],
+        "status": str(doc.get("status") or "")[:40],
+        "issued": str(doc.get("issued") or "")[:10],
+        "valid_until": str(doc.get("valid_until") or "")[:10],
+        "due": str(doc.get("due") or "")[:10],
+        "revision": int(doc.get("revision") or 1),
+        "currency": str(doc.get("currency") or "₦")[:5],
+        "total": str(_money(doc.get("total"))),
+        "paid": str(_money(doc.get("paid"))),
+        "balance": str(max(_money(doc.get("total")) - _money(doc.get("paid")), Decimal("0"))),
+        "scope": str(doc.get("scope") or "")[:1400],
+        "terms": str(doc.get("terms") or "")[:2400],
+        "sections": clean_sections,
+    }
+    return {
+        "document": clean_doc,
+        "brand": {
+            "name": str(brand.get("name") or "Ajebo Fix Ltd")[:100],
+            "tagline": str(brand.get("tagline") or "")[:140],
+            "website": str(brand.get("website") or "")[:150],
+            "footer": str(brand.get("footer") or "")[:160],
+            "logo": str(brand.get("logo") or "")[:600]
+            if str(brand.get("logo") or "").startswith(
+                "https://odtctmjhkcphyaozpcup.supabase.co/storage/"
+            ) else "",
+        },
+    }

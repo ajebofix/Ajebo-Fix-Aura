@@ -99,12 +99,12 @@ def test_verified_owner_without_billing_email_can_view_released_docs(
     seen = _mock_gateway(
         monkeypatch,
         documents=[{
-            "kind": "invoice", "group": "vehicle_history", "number": "INV-2026-TEST",
+            "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "kind": "invoice", "group": "vehicle_history", "number": "INV-2026-TEST",
             "status": "partially_paid", "issued": "2026-10-08",
             "due": "", "currency": "₦", "total": "150000",
             "paid": "50000", "balance": "100000",
         }, {
-            "kind": "receipt", "group": "vehicle_history", "number": "RCP-2026-TEST",
+            "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "kind": "receipt", "group": "vehicle_history", "number": "RCP-2026-TEST",
             "status": "issued", "issued": "2026-10-08", "due": "",
             "currency": "₦", "total": "50000", "paid": "0", "balance": "50000",
         }],
@@ -115,7 +115,7 @@ def test_verified_owner_without_billing_email_can_view_released_docs(
     assert resp.status_code == 200
     assert b"INV-2026-TEST" in resp.data
     assert b"RCP-2026-TEST" in resp.data
-    assert b"100000" in resp.data
+    assert b"100,000" in resp.data
     assert len(seen) == 1
     assert seen[0]["owner_user_id"] == owner.id
     assert seen[0]["car_id"] == car.id
@@ -324,3 +324,159 @@ def test_read_only_handshake_authenticates_without_owner_data(
     }
     assert response.headers["Cache-Control"] == "no-store"
     assert len(seen) == 3
+
+
+def test_owner_can_open_only_valid_published_source_document(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=782)
+    car = _car(suffix=782)
+    _own(owner=owner, car=car, suffix=782)
+    db.session.commit()
+    doc_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    observed = []
+
+    def service(_endpoint, *, data, headers, timeout, allow_redirects):
+        payload = json.loads(data)
+        observed.append(payload)
+        assert payload["owner_user_id"] == owner.id
+        assert payload["car_id"] == car.id
+        assert payload["document_id"] == doc_id
+        assert payload["action"] == "document"
+        assert headers["X-Aura-Signature"]
+        assert allow_redirects is False
+        return FakeResponse({
+            "state": "linked",
+            "brand": {
+                "name": "Ajebo Fix Ltd",
+                "tagline": "Luxury Automotive Health & Concierge",
+                "footer": "Discretion. Precision. Excellence.",
+                "logo": "", "website": "www.ajebofix.com",
+            },
+            "document": {
+                "id": doc_id, "kind": "estimate", "group": "job_record",
+                "number": "AJF-EST-TEST", "status": "issued",
+                "issued": "2026-10-08", "valid_until": "2026-10-15",
+                "due": "", "revision": 1, "currency": "₦",
+                "total": "650000", "paid": "0", "balance": "650000",
+                "scope": "Body restoration and painting",
+                "terms": "Ninety percent upfront",
+                "sections": [{
+                    "title": "Restoration services",
+                    "rows": [
+                        {"description": "Bodywork", "quantity": "1",
+                         "unit_price": "250000", "amount": "250000"},
+                        {"description": "Painting", "quantity": "1",
+                         "unit_price": "180000", "amount": "180000"},
+                        {"description": "Professional management",
+                         "quantity": "1", "unit_price": "220000",
+                         "amount": "220000"},
+                    ],
+                }],
+            },
+        })
+
+    monkeypatch.setattr(
+        "services.billing_client_bridge.requests.post", service
+    )
+    _sign_in(client, owner)
+    response = client.get(f"/cars/{car.id}/billing/documents/{doc_id}")
+    assert response.status_code == 200
+    assert b"AJF-EST-TEST" in response.data
+    assert b"650,000" in response.data
+    assert b"Discretion. Precision. Excellence." in response.data
+    assert b"Bodywork" in response.data
+    assert "no-store" in response.headers["Cache-Control"]
+    assert response.headers["Referrer-Policy"] in {"no-referrer", "strict-origin-when-cross-origin"}
+    assert len(observed) == 1
+
+
+def test_owner_detail_hides_revoked_and_other_owner_documents(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=786)
+    another_owner = _user(suffix=787)
+    car = _car(suffix=786)
+    _own(owner=owner, car=car, suffix=786)
+    db.session.commit()
+    doc_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
+    def denied(_endpoint, *, data, headers, timeout, allow_redirects):
+        return FakeResponse({"error": "Document not available"}, status=404)
+
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", denied)
+    _sign_in(client, owner)
+    assert client.get(f"/cars/{car.id}/billing/documents/{doc_id}").status_code == 404
+
+    _sign_in(client, another_owner)
+    assert client.get(f"/cars/{car.id}/billing/documents/{doc_id}").status_code == 404
+
+
+def test_invalid_document_id_requires_no_remote_call(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner = _user(suffix=789)
+    car = _car(suffix=789)
+    _own(owner=owner, car=car, suffix=789)
+    db.session.commit()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Invalid ID must not reach provider")
+    monkeypatch.setattr(
+        "services.billing_client_bridge.requests.post", forbidden
+    )
+    _sign_in(client, owner)
+    assert client.get(f"/cars/{car.id}/billing/documents/not-a-document").status_code == 404
+
+
+def test_advisor_previews_source_without_releasing_to_owner(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=792)
+    advisor = _user(suffix=793, role="admin")
+    car = _car(suffix=792)
+    _own(owner=owner, car=car, suffix=792)
+    db.session.commit()
+    doc_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+    def provider(_endpoint, *, data, headers, timeout, allow_redirects):
+        payload = json.loads(data)
+        assert payload["action"] == "advisor_preview"
+        assert payload["owner_user_id"] == owner.id
+        assert payload["advisor_user_id"] == advisor.id
+        assert payload["document_id"] == doc_id
+        assert headers["X-Aura-Signature"]
+        return FakeResponse({
+            "state":"linked", "preview":True,
+            "brand":{"name":"Ajebo Fix Ltd", "tagline":"Luxury",
+                     "footer":"Discretion. Precision. Excellence.",
+                     "website":"", "logo":""},
+            "document":{
+                "id":doc_id, "kind":"estimate", "group":"job_record",
+                "number":"AJF-EST-TEST", "status":"issued",
+                "issued":"2026-10-08", "valid_until":"2026-10-15",
+                "due":"", "revision":1, "currency":"₦",
+                "total":"650000", "paid":"0", "balance":"650000",
+                "scope":"Body restoration",
+                "terms":"90 percent upfront", "sections":[]
+            }
+        })
+    monkeypatch.setattr("services.billing_client_bridge.requests.post",provider)
+    _sign_in(client, advisor)
+    response=client.get(f"/admin/cars/{car.id}/billing/preview/{doc_id}")
+    assert response.status_code == 200
+    assert b"Advisor-only document preview" in response.data
+    assert b"not</strong> a native Billing PDF" in response.data
+    assert b"AJF-EST-TEST" in response.data
+    assert b"Print / Save as PDF" not in response.data
+
+def test_owner_cannot_access_advisor_unpublished_preview(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner=_user(suffix=795)
+    car=_car(suffix=795)
+    _own(owner=owner,car=car,suffix=795)
+    db.session.commit()
+    _sign_in(client,owner)
+    doc_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assert client.get(f"/admin/cars/{car.id}/billing/preview/{doc_id}").status_code == 403

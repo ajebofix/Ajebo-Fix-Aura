@@ -356,6 +356,8 @@ def test_owner_can_open_only_valid_published_source_document(
             },
             "document": {
                 "id": doc_id, "kind": "estimate", "group": "job_record",
+                "billed_to": "Test Client", "vin": car.vin,
+                "job_number": "JOB-2026-003", "sow_number": "SOW-2026-003",
                 "number": "AJF-EST-TEST", "status": "issued",
                 "issued": "2026-10-08", "valid_until": "2026-10-15",
                 "due": "", "revision": 1, "currency": "₦",
@@ -387,6 +389,8 @@ def test_owner_can_open_only_valid_published_source_document(
     assert b"650,000" in response.data
     assert b"Discretion. Precision. Excellence." in response.data
     assert b"Bodywork" in response.data
+    assert b"Test Client" in response.data
+    assert b"JOB-2026-003" in response.data
     assert "no-store" in response.headers["Cache-Control"]
     assert response.headers["Referrer-Policy"] in {"no-referrer", "strict-origin-when-cross-origin"}
     assert len(observed) == 1

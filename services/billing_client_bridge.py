@@ -251,6 +251,10 @@ def client_billing_document(
     clean_doc = {
         "id": normalized_id,
         "kind": doc["kind"],
+        "billed_to": str(doc.get("billed_to") or "")[:120],
+        "vin": _normalise_vin(doc.get("vin"))[:17],
+        "job_number": str(doc.get("job_number") or "")[:80],
+        "sow_number": str(doc.get("sow_number") or "")[:80],
         "group": doc["group"],
         "number": str(doc.get("number") or "")[:80],
         "status": str(doc.get("status") or "")[:40],

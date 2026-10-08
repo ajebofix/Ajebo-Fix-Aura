@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Vehicle Billing | Aura{% endblock %}
+{% block page_title %}Care & Billing{% endblock %}
+{% block page_subtitle %}Private automotive health management{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2>{{ car.rina_display_name }}</h2>
+  <p class="muted">Your vehicle care record and commercial documents are separate, verified records.</p>
+  <div class="button-stack">
+    <a class="btn btn-secondary" href="{{ url_for('cars.car_detail', car_id=car.id) }}">Vehicle Health Record</a>
+    <a class="btn btn-secondary" href="{{ url_for('cars.owner_treatment_plans') }}">Treatment Plans</a>
+  </div>
+</section>
+
+{% if snapshot.state == "not_enabled" %}
+<section class="card">
+  <h2>Commercial documents coming soon</h2>
+  <p class="muted">Your vehicle care record remains available. The secure billing connection has not been enabled yet.</p>
+</section>
+{% elif snapshot.state == "not_published" %}
+<section class="card">
+  <h2>Commercial records awaiting publication</h2>
+  <p class="muted">Ajebo Fix has not yet authorised the release of financial information to this account. Your vehicle care records remain available separately.</p>
+</section>
+{% elif snapshot.state == "not_linked" %}
+<section class="card">
+  <h2>Billing record not connected</h2>
+  <p class="muted">Ajebo Fix has not yet verified a billing record for this vehicle and account. No billing information will be shown until that verification is completed.</p>
+</section>
+{% elif snapshot.state == "unavailable" %}
+<section class="card">
+  <h2>Billing records temporarily unavailable</h2>
+  <p class="muted">Your financial records have not been changed. Please try again later or contact your Ajebo Fix advisor.</p>
+</section>
+{% else %}
+<section class="card">
+  <h2>Estimates, Invoices & Receipts</h2>
+  <p class="muted">Only client-ready documents from Ajebo Fix Billing are shown here. The original billing records remain authoritative.</p>
+  {% if snapshot.documents %}
+    {% for document in snapshot.documents %}
+      <div class="list-item" style="display:block;padding:14px 0;border-bottom:1px solid var(--border, #e5e7eb)">
+        <div class="section-head">
+          <div>
+            <strong>{{ document.kind|capitalize }} — {{ document.number }}</strong>
+            <p class="muted">{{ document.status|replace('_',' ')|capitalize }} · {{ document.issued }}</p>
+          </div>
+          <strong>{{ document.currency }}{{ document.total }}</strong>
+        </div>
+        {% if document.kind == "invoice" %}
+          <p>Recorded payment: {{ document.currency }}{{ document.paid }}</p>
+          <p><strong>Outstanding: {{ document.currency }}{{ document.balance }}</strong></p>
+          {% if document.due %}<p class="muted">Due date: {{ document.due }}</p>{% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No client-ready estimates, invoices, or receipts are available for this vehicle yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Recorded Payments</h2>
+  {% if snapshot.payments %}
+    {% for payment in snapshot.payments %}
+      <div class="list-item">
+        <span>{{ payment.paid_at }}</span>
+        <strong>{{ payment.currency }}{{ payment.amount }}</strong>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No linked invoice payments are currently available to display.</p>
+  {% endif %}
+  <p class="muted">A payment does not confirm that a Treatment Action has been completed. Work progress is recorded separately in the vehicle care record.</p>
+</section>
+{% endif %}
+{% endblock %}

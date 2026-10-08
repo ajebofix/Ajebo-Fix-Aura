@@ -14,6 +14,9 @@ Vehicle Health Record
 
 {% block content %}
 <p><a class="btn btn-primary" href="#rina-chat-shell">Discuss this vehicle with Rina</a></p>
+{% if not is_admin_view and billing_portal_enabled|default(false) %}
+<p><a class="btn btn-secondary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Care &amp; Billing</a></p>
+{% endif %}
 
 <!-- ========================= -->
 <!-- HERO HEADER -->

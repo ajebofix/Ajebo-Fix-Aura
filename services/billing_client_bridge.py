@@ -114,6 +114,8 @@ def client_billing_snapshot(
         kind = str(item.get("kind", ""))
         if kind not in ("invoice", "estimate", "receipt"):
             raise BillingBridgeUnavailable("Unrecognised commercial document")
+        total = _money(item.get("total"))
+        paid = _money(item.get("paid"))
         safe_docs.append({
             "kind": kind,
             "number": str(item.get("number") or "")[:80],
@@ -121,9 +123,9 @@ def client_billing_snapshot(
             "issued": str(item.get("issued") or "")[:10],
             "due": str(item.get("due") or "")[:10],
             "currency": str(item.get("currency") or "₦")[:5],
-            "total": str(_money(item.get("total"))),
-            "paid": str(_money(item.get("paid"))),
-            "balance": str(_money(item.get("balance"))),
+            "total": str(total),
+            "paid": str(paid),
+            "balance": str(max(Decimal("0"), total - paid)),
         })
     safe_payments = []
     for payment in payment_rows:

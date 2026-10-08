@@ -163,11 +163,30 @@
             </p>
             {% if entry.tags %}
             <p class="muted">
-                Tags:
+                Internal classification tags:
                 {% for tag in entry.tags %}
                     {{ tag|replace("_", " ") }}{% if not loop.last %}, {% endif %}
                 {% endfor %}
             </p>
+            {% endif %}
+            {% if entry.note_id in client_published_note_ids %}
+                <p class="muted"><strong>Published to client.</strong> Source record stays private.</p>
+                <form method="POST" action="{{ url_for('admin.revoke_repair_progress_from_owner', car_id=car.id, note_id=entry.note_id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-secondary" type="submit">Unpublish client update</button>
+                </form>
+            {% else %}
+                <form method="POST" action="{{ url_for('admin.publish_repair_progress_to_owner', car_id=car.id, note_id=entry.note_id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label class="label" for="client-summary-{{ entry.note_id }}">Client-safe progress summary</label>
+                    <textarea
+                        class="input" rows="3" minlength="10" maxlength="700"
+                        id="client-summary-{{ entry.note_id }}" name="client_summary"
+                        required placeholder="Write a factual owner-safe summary; for example, parts received and dismantling begun. Do not copy private advisor discussions."
+                    ></textarea>
+                    <p class="muted">Advisor approval is required. Classification tags, private notes and pricing are never published automatically.</p>
+                    <button class="btn btn-secondary" type="submit">Review and publish to client</button>
+                </form>
             {% endif %}
         </div>
         {% endfor %}

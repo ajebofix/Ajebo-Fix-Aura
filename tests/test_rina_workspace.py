@@ -331,6 +331,76 @@ def test_live_plan_source_review_escapes_stale_historical_session(
         assert flask_session.get("rina_history_review_extraction_id") is None
 
 
+def test_live_plan_followup_continues_after_truncated_analysis_without_history_hijack(
+    app, client, monkeypatch
+):
+    from routes.chat import (
+        _current_plan_source_review_requested,
+        _historical_review_start_requested,
+    )
+
+    admin = _user(suffix=293, role="admin")
+    owner = _user(suffix=294)
+    car = _car(suffix=293, model="GLK 350")
+    _own(owner=owner, car=car, suffix=293)
+    evidence = _service_document(car=car, uploader=admin, suffix=293)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    created = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": (
+                f"Create collision repair treatment plan from Evidence #{evidence.id} "
+                "JOB-2026-003"
+            ),
+        },
+    )
+    assert created.status_code == 200
+    plan_id = created.json["treatment_plan"]["id"]
+    action_count = TreatmentAction.query.filter_by(treatment_plan_id=plan_id).count()
+    assert action_count == 11
+
+    provider = _fake_provider(
+        monkeypatch,
+        text="Remaining washer-reservoir and support-bracket proposals require advisor confirmation.",
+    )
+    message = (
+        "Continue your previous JOB-2026-003 review from the unfinished "
+        "washer-reservoir section. Complete the remaining proposed actions, "
+        "explain the evidence supporting each, and prioritise what requires "
+        "my confirmation before the Treatment Plan can be revised. "
+        "Do not modify any records or Treatment Actions yet."
+    )
+
+    # This overlap caused the actual production regression: the previous
+    # JOB reference is also matched by the historical-recording classifier.
+    assert _historical_review_start_requested(message) is True
+    assert _current_plan_source_review_requested(message) is True
+
+    for stale_review_state in (False, True):
+        if stale_review_state:
+            with client.session_transaction() as flask_session:
+                flask_session["rina_history_review_phase"] = "choose_episode"
+
+        result = _post_json(
+            client, "/chat", {"car_id": car.id, "message": message}
+        )
+        assert result.status_code == 200
+        assert result.json["intent"] == "general"
+        assert "Remaining washer-reservoir" in result.json["reply"]
+        assert "source-supported completed-work episode" not in result.json["reply"]
+        assert provider.calls[-1].input_messages[-1]["content"] == message
+        with client.session_transaction() as flask_session:
+            assert flask_session.get("rina_history_review_phase") is None
+
+    assert len(provider.calls) == 2
+    assert TreatmentAction.query.filter_by(treatment_plan_id=plan_id).count() == action_count
+    assert db.session.get(TreatmentPlan, plan_id).status == "proposed"
+
+
 def test_manual_repair_progress_console_records_same_vehicle_log(app, client):
     admin = _user(suffix=273, role="admin")
     owner = _user(suffix=274)

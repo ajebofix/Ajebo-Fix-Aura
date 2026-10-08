@@ -223,7 +223,26 @@ def _current_plan_source_review_requested(message: str) -> bool:
         )
     )
 
-    return current_scope and source_comparison and analysis_intent
+    # A continuation of an existing source comparison will usually omit the
+    # words "WhatsApp" and "processed media": those sources were specified in
+    # the prior turn. Do not mistake "previous JOB-..." for a request to write
+    # historical completed-work records.
+    continuation_scope = (
+        any(marker in text for marker in ("continue", "finish", "resume", "unfinished"))
+        and any(
+            marker in text
+            for marker in (
+                "review",
+                "remaining proposed actions",
+                "proposed treatment actions",
+                "complete the remaining",
+            )
+        )
+    )
+
+    return current_scope and analysis_intent and (
+        source_comparison or continuation_scope
+    )
 
 
 def _historical_review_start_requested(message: str) -> bool:

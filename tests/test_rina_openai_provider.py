@@ -90,6 +90,14 @@ def test_advisor_plan_source_comparison_gets_a_larger_bounded_budget(monkeypatch
     assert _advisor_source_comparison_budget(
         authority="administrator", message="Where is the vehicle?"
     ) is None
+    assert _advisor_source_comparison_budget(
+        authority="administrator",
+        message=(
+            "Continue your previous JOB-2026-003 review from the unfinished "
+            "washer-reservoir section; complete the remaining proposed actions "
+            "before the Treatment Plan is revised. Do not modify records."
+        ),
+    ) == 4800
 
     monkeypatch.setenv("RINA_OPENAI_MAX_OUTPUT_TOKENS", "1800")
     client = FakeClient()

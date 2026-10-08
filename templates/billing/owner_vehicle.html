@@ -36,57 +36,76 @@
   <p class="muted">Your financial records have not been changed. Please try again later or contact your Ajebo Fix advisor.</p>
 </section>
 {% else %}
+{% set current_docs = snapshot.documents|selectattr('group','equalto','job_record')|list %}
+{% set history_docs = snapshot.documents|selectattr('group','equalto','vehicle_history')|list %}
 <section class="card">
-  <h2>Vehicle Billing History</h2>
-  <p class="muted">These documents are published from Ajebo Fix Billing. Historic vehicle records do not establish charges for the current collision repair. Billing remains the authoritative financial ledger.</p>
-  {% if snapshot.documents %}
-    {% for document in snapshot.documents %}
-      <div class="list-item" style="display:block;padding:14px 0;border-bottom:1px solid var(--border, #e5e7eb)">
+  <h2>Vehicle Financial Records</h2>
+  <p class="muted">Private, verified financial records from Ajebo Fix Billing. Select a document to view its full itemised scope and commercial terms on our professional platform.</p>
+  <div class="button-stack">
+    <a class="btn btn-secondary" href="#current-records">Current Service Records ({{ current_docs|length }})</a>
+    <a class="btn btn-secondary" href="#history-records">Earlier Vehicle Records ({{ history_docs|length }})</a>
+    <a class="btn btn-secondary" href="#recorded-payments">Recorded Payments</a>
+  </div>
+</section>
+<section class="card" id="current-records">
+  <h2>Current Service Records</h2>
+  <p class="muted">Current job documents and their acceptance/payment status. A published estimate is not a paid invoice or approval of additional work.</p>
+  {% if current_docs %}
+    {% for document in current_docs %}
+      <div class="list-item" style="display:block;padding:16px 0;border-bottom:1px solid var(--border,#e5e7eb)">
         <div class="section-head">
           <div>
-            <strong>{{ document.kind|capitalize }} — {{ document.number }}</strong>
-            <p class="muted">{{ document.status|replace('_',' ')|capitalize }} · {{ document.issued }}</p>
-            {% if document.group == 'vehicle_history' %}
-            <p class="muted">Earlier vehicle billing record · Not a JOB-2026-003 charge</p>
-            {% else %}
-            <p class="muted">Job-linked document · Check its approved scope separately</p>
-            {% endif %}
+            <strong>{{ document.kind|title }} — {{ document.number }}</strong>
+            <p class="muted">{{ document.status|replace('_',' ')|title }} · Issued {{ document.issued }}</p>
           </div>
-          <strong>{{ document.currency }}{{ document.total }}</strong>
+          <strong>{{ document.currency }}{{ "{:,.2f}".format(document.total|float) }}</strong>
         </div>
         {% if document.kind == "invoice" %}
-          <p>Recorded payment: {{ document.currency }}{{ document.paid }}</p>
-          <p><strong>Outstanding: {{ document.currency }}{{ document.balance }}</strong></p>
-          {% if document.due %}<p class="muted">Due date: {{ document.due }}</p>{% endif %}
+        <p class="muted">Paid: {{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }} · Balance: {{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</p>
         {% endif %}
+        <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_billing_document',car_id=car.id,document_id=document.id) }}">View {{ document.kind|title }}</a>
       </div>
     {% endfor %}
   {% else %}
-    <p class="muted">No client-ready estimates, invoices, or receipts are available for this vehicle yet.</p>
+    <p class="muted">No approved, client-visible documents for the current vehicle service yet.</p>
   {% endif %}
 </section>
-<section class="card">
-  <h2>Current collision repair · JOB-2026-003</h2>
-  <p class="muted">
-    This job's estimates, invoices and payments are separate from historical vehicle documents.
-    No JOB-2026-003 document is published until its scope and commercial release
-    have been explicitly approved.
-  </p>
+<section class="card" id="history-records">
+  <h2>Earlier Vehicle Financial Records</h2>
+  <p class="muted">Historical invoices, receipts and estimates. These must not be mistaken for new charges on the current repair.</p>
+  {% if history_docs %}
+    {% for document in history_docs %}
+      <div class="list-item" style="display:block;padding:16px 0;border-bottom:1px solid var(--border,#e5e7eb)">
+        <div class="section-head">
+          <div>
+            <strong>{{ document.kind|title }} — {{ document.number }}</strong>
+            <p class="muted">{{ document.status|replace('_',' ')|title }} · {{ document.issued }}</p>
+          </div>
+          <strong>{{ document.currency }}{{ "{:,.2f}".format(document.total|float) }}</strong>
+        </div>
+        {% if document.kind == "invoice" %}
+        <p class="muted">Paid: {{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }} · Balance: {{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</p>
+        {% endif %}
+        <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_billing_document',car_id=car.id,document_id=document.id) }}">View {{ document.kind|title }}</a>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No earlier financial documents are currently published for this vehicle.</p>
+  {% endif %}
 </section>
-
-<section class="card">
+<section class="card" id="recorded-payments">
   <h2>Recorded Payments</h2>
   {% if snapshot.payments %}
     {% for payment in snapshot.payments %}
       <div class="list-item">
         <span>{{ payment.paid_at }}</span>
-        <strong>{{ payment.currency }}{{ payment.amount }}</strong>
+        <strong>{{ payment.currency }}{{ "{:,.2f}".format(payment.amount|float) }}</strong>
       </div>
     {% endfor %}
   {% else %}
-    <p class="muted">No linked invoice payments are currently available to display.</p>
+    <p class="muted">No payments linked to the published invoices are available.</p>
   {% endif %}
-  <p class="muted">A payment does not confirm that a Treatment Action has been completed. Work progress is recorded separately in the vehicle care record.</p>
+  <p class="muted">Payment status is sourced from Billing. Payment is not proof that a Treatment Action is completed.</p>
 </section>
 {% endif %}
 {% endblock %}

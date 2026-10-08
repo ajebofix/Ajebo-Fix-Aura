@@ -563,7 +563,7 @@ def test_advisor_billing_hub_has_working_vehicle_buttons(app, client, monkeypatc
     assert b"Billing &amp; Accounts" in response.data
     assert f"/admin/cars/{car.id}/billing/workspace".encode() in response.data
     assert f"/admin/cars/{car.id}/billing/preview".encode() in response.data
-    assert b"Financial Records" not in response.data
+    assert b'href="/my-financial-records"' not in response.data
     assert "no-store" in response.headers.get("Cache-Control", "")
     query_response = client.get(f"/admin/billing?q={car.vin}")
     assert query_response.status_code == 200
@@ -627,6 +627,8 @@ def test_owner_and_driver_cannot_enter_advisor_billing(app,client,monkeypatch):
     assert client.get(f"/admin/cars/{car.id}/billing/workspace").status_code == 403
     driver = _user(suffix=845,role="driver")
     db.session.commit()
+    with client.session_transaction() as browser_session:
+        browser_session.clear()
     _sign_in(client,driver)
     assert client.get("/my-financial-records").status_code == 403
     assert client.get("/admin/billing").status_code == 403

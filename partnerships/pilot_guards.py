@@ -16,6 +16,7 @@ class AppointmentReadiness:
     product_received_and_accepted: bool = False
     capacity_reserved: bool = False
     technician_confirmed_for_window: bool = False
+    technician_commission_agreed: bool = False
     customer_confirmed: bool = False
 
 
@@ -28,6 +29,7 @@ def appointment_blockers(readiness: AppointmentReadiness) -> tuple[str, ...]:
         ("products_not_accepted", readiness.product_received_and_accepted),
         ("capacity_not_reserved", readiness.capacity_reserved),
         ("technician_not_committed", readiness.technician_confirmed_for_window),
+        ("technician_commission_not_agreed", readiness.technician_commission_agreed),
         ("customer_confirmation_missing", readiness.customer_confirmed),
     )
     return tuple(code for code, satisfied in requirements if not satisfied)

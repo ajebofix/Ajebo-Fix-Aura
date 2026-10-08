@@ -41,8 +41,9 @@ Billing records.
 For each vehicle, an authorised advisor must first verify:
 1. The currently active Aura owner and vehicle ID.
 2. The full, genuine 17-character VIN, matching Billing vehicle VIN exactly.
-3. The exact billing client's email address, matching the active Aura owner's
-   email address. Delegated billing accounts are **not** supported in V1.
+3. The exact billing client's email address, matching the **verified** active
+   Aura owner's email address. Delegated billing accounts are **not** supported
+   in V1.
 4. Correct Billing customer UUID and vehicle UUID.
 
 Only then may an authorised operator set

@@ -11,6 +11,7 @@
   <div class="button-stack">
     <a class="btn btn-secondary" href="{{ url_for('cars.car_detail', car_id=car.id) }}">Vehicle Health Record</a>
     <a class="btn btn-secondary" href="{{ url_for('cars.owner_treatment_plans') }}">Treatment Plans</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_repair_progress', car_id=car.id) }}">Repair Journey</a>
   </div>
 </section>
 
@@ -36,8 +37,8 @@
 </section>
 {% else %}
 <section class="card">
-  <h2>Estimates, Invoices & Receipts</h2>
-  <p class="muted">Only client-ready documents from Ajebo Fix Billing are shown here. The original billing records remain authoritative.</p>
+  <h2>Vehicle Billing History</h2>
+  <p class="muted">These documents are published from Ajebo Fix Billing. Historic vehicle records do not establish charges for the current collision repair. Billing remains the authoritative financial ledger.</p>
   {% if snapshot.documents %}
     {% for document in snapshot.documents %}
       <div class="list-item" style="display:block;padding:14px 0;border-bottom:1px solid var(--border, #e5e7eb)">
@@ -45,6 +46,11 @@
           <div>
             <strong>{{ document.kind|capitalize }} — {{ document.number }}</strong>
             <p class="muted">{{ document.status|replace('_',' ')|capitalize }} · {{ document.issued }}</p>
+            {% if document.group == 'vehicle_history' %}
+            <p class="muted">Earlier vehicle billing record · Not a JOB-2026-003 charge</p>
+            {% else %}
+            <p class="muted">Job-linked document · Check its approved scope separately</p>
+            {% endif %}
           </div>
           <strong>{{ document.currency }}{{ document.total }}</strong>
         </div>
@@ -58,6 +64,14 @@
   {% else %}
     <p class="muted">No client-ready estimates, invoices, or receipts are available for this vehicle yet.</p>
   {% endif %}
+</section>
+<section class="card">
+  <h2>Current collision repair · JOB-2026-003</h2>
+  <p class="muted">
+    This job's estimates, invoices and payments are separate from historical vehicle documents.
+    No JOB-2026-003 document is published until its scope and commercial release
+    have been explicitly approved.
+  </p>
 </section>
 
 <section class="card">

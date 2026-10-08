@@ -17,6 +17,7 @@ class FakeResponse:
     def __init__(self, payload, status=200):
         self.payload = payload
         self.status = status
+        self.status_code = status
 
     def raise_for_status(self):
         if self.status >= 400:
@@ -305,17 +306,21 @@ def test_read_only_handshake_authenticates_without_owner_data(
             "owner_user_id": 2147483647,
             "vin": "00000000000000000",
         }
-        assert "X-Aura-Signature" in headers
         seen.append(payload)
-        return FakeResponse({
-            "state": "not_published", "documents": [], "payments": []
-        })
+        if "X-Aura-Signature" not in headers:
+            return FakeResponse({"error": "Unauthorized"}, status=401)
+        if len(seen) == 2:
+            return FakeResponse({
+                "state": "not_published", "documents": [], "payments": []
+            })
+        return FakeResponse({"error": "Unauthorized"}, status=401)
 
     monkeypatch.setattr("requests.post", bridge)
     response = client.get("/internal/health/billing-bridge")
     assert response.status_code == 200
     assert response.get_json() == {
-        "handshake": "authenticated", "publication": "none"
+        "handshake": "authenticated", "publication": "none",
+        "unsigned": "rejected", "replay": "rejected",
     }
     assert response.headers["Cache-Control"] == "no-store"
-    assert len(seen) == 1
+    assert len(seen) == 3

@@ -6,6 +6,7 @@ from flask_login import current_user, login_required
 
 from models import CarOwnership
 from services.billing_client_bridge import BillingBridgeUnavailable, client_billing_snapshot
+from services.client_repair_progress import client_published_progress
 
 
 client_billing_bp = Blueprint("client_billing", __name__)
@@ -39,4 +40,21 @@ def owner_vehicle_billing(car_id: int):
         "billing/owner_vehicle.html",
         car=ownership.car,
         snapshot=snapshot,
+    )
+
+
+@client_billing_bp.get("/cars/<int:car_id>/repair-progress")
+@login_required
+def owner_repair_progress(car_id: int):
+    if current_user.role != "user" or not getattr(current_user, "email_verified_at", None):
+        abort(403)
+    ownership = CarOwnership.query.filter_by(
+        car_id=car_id,
+        user_id=current_user.id,
+        is_active=True,
+    ).first_or_404()
+    return render_template(
+        "treatment_actions/owner_repair_progress.html",
+        car=ownership.car,
+        updates=client_published_progress(car_id=car_id),
     )

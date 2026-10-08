@@ -1,16 +1,22 @@
 """Client-only read view of existing Ajebo Fix Billing records inside Aura."""
 from __future__ import annotations
 
-from flask import Blueprint, abort, current_app, render_template
+from flask import Blueprint, abort, current_app, render_template, request, flash, redirect, url_for
 from flask_login import current_user, login_required
 
-from models import CarOwnership
+from models import CarOwnership, AdvisorNote
+from extensions import db
 from services.billing_client_bridge import (
     BillingBridgeUnavailable,
     client_billing_snapshot,
     client_billing_document,
 )
 from services.client_repair_progress import client_published_progress
+from services.billing_accounts_delivery import (
+    DELIVERY_PREFIX, already_delivered, publish_native_billing_estimate,
+    send_accounts_estimate_via_resend,
+)
+import json
 
 
 client_billing_bp = Blueprint("client_billing", __name__)
@@ -194,3 +200,110 @@ def advisor_client_finance_preview(car_id: int):
     ))
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@client_billing_bp.route(
+    "/admin/cars/<int:car_id>/billing/estimate/<string:document_id>/send",
+    methods=["GET", "POST"],
+)
+@login_required
+def advisor_issue_estimate_email(car_id: int, document_id: str):
+    """Advisor reviews and explicitly sends a native Billing estimate via Resend.
+
+    Requires independent Billing native-created provenance + owner publication
+    and an exact authenticated, verified owner email. No impersonation,
+    browser-held Resend secret, or premature financial completion flag.
+    """
+    if current_user.role != "admin":
+        abort(403)
+    owners = CarOwnership.query.filter_by(car_id=car_id, is_active=True).all()
+    if len(owners) != 1 or owners[0].user is None:
+        abort(404)
+    owner_link = owners[0]
+    owner = owner_link.user
+    if not owner.is_active or not getattr(owner, "email_verified_at", None) or not owner.email:
+        abort(409)
+    try:
+        detail = client_billing_document(
+            car_id=car_id, owner_user_id=owner.id,
+            advisor_user_id=current_user.id,
+            vin=owner_link.car.vin,
+            document_id=document_id,
+        )
+    except BillingBridgeUnavailable:
+        flash("Billing estimate not available. Please retry.", "error")
+        return redirect(url_for("client_billing.advisor_client_finance_preview", car_id=car_id))
+    if detail is None:
+        abort(404)
+    doc = detail["document"]
+    if doc.get("kind") != "estimate" or doc.get("group") != "job_record":
+        abort(404)
+    if request.method == "POST":
+        if request.form.get("confirmed") != "yes":
+            flash("Review the original Billing estimate and confirm before sending.", "error")
+            return redirect(request.path)
+        if doc.get("status") != "issued":
+            flash("Issue the estimate inside Ajebo Fix Billing before sending.", "error")
+            return redirect(request.path)
+        if already_delivered(
+            car_id=car_id, owner_user_id=owner.id, document_id=doc["id"]
+        ):
+            flash("This estimate was already submitted to Resend. Review its delivery record before resending.", "error")
+            return redirect(request.path)
+        try:
+            percent = int(request.form.get("upfront_percentage", ""))
+            publish_native_billing_estimate(
+                car_id=car_id, owner_user_id=owner.id,
+                advisor_user_id=current_user.id,
+                vin=owner_link.car.vin, document_id=doc["id"],
+            )
+            # Obtain a SECOND independent owner-scoped publication read.
+            published = client_billing_document(
+                car_id=car_id, owner_user_id=owner.id,
+                vin=owner_link.car.vin, document_id=doc["id"],
+            )
+            if not published or published["document"]["id"] != doc["id"]:
+                raise BillingBridgeUnavailable("Owner document not accessible")
+            provider_id = send_accounts_estimate_via_resend(
+                to=owner.email,
+                customer=published["document"]["billed_to"],
+                vehicle=owner_link.car.rina_display_name,
+                document=published["document"],
+                car_id=car_id,
+                upfront_percentage=percent,
+            )
+            db.session.add(AdvisorNote(
+                user_id=owner.id,
+                car_id=car_id,
+                advisor_id=current_user.id,
+                note=DELIVERY_PREFIX + json.dumps({
+                    "event": "submitted",
+                    "document_id": doc["id"],
+                    "document_number": doc["number"],
+                    "provider_message_id": provider_id,
+                    "upfront_percentage": percent,
+                    "actor_user_id": current_user.id,
+                }, separators=(",", ":")),
+            ))
+            db.session.commit()
+            flash(f"Resend accepted the estimate email (ID {provider_id}). Delivery confirmation may follow.", "success")
+        except (BillingBridgeUnavailable, ValueError) as exc:
+            db.session.rollback()
+            current_app.logger.warning(
+                "Restricted Billing accounts send was not confirmed car=%s", car_id
+            )
+            flash(str(exc), "error")
+        return redirect(request.path)
+
+    previously_submitted = already_delivered(
+        car_id=car_id, owner_user_id=owner.id, document_id=doc["id"]
+    )
+    response = render_template(
+        "billing/advisor_estimate_send.html",
+        car=owner_link.car, owner=owner, document=doc,
+        sent_before=previously_submitted,
+    )
+    from flask import make_response
+    result = make_response(response)
+    result.headers["Cache-Control"] = "no-store"
+    return result

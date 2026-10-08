@@ -27,9 +27,19 @@
 }
 </style>
 
+{% if advisor_preview|default(false) %}
+<section class="card" style="border-left:4px solid #d4a017">
+  <h2>Advisor-only document preview</h2>
+  <p>This projection shows the Billing record for review. It is <strong>not</strong> a native Billing PDF or evidence that it was sent. The manually entered estimate remains unpublished to the client until reconciled and approved.</p>
+</section>
+{% endif %}
 <div class="af-billing-actions">
+  {% if advisor_preview|default(false) %}
+  <a class="btn btn-secondary" href="{{ url_for('admin.repair_progress_console',car_id=car.id) }}">Back to advisor vehicle</a>
+  {% else %}
   <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Back to financial records</a>
   <button type="button" class="btn btn-secondary" onclick="window.print()">Print / Save as PDF</button>
+  {% endif %}
 </div>
 <article class="af-billing-document">
   <header class="af-billing-head">

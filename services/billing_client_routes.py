@@ -242,7 +242,7 @@ def advisor_issue_estimate_email(car_id: int, document_id: str):
         if request.form.get("confirmed") != "yes":
             flash("Review the original Billing estimate and confirm before sending.", "error")
             return redirect(request.path)
-        if doc.get("status") != "issued":
+        if doc.get("status") not in {"issued", "sent"}:
             flash("Issue the estimate inside Ajebo Fix Billing before sending.", "error")
             return redirect(request.path)
         if already_delivered(

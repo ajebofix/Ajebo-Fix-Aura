@@ -99,12 +99,12 @@ def test_verified_owner_without_billing_email_can_view_released_docs(
     seen = _mock_gateway(
         monkeypatch,
         documents=[{
-            "kind": "invoice", "group": "vehicle_history", "number": "INV-2026-TEST",
+            "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "kind": "invoice", "group": "vehicle_history", "number": "INV-2026-TEST",
             "status": "partially_paid", "issued": "2026-10-08",
             "due": "", "currency": "₦", "total": "150000",
             "paid": "50000", "balance": "100000",
         }, {
-            "kind": "receipt", "group": "vehicle_history", "number": "RCP-2026-TEST",
+            "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "kind": "receipt", "group": "vehicle_history", "number": "RCP-2026-TEST",
             "status": "issued", "issued": "2026-10-08", "due": "",
             "currency": "₦", "total": "50000", "paid": "0", "balance": "50000",
         }],
@@ -324,3 +324,106 @@ def test_read_only_handshake_authenticates_without_owner_data(
     }
     assert response.headers["Cache-Control"] == "no-store"
     assert len(seen) == 3
+
+
+def test_owner_can_open_only_valid_published_source_document(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=782)
+    car = _car(suffix=782)
+    _own(owner=owner, car=car, suffix=782)
+    db.session.commit()
+    doc_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    observed = []
+
+    def service(_endpoint, *, data, headers, timeout, allow_redirects):
+        payload = json.loads(data)
+        observed.append(payload)
+        assert payload["owner_user_id"] == owner.id
+        assert payload["car_id"] == car.id
+        assert payload["document_id"] == doc_id
+        assert payload["action"] == "document"
+        assert headers["X-Aura-Signature"]
+        assert allow_redirects is False
+        return FakeResponse({
+            "state": "linked",
+            "brand": {
+                "name": "Ajebo Fix Ltd",
+                "tagline": "Luxury Automotive Health & Concierge",
+                "footer": "Discretion. Precision. Excellence.",
+                "logo": "", "website": "www.ajebofix.com",
+            },
+            "document": {
+                "id": doc_id, "kind": "estimate", "group": "job_record",
+                "number": "AJF-EST-TEST", "status": "issued",
+                "issued": "2026-10-08", "valid_until": "2026-10-15",
+                "due": "", "revision": 1, "currency": "₦",
+                "total": "650000", "paid": "0", "balance": "650000",
+                "scope": "Body restoration and painting",
+                "terms": "Ninety percent upfront",
+                "sections": [{
+                    "title": "Restoration services",
+                    "rows": [
+                        {"description": "Bodywork", "quantity": "1",
+                         "unit_price": "250000", "amount": "250000"},
+                        {"description": "Painting", "quantity": "1",
+                         "unit_price": "180000", "amount": "180000"},
+                        {"description": "Professional management",
+                         "quantity": "1", "unit_price": "220000",
+                         "amount": "220000"},
+                    ],
+                }],
+            },
+        })
+
+    monkeypatch.setattr(
+        "services.billing_client_bridge.requests.post", service
+    )
+    _sign_in(client, owner)
+    response = client.get(f"/cars/{car.id}/billing/documents/{doc_id}")
+    assert response.status_code == 200
+    assert b"AJF-EST-TEST" in response.data
+    assert b"650,000" in response.data
+    assert b"Discretion. Precision. Excellence." in response.data
+    assert b"Bodywork" in response.data
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert len(observed) == 1
+
+
+def test_owner_detail_hides_revoked_and_other_owner_documents(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=786)
+    another_owner = _user(suffix=787)
+    car = _car(suffix=786)
+    _own(owner=owner, car=car, suffix=786)
+    db.session.commit()
+    doc_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
+    def denied(_endpoint, *, data, headers, timeout, allow_redirects):
+        return FakeResponse({"error": "Document not available"}, status=404)
+
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", denied)
+    _sign_in(client, owner)
+    assert client.get(f"/cars/{car.id}/billing/documents/{doc_id}").status_code == 404
+
+    _sign_in(client, another_owner)
+    assert client.get(f"/cars/{car.id}/billing/documents/{doc_id}").status_code == 404
+
+
+def test_invalid_document_id_requires_no_remote_call(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner = _user(suffix=789)
+    car = _car(suffix=789)
+    _own(owner=owner, car=car, suffix=789)
+    db.session.commit()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Invalid ID must not reach provider")
+    monkeypatch.setattr(
+        "services.billing_client_bridge.requests.post", forbidden
+    )
+    _sign_in(client, owner)
+    assert client.get(f"/cars/{car.id}/billing/documents/not-a-document").status_code == 404

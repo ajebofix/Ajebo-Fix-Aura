@@ -99,14 +99,16 @@ def revoke_client_progress(*, car_id: int, note_id: int, actor_user_id: int) -> 
     db.session.commit()
 
 
-def client_published_progress(*, car_id: int, limit: int = 40) -> list[ClientProgressUpdate]:
+def client_published_progress(\n    *, car_id: int, owner_user_id: int | None = None, limit: int = 40\n) -> list[ClientProgressUpdate]:
     # Later records for the same source (including revocation) override prior publication.
+    query = AdvisorNote.query.filter(
+        AdvisorNote.car_id == car_id,
+        AdvisorNote.note.like(f"{PUBLICATION_PREFIX}%"),
+    )
+    if owner_user_id is not None:
+        query = query.filter(AdvisorNote.user_id == int(owner_user_id))
     records = (
-        AdvisorNote.query.filter(
-            AdvisorNote.car_id == car_id,
-            AdvisorNote.note.like(f"{PUBLICATION_PREFIX}%"),
-        )
-        .order_by(AdvisorNote.created_at.desc(), AdvisorNote.id.desc())
+        query.order_by(AdvisorNote.created_at.desc(), AdvisorNote.id.desc())
         .limit(200)
         .all()
     )

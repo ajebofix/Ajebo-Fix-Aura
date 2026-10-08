@@ -344,6 +344,16 @@ def create_app():
         )
         return redirect(target, code=307 if request.method == "POST" else 302)
 
+    @app.get("/.well-known/aura-billing-public-key")
+    def aura_billing_public_key():
+        # Public verification key only; no billing/customer data or private seed.
+        from flask import jsonify
+        from services.billing_bridge_signing import public_key_document
+
+        response = jsonify(public_key_document())
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/version")
     def version():
         return {

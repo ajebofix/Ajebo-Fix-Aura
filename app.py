@@ -285,12 +285,14 @@ def create_app():
         ensure_historical_background_runner,
     )
     from services.owner_driver_management import init_owner_driver_management
+    from services.billing_client_routes import client_billing_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(advisor_bp)
     app.register_blueprint(email_verification_bp)
     app.register_blueprint(session_registry_bp)
     app.register_blueprint(cars_bp)
+    app.register_blueprint(client_billing_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(driver_bp)
     app.register_blueprint(mileage_bp)

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Review Estimate Delivery | Ajebo Fix{% endblock %}
+{% block page_title %}Ajebo Fix Accounts{% endblock %}
+{% block page_subtitle %}Advisor approval · Native Billing document · Resend{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Review before sending</h2>
+  <p>This action sends a professional Resend email containing an authenticated Aura viewing link.
+  It never manufactures a Billing PDF or marks a payment received.</p>
+  <p><strong>{{ document.number }}</strong> · {{ document.status|title }} · {{ document.job_number }}</p>
+  <div class="detail-grid">
+    <div><span class="muted">Billing customer</span><p><strong>{{ document.billed_to }}</strong></p></div>
+    <div><span class="muted">Verified Aura recipient</span><p><strong>{{ owner.email }}</strong></p></div>
+    <div><span class="muted">Vehicle</span><p><strong>{{ car.rina_display_name }}</strong></p></div>
+    <div><span class="muted">Total</span><p><strong>{{ document.currency }}{{ "{:,.2f}".format(document.total|float) }}</strong></p></div>
+  </div>
+  <p class="muted">Source: original Ajebo Fix Billing. Invoice, receipt, completed work and actual payment statuses remain separate.</p>
+  <div class="button-stack">
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_document_preview',car_id=car.id,document_id=document.id) }}">Review estimate content in Aura</a>
+    <a class="btn btn-secondary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open original Billing application</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_client_finance_preview',car_id=car.id) }}">Preview published client records</a>
+  </div>
+</section>
+<section class="card">
+  <h2>Payment terms</h2>
+  <p style="white-space:pre-wrap">{{ document.terms }}</p>
+  <p>Client-facing link: <code>https://aura.ajebofix.com/cars/{{ car.id }}/billing/documents/{{ document.id }}</code></p>
+  {% if sent_before %}
+    <p class="banner banner-good">A Resend submission is already recorded for this estimate. Duplicate sending is blocked.</p>
+  {% elif document.status != 'issued' %}
+    <p class="banner banner-warn">This estimate is not issued in Billing. Open the original Billing application and issue it before emailing.</p>
+  {% else %}
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="label" for="upfront_percentage">Agreed mobilisation amount</label>
+      <select class="input" id="upfront_percentage" name="upfront_percentage" required>
+        <option value="90" selected>90% upfront (₦585,000 for a ₦650,000 estimate)</option>
+      </select>
+      <label style="display:block;margin-top:15px">
+        <input type="checkbox" name="confirmed" value="yes" required>
+        I have inspected the original Billing document, including its native PDF,
+        checked the client/vehicle/job, scope, amount and terms, and approve publication and email delivery.
+      </label>
+      <button class="btn btn-navy" type="submit" style="margin-top:20px">
+        Publish approved estimate and send through Resend
+      </button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

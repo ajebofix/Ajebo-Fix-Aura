@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "services/billing_client_bridge.py"
-      - "services/client_repair_progress.py services/repair_progress.py"
+      - "services/client_repair_progress.py"
       - "services/repair_progress.py"
       - "services/treatment_action_routes.py"
       - "templates/treatment_actions/repair_progress.html"
@@ -67,4 +67,4 @@ jobs:
           tests/test_billing_client_bridge.py
           tests/test_client_repair_progress.py
       - name: Bandit server boundary
-        run: bandit -q -r services/billing_client_bridge.py services/billing_client_routes.py services/client_repair_progress.py
+        run: bandit -q -r services/billing_client_bridge.py services/billing_client_routes.py services/client_repair_progress.py services/repair_progress.py

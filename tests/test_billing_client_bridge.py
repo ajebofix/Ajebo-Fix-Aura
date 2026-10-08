@@ -480,3 +480,48 @@ def test_owner_cannot_access_advisor_unpublished_preview(app, client, monkeypatc
     _sign_in(client,owner)
     doc_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     assert client.get(f"/admin/cars/{car.id}/billing/preview/{doc_id}").status_code == 403
+
+
+def test_advisor_can_preview_only_current_owners_released_financial_records(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=812)
+    advisor = _user(suffix=813, role="admin")
+    car = _car(suffix=812)
+    _own(owner=owner, car=car, suffix=812)
+    db.session.commit()
+    doc_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    seen = _mock_gateway(
+        monkeypatch,
+        documents=[{
+            "id": doc_id,
+            "kind": "invoice", "group": "vehicle_history",
+            "number": "AJF-INVOICE-PUBLISHED", "status": "partially_paid",
+            "issued": "2026-10-08", "currency": "₦",
+            "total": "500000", "paid": "490000", "balance": "10000",
+        }],
+    )
+    _sign_in(client, advisor)
+    response = client.get(f"/admin/cars/{car.id}/billing/preview")
+    assert response.status_code == 200
+    assert b"Preview as Client" in response.data
+    assert b"AJF-INVOICE-PUBLISHED" in response.data
+    assert b"10,000" in response.data
+    assert f"/admin/cars/{car.id}/billing/preview/{doc_id}".encode() in response.data
+    assert b"owner_treatment_plans" not in response.data
+    assert len(seen) == 1
+    assert seen[0]["owner_user_id"] == owner.id
+
+
+def test_client_cannot_enter_advisor_financial_preview(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner = _user(suffix=816)
+    car = _car(suffix=816)
+    _own(owner=owner, car=car, suffix=816)
+    db.session.commit()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Disallowed client preview must not query Billing")
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", forbidden)
+    _sign_in(client, owner)
+    assert client.get(f"/admin/cars/{car.id}/billing/preview").status_code == 403

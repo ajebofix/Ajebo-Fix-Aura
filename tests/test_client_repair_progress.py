@@ -13,6 +13,18 @@ from services.repair_progress import record_repair_progress
 from test_rina_chat_cutover import _car, _own, _sign_in, _user, _csrf_token
 
 
+def _login_as(client, user):
+    # Use the real session/logout pathway when switching test identities.
+    with client.session_transaction() as sess:
+        already_signed_in = bool(sess.get("_user_id"))
+    if already_signed_in:
+        result = client.post(
+            "/auth/logout", data={"csrf_token": _csrf_token(client)}
+        )
+        assert result.status_code == 302
+    _sign_in(client, user)
+
+
 def _setup(suffix=611):
     owner = _user(suffix=suffix)
     advisor = _user(suffix=suffix + 1, role="admin")

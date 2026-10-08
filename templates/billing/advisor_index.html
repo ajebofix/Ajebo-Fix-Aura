@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Billing & Accounts | Aura{% endblock %}
+{% block page_title %}Billing & Accounts{% endblock %}
+{% block page_subtitle %}Advisor workspace · Secure client finance{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Billing operations</h2>
+  <p class="muted">Ajebo Fix Billing is the source for estimates, invoices, receipts and payment status. Aura manages authorised client access, document reviews and approval-controlled Resend delivery.</p>
+  <div class="button-stack">
+    <a class="btn btn-primary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open Original Ajebo Fix Billing</a>
+  </div>
+</section>
+<section class="card">
+  <h2>Find a client's vehicle</h2>
+  <form method="GET" action="{{ url_for('client_billing.advisor_billing_index') }}">
+    <label for="billing-search">Client name, email, VIN, plate or model</label>
+    <div class="button-stack">
+      <input class="input" id="billing-search" name="q" type="search" maxlength="80" value="{{ query }}" placeholder="Find a vehicle…" autocomplete="off">
+      <button type="submit" class="btn btn-primary">Search records</button>
+      {% if query %}<a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_index') }}">Clear</a>{% endif %}
+    </div>
+  </form>
+  <p class="muted">Showing up to 100 active owner–vehicle relationships{% if query %} matching your search{% endif %}.</p>
+</section>
+{% if ownerships %}
+<section class="stack-list">
+  {% for ownership in ownerships %}
+  <article class="card">
+    <h3>{{ ownership.car.rina_display_name }}</h3>
+    <p class="muted">{{ ownership.user.name or 'Registered client' }} · {{ ownership.car.vin }}</p>
+    <div class="button-stack">
+      <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_billing_workspace',car_id=ownership.car_id) }}">Billing Workspace</a>
+      <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_client_finance_preview',car_id=ownership.car_id) }}">Preview Client Financial Records</a>
+      <a class="btn btn-secondary" href="{{ url_for('admin.view_vehicle',car_id=ownership.car_id) }}">Advisor Vehicle Record</a>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="card"><h2>No matching linked vehicles</h2><p class="muted">Try another client name, VIN, plate or model. Only active owner relationships appear.</p></section>
+{% endif %}
+{% endblock %}

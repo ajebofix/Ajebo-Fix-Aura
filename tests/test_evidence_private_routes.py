@@ -111,7 +111,13 @@ def test_owner_retrieves_private_bytes_through_post_only_grant_flow(app, client)
     assert grant_payload["evidence_id"] == evidence.id
     assert grant_payload["expires_in_seconds"] == 60
     assert "object_key" not in str(grant_payload)
-    assert "r2" not in str(grant_payload).lower()
+    # A cryptographically random grant token may legitimately contain "r2".
+    # Check metadata fields, excluding the opaque credential, not token bytes.
+    assert not {"r2_bucket", "storage_provider", "storage_bucket", "bucket"} & set(grant_payload)
+    assert "r2://" not in str({
+        key: value for key, value in grant_payload.items()
+        if key != "grant_token"
+    }).lower()
     content_response = client.post(grant_payload["content_endpoint"], data={"csrf_token": _csrf(client), "grant_token": grant_payload["grant_token"]})
     assert content_response.status_code == 200
     assert content_response.data == expected

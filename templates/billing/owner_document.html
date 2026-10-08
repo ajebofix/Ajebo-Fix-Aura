@@ -59,7 +59,11 @@
   </header>
   <div class="af-billing-body">
     <div class="af-billing-kv">
+      <div><span>Prepared for</span><strong>{{ document.billed_to }}</strong></div>
       <div><span>Vehicle</span><strong>{{ car.rina_display_name }}</strong></div>
+      {% if document.vin %}<div><span>VIN</span><strong>{{ document.vin }}</strong></div>{% endif %}
+      {% if document.job_number %}<div><span>Job reference</span><strong>{{ document.job_number }}</strong></div>{% endif %}
+      {% if document.sow_number %}<div><span>Scope reference</span><strong>{{ document.sow_number }}</strong></div>{% endif %}
       <div><span>Document status</span><strong>{{ document.status|replace('_',' ')|title }}</strong></div>
       <div><span>Issued</span><strong>{{ document.issued }}</strong></div>
       <div><span>Revision</span><strong>{{ document.revision }}</strong></div>

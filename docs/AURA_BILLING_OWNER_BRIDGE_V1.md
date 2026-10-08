@@ -1,105 +1,67 @@
-# Aura × Ajebo Fix Billing — Owner Read-Only Bridge (Issue #291)
+# Aura × Ajebo Fix Billing — controlled owner bridge (PR #292, Issue #291)
 
-## Implemented first slice
-- `GET /cars/<car_id>/billing` is an authenticated **owner-only** Aura route.
-- Links from the owner's canonical Vehicle Health Record.
-- Displays client-publishable accepted estimates, issued/current invoices,
-  recorded amounts paid/outstanding, issued receipts and linked payment events.
-- Existing commercial data stays in the **Ajebo Fix Billing** Supabase ledger,
-  and all Billing reads occur server-side in Aura.
-- No creation, editing, migration, synchronization writes, charging, or approval
-  occurs in this slice. No claim of work completion is derived from payment.
-- Owners see no billing data by default until both feature activation and
-  exact identity linkage pass.
+## Current architecture (October 2026)
+- **Aura** (Railway/PostgreSQL) owns the authenticated owner account, active CarOwnership, VIN, care record and Treatment lifecycle.
+- **Billing** (existing Supabase project) remains the source of truth for commercial jobs, estimate/invoice versions, partial payments and receipts.
+- A dedicated Supabase Edge Function at `/functions/v1/aura-billing-bridge` is the **only data retrieval boundary** used by Aura. It has no published anonymous information and permits only read operations.
+- The Edge Function owns the existing Supabase service key; **Aura never receives a service-role credential**.
+- Aura presents published commercial information at `/cars/<car_id>/billing` only for authenticated active vehicle owners whose email **in Aura** is verified. This does not require that the Billing client's email be present.
+- The read-only integration is disabled in production until secure credential provisioning and owner publication are independently verified.
 
-## Canonical systems
-- Care: Aura PostgreSQL / `CarOwnership`, `TreatmentPlan`, `TreatmentAction`.
-- Commercial: Billing Supabase project `ajebo-fix-official-website`,
-  tables `billing_vehicles`, `billing_clients`, `billing_documents`,
-  `billing_payments`. Billing is NOT recreated or migrated here.
-- Current Billing website, payment, amendment and document-generation
-  workflows are unchanged.
+## Authorisation model
+A successful client-side session alone does not grant financial access.
 
-## Feature activation
-Add the following **server-only** environment variables in Railway:
-```text
-AURA_BILLING_CLIENT_VIEW_ENABLED=true
-AURA_BILLING_SUPABASE_URL=https://<verified-billing-project>.supabase.co
-AURA_BILLING_SUPABASE_SERVICE_ROLE_KEY=<secret-from-authorized-operator>
+1. Aura verifies the signed-in user's role is `user`, their email is verified and there is one active `CarOwnership` for the requested car.
+2. Aura sends only `{car_id, owner_user_id, vin}` server-to-server to Billing. Never send the bridge credential or owner identity in the browser.
+3. Billing accepts requests **only** with a 256-bit, opaque, private bearer token whose SHA-256 digest matches an active stored credential. Wrong/missing bearer → 401.
+4. Billing requires an explicit row in `aura_billing_publication_grants` matching **both Aura owner ID and car ID** with `published=true`, `revoked_at IS NULL`, and verified Billing vehicle/client UUIDs.
+5. Billing additionally checks the existing `billing_vehicles.aura_vehicle_ref` equals Aura's car ID, its Billing client ID agrees with the grant and its full 17-character VIN matches.
+6. Every document must also have its own active grant in `aura_billing_published_documents`; draft, superseded, revoked, unapproved or cross-client documents are excluded even if the vehicle grant exists.
+7. Payments are retrieved only for visible invoices; no bank account, private note, contact detail, service token, personal payment reference, AI suggestion or supplier-cost fields are returned.
+8. Retiring an Aura owner or revoking either publication grant immediately denies subsequent access. Client payment state and repair-work state are **independent**.
+
+**Do not populate a client publication grant from name/VIN matching alone.** The pilot identity was manually reviewed, but the active Aura owner's numeric user ID and account activation must still be verified inside production Aura before the publication workflow is approved.
+
+## Deployed Billing infrastructure (non-public data)
+Billing database objects:
+- `public.aura_billing_bridge_credentials` — hashed token, active status, RLS on.
+- `public.aura_billing_publication_grants` — explicit owner-car-Billing binding, `published=false` by default, RLS on.
+- `public.aura_billing_published_documents` — per-document publication, RLS on.
+- Public/anon/authenticated permissions revoked; service_role may read from within the protected Edge Function only.
+- Edge Function `aura-billing-bridge` uses custom bearer-token authentication, no CORS opt-in, POST only and no-store responses. This is why the Supabase function is deployed with `verify_jwt=false`: it **does** implement its own bearer verification.
+
+Currently all publication tables are empty and client release remains off. The vehicle for JOB-2026-003 has `aura_vehicle_ref='3'` and an audited association but no public commercial records.
+
+## Provisioning (required; never put secrets in GitHub)
+1. In Supabase's private SQL editor, generate and rotate the bridge token into its hashed table:
+```sql
+WITH minted AS (SELECT encode(gen_random_bytes(32), 'hex') AS token),
+upserted AS (
+  INSERT INTO public.aura_billing_bridge_credentials(name, token_sha256, active)
+  SELECT 'primary', encode(digest(token, 'sha256'), 'hex'), true FROM minted
+  ON CONFLICT(name) DO UPDATE
+     SET token_sha256=excluded.token_sha256, active=true, created_at=now()
+  RETURNING name
+)
+SELECT token FROM minted WHERE (SELECT COUNT(*) FROM upserted)=1;
 ```
-Do **not** commit real keys to GitHub or expose them in Jinja templates, JS,
-public environment variables or customer links. The server-side integration
-uses an existing service-role key because present Supabase Billing RLS rules
-are administrator-only. Long-term, replace this broad key with a dedicated,
-least-privilege server-to-server API or scoped database role. Rotate credentials
-after any accidental exposure.
+2. Copy the one-time token directly from the private SQL editor result into **Railway → Aura → production → Variables → `AURA_BILLING_BRIDGE_TOKEN`**. Do not paste it into issues, ChatGPT, source files, screenshots or client messages.
+3. Confirm `AURA_BILLING_BRIDGE_URL=https://odtctmjhkcphyaozpcup.supabase.co/functions/v1/aura-billing-bridge`. Keep `AURA_BILLING_CLIENT_VIEW_ENABLED=false` while testing.
+4. Inspect the Supabase function logs for a signed private request, verify 401 on missing/wrong credentials, 200 with `not_published` for a correctly authenticated but unpublished account, 503 for provider outages.
+5. Only **after owner verification and client document publication**, set `AURA_BILLING_CLIENT_VIEW_ENABLED=true`; re-test other owners, drivers, revoked owners and cross-document references.
 
-The flag defaults to off. Production deployment alone does **not** publish
-Billing records.
+## Job 2026-003 readiness
+- 2013 Mercedes-Benz GLK 350. Aura vehicle #3 and Billing VIN match exactly.
+- Billing client and Aura displayed owner identity reviewed.
+- Billing vehicle's Aura reference set to `3`, with activity audit entry.
+- Billing job remains a draft. Job-linked invoice/receipt/payment count: zero.
+- Aura client setup screen shows **incomplete**; no owner access to financial data should be enabled until the account is actually verified.
+- No `aura_billing_publication_grants` record has been created. Work history/Treatment Actions are unaffected.
 
-## Manual linking and confidentiality gate
-For each vehicle, an authorised advisor must first verify:
-1. The currently active Aura owner and vehicle ID.
-2. The full, genuine 17-character VIN, matching Billing vehicle VIN exactly.
-3. The exact billing client's email address, matching the **verified** active
-   Aura owner's email address. Delegated billing accounts are **not** supported
-   in V1.
-4. Correct Billing customer UUID and vehicle UUID.
-
-Only then may an authorised operator set
-`billing_vehicles.aura_vehicle_ref` to Aura's decimal `cars.id`, with an
-audit trail. Do not bulk-link by names, phone numbers, plate numbers, or
-repeated `JOB-2026-003` strings.
-
-If linkage is missing, duplicated, wrong, or incomplete, the portal displays
-a neutral "not connected" state with **no financial details**. Ownership
-transfers/revocations immediately remove route access. Drivers and advisors
-cannot use the owner's financial projection.
-
-## Publication rules
-This read-only slice exposes:
-- estimates in accepted/issued/sent state;
-- invoices in issued/sent/overdue/partially_paid/paid state;
-- receipts in issued state;
-- verified payments linked to a visible invoice.
-
-It hides drafts, superseded documents, revoked shared documents and internal
-fields such as vendor prices, payment bank/account details, tax internals,
-free-text administrative notes, AI suggestions and attachments. Portal access
-does not imply disclosure of raw WhatsApp exports, privileged advisor notes or
-other clients' records. PDFs/attachments and client electronic acceptance are
-deliberately out of scope until secure download/approval routes are implemented.
-
-## Tests / release gates
-Run:
+## Test contract
 ```bash
 python -m pytest -q tests/test_billing_client_bridge.py
 ```
-Before enabling:
-1. Confirm no published data appears in an unlinked account.
-2. Verify a controlled real vehicle with matching VIN and owner email.
-3. Confirm invoice partial paid/outstanding amounts against Billing ledger.
-4. Test a different owner, a driver, an ownership transfer and a disabled flag.
-5. Confirm no unexpected Billing or care database writes in read-only flows.
-6. Record the linkage and publication decision under #291 and pilot #272.
-7. Perform privacy/security review before exposing live financial data.
+Assertions: forbidden drivers/advisors/other owners; revoked ownership; verified owner works despite missing Billing email; unpublished mapping releases no money; only approved invoices/receipts; partial payments and precise invoice balance; outage and invalid data fail closed; no privileged Supabase key in Aura.
 
-## Next increments
-A. Adviser-run explicit linking/approval workflow with immutable provenance
-   instead of manually setting a reference.
-B. Document PDFs via time-bounded Aura authorisation and server-side streaming;
-   avoid reusing public share tokens.
-C. Versioned client estimate/change-order acceptance; never infer approval
-   from invoice status alone.
-D. Rina can explain only the same owner-approved commercial projection, after
-   separate role-scoped retrieval and prompt-injection/privacy testing.
-E. Once migrated with parity/rollback checks, phase out the separate UI.
-
-## Known limitations
-- Existing billing vehicles were not linked at start of implementation.
-- First release requires owner billing email equality and verified VIN; other
-  legitimate payer / delegated-ownership configurations remain unsupported.
-- Monetary amounts are per document and are **not** consolidated across
-  currencies. Payment entries are not an independent proof of treatment
-  completion.
-- No PDFs, attachments, online payment capture, or new invoice creation yet.
+GitHub CI tests are **not** a substitute for an authenticated, real end-to-end production test. Such a test additionally requires an activated owner, a published verified grant, production credential, and a real approved document. Never invent those test conditions or publish a draft just to pass a test.

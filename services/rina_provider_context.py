@@ -838,8 +838,16 @@ def _advisor_source_comparison_budget(*, authority: str, message: str) -> int | 
     clean = str(message or "").lower()
     treatment_context = "treatment plan" in clean or "treatment actions" in clean
     source_context = "whatsapp" in clean or "processed media" in clean
+    continuation_context = (
+        any(term in clean for term in ("continue", "finish", "resume", "unfinished"))
+        and any(term in clean for term in ("job-", "previous", "remaining proposed"))
+    )
     comparison = any(phrase in clean for phrase in ("review", "compare", "against"))
-    return 4800 if treatment_context and source_context and comparison else None
+    return (
+        4800
+        if treatment_context and comparison and (source_context or continuation_context)
+        else None
+    )
 
 
 def build_rina_provider_context(

@@ -151,7 +151,8 @@ def client_billing_snapshot(
 
 
 def client_billing_document(
-    *, car_id: int, owner_user_id: int, vin: str, document_id: str
+    *, car_id: int, owner_user_id: int, vin: str, document_id: str,
+    advisor_user_id: int | None = None,
 ) -> dict | None:
     """Read one previously published document from Billing's authoritative record.
 
@@ -181,13 +182,18 @@ def client_billing_document(
         or parsed.username or parsed.password or parsed.query or parsed.fragment
     ):
         raise BillingBridgeUnavailable("Invalid document gateway")
-    body, signed_headers = sign_billing_request({
-        "action": "document",
+    payload = {
+        "action": "advisor_preview" if advisor_user_id else "document",
         "car_id": car_id,
         "owner_user_id": owner_user_id,
         "vin": vin_value,
         "document_id": normalized_id,
-    })
+    }
+    if advisor_user_id is not None:
+        if type(advisor_user_id) is not int or advisor_user_id < 1:
+            return None
+        payload["advisor_user_id"] = advisor_user_id
+    body, signed_headers = sign_billing_request(payload)
     try:
         response = requests.post(
             endpoint,

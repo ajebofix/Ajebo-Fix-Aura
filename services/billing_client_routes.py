@@ -27,8 +27,8 @@ def owner_vehicle_billing(car_id: int):
     try:
         snapshot = client_billing_snapshot(
             car_id=ownership.car_id,
+            owner_user_id=current_user.id,
             vin=ownership.car.vin,
-            owner_email=current_user.email,
         )
     except BillingBridgeUnavailable:
         # No Supabase errors, secrets, or internal identity fields reach HTML.

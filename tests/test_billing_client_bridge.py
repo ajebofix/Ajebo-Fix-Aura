@@ -284,3 +284,38 @@ def test_signature_is_body_bound_and_non_reusable(app):
         "car_id": 3, "owner_user_id": 1, "vin": "WDCGG5HB1EG276273"
     })
     assert other["X-Aura-Nonce"] != headers["X-Aura-Nonce"]
+
+
+def test_production_handshake_route_hidden_by_default(app, client, monkeypatch):
+    monkeypatch.delenv("AURA_BILLING_SMOKE_TEST_ENABLED", raising=False)
+    assert client.get("/internal/health/billing-bridge").status_code == 404
+
+
+def test_read_only_handshake_authenticates_without_owner_data(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    monkeypatch.setenv("AURA_BILLING_SMOKE_TEST_ENABLED", "true")
+    seen = []
+
+    def bridge(_url, *, data, headers, timeout, allow_redirects):
+        payload = json.loads(data)
+        assert payload == {
+            "car_id": 2147483647,
+            "owner_user_id": 2147483647,
+            "vin": "00000000000000000",
+        }
+        assert "X-Aura-Signature" in headers
+        seen.append(payload)
+        return FakeResponse({
+            "state": "not_published", "documents": [], "payments": []
+        })
+
+    monkeypatch.setattr("requests.post", bridge)
+    response = client.get("/internal/health/billing-bridge")
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "handshake": "authenticated", "publication": "none"
+    }
+    assert response.headers["Cache-Control"] == "no-store"
+    assert len(seen) == 1

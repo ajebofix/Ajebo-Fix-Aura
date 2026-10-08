@@ -64,14 +64,14 @@ class BayAvailability:
 @dataclass(frozen=True)
 class DayPolicy:
     service_day: date
-    active_gulf_allocations: int = 0
+    counted_gulf_jobs: int = 0
     baseline_day_cap: int = 4
     authorised_day_cap: int | None = None
     saturday_staff_check_done: bool = False
     sunday_open_approved: bool = False
 
     def __post_init__(self) -> None:
-        if self.active_gulf_allocations < 0 or self.baseline_day_cap < 0:
+        if self.counted_gulf_jobs < 0 or self.baseline_day_cap < 0:
             raise ValueError("Active allocations and capacity limits cannot be negative")
         if self.authorised_day_cap is not None and self.authorised_day_cap < 0:
             raise ValueError("Authorised day cap cannot be negative")
@@ -115,7 +115,7 @@ def assess_slot(
 
     if start_day != end_day or start_day != policy.service_day:
         blockers.append("invalid_service_day")
-    if policy.active_gulf_allocations >= policy.max_bookings:
+    if policy.counted_gulf_jobs >= policy.max_bookings:
         blockers.append("daily_cap_reached")
     if policy.service_day.weekday() == 5 and not policy.saturday_staff_check_done:
         blockers.append("saturday_staff_check_required")

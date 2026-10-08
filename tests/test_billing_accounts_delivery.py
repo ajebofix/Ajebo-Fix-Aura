@@ -40,7 +40,7 @@ def _document():
         "id": DOC_ID,
         "kind": "estimate",
         "group": "job_record",
-        "status": "issued",
+        "status": "sent",
         "job_number": "JOB-2026-003",
         "number": "AJF-EST-2026-1009-001",
         "billed_to": "Christian Damilola Oyebola",

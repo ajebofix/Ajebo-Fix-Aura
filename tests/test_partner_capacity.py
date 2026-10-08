@@ -59,10 +59,10 @@ class FlexibleCapacityTests(unittest.TestCase):
         self.assertIn("no_accepted_qualified_technician", self.check(skill="specialist").blockers)
 
     def test_already_four_jobs_blocks_fifth_even_when_worker_free(self):
-        self.assertIn("daily_cap_reached", self.check(policy=DayPolicy(self.day, confirmed_gulf_jobs=4)).blockers)
+        self.assertIn("daily_cap_reached", self.check(policy=DayPolicy(self.day, active_gulf_allocations=4)).blockers)
 
     def test_approved_daily_override_allows_fifth_slot(self):
-        self.assertTrue(self.check(policy=DayPolicy(self.day, confirmed_gulf_jobs=4,
+        self.assertTrue(self.check(policy=DayPolicy(self.day, active_gulf_allocations=4,
                                                    authorised_day_cap=5)).can_offer_tentative_hold)
 
     def test_saturday_requires_staff_check_and_explicit_acceptance(self):
@@ -103,7 +103,7 @@ class FlexibleCapacityTests(unittest.TestCase):
             TimeWindow(datetime(2026, 10, 12, 11, tzinfo=ZONE),
                        datetime(2026, 10, 12, 10, tzinfo=ZONE))
         with self.assertRaises(ValueError):
-            DayPolicy(self.day, confirmed_gulf_jobs=-1)
+            DayPolicy(self.day, active_gulf_allocations=-1)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ client_billing_bp = Blueprint("client_billing", __name__)
 def owner_vehicle_billing(car_id: int):
     # An advisor, administrator, or assigned driver does not inherit the
     # owner's financial access. Only the current authenticated owner qualifies.
-    if current_user.role != "user":
+    if current_user.role != "user" or not getattr(current_user, "email_verified_at", None):
         abort(403)
     ownership = CarOwnership.query.filter_by(
         car_id=car_id,

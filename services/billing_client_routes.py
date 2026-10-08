@@ -103,3 +103,51 @@ def owner_billing_document(car_id: int, document_id: str):
     result.headers["X-Content-Type-Options"] = "nosniff"
     result.headers["Referrer-Policy"] = "no-referrer"
     return result
+
+
+@client_billing_bp.get("/admin/cars/<int:car_id>/billing/preview/<string:document_id>")
+@login_required
+def advisor_billing_document_preview(car_id: int, document_id: str):
+    """Strictly read-only projection of linked Billing document for an advisor.
+
+    Preview is not public release, client impersonation or financial approval.
+    No native PDF is manufactured here.
+    """
+    if current_user.role != "admin":
+        abort(403)
+    active = CarOwnership.query.filter_by(car_id=car_id, is_active=True).all()
+    if len(active) != 1:
+        abort(404)
+    ownership = active[0]
+    try:
+        detail = client_billing_document(
+            car_id=car_id,
+            owner_user_id=ownership.user_id,
+            vin=ownership.car.vin,
+            document_id=document_id,
+            advisor_user_id=current_user.id,
+        )
+    except BillingBridgeUnavailable:
+        current_app.logger.warning(
+            "Advisor billing preview gateway unavailable for vehicle %s", car_id,
+        )
+        return render_template(
+            "billing/document_unavailable.html", car=ownership.car,
+        ), 503
+    if not detail:
+        abort(404)
+    current_app.logger.info(
+        "Advisor source financial preview car=%s document=%s actor=%s",
+        car_id, document_id, current_user.id,
+    )
+    from flask import make_response
+    response = make_response(render_template(
+        "billing/owner_document.html",
+        car=ownership.car,
+        document=detail["document"],
+        brand=detail["brand"],
+        advisor_preview=True,
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response

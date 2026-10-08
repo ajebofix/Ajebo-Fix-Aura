@@ -19,6 +19,11 @@
   <h2>Commercial documents coming soon</h2>
   <p class="muted">Your vehicle care record remains available. The secure billing connection has not been enabled yet.</p>
 </section>
+{% elif snapshot.state == "not_published" %}
+<section class="card">
+  <h2>Commercial records awaiting publication</h2>
+  <p class="muted">Ajebo Fix has not yet authorised the release of financial information to this account. Your vehicle care records remain available separately.</p>
+</section>
 {% elif snapshot.state == "not_linked" %}
 <section class="card">
   <h2>Billing record not connected</h2>

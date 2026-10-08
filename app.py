@@ -377,10 +377,21 @@ def create_app():
             "vin": "00000000000000000",
         })
         try:
+            unsigned = requests.post(
+                endpoint,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=(3.05, 15),
+                allow_redirects=False,
+            )
+            if unsigned.status_code != 401:
+                return jsonify({"handshake": "unavailable"}), 503
+
+            signed_headers = {**headers, "Content-Type": "application/json"}
             response = requests.post(
                 endpoint,
                 data=payload,
-                headers={**headers, "Content-Type": "application/json"},
+                headers=signed_headers,
                 timeout=(3.05, 15),
                 allow_redirects=False,
             )
@@ -391,9 +402,22 @@ def create_app():
                 and answer.get("documents") == []
                 and answer.get("payments") == []
             ):
-                out = jsonify({"handshake": "authenticated", "publication": "none"})
-                out.headers["Cache-Control"] = "no-store"
-                return out, 200
+                replay = requests.post(
+                    endpoint,
+                    data=payload,
+                    headers=signed_headers,
+                    timeout=(3.05, 15),
+                    allow_redirects=False,
+                )
+                if replay.status_code == 401:
+                    out = jsonify({
+                        "handshake": "authenticated",
+                        "publication": "none",
+                        "unsigned": "rejected",
+                        "replay": "rejected",
+                    })
+                    out.headers["Cache-Control"] = "no-store"
+                    return out, 200
         except (requests.RequestException, ValueError):
             pass
         return jsonify({"handshake": "unavailable"}), 503

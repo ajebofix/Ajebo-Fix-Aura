@@ -99,12 +99,12 @@ def test_verified_owner_without_billing_email_can_view_released_docs(
     seen = _mock_gateway(
         monkeypatch,
         documents=[{
-            "kind": "invoice", "number": "INV-2026-TEST",
+            "kind": "invoice", "group": "vehicle_history", "number": "INV-2026-TEST",
             "status": "partially_paid", "issued": "2026-10-08",
             "due": "", "currency": "₦", "total": "150000",
             "paid": "50000", "balance": "100000",
         }, {
-            "kind": "receipt", "number": "RCP-2026-TEST",
+            "kind": "receipt", "group": "vehicle_history", "number": "RCP-2026-TEST",
             "status": "issued", "issued": "2026-10-08", "due": "",
             "currency": "₦", "total": "50000", "paid": "0", "balance": "50000",
         }],
@@ -222,7 +222,7 @@ def test_gateway_invalid_state_or_amount_fails_closed(app, monkeypatch):
         assert False, "Unrecognised bridge publication state must fail closed"
 
     _mock_gateway(monkeypatch, documents=[{
-        "kind": "invoice", "number": "BAD", "status": "paid",
+        "kind": "invoice", "group": "vehicle_history", "number": "BAD", "status": "paid",
         "currency": "₦", "total": "-5", "paid": "0", "balance": "0",
     }])
     try:

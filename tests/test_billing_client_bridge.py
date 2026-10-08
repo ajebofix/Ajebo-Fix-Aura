@@ -237,3 +237,83 @@ def test_client_vehicle_page_links_into_billing_portal(app, client, monkeypatch)
     response = client.get(f"/cars/{car.id}")
     assert response.status_code == 200
     assert f'/cars/{car.id}/billing'.encode() in response.data
+
+
+def test_advisor_preflight_reports_verified_vin_but_requires_identity_review(
+    app, monkeypatch
+):
+    from services.billing_client_bridge import advisor_job_link_preflight
+    from services import billing_client_bridge
+
+    job_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    seen = []
+    car = _car(suffix=410)
+    db.session.commit()
+
+    class ReadOnlyGateway:
+        def get(self, table, *, select, filters):
+            seen.append(table)
+            if table == "billing_jobs":
+                return [{
+                    "id": job_id, "job_number": "JOB-PILOT",
+                    "sow_number": "SOW-PILOT", "status": "draft",
+                    "vehicle_id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
+                }]
+            if table == "billing_vehicles":
+                return [{
+                    "id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
+                    "vin": car.vin, "aura_vehicle_ref": str(car.id),
+                    "make": "Mercedes", "model": "GLK", "year": "2013",
+                }]
+            if table == "billing_clients":
+                return [{
+                    "id": BILLING_CLIENT, "name": "Pilot Client", "email": None,
+                }]
+            raise AssertionError(table)
+
+    monkeypatch.setattr(
+        billing_client_bridge, "_BillingReadGateway", ReadOnlyGateway
+    )
+    result = advisor_job_link_preflight(
+        car_id=car.id, vin=car.vin,
+        owner_email="owner@example.com", job_uuid=job_id,
+    )
+    assert result["status"] == "requires_advisor_identity_confirmation"
+    assert result["billing_email_status"] == "missing"
+    assert result["aura_ref_state"] == "already_set"
+    assert result["commercial_status"] == "draft"
+    assert seen == ["billing_jobs", "billing_vehicles", "billing_clients"]
+
+
+def test_advisor_preflight_never_accepts_conflicting_vehicle(
+    app, monkeypatch
+):
+    from services.billing_client_bridge import advisor_job_link_preflight
+    from services import billing_client_bridge
+
+    job_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    car = _car(suffix=411)
+    db.session.commit()
+
+    class ReadOnlyGateway:
+        def get(self, table, *, select, filters):
+            if table == "billing_jobs":
+                return [{
+                    "id": job_id, "job_number": "JOB-PILOT",
+                    "vehicle_id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
+                }]
+            if table == "billing_vehicles":
+                return [{
+                    "id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
+                    "vin": "ANOTHER1234567890", "aura_vehicle_ref": "987",
+                }]
+            raise AssertionError("Client identity must not be queried")
+
+    monkeypatch.setattr(
+        billing_client_bridge, "_BillingReadGateway", ReadOnlyGateway
+    )
+    result = advisor_job_link_preflight(
+        car_id=car.id, vin=car.vin,
+        owner_email="owner@example.com", job_uuid=job_id,
+    )
+    assert result == {"status": "vin_mismatch"}

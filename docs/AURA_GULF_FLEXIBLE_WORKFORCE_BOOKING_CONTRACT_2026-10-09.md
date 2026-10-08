@@ -17,7 +17,7 @@
 ## Booking principle
 **Four per day is a baseline planning cap, never four guaranteed reservations.** An operator can set a day-specific lower limit. More than four Gulf bookings requires an explicit, recorded authorised day-cap increase supported by real technicians and bays. Customer demand must NEVER raise the cap automatically.
 
-A service request may always enter a waitlist. Only a specific appointment window supported by a qualified technician, a usable workshop bay, an agreed service duration and no overlapping obligations can become a tentative hold. **Final customer confirmation additionally requires the voucher, human technical eligibility, correctly supplied oil/filter received and accepted, customer acknowledgment and persisted slot assignment.**
+Daily quota counts **completed Gulf services, confirmed Gulf appointments and unexpired temporary Gulf holds** for that calendar day; cancelled/released or expired holds no longer count. A service request may always enter a waitlist. Only a specific appointment window supported by a qualified technician, a usable workshop bay, an agreed service duration and no overlapping obligations can become a tentative hold. **Final customer confirmation additionally requires the voucher, human technical eligibility, correctly supplied oil/filter received and accepted, customer acknowledgment and persisted slot assignment.**
 
 The pure scheduling evaluator `partnerships/capacity.py` is advisory. Database-level revalidation and atomic booking locks will be essential when implementation reaches the reservation layer. A successful capacity evaluation alone never confirms a customer booking.
 

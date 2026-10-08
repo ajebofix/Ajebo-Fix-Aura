@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Repair Journey | Aura{% endblock %}
+{% block page_title %}Vehicle Repair Journey{% endblock %}
+{% block page_subtitle %}Advisor-reviewed updates for your vehicle{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>{{ car.rina_display_name }}</h2>
+  <p class="muted">
+    This journey shows progress statements that Ajebo Fix has reviewed for your account.
+    An update does not by itself confirm work completion, a repair outcome, or payment.
+  </p>
+  <div class="button-stack">
+    <a class="btn btn-secondary" href="{{ url_for('cars.car_detail', car_id=car.id) }}">Vehicle Record</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Vehicle Billing History</a>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Reviewed repair updates</h2>
+  {% if updates %}
+    {% for entry in updates %}
+    <div class="list-item" style="display:block;padding:14px 0;border-bottom:1px solid var(--border,#e5e7eb)">
+      <div class="section-head">
+        <strong>{{ entry.milestone|replace('_',' ')|title }}</strong>
+        <span class="pill">Advisor-reviewed</span>
+      </div>
+      <p>{{ entry.summary }}</p>
+      {% if entry.recorded_at %}
+      <p class="muted">Recorded {{ entry.recorded_at.strftime("%d %b %Y") }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">
+      No repair-progress statements have been published to your account yet.
+      Your advisor will share reviewed updates here as they are authorised.
+    </p>
+  {% endif %}
+  <p class="muted">
+    Repair journey milestones are not a substitute for completed Treatment Actions,
+    approved estimates or confirmed payment records.
+  </p>
+</section>
+{% endblock %}

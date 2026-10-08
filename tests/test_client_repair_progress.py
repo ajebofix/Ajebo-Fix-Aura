@@ -53,13 +53,13 @@ def _private_note(advisor, car):
 def test_progress_requires_advisor_approval_before_client_visibility(app, client):
     owner, advisor, other, driver, car = _setup(611)
     note_id = _private_note(advisor, car)
-    _sign_in(client, owner)
+    _login_as(client, owner)
     response = client.get(f"/cars/{car.id}/repair-progress")
     assert response.status_code == 200
     assert b"No repair-progress statements have been published" in response.data
     assert b"Private vendor margin" not in response.data
 
-    _sign_in(client, advisor)
+    _login_as(client, advisor)
     response = client.post(
         f"/admin/cars/{car.id}/repair-progress/{note_id}/publish-to-client",
         data={
@@ -68,7 +68,7 @@ def test_progress_requires_advisor_approval_before_client_visibility(app, client
         },
     )
     assert response.status_code == 302
-    _sign_in(client, owner)
+    _login_as(client, owner)
     response = client.get(f"/cars/{car.id}/repair-progress")
     assert response.status_code == 200
     assert b"Replacement parts have arrived" in response.data
@@ -78,13 +78,13 @@ def test_progress_requires_advisor_approval_before_client_visibility(app, client
     assert b"Internal classification tags" not in response.data
     assert b"Delivered" not in response.data
 
-    _sign_in(client, advisor)
+    _login_as(client, advisor)
     revoke = client.post(
         f"/admin/cars/{car.id}/repair-progress/{note_id}/revoke-client",
         data={"csrf_token": _csrf_token(client)},
     )
     assert revoke.status_code == 302
-    _sign_in(client, owner)
+    _login_as(client, owner)
     response = client.get(f"/cars/{car.id}/repair-progress")
     assert b"Replacement parts have arrived" not in response.data
     assert b"No repair-progress statements have been published" in response.data
@@ -100,18 +100,18 @@ def test_unrelated_owner_driver_and_admin_do_not_get_client_route(app, client):
         actor_user_id=advisor.id,
         client_summary="Parts received; vehicle dismantling is underway.",
     )
-    _sign_in(client, stranger)
+    _login_as(client, stranger)
     assert client.get(f"/cars/{car.id}/repair-progress").status_code == 404
-    _sign_in(client, driver)
+    _login_as(client, driver)
     assert client.get(f"/cars/{car.id}/repair-progress").status_code == 403
-    _sign_in(client, advisor)
+    _login_as(client, advisor)
     assert client.get(f"/cars/{car.id}/repair-progress").status_code == 403
 
 
 def test_non_advisor_cannot_publish_and_unverified_owner_is_denied(app, client):
     owner, advisor, stranger, driver, car = _setup(631)
     note_id = _private_note(advisor, car)
-    _sign_in(client, owner)
+    _login_as(client, owner)
     assert client.post(
         f"/admin/cars/{car.id}/repair-progress/{note_id}/publish-to-client",
         data={

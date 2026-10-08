@@ -5,14 +5,23 @@
 {% block page_subtitle %}Private automotive health management{% endblock %}
 
 {% block content %}
+{% if advisor_preview|default(false) %}
+<section class="card" style="border-left:4px solid #d4a017">
+  <h2>Preview as Client · Published Financial Records</h2>
+  <p class="muted">This is a read-only view of the documents currently authorised for the active vehicle owner. You have not signed into the owner's account. Unpublished drafts and withdrawn documents are excluded.</p>
+  <a class="btn btn-secondary" href="{{ url_for('admin.repair_progress_console',car_id=car.id) }}">Back to advisor vehicle</a>
+</section>
+{% endif %}
 <section class="card">
   <h2>{{ car.rina_display_name }}</h2>
   <p class="muted">Your vehicle care record and commercial documents are separate, verified records.</p>
+  {% if not advisor_preview|default(false) %}
   <div class="button-stack">
     <a class="btn btn-secondary" href="{{ url_for('cars.car_detail', car_id=car.id) }}">Vehicle Health Record</a>
     <a class="btn btn-secondary" href="{{ url_for('cars.owner_treatment_plans') }}">Treatment Plans</a>
     <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_repair_progress', car_id=car.id) }}">Repair Journey</a>
   </div>
+  {% endif %}
 </section>
 
 {% if snapshot.state == "not_enabled" %}
@@ -63,7 +72,7 @@
         {% if document.kind == "invoice" %}
         <p class="muted">Paid: {{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }} · Balance: {{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</p>
         {% endif %}
-        <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_billing_document',car_id=car.id,document_id=document.id) }}">View {{ document.kind|title }}</a>
+        <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_document_preview',car_id=car.id,document_id=document.id) if advisor_preview|default(false) else url_for('client_billing.owner_billing_document',car_id=car.id,document_id=document.id) }}">View {{ document.kind|title }}</a>
       </div>
     {% endfor %}
   {% else %}
@@ -86,7 +95,7 @@
         {% if document.kind == "invoice" %}
         <p class="muted">Paid: {{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }} · Balance: {{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</p>
         {% endif %}
-        <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_billing_document',car_id=car.id,document_id=document.id) }}">View {{ document.kind|title }}</a>
+        <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_document_preview',car_id=car.id,document_id=document.id) if advisor_preview|default(false) else url_for('client_billing.owner_billing_document',car_id=car.id,document_id=document.id) }}">View {{ document.kind|title }}</a>
       </div>
     {% endfor %}
   {% else %}

@@ -893,7 +893,14 @@ def build_rina_provider_context(
         # such as "review your previous answer critically". Older turns remain
         # tightly minimized.
         limit = 8000 if index == last_assistant_index else 1500
-        content = _clip(turn.content, limit=limit)
+        continuing = bool(
+            re.search(r"\\b(?:continue|finish|complete)\\b", rina_request.message, re.I)
+        )
+        content = (
+            _tail_clip(turn.content, limit=limit)
+            if continuing and index == last_assistant_index
+            else _clip(turn.content, limit=limit)
+        )
         if content:
             input_messages.append({"role": turn.role, "content": content})
 

@@ -120,7 +120,13 @@ def client_billing_snapshot(
             raise BillingBridgeUnavailable("Missing commercial document provenance")
         total = _money(item.get("total"))
         paid = _money(item.get("paid"))
+        document_id = str(item.get("id") or "")
+        try:
+            document_id = str(uuid.UUID(document_id))
+        except (ValueError, AttributeError):
+            raise BillingBridgeUnavailable("Invalid published document ID")
         safe_docs.append({
+            "id": document_id,
             "kind": kind,
             "group": group,
             "number": str(item.get("number") or "")[:80],

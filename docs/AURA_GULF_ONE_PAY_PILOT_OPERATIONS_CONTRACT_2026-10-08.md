@@ -5,6 +5,11 @@
 **Pilot:** Ebice Hoses Limited / Gulf One-Pay — Surulere  
 **Architecture placement:** Domain E (Advisor Operations), F (Ajebo OS), G (Commercial/Enterprise), with existing Vehicle Intelligence, Evidence and VehicleEvent services.
 
+## Updated workshop operating model (9 October 2026)
+Ajebo Fix can potentially serve **4+ Gulf vehicles/day** but has no full-time technicians; technicians are flexible commission-paid contractors and may have other workshop or home-service commitments. General presence at the workshop does NOT constitute an accepted shift or an allocated Gulf slot. Saturdays require explicit staffing confirmation; Sundays require explicit opening approval. Start with a **4 per-day allocation cap including active holds**, then permit staff-approved adjustments based on real resources. No hard-coded appointment hours or service durations are assumed.
+
+**Detailed source of truth:** [Gulf flexible workforce booking contract](AURA_GULF_FLEXIBLE_WORKFORCE_BOOKING_CONTRACT_2026-10-09.md). Its capacity policy is additive to all voucher, spec/product, evidence and settlement safety rules below. Internal contractor commission and Ebice sponsor settlement must remain separate records.
+
 ## Purpose and decisive rules
 Prepare Aura to run the Gulf pilot without WhatsApp becoming the system of record. This document is an additive design contract, not authorisation to go live. The current Ebice PDF is a proposal, not a signed SLA. Meeting of 2026-10-08 supersedes the PDF's consignment assumption: **oil and filters stay in Yaba with Ebice and are dispatched per validated booking to Ajebo Fix**. Ajebo Fix is sole proposed Surulere campaign service partner, while Ebice works with others in Ikeja/Lekki. Oil-filter supplier/specification brief, commercial tariffs, signed agreement, authorisation and partner identity evidence are pending.
 
@@ -40,7 +45,7 @@ Compute top-level queue and blocker from these states, not from a second indepen
 - Any unsigned pilot agreement keeps partner campaign INACTIVE and public booking disabled.
 - External voucher verification must record verification channel, verifier, time and reference; no guessing validity from code format alone.
 - Lock duplicate voucher/service claims and flag same plate within 30 days for operator review (not silent irreversible rejection).
-- 'Confirmed' appointment requires voucher verified, technical approval, accepted oil/filter available at Ajebo Fix, reserved bay capacity and explicit customer confirmation; exceptions require an audited supervisor override and customer warning.
+- 'Confirmed' appointment requires voucher verified, technical approval, accepted oil/filter available at Ajebo Fix, reserved bay capacity, a qualified technician's accepted dated slot, approved contractor compensation terms and explicit customer confirmation; exceptions require an audited supervisor override and customer warning.
 - Wrong oil, wrong filter, insufficient litres, product seal anomalies, unverified spec, existing mechanical danger or workshop overload must pause/reject the job rather than improvise.
 - Only after actual service and handover confirmation can a labour-fee claim become eligible. Evidence gaps create a review/dispute queue rather than silently erasing labour.
 - External Ebice confirmation and paid amounts must be explicit, not assumed from promised weekly settlement.
@@ -56,6 +61,8 @@ Compute top-level queue and blocker from these states, not from a second indepen
 **PartnerServiceFulfilment:** technician, oil lot/qty, filter exact code, arrival/service timing, actual odometer + evidence, ten-point observations, drain/refill/level/leak/reset outcomes, advisor release, customer confirmation and service-record link.
 **PartnerSettlementLine:** service ID unique, contractual rate + adjustment history, weekly statement identifier, invoice or billing-platform reference, submitted/disputed/paid dates and allocated amounts; do not reproduce accounting ledgers if Ajebo Fix billing system is authority.
 **PartnerOperationEvent:** append-only business audit events (actor/source/timestamp/decision, minimal metadata). DO NOT create a second car progression envelope: verified vehicle service facts append to existing VehicleEvent only when car linkage and provenance are established.
+**PartnerTechnician / PartnerTechnicianCommission (proposed):** limited staff/contractor identity, service qualifications, date-bounded accepted availability, existing job conflicts, assignment acceptance, agreed per-job commission snapshot and separately audited worker payment; do not confuse with sponsor receivable or treat contractor as a guaranteed employee.
+**PartnerCapacityHold (proposed):** tentative time window, bounded expiry, technician and bay assignment with atomic conflict protection, operator decision and release/reschedule reason; active holds count against daily limits.
 **PartnerConsent:** narrow consent/notice record for fulfilment and separately explicit opt-in for Ajebo Fix marketing/Aura invitation. Opt-in is never inferred from voucher redemption.
 
 Follow the existing schema migration conventions and security controls. Decide exact normalization, encryption and FK/nullability after inspection; these are design-level entities, not migrations yet.

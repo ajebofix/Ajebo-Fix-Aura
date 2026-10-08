@@ -1,4 +1,4 @@
-"""Owner Billing bridge: authorization, linkage and read-only filtering."""
+"""Billing owner bridge: verified identity, publication, isolation and outages."""
 from __future__ import annotations
 
 import requests
@@ -7,313 +7,223 @@ from extensions import db
 from services.billing_client_bridge import client_billing_snapshot
 from test_rina_chat_cutover import _car, _own, _sign_in, _user
 
-BILLING_CLIENT = "11111111-1111-4111-8111-111111111111"
-BILLING_VEHICLE = "22222222-2222-4222-8222-222222222222"
-ESTIMATE = "33333333-3333-4333-8333-333333333333"
-INVOICE = "44444444-4444-4444-8444-444444444444"
-RECEIPT = "55555555-5555-4555-8555-555555555555"
-PAYMENT = "66666666-6666-4666-8666-666666666666"
-
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status=200):
         self.payload = payload
+        self.status = status
 
     def raise_for_status(self):
-        return None
+        if self.status >= 400:
+            raise requests.HTTPError("Bridge failure")
 
     def json(self):
         return self.payload
 
 
-def _enable(monkeypatch):
+def _configure(monkeypatch):
     monkeypatch.setenv("AURA_BILLING_CLIENT_VIEW_ENABLED", "true")
     monkeypatch.setenv(
-        "AURA_BILLING_SUPABASE_URL",
-        "https://odtctmjhkcphyaozpcup.supabase.co",
+        "AURA_BILLING_BRIDGE_URL",
+        "https://odtctmjhkcphyaozpcup.supabase.co/functions/v1/aura-billing-bridge",
     )
-    monkeypatch.setenv("AURA_BILLING_SUPABASE_SERVICE_ROLE_KEY", "test-secret")
+    monkeypatch.setenv("AURA_BILLING_BRIDGE_TOKEN", "a" * 64)
+    # It is critical that Aura needs neither Supabase admin keys nor client email.
+    monkeypatch.delenv("AURA_BILLING_SUPABASE_SERVICE_ROLE_KEY", raising=False)
 
 
-def _fake_gateway(monkeypatch, *, car, owner, vin=None, client_email=None):
-    calls = []
+def _mock_gateway(monkeypatch, *, state="linked", documents=None, payments=None):
+    seen = []
 
-    def fake_get(url, *, params, headers, timeout, allow_redirects):
-        assert url.startswith("https://odtctmjhkcphyaozpcup.supabase.co/rest/v1/")
-        assert headers["apikey"] == "test-secret"
-        assert headers["Authorization"] == "Bearer test-secret"
-        assert timeout[1] <= 8
+    def mock_post(url, *, headers, json, timeout, allow_redirects):
+        assert url == (
+            "https://odtctmjhkcphyaozpcup.supabase.co"
+            "/functions/v1/aura-billing-bridge"
+        )
+        assert headers["Authorization"] == "Bearer " + "a" * 64
+        assert "service_role" not in str(headers).lower()
+        assert "email" not in json
+        assert json["car_id"] > 0
+        assert json["owner_user_id"] > 0
+        assert len(json["vin"]) == 17
         assert allow_redirects is False
-        table = url.rsplit("/", 1)[-1]
-        calls.append((table, dict(params)))
-        if table == "billing_vehicles":
-            assert params["aura_vehicle_ref"] == f"eq.{car.id}"
-            return FakeResponse([
-                {"id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
-                 "vin": vin if vin is not None else car.vin,
-                 "aura_vehicle_ref": str(car.id)}
-            ])
-        if table == "billing_clients":
-            return FakeResponse([
-                {"id": BILLING_CLIENT, "email": (
-                    client_email if client_email is not None else owner.email
-                )}
-            ])
-        if table == "billing_documents":
-            assert params["vehicle_id"] == f"eq.{BILLING_VEHICLE}"
-            assert params["client_id"] == f"eq.{BILLING_CLIENT}"
-            common = {
-                "vehicle_id": BILLING_VEHICLE,
-                "client_id": BILLING_CLIENT,
-                "issue_date": "2026-10-08",
-                "due_date": None,
-                "currency_symbol": "₦",
-                "amount_paid": "0",
-                "superseded_at": None,
-                "share_revoked_at": None,
-            }
-            return FakeResponse([
-                {**common, "id": ESTIMATE, "doc_type": "estimate",
-                 "doc_number": "EST-2026-1", "status": "accepted", "total": "75000"},
-                {**common, "id": INVOICE, "doc_type": "invoice",
-                 "doc_number": "INV-2026-1", "status": "partially_paid",
-                 "total": "150000", "amount_paid": "50000"},
-                {**common, "id": RECEIPT, "doc_type": "receipt",
-                 "doc_number": "RCT-2026-1", "status": "issued",
-                 "total": "50000"},
-                {**common, "id": "77777777-7777-4777-8777-777777777777",
-                 "doc_type": "invoice", "doc_number": "INTERNAL-DRAFT",
-                 "status": "draft", "total": "9000000"},
-                {**common, "id": "88888888-8888-4888-8888-888888888888",
-                 "doc_type": "estimate", "doc_number": "SUPERSEDED",
-                 "status": "accepted", "total": "80000",
-                 "superseded_at": "2026-10-09T10:00:00Z"},
-            ])
-        if table == "billing_payments":
-            assert params["invoice_id"] == f"in.({INVOICE})"
-            return FakeResponse([
-                {"id": PAYMENT, "invoice_id": INVOICE, "amount": "50000",
-                 "paid_at": "2026-10-08T10:00:00Z", "currency_symbol": "₦"},
-                {"id": "99999999-9999-4999-8999-999999999999",
-                 "invoice_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                 "amount": "400000", "paid_at": "2026-10-08",
-                 "currency_symbol": "₦"},
-            ])
-        raise AssertionError(f"Unexpected table {table}")
+        assert timeout[1] <= 12
+        seen.append(json)
+        return FakeResponse({
+            "state": state,
+            "documents": documents if documents is not None else [],
+            "payments": payments if payments is not None else [],
+        })
 
-    monkeypatch.setattr("services.billing_client_bridge.requests.get", fake_get)
-    return calls
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", mock_post)
+    return seen
 
 
-def test_billing_page_disabled_without_exposing_financial_records(
-    app, client, monkeypatch
-):
+def test_feature_disabled_by_default(app, client, monkeypatch):
     monkeypatch.delenv("AURA_BILLING_CLIENT_VIEW_ENABLED", raising=False)
-    owner = _user(suffix=401)
-    car = _car(suffix=401)
-    _own(owner=owner, car=car, suffix=401)
+    owner = _user(suffix=451)
+    car = _car(suffix=451)
+    _own(owner=owner, car=car, suffix=451)
     db.session.commit()
     _sign_in(client, owner)
-    response = client.get(f"/cars/{car.id}/billing")
-    assert response.status_code == 200
-    assert b"connection has not been enabled" in response.data
-    assert b"INV-2026" not in response.data
+    resp = client.get(f"/cars/{car.id}/billing")
+    assert resp.status_code == 200
+    assert b"connection has not been enabled" in resp.data
+    assert b"Client" not in resp.data
 
 
-def test_owner_can_view_published_billing_without_any_writes(
+def test_verified_owner_without_billing_email_can_view_released_docs(
     app, client, monkeypatch
 ):
-    _enable(monkeypatch)
-    owner = _user(suffix=402)
-    car = _car(suffix=402)
-    _own(owner=owner, car=car, suffix=402)
+    _configure(monkeypatch)
+    owner = _user(suffix=452)
+    car = _car(suffix=452)
+    _own(owner=owner, car=car, suffix=452)
     db.session.commit()
-    calls = _fake_gateway(monkeypatch, car=car, owner=owner)
+    seen = _mock_gateway(
+        monkeypatch,
+        documents=[{
+            "kind": "invoice", "number": "INV-2026-TEST",
+            "status": "partially_paid", "issued": "2026-10-08",
+            "due": "", "currency": "₦", "total": "150000",
+            "paid": "50000", "balance": "100000",
+        }, {
+            "kind": "receipt", "number": "RCP-2026-TEST",
+            "status": "issued", "issued": "2026-10-08", "due": "",
+            "currency": "₦", "total": "50000", "paid": "0", "balance": "50000",
+        }],
+        payments=[{"amount": "50000", "paid_at": "2026-10-08", "currency": "₦"}],
+    )
     _sign_in(client, owner)
-
-    response = client.get(f"/cars/{car.id}/billing")
-    assert response.status_code == 200
-    assert b"EST-2026-1" in response.data
-    assert b"INV-2026-1" in response.data
-    assert b"RCT-2026-1" in response.data
-    assert b"100000" in response.data  # invoice balance
-    assert b"INTERNAL-DRAFT" not in response.data
-    assert b"SUPERSEDED" not in response.data
-    assert b"9000000" not in response.data
-    assert [item[0] for item in calls] == [
-        "billing_vehicles", "billing_clients", "billing_documents",
-        "billing_payments",
-    ]
+    resp = client.get(f"/cars/{car.id}/billing")
+    assert resp.status_code == 200
+    assert b"INV-2026-TEST" in resp.data
+    assert b"RCP-2026-TEST" in resp.data
+    assert b"100000" in resp.data
+    assert len(seen) == 1
+    assert seen[0]["owner_user_id"] == owner.id
+    assert seen[0]["car_id"] == car.id
+    assert seen[0]["vin"] == car.vin
 
 
-def test_other_owner_and_revoked_owner_cannot_query_billing(
+def test_linked_vehicle_but_not_published_shows_no_money(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner = _user(suffix=453)
+    car = _car(suffix=453)
+    _own(owner=owner, car=car, suffix=453)
+    db.session.commit()
+    _mock_gateway(monkeypatch, state="not_published")
+    _sign_in(client, owner)
+    resp = client.get(f"/cars/{car.id}/billing")
+    assert resp.status_code == 200
+    assert b"awaiting publication" in resp.data
+    assert b"INVOICE" not in resp.data
+
+
+def test_cross_owner_and_revoked_ownership_denied_before_remote_access(
     app, client, monkeypatch
 ):
-    _enable(monkeypatch)
-    owner = _user(suffix=403)
-    stranger = _user(suffix=404)
-    car = _car(suffix=403)
-    ownership = _own(owner=owner, car=car, suffix=403)
+    _configure(monkeypatch)
+    owner = _user(suffix=454)
+    other = _user(suffix=455)
+    car = _car(suffix=454)
+    ownership = _own(owner=owner, car=car, suffix=454)
     db.session.commit()
 
-    def forbid(*args, **kwargs):
-        raise AssertionError("billing provider should not be called")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Remote Billing request must not happen")
 
-    monkeypatch.setattr("services.billing_client_bridge.requests.get", forbid)
-    _sign_in(client, stranger)
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", forbidden)
+    _sign_in(client, other)
     assert client.get(f"/cars/{car.id}/billing").status_code == 404
-
     db.session.delete(ownership)
     db.session.commit()
-    # Original owner has no active ownership after transfer/revocation.
     _sign_in(client, owner)
     assert client.get(f"/cars/{car.id}/billing").status_code == 404
 
 
-def test_driver_cannot_read_billing_even_with_car_assignment(
+def test_driver_and_advisor_cannot_use_owner_financial_view(
     app, client, monkeypatch
 ):
-    _enable(monkeypatch)
-    driver = _user(suffix=405, role="driver")
-    car = _car(suffix=405)
-    _own(owner=driver, car=car, suffix=405)
+    _configure(monkeypatch)
+    driver = _user(suffix=456, role="driver")
+    advisor = _user(suffix=457, role="admin")
+    car = _car(suffix=456)
+    _own(owner=driver, car=car, suffix=456)
     db.session.commit()
     _sign_in(client, driver)
     assert client.get(f"/cars/{car.id}/billing").status_code == 403
+    _sign_in(client, advisor)
+    assert client.get(f"/cars/{car.id}/billing").status_code == 403
 
 
-def test_mismatched_vin_and_email_fail_closed(app, monkeypatch):
-    _enable(monkeypatch)
-    owner = _user(suffix=406)
-    car = _car(suffix=406)
-    db.session.commit()
-    _fake_gateway(monkeypatch, car=car, owner=owner, vin="WRONGVIN000000000")
-    mismatch = client_billing_snapshot(car_id=car.id, vin=car.vin, owner_email=owner.email)
-    assert mismatch["state"] == "not_linked"
-    assert mismatch["documents"] == []
-
-    _fake_gateway(monkeypatch, car=car, owner=owner, client_email="other@example.com")
-    mismatch = client_billing_snapshot(car_id=car.id, vin=car.vin, owner_email=owner.email)
-    assert mismatch["state"] == "not_linked"
-    assert mismatch["documents"] == []
-
-
-def test_provider_outage_is_generic_and_non_disclosing(app, client, monkeypatch):
-    _enable(monkeypatch)
-    owner = _user(suffix=407)
-    car = _car(suffix=407)
-    _own(owner=owner, car=car, suffix=407)
-    db.session.commit()
-    _sign_in(client, owner)
-
-    def timeout(*args, **kwargs):
-        raise requests.Timeout("private upstream incident")
-
-    monkeypatch.setattr("services.billing_client_bridge.requests.get", timeout)
-    response = client.get(f"/cars/{car.id}/billing")
-    assert response.status_code == 200
-    assert b"temporarily unavailable" in response.data
-    assert b"private upstream incident" not in response.data
-
-
-def test_unverified_account_cannot_read_billing(app, client, monkeypatch):
-    _enable(monkeypatch)
-    owner = _user(suffix=408)
+def test_unverified_owner_never_receives_financial_data(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=458)
     owner.email_verified_at = None
-    car = _car(suffix=408)
-    _own(owner=owner, car=car, suffix=408)
+    car = _car(suffix=458)
+    _own(owner=owner, car=car, suffix=458)
     db.session.commit()
     _sign_in(client, owner)
     assert client.get(f"/cars/{car.id}/billing").status_code == 403
 
 
-def test_client_vehicle_page_links_into_billing_portal(app, client, monkeypatch):
-    _enable(monkeypatch)
-    owner = _user(suffix=409)
-    car = _car(suffix=409)
-    _own(owner=owner, car=car, suffix=409)
+def test_billing_provider_outage_does_not_leak_details(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=459)
+    car = _car(suffix=459)
+    _own(owner=owner, car=car, suffix=459)
+    db.session.commit()
+
+    def fail(*args, **kwargs):
+        raise requests.Timeout("private service exception")
+
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", fail)
+    _sign_in(client, owner)
+    resp = client.get(f"/cars/{car.id}/billing")
+    assert resp.status_code == 200
+    assert b"temporarily unavailable" in resp.data
+    assert b"private service exception" not in resp.data
+
+
+def test_gateway_invalid_state_or_amount_fails_closed(app, monkeypatch):
+    from services.billing_client_bridge import BillingBridgeUnavailable
+
+    _configure(monkeypatch)
+    _mock_gateway(monkeypatch, state="unexpected")
+    car = _car(suffix=460)
+    owner = _user(suffix=460)
+    db.session.commit()
+    try:
+        client_billing_snapshot(car_id=car.id, owner_user_id=owner.id, vin=car.vin)
+    except BillingBridgeUnavailable:
+        pass
+    else:
+        assert False, "Unrecognised bridge publication state must fail closed"
+
+    _mock_gateway(monkeypatch, documents=[{
+        "kind": "invoice", "number": "BAD", "status": "paid",
+        "currency": "₦", "total": "-5", "paid": "0", "balance": "0",
+    }])
+    try:
+        client_billing_snapshot(car_id=car.id, owner_user_id=owner.id, vin=car.vin)
+    except BillingBridgeUnavailable:
+        pass
+    else:
+        assert False, "Invalid provider amount must fail closed"
+
+
+def test_navigation_only_appears_when_bridge_configured(app, client, monkeypatch):
+    _configure(monkeypatch)
+    owner = _user(suffix=461)
+    car = _car(suffix=461)
+    _own(owner=owner, car=car, suffix=461)
     db.session.commit()
     _sign_in(client, owner)
-    response = client.get(f"/cars/{car.id}")
-    assert response.status_code == 200
-    assert f'/cars/{car.id}/billing'.encode() in response.data
-
-
-def test_advisor_preflight_reports_verified_vin_but_requires_identity_review(
-    app, monkeypatch
-):
-    from services.billing_client_bridge import advisor_job_link_preflight
-    from services import billing_client_bridge
-
-    job_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    seen = []
-    car = _car(suffix=410)
-    db.session.commit()
-
-    class ReadOnlyGateway:
-        def get(self, table, *, select, filters):
-            seen.append(table)
-            if table == "billing_jobs":
-                return [{
-                    "id": job_id, "job_number": "JOB-PILOT",
-                    "sow_number": "SOW-PILOT", "status": "draft",
-                    "vehicle_id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
-                }]
-            if table == "billing_vehicles":
-                return [{
-                    "id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
-                    "vin": car.vin, "aura_vehicle_ref": str(car.id),
-                    "make": "Mercedes", "model": "GLK", "year": "2013",
-                }]
-            if table == "billing_clients":
-                return [{
-                    "id": BILLING_CLIENT, "name": "Pilot Client", "email": None,
-                }]
-            raise AssertionError(table)
-
-    monkeypatch.setattr(
-        billing_client_bridge, "_BillingReadGateway", ReadOnlyGateway
-    )
-    result = advisor_job_link_preflight(
-        car_id=car.id, vin=car.vin,
-        owner_email="owner@example.com", job_uuid=job_id,
-    )
-    assert result["status"] == "requires_advisor_identity_confirmation"
-    assert result["billing_email_status"] == "missing"
-    assert result["aura_ref_state"] == "already_set"
-    assert result["commercial_status"] == "draft"
-    assert seen == ["billing_jobs", "billing_vehicles", "billing_clients"]
-
-
-def test_advisor_preflight_never_accepts_conflicting_vehicle(
-    app, monkeypatch
-):
-    from services.billing_client_bridge import advisor_job_link_preflight
-    from services import billing_client_bridge
-
-    job_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    car = _car(suffix=411)
-    db.session.commit()
-
-    class ReadOnlyGateway:
-        def get(self, table, *, select, filters):
-            if table == "billing_jobs":
-                return [{
-                    "id": job_id, "job_number": "JOB-PILOT",
-                    "vehicle_id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
-                }]
-            if table == "billing_vehicles":
-                return [{
-                    "id": BILLING_VEHICLE, "client_id": BILLING_CLIENT,
-                    "vin": "ANOTHER1234567890", "aura_vehicle_ref": "987",
-                }]
-            raise AssertionError("Client identity must not be queried")
-
-    monkeypatch.setattr(
-        billing_client_bridge, "_BillingReadGateway", ReadOnlyGateway
-    )
-    result = advisor_job_link_preflight(
-        car_id=car.id, vin=car.vin,
-        owner_email="owner@example.com", job_uuid=job_id,
-    )
-    assert result == {"status": "vin_mismatch"}
+    assert f"/cars/{car.id}/billing".encode() in client.get(f"/cars/{car.id}").data
+    monkeypatch.setenv("AURA_BILLING_CLIENT_VIEW_ENABLED", "false")
+    assert f"/cars/{car.id}/billing".encode() not in client.get(f"/cars/{car.id}").data

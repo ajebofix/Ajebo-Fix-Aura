@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import requests
+import json
+
+from services.billing_bridge_signing import public_key_document
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+import base64
 
 from extensions import db
 from services.billing_client_bridge import client_billing_snapshot
@@ -12,6 +17,7 @@ class FakeResponse:
     def __init__(self, payload, status=200):
         self.payload = payload
         self.status = status
+        self.status_code = status
 
     def raise_for_status(self):
         if self.status >= 400:
@@ -27,7 +33,7 @@ def _configure(monkeypatch):
         "AURA_BILLING_BRIDGE_URL",
         "https://odtctmjhkcphyaozpcup.supabase.co/functions/v1/aura-billing-bridge",
     )
-    monkeypatch.setenv("AURA_BILLING_BRIDGE_TOKEN", "a" * 64)
+    monkeypatch.delenv("AURA_BILLING_BRIDGE_TOKEN", raising=False)
     # It is critical that Aura needs neither Supabase admin keys nor client email.
     monkeypatch.delenv("AURA_BILLING_SUPABASE_SERVICE_ROLE_KEY", raising=False)
 
@@ -35,20 +41,30 @@ def _configure(monkeypatch):
 def _mock_gateway(monkeypatch, *, state="linked", documents=None, payments=None):
     seen = []
 
-    def mock_post(url, *, headers, json, timeout, allow_redirects):
+    def mock_post(url, *, headers, data, timeout, allow_redirects):
         assert url == (
             "https://odtctmjhkcphyaozpcup.supabase.co"
             "/functions/v1/aura-billing-bridge"
         )
-        assert headers["Authorization"] == "Bearer " + "a" * 64
+        assert "Authorization" not in headers
         assert "service_role" not in str(headers).lower()
-        assert "email" not in json
-        assert json["car_id"] > 0
-        assert json["owner_user_id"] > 0
-        assert len(json["vin"]) == 17
+        assert headers["X-Aura-Key-Id"] == "aura-billing-v1"
+        payload = json.loads(data)
+        assert "email" not in payload
+        assert payload["car_id"] > 0
+        assert payload["owner_user_id"] > 0
+        assert len(payload["vin"]) == 17
+        doc = public_key_document()
+        keybytes = base64.urlsafe_b64decode(doc["x"] + "==")
+        sig = base64.urlsafe_b64decode(headers["X-Aura-Signature"] + "==")
+        signed_bytes = (
+            headers["X-Aura-Timestamp"] + "." +
+            headers["X-Aura-Nonce"] + "."
+        ).encode("ascii") + data
+        Ed25519PublicKey.from_public_bytes(keybytes).verify(sig, signed_bytes)
         assert allow_redirects is False
         assert timeout[1] <= 12
-        seen.append(json)
+        seen.append(payload)
         return FakeResponse({
             "state": state,
             "documents": documents if documents is not None else [],
@@ -227,3 +243,84 @@ def test_navigation_only_appears_when_bridge_configured(app, client, monkeypatch
     assert f"/cars/{car.id}/billing".encode() in client.get(f"/cars/{car.id}").data
     monkeypatch.setenv("AURA_BILLING_CLIENT_VIEW_ENABLED", "false")
     assert f"/cars/{car.id}/billing".encode() not in client.get(f"/cars/{car.id}").data
+
+
+def test_public_verification_key_contains_no_private_material(app, client):
+    response = client.get("/.well-known/aura-billing-public-key")
+    assert response.status_code == 200
+    document = response.get_json()
+    assert document["kty"] == "OKP"
+    assert document["crv"] == "Ed25519"
+    assert document["kid"] == "aura-billing-v1"
+    assert len(base64.urlsafe_b64decode(document["x"] + "==")) == 32
+    assert "private" not in str(document).lower()
+    assert "seed" not in str(document).lower()
+    assert "secret" not in str(document).lower()
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_signature_is_body_bound_and_non_reusable(app):
+    from services.billing_bridge_signing import sign_billing_request
+
+    public = public_key_document()
+    pub = Ed25519PublicKey.from_public_bytes(
+        base64.urlsafe_b64decode(public["x"] + "==")
+    )
+    body, headers = sign_billing_request({
+        "car_id": 3, "owner_user_id": 1, "vin": "WDCGG5HB1EG276273"
+    })
+    message = (
+        headers["X-Aura-Timestamp"] + "." +
+        headers["X-Aura-Nonce"] + "."
+    ).encode() + body
+    signature = base64.urlsafe_b64decode(headers["X-Aura-Signature"] + "==")
+    pub.verify(signature, message)
+    try:
+        pub.verify(signature, message.replace(b'"car_id":3', b'"car_id":4'))
+    except Exception:
+        pass
+    else:
+        raise AssertionError("Tampering with vehicle ID must invalidate signature")
+    _, other = sign_billing_request({
+        "car_id": 3, "owner_user_id": 1, "vin": "WDCGG5HB1EG276273"
+    })
+    assert other["X-Aura-Nonce"] != headers["X-Aura-Nonce"]
+
+
+def test_production_handshake_route_hidden_by_default(app, client, monkeypatch):
+    monkeypatch.delenv("AURA_BILLING_SMOKE_TEST_ENABLED", raising=False)
+    assert client.get("/internal/health/billing-bridge").status_code == 404
+
+
+def test_read_only_handshake_authenticates_without_owner_data(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    monkeypatch.setenv("AURA_BILLING_SMOKE_TEST_ENABLED", "true")
+    seen = []
+
+    def bridge(_url, *, data, headers, timeout, allow_redirects):
+        payload = json.loads(data)
+        assert payload == {
+            "car_id": 2147483647,
+            "owner_user_id": 2147483647,
+            "vin": "00000000000000000",
+        }
+        seen.append(payload)
+        if "X-Aura-Signature" not in headers:
+            return FakeResponse({"error": "Unauthorized"}, status=401)
+        if len(seen) == 2:
+            return FakeResponse({
+                "state": "not_published", "documents": [], "payments": []
+            })
+        return FakeResponse({"error": "Unauthorized"}, status=401)
+
+    monkeypatch.setattr("requests.post", bridge)
+    response = client.get("/internal/health/billing-bridge")
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "handshake": "authenticated", "publication": "none",
+        "unsigned": "rejected", "replay": "rejected",
+    }
+    assert response.headers["Cache-Control"] == "no-store"
+    assert len(seen) == 3

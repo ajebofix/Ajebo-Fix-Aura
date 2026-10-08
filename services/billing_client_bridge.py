@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 import re
+
+from services.billing_bridge_signing import sign_billing_request
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
@@ -36,7 +38,6 @@ def client_billing_feature_enabled() -> bool:
     return (
         os.getenv("AURA_BILLING_CLIENT_VIEW_ENABLED", "").strip().lower() == "true"
         and bool(os.getenv("AURA_BILLING_BRIDGE_URL", "").strip())
-        and bool(os.getenv("AURA_BILLING_BRIDGE_TOKEN", "").strip())
     )
 
 
@@ -61,7 +62,6 @@ def client_billing_snapshot(
         return empty
 
     endpoint = os.getenv("AURA_BILLING_BRIDGE_URL", "").strip()
-    secret = os.getenv("AURA_BILLING_BRIDGE_TOKEN", "").strip()
     uri = urlparse(endpoint)
     if (
         uri.scheme != "https"
@@ -69,22 +69,22 @@ def client_billing_snapshot(
         or not uri.hostname.endswith(".supabase.co")
         or uri.path != "/functions/v1/aura-billing-bridge"
         or uri.username or uri.password or uri.query or uri.fragment
-        or not re.fullmatch(r"[a-f0-9]{64}", secret)
     ):
         raise BillingBridgeUnavailable("Invalid Billing gateway configuration")
     try:
+        body, signature_headers = sign_billing_request({
+            "car_id": car_id,
+            "owner_user_id": owner_user_id,
+            "vin": norm_vin,
+        })
         resp = requests.post(
             endpoint,
             headers={
-                "Authorization": f"Bearer {secret}",
+                **signature_headers,
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             },
-            json={
-                "car_id": car_id,
-                "owner_user_id": owner_user_id,
-                "vin": norm_vin,
-            },
+            data=body,
             timeout=(3.05, 12),
             allow_redirects=False,
         )

@@ -35,7 +35,7 @@
 {% endif %}
 <div class="af-billing-actions">
   {% if advisor_preview|default(false) %}
-  <a class="btn btn-secondary" href="{{ url_for('admin.repair_progress_console',car_id=car.id) }}">Back to advisor vehicle</a>
+  <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}">Back to Billing Workspace</a>
   {% else %}
   <a class="btn btn-secondary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Back to financial records</a>
   <button type="button" class="btn btn-secondary" onclick="window.print()">Print / Save as PDF</button>

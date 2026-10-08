@@ -12,7 +12,7 @@ from admin.routes import admin_bp
 from admin.utils import advisor_required
 from evidence.models import VehicleEvidence
 from extensions import db
-from models import Car, TreatmentPlan
+from models import Car, CarOwnership, TreatmentPlan
 from security.access import resolve_vehicle_authority
 from services.treatment_action_lifecycle import (
     TreatmentActionLifecycleError,
@@ -39,6 +39,12 @@ from services.repair_progress import (
     RepairProgressError,
     record_repair_progress,
     repair_progress_for_car,
+)
+from services.client_repair_progress import (
+    ClientProgressPublicationError,
+    client_published_progress,
+    publish_client_progress,
+    revoke_client_progress,
 )
 from treatment.models import TreatmentAction
 
@@ -111,10 +117,22 @@ def repair_progress_console(car_id: int):
         ),
         None,
     )
+    active_owners = CarOwnership.query.filter_by(
+        car_id=car.id, is_active=True
+    ).all()
+    currently_published = (
+        client_published_progress(
+            car_id=car.id, owner_user_id=active_owners[0].user_id
+        )
+        if len(active_owners) == 1 else []
+    )
     return render_template(
         "treatment_actions/repair_progress.html",
         car=car,
         progress_entries=repair_progress_for_car(car_id=car.id, limit=150),
+        client_published_note_ids={
+            p.source_note_id for p in currently_published
+        },
         milestones=MILESTONES,
         treatment_plans=plans,
         service_documents=service_documents,
@@ -184,6 +202,39 @@ def record_repair_progress_manual(car_id: int):
         db.session.rollback()
         raise
     return redirect(url_for("admin.repair_progress_console", car_id=car.id))
+
+
+@admin_bp.post("/cars/<int:car_id>/repair-progress/<int:note_id>/publish-to-client")
+@login_required
+@advisor_required
+def publish_repair_progress_to_owner(car_id: int, note_id: int):
+    try:
+        publish_client_progress(
+            car_id=car_id,
+            note_id=note_id,
+            actor_user_id=current_user.id,
+            client_summary=request.form.get("client_summary", ""),
+        )
+        flash("Reviewed repair progress published to the owner's timeline.", "success")
+    except ClientProgressPublicationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return redirect(url_for("admin.repair_progress_console", car_id=car_id))
+
+
+@admin_bp.post("/cars/<int:car_id>/repair-progress/<int:note_id>/revoke-client")
+@login_required
+@advisor_required
+def revoke_repair_progress_from_owner(car_id: int, note_id: int):
+    try:
+        revoke_client_progress(
+            car_id=car_id, note_id=note_id, actor_user_id=current_user.id
+        )
+        flash("Client progress entry unpublished; private advisor record preserved.", "success")
+    except ClientProgressPublicationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return redirect(url_for("admin.repair_progress_console", car_id=car_id))
 
 
 @admin_bp.get("/treatment-actions")

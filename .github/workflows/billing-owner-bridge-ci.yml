@@ -6,6 +6,12 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "services/billing_client_bridge.py"
+      - "services/client_repair_progress.py"
+      - "services/repair_progress.py"
+      - "services/treatment_action_routes.py"
+      - "templates/treatment_actions/repair_progress.html"
+      - "templates/treatment_actions/owner_repair_progress.html"
+      - "tests/test_client_repair_progress.py"
       - "services/billing_client_routes.py"
       - "templates/billing/owner_vehicle.html"
       - "templates/car_detail.html"
@@ -44,14 +50,21 @@ jobs:
           python -m compileall -q
           services/billing_client_bridge.py
           services/billing_client_routes.py
+          services/client_repair_progress.py
+          services/repair_progress.py
+          services/treatment_action_routes.py
           tests/test_billing_client_bridge.py
+          tests/test_client_repair_progress.py
       - name: Run owner billing security and read-only tests
-        run: pytest -q --tb=short tests/test_billing_client_bridge.py
+        run: pytest -q --tb=short tests/test_billing_client_bridge.py tests/test_client_repair_progress.py
       - name: Ruff new billing code
         run: >-
           ruff check
           services/billing_client_bridge.py
           services/billing_client_routes.py
+          services/client_repair_progress.py
+          services/repair_progress.py
           tests/test_billing_client_bridge.py
+          tests/test_client_repair_progress.py
       - name: Bandit server boundary
-        run: bandit -q -r services/billing_client_bridge.py services/billing_client_routes.py
+        run: bandit -q -r services/billing_client_bridge.py services/billing_client_routes.py services/client_repair_progress.py services/repair_progress.py

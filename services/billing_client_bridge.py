@@ -112,12 +112,16 @@ def client_billing_snapshot(
         if not isinstance(item, dict):
             raise BillingBridgeUnavailable("Invalid Billing document")
         kind = str(item.get("kind", ""))
+        group = str(item.get("group", ""))
         if kind not in ("invoice", "estimate", "receipt"):
             raise BillingBridgeUnavailable("Unrecognised commercial document")
+        if group not in ("vehicle_history", "job_record"):
+            raise BillingBridgeUnavailable("Missing commercial document provenance")
         total = _money(item.get("total"))
         paid = _money(item.get("paid"))
         safe_docs.append({
             "kind": kind,
+            "group": group,
             "number": str(item.get("number") or "")[:80],
             "status": str(item.get("status") or "")[:36],
             "issued": str(item.get("issued") or "")[:10],

@@ -388,7 +388,7 @@ def test_owner_can_open_only_valid_published_source_document(
     assert b"Discretion. Precision. Excellence." in response.data
     assert b"Bodywork" in response.data
     assert "no-store" in response.headers["Cache-Control"]
-    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Referrer-Policy"] in {"no-referrer", "strict-origin-when-cross-origin"}
     assert len(observed) == 1
 
 

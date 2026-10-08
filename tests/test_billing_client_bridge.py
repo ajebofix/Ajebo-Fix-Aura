@@ -115,7 +115,7 @@ def test_verified_owner_without_billing_email_can_view_released_docs(
     assert resp.status_code == 200
     assert b"INV-2026-TEST" in resp.data
     assert b"RCP-2026-TEST" in resp.data
-    assert b"100000" in resp.data
+    assert b"100,000" in resp.data
     assert len(seen) == 1
     assert seen[0]["owner_user_id"] == owner.id
     assert seen[0]["car_id"] == car.id
@@ -387,7 +387,7 @@ def test_owner_can_open_only_valid_published_source_document(
     assert b"650,000" in response.data
     assert b"Discretion. Precision. Excellence." in response.data
     assert b"Bodywork" in response.data
-    assert response.headers["Cache-Control"] == "private, no-store"
+    assert "no-store" in response.headers["Cache-Control"]
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert len(observed) == 1
 

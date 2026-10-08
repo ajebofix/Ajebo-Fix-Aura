@@ -894,7 +894,7 @@ def build_rina_provider_context(
         # tightly minimized.
         limit = 8000 if index == last_assistant_index else 1500
         continuing = bool(
-            re.search(r"\\b(?:continue|finish|complete)\\b", rina_request.message, re.I)
+            re.search(r"\b(?:continue|finish|complete)\b", rina_request.message, re.I)
         )
         content = (
             _tail_clip(turn.content, limit=limit)

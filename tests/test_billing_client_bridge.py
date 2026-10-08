@@ -225,3 +225,14 @@ def test_unverified_account_cannot_read_billing(app, client, monkeypatch):
     db.session.commit()
     _sign_in(client, owner)
     assert client.get(f"/cars/{car.id}/billing").status_code == 403
+
+
+def test_client_vehicle_page_links_into_billing_portal(app, client):
+    owner = _user(suffix=409)
+    car = _car(suffix=409)
+    _own(owner=owner, car=car, suffix=409)
+    db.session.commit()
+    _sign_in(client, owner)
+    response = client.get(f"/cars/{car.id}")
+    assert response.status_code == 200
+    assert f'/cars/{car.id}/billing'.encode() in response.data

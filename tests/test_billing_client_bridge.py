@@ -214,3 +214,14 @@ def test_provider_outage_is_generic_and_non_disclosing(app, client, monkeypatch)
     assert response.status_code == 200
     assert b"temporarily unavailable" in response.data
     assert b"private upstream incident" not in response.data
+
+
+def test_unverified_account_cannot_read_billing(app, client, monkeypatch):
+    _enable(monkeypatch)
+    owner = _user(suffix=408)
+    owner.email_verified_at = None
+    car = _car(suffix=408)
+    _own(owner=owner, car=car, suffix=408)
+    db.session.commit()
+    _sign_in(client, owner)
+    assert client.get(f"/cars/{car.id}/billing").status_code == 403

@@ -167,3 +167,30 @@ def test_source_change_invalidates_existing_client_publication(app):
     db.session.get(AdvisorNote, note_id).note += "Changed private source"
     db.session.commit()
     assert client_published_progress(car_id=car.id) == []
+
+
+def test_ownership_transfer_does_not_leak_previous_owners_progress(
+    app, client
+):
+    owner, advisor, stranger, driver, car = _setup(661)
+    note_id = _private_note(advisor, car)
+    publish_client_progress(
+        car_id=car.id,
+        note_id=note_id,
+        actor_user_id=advisor.id,
+        client_summary="Earlier owner's approved progress summary.",
+    )
+    _login_as(client, owner)
+    assert b"Earlier owner" in client.get(
+        f"/cars/{car.id}/repair-progress"
+    ).data
+    ownership = owner.car_ownerships[0]
+    ownership.is_active = False
+    _own(owner=stranger, car=car, suffix=667)
+    db.session.commit()
+    assert client.get(f"/cars/{car.id}/repair-progress").status_code == 404
+    _login_as(client, stranger)
+    response = client.get(f"/cars/{car.id}/repair-progress")
+    assert response.status_code == 200
+    assert b"Earlier owner" not in response.data
+    assert b"No repair-progress statements have been published" in response.data

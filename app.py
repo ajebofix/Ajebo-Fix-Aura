@@ -354,6 +354,50 @@ def create_app():
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.get("/internal/health/billing-bridge")
+    def billing_bridge_smoke_check():
+        # One-time, read-only operational handshake. There is no customer
+        # input, no user lookup, and no pathway to any published document.
+        # Disabled by default and again immediately after production test.
+        from flask import abort, jsonify
+        import requests
+
+        if os.getenv("AURA_BILLING_SMOKE_TEST_ENABLED", "").lower() != "true":
+            abort(404)
+        from services.billing_bridge_signing import sign_billing_request
+        endpoint = os.getenv("AURA_BILLING_BRIDGE_URL", "")
+        if endpoint != (
+            "https://odtctmjhkcphyaozpcup.supabase.co/"
+            "functions/v1/aura-billing-bridge"
+        ):
+            return jsonify({"handshake": "unavailable"}), 503
+        payload, headers = sign_billing_request({
+            "car_id": 2147483647,
+            "owner_user_id": 2147483647,
+            "vin": "00000000000000000",
+        })
+        try:
+            response = requests.post(
+                endpoint,
+                data=payload,
+                headers={**headers, "Content-Type": "application/json"},
+                timeout=(3.05, 15),
+                allow_redirects=False,
+            )
+            response.raise_for_status()
+            answer = response.json()
+            if (
+                answer.get("state") == "not_published"
+                and answer.get("documents") == []
+                and answer.get("payments") == []
+            ):
+                out = jsonify({"handshake": "authenticated", "publication": "none"})
+                out.headers["Cache-Control"] = "no-store"
+                return out, 200
+        except (requests.RequestException, ValueError):
+            pass
+        return jsonify({"handshake": "unavailable"}), 503
+
     @app.get("/version")
     def version():
         return {

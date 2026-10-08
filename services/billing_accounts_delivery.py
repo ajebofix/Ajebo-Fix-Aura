@@ -109,7 +109,7 @@ def send_accounts_estimate_via_resend(
         raise BillingBridgeUnavailable("Resend key not configured")
     if upfront_percentage not in {50, 60, 70, 80, 90, 100}:
         raise BillingBridgeUnavailable("Invalid approved mobilisation percentage")
-    if document.get("kind") != "estimate" or document.get("status") != "issued":
+    if document.get("kind") != "estimate" or document.get("status") not in {"issued", "sent"}:
         raise BillingBridgeUnavailable("Only native issued estimates may be emailed")
     if document.get("group") != "job_record":
         raise BillingBridgeUnavailable("Estimate has no commercial job reference")

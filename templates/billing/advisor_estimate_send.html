@@ -27,7 +27,7 @@
   <p>Client-facing link: <code>https://aura.ajebofix.com/cars/{{ car.id }}/billing/documents/{{ document.id }}</code></p>
   {% if sent_before %}
     <p class="banner banner-good">A Resend submission is already recorded for this estimate. Duplicate sending is blocked.</p>
-  {% elif document.status != 'issued' %}
+  {% elif document.status not in ['issued', 'sent'] %}
     <p class="banner banner-warn">This estimate is not issued in Billing. Open the original Billing application and issue it before emailing.</p>
   {% else %}
     <form method="POST">

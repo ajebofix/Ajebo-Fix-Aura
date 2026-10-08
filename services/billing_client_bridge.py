@@ -51,6 +51,15 @@ def _money(value: object) -> Decimal:
         raise BillingBridgeUnavailable("Invalid billing amount") from exc
 
 
+def client_billing_feature_enabled() -> bool:
+    """Display navigation only after explicit, credentialled activation."""
+    return (
+        os.getenv("AURA_BILLING_CLIENT_VIEW_ENABLED", "").lower() == "true"
+        and bool(os.getenv("AURA_BILLING_SUPABASE_URL", "").strip())
+        and bool(os.getenv("AURA_BILLING_SUPABASE_SERVICE_ROLE_KEY", "").strip())
+    )
+
+
 def _client_ready() -> bool:
     return os.getenv("AURA_BILLING_CLIENT_VIEW_ENABLED", "").lower() == "true"
 

@@ -7,7 +7,6 @@ from services.client_repair_progress import (
     ClientProgressPublicationError,
     client_published_progress,
     publish_client_progress,
-    revoke_client_progress,
 )
 from services.repair_progress import record_repair_progress
 from test_rina_chat_cutover import _car, _own, _sign_in, _user, _csrf_token

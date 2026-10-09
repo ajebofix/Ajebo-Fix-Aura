@@ -1,9 +1,9 @@
-"""Pure advisory capacity checks for flexible, commission-based service crews.
+"""Advisory capacity checks for flexible Gulf pilot workforce and workspaces.
 
-A successful result means an operator MAY allocate a temporary time hold, not
-that a customer appointment is confirmed or a technician has been booked.
-These checks must be repeated under transactional locks when a real booking
-is created. No staffing or attendance is inferred from historical presence.
+Two distinct limits: daily completed/allocated jobs and oil changes happening
+at once. No presence, qualification, bay, or technician approval is inferred.
+This is NOT a reservation transaction; production callers must recheck every
+fact under an atomic lock and account for all non-Gulf workshop commitments.
 """
 
 from dataclasses import dataclass
@@ -11,6 +11,11 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 LAGOS = ZoneInfo("Africa/Lagos")
+
+# Current Ajebo Fix capability as described on 2026-10-09. Reassess these
+# ceilings explicitly if workshop operating arrangements change.
+ATTESTED_DAILY_CEILING = 7
+ATTESTED_CONCURRENT_CEILING = 4
 
 
 @dataclass(frozen=True)
@@ -39,10 +44,14 @@ class TechnicianAvailability:
     qualified_for: frozenset[str]
     accepted_windows: tuple[TimeWindow, ...] = ()
     other_commitments: tuple[TimeWindow, ...] = ()
+    # Interns may assist qualified technicians but are not themselves a
+    # primary technician reservation or technical-authorisation authority.
+    is_intern: bool = False
 
     def free_and_accepted(self, window: TimeWindow, service_skill: str) -> bool:
         return (
-            service_skill in self.qualified_for
+            not self.is_intern
+            and service_skill in self.qualified_for
             and any(w.contains(window) for w in self.accepted_windows)
             and not any(w.overlaps(window) for w in self.other_commitments)
         )
@@ -64,23 +73,42 @@ class BayAvailability:
 @dataclass(frozen=True)
 class DayPolicy:
     service_day: date
+    # Sum of today's completed Gulf jobs, confirmed allocations and unexpired
+    # holds; each job is counted once (never count a state transition twice).
     counted_gulf_jobs: int = 0
-    baseline_day_cap: int = 4
+    # Conservative defaults. Higher capability is not prebooked by default.
+    baseline_day_cap: int = 6
+    baseline_concurrent_cap: int = 2
     authorised_day_cap: int | None = None
+    authorised_concurrent_cap: int | None = None
     saturday_staff_check_done: bool = False
     sunday_open_approved: bool = False
 
     def __post_init__(self) -> None:
-        if self.counted_gulf_jobs < 0 or self.baseline_day_cap < 0:
-            raise ValueError("Active allocations and capacity limits cannot be negative")
-        if self.authorised_day_cap is not None and self.authorised_day_cap < 0:
-            raise ValueError("Authorised day cap cannot be negative")
+        if not 0 <= self.counted_gulf_jobs:
+            raise ValueError("Counted jobs cannot be negative")
+        for limit, ceiling, label in (
+            (self.baseline_day_cap, ATTESTED_DAILY_CEILING, "Daily baseline"),
+            (self.baseline_concurrent_cap, ATTESTED_CONCURRENT_CEILING, "Concurrent baseline"),
+            (self.authorised_day_cap, ATTESTED_DAILY_CEILING, "Daily override"),
+            (self.authorised_concurrent_cap, ATTESTED_CONCURRENT_CEILING, "Concurrent override"),
+        ):
+            if limit is not None and not 0 <= limit <= ceiling:
+                raise ValueError(f"{label} must be within attested ceiling")
 
     @property
     def max_bookings(self) -> int:
-        # authorised_day_cap is set only by Ajebo Fix's staff-facing approval path.
-        # It is not a customer preference or a self-reported technician claim.
+        # Overrides require an audited authorised action outside this pure
+        # evaluator. It does not accept client-reported availability as proof.
         return self.baseline_day_cap if self.authorised_day_cap is None else self.authorised_day_cap
+
+    @property
+    def max_concurrent_oil_jobs(self) -> int:
+        return (
+            self.baseline_concurrent_cap
+            if self.authorised_concurrent_cap is None
+            else self.authorised_concurrent_cap
+        )
 
 
 @dataclass(frozen=True)
@@ -101,14 +129,21 @@ def assess_slot(
     required_skill: str,
     technicians: tuple[TechnicianAvailability, ...],
     bays: tuple[BayAvailability, ...],
+    overlapping_oil_jobs: int = 0,
 ) -> SlotCandidates:
-    """Compute eligible resources, never confirm an appointment by itself.
+    """Evaluate one potential Gulf oil-change hold, not a confirmed booking.
 
-    A technician's accepted window is an explicit, current human response,
-    not a routine assumption that someone will be around the workshop.
-    Other Ajebo Fix work and home-service commitments must be included in
-    the busy intervals supplied by the booking layer.
+    overlapping_oil_jobs MUST include all oil-change jobs with intersecting
+    windows: Gulf confirmed, in progress and unexpired holds, plus Ajebo Fix
+    oil changes that consume the same resources. Non-oil workshop commitments
+    must still appear in technician/bay other_commitments.
+
+    Never infer a staff commitment from habitual presence at the workshop.
+    Runtime must perform this check again inside the reservation transaction.
     """
+    if overlapping_oil_jobs < 0:
+        raise ValueError("Overlapping oil jobs cannot be negative")
+
     start_day = window.start.astimezone(LAGOS).date()
     end_day = window.end.astimezone(LAGOS).date()
     blockers: list[str] = []
@@ -117,13 +152,17 @@ def assess_slot(
         blockers.append("invalid_service_day")
     if policy.counted_gulf_jobs >= policy.max_bookings:
         blockers.append("daily_cap_reached")
+    if overlapping_oil_jobs >= policy.max_concurrent_oil_jobs:
+        blockers.append("concurrent_oil_capacity_reached")
     if policy.service_day.weekday() == 5 and not policy.saturday_staff_check_done:
         blockers.append("saturday_staff_check_required")
     if policy.service_day.weekday() == 6 and not policy.sunday_open_approved:
         blockers.append("sunday_opening_not_approved")
 
-    available_techs = tuple(sorted(t.technician_id for t in technicians if t.free_and_accepted(window, required_skill)))
-    available_bays = tuple(sorted(b.bay_id for b in bays if b.free_for(window)))
+    available_techs = tuple(sorted(
+        {t.technician_id for t in technicians if t.free_and_accepted(window, required_skill)}
+    ))
+    available_bays = tuple(sorted({b.bay_id for b in bays if b.free_for(window)}))
     if not available_techs:
         blockers.append("no_accepted_qualified_technician")
     if not available_bays:

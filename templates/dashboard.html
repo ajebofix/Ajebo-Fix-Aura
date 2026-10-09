@@ -111,7 +111,8 @@ Your vehicle is under professional care.
 
             <button
                 class="btn btn-primary btn-block"
-                onclick="selectVehicle({{ v.vehicle_id }})"
+                type="button"
+                onclick="selectVehicle({{ v.vehicle_id }}, this)"
             >
                 Use This Vehicle
             </button>
@@ -313,19 +314,34 @@ Your vehicle is under professional care.
 
 
 <script>
-function selectVehicle(vehicleId) {
-
-    fetch("/dashboard/select-vehicle", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            vehicle_id: vehicleId
-        }),
-    }).then(() =>
-        window.location.reload()
-    );
+async function selectVehicle(vehicleId, button) {
+    if (!button || button.disabled) return;
+    const initialText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Selecting vehicle…";
+    let error = button.parentElement.querySelector(".vehicle-action-error");
+    if (error) error.remove();
+    try {
+        const response = await fetch("{{ url_for('dashboard.select_vehicle') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ vehicle_id: vehicleId })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.status !== "ok") {
+            throw new Error(result.message || "Could not select the vehicle.");
+        }
+        window.location.reload();
+    } catch (issue) {
+        button.disabled = false;
+        button.textContent = initialText;
+        error = document.createElement("p");
+        error.className = "flash error vehicle-action-error";
+        error.setAttribute("role", "alert");
+        error.textContent = issue.message || "Vehicle selection unavailable. Retry.";
+        button.insertAdjacentElement("afterend", error);
+    }
 }
 </script>
 

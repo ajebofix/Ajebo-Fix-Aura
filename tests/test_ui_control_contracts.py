@@ -54,6 +54,17 @@ def test_mobile_layout_rules_are_scoped_to_narrow_screens():
     assert "overflow: hidden" in mobile[start:]
 
 
+def test_shared_approval_review_and_password_layout_styles_loaded():
+    entrypoint = (CSS / "style.css").read_text(encoding="utf-8")
+    utilities = (CSS / "ui-utilities.css").read_text(encoding="utf-8")
+    assert '@import url("ui-utilities.css")' in entrypoint
+    for name in (
+        ".detail-grid", ".banner-warn", ".banner-good",
+        ".password-wrap", ".password-toggle", ".checkbox-row",
+    ):
+        assert name in utilities
+
+
 def test_choice_controls_not_styled_as_text_fields():
     forms = (CSS / "forms.css").read_text(encoding="utf-8")
     assert 'input:not([type="checkbox"])' in forms

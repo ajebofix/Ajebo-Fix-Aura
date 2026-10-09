@@ -8,7 +8,7 @@
 - Inspected shared CSS imports: theme, layout, mobile, form, button, sidebar, component and animation styles.
 - Reviewed source action markup, forms, inline click handlers, static `url_for` references, and administrator/customer separation.
 - Added regression checks that **compile all Jinja page templates and verify that every literal `url_for` target exists in the Flask route registry**. This is a structural link check, not a claim that every click was exercised in the browser.
-- A public (unauthenticated) login mobile-browser audit was started separately. It does not grant access to private client or admin pages.
+- Completed a live unauthenticated mobile login browser check (25 steps). The navigation opens and closes; password field visibility changes, but the Show/Hide label did not update. The menu covering the underlying form while open is expected for a drawer, not by itself a defect. This check does not grant access to private client or admin pages.
 - Existing Billing invariants are preserved: financial records originate in Billing; publication and email are separately approved; users retain the original manual editor; never record payments by clicking a front-end action.
 
 ## Reproducible defects addressed
@@ -27,6 +27,7 @@
 | UI-010 | Low | Sidebar branding | Invalid CSS values `12x` and `2-px` silently discarded shadow styles. | Correct CSS units. | Source inspection |
 | UI-011 | Medium | Admin concern status | Two admin concern actions were native unstyled buttons with no `.btn` classes or explicit type. | Apply visible primary/secondary styles and explicit submit type. | Source; administrator browser follow-up |
 | UI-012 | Preventive | Cross-app links | No unified check of hardcoded Jinja route names across all page templates. | New `test_ui_control_contracts.py` and `ui-ux-contract-ci.yml` for all Jinja compile/link checks and shared styling invariants. | Automated CI |
+| UI-013 | High | Finalized vehicle health PDF | The health screen linked to `car_assessments.client_download_assessment_pdf`, but that blueprint endpoint is not registered in production. The Download Report button would fail with a Flask URL build error. | Point to the registered, owner-safe `assessment_reports.assessment_report_pdf` endpoint. | Template route test caught this, recheck CI after fix. |
 
 ## Still open / needs authenticated or device testing
 

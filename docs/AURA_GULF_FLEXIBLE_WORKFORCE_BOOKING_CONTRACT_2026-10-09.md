@@ -6,7 +6,7 @@
 **Owner of service decisions:** Ajebo Fix operations / authorised advisor
 
 ## Current operating reality — confirmed by Ajebo Fix
-- Ajebo Fix estimates **four or more** Gulf oil changes per day are operationally possible.
+- Updated capacity statement (9 Oct): Ajebo Fix can complete **6–7 oil changes across a day**, including during reduced staffing, provided actual workshop resources and sequential job windows support the workload. With most qualified technicians present (including suitably supervised interns), it can work on **up to 4 oil changes simultaneously**. With reduced staffing it can work on **2 or 3 simultaneously**. These are observed capabilities, not guaranteed bookable slots.
 - Technicians are **not salaried or guaranteed onsite employees**; they work flexibly on commission.
 - Technicians may already be serving other workshop jobs or carrying out home/mobile services.
 - There are usually technicians at the workshop, but that general observation is **not a time-slot acceptance**.
@@ -15,25 +15,25 @@
 - Gulf partner terms, final labour rates, filter supplier, signed contract and operational service windows remain pending.
 
 ## Booking principle
-**Four per day is a baseline planning cap, never four guaranteed reservations.** An operator can set a day-specific lower limit. More than four Gulf bookings requires an explicit, recorded authorised day-cap increase supported by real technicians and bays. Customer demand must NEVER raise the cap automatically.
+**Two independent limits must be enforced:** number of Gulf jobs across the working day, and number of overlapping oil changes in the same service window (including oil changes not sponsored by Gulf). Default pilot planning cap: **6 Gulf jobs/day with 2 oil changes at once**. An authorised operator may configure up to **7 per day**, and raise simultaneous capacity to **3** with verified reduced-crew resources or **4** with verified full-team resources. Operator may also lower either limit. Do not infer staffing, available work positions, or demand-driven capacity from the upper bound. These numbers must not be advertised as guaranteed availability.
 
 Daily quota counts **completed Gulf services, confirmed Gulf appointments and unexpired temporary Gulf holds** for that calendar day; cancelled/released or expired holds no longer count. A service request may always enter a waitlist. Only a specific appointment window supported by a qualified technician, a usable workshop bay, an agreed service duration and no overlapping obligations can become a tentative hold. **Final customer confirmation additionally requires the voucher, human technical eligibility, correctly supplied oil/filter received and accepted, customer acknowledgment and persisted slot assignment.**
 
 The pure scheduling evaluator `partnerships/capacity.py` is advisory. Database-level revalidation and atomic booking locks will be essential when implementation reaches the reservation layer. A successful capacity evaluation alone never confirms a customer booking.
 
 ## Days and appointment strategy
-- **Monday–Friday:** baseline maximum **4 Gulf completions per day** initially; operator can reduce or explicitly approve more when real resources support it. No automatic assumption of four technicians or bays.
+- **Monday–Friday:** planning maximum **6 Gulf completed/allocated jobs per day**, extendable to **7 by an audited authorised decision** supported by actual availability; concurrent oil-change cap **2 by default**, **3 or 4 only after separately verifying capable assigned technicians, supervision arrangements and work positions**. Actual future availability may be lower than both caps.
 - **Saturday:** **manual staffing confirmation required** before any hold. If no qualified technician explicitly accepts and an available bay is confirmed, the day offers zero slots. This rule does not mean all Saturdays are closed.
 - **Sunday:** no automated availability; requires an explicit decision to operate plus the same qualified technician and bay evidence.
 - **Hours and slot length:** not yet agreed. Do not invent fixed clock-time slots or 30/45-minute service durations. Record an estimated duration by service class after initial real pilot measurements; leave buffer for delays. Make windows configurable.
 - **Existing private-client jobs take priority.** Other Ajebo Fix jobs and mobile visits must block overlapping technician/bay windows in the planner.
-- **Per-day cap and concurrent cap are different:** a single qualified technician may service several vehicles sequentially, but may not work on two cars simultaneously.
+- **Per-day throughput and parallel capacity are separate:** even with 2 concurrent working positions, 6–7 across the day may be possible using sequential sessions. Daily counts include completed Gulf services, confirmed Gulf bookings and unexpired Gulf holds; concurrency counts overlapping Gulf and non-Gulf oil-change reservations and in-progress jobs. Only one worker may be assigned as the primary qualified technician per job; interns are supplemental support, not unsupervised lead technicians.
 - Waitlist requests are permitted; do not confirm a waitlist as a booked job or request customers travel before explicit readiness.
 
 ## Technician model (lightweight roster, not payroll)
 Create restricted `PartnerTechnician` (or references to an existing approved Ajebo OS workforce entity if available) with:
 - staff/contractor identity and contact; **contractor**, not full-time employee by default;
-- eligible service classes verified by Ajebo Fix (standard / specialist); ability to refuse unfamiliar makes/models;
+- eligible service classes verified by Ajebo Fix (standard / specialist); ability to refuse unfamiliar makes/models; interns may assist only in approved tasks with a named qualified supervising technician and cannot independently approve oil/filters or sign off the service;
 - active/inactive status; no promise of daily attendance;
 - operator-entered availability **for dated time windows only**, with who contacted worker, time and response provenance (e.g. recorded WhatsApp/phone confirmation);
 - other job/mobile service busy windows that cannot overlap Gulf assignments;
@@ -55,7 +55,7 @@ Technicians do not require Aura accounts in the first pilot. Ajebo Fix's authori
 10. **Commercial closure:** track Ebice labour claim **separately** from technician commission owed/paid. Do not assume commission must await Ebice settlement or vice versa.
 
 ## What the operator sees
-**Today's capacity:** planned limit 4 (modifiable), tentatively held, confirmed, in service, finished, slots requiring staffing confirmation. This is an illustration, not live data.
+**Today's capacity:** daily Gulf quota 6 (operator may authorise 7), oil-change parallel limit 2 (operator may authorise 3/4), counted Gulf completions/confirmed/holds, currently simultaneous Gulf and other oil changes, and candidate qualified technicians/work positions. Show these *separately* so total capacity is not mistaken for free booking slots. This is illustrative only, not a live count.
 
 **Queues:** New enquiries; Need technician response; Waiting for Ebice; Ready for confirmation; Today's arrivals; Unfilled/cancelled/reassignment; Service evidence review; Partner claims; Contractor commissions.
 
@@ -76,11 +76,16 @@ Technicians do not require Aura accounts in the first pilot. Ajebo Fix's authori
 `PartnerSettlementLine` represents what Ebice owes Ajebo Fix. A separate restricted `PartnerTechnicianCommission` represents what Ajebo Fix owes the specific worker. Their rates, accrual triggers and payment timing are independent, subject to written/recorded internal terms. Record job-level contribution as: settled/contracted labour revenue less directly attributable commission and other variable fulfilment costs; do not treat *revenue* as company profit or expose internal margin to the partner.
 
 ## Staging acceptance scenarios
-- Planning cap 4 but no technician accepts → **no bookable slot**.
+- Planning cap 6 with parallel cap 2, but no technician accepts → **no bookable slot**.
 - Technician accepts but is committed to another workshop or mobile job → **conflict**.
 - Standard technician offered specialist car → **not eligible**.
-- Four confirmed Gulf jobs, fifth requested → **daily cap** unless specifically approved.
-- Owner authorises five or more for a day, and extra resources are real → allow an additional **tentative** allocation.
+- Six Gulf jobs counted (completed + confirmed + unexpired holds), seventh requested → **daily cap** unless authorised increase to seven.
+- Seven Gulf jobs counted, eighth requested → **daily cap** even if concurrent capacity is free.
+- Two overlapping oil changes, third requested in same window → **concurrent cap** even when daily bookings are below six.
+- Operator verifies three simultaneously serviceable positions/qualified technicians and approves three → third tentative allocation may proceed but fourth in same window fails.
+- With fully available team and four safe working positions explicitly approved, four simultaneous jobs may proceed, but fifth overlapping oil change is blocked.
+- Six or seven vehicles can be served sequentially under daily cap without requiring six or seven technicians present at once.
+- Intern without qualified supervisor cannot be assigned as lead technician or counted as an independent concurrent slot.
 - Saturday without recorded staffing check → **manual hold**.
 - Saturday with check but no accepted technician → **no slot**.
 - Sunday without explicit opening approval → **no slot**.
@@ -94,9 +99,9 @@ Technicians do not require Aura accounts in the first pilot. Ajebo Fix's authori
 ## Implementation sequencing
 A. Pure appointment-capacity evaluator and tests (no runtime registration).  
 B. Partner technician roster/acceptance record and day-cap config; audited, admin-only.  
-C. Database-backed time holds and conflict locks across all Ajebo Fix and Gulf work.  
+C. Database-backed time holds, non-Gulf oil-change concurrency count, and conflict locks across all Ajebo Fix and Gulf work.  
 D. Link final confirmation to voucher/spec/product receipt controls.  
 E. Day-of assignment, reassignment and separately recorded contractor commissions.  
-F. Pilot measurement: completed services/day, missed staff commitments, average actual service duration, delays attributable to Yaba supply, customer reschedules, technician earnings, net contribution and displacement of existing work.
+F. Pilot measurement: actual concurrent service volume, completed services/day, timeslots per technician, missed staff commitments, average actual service duration, delays attributable to Yaba supply, customer reschedules, technician earnings, net contribution and displacement of existing work.
 
 **No production activation, database migration, notifications, or live partner/customer access is authorised by this contract.**

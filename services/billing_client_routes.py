@@ -18,6 +18,7 @@ from services.client_repair_progress import client_published_progress
 from services.billing_accounts_delivery import (
     DELIVERY_PREFIX, already_delivered, publish_native_billing_estimate,
     send_accounts_estimate_via_resend, validate_estimate_delivery,
+    approve_native_estimate_issue,
 )
 import json
 
@@ -306,6 +307,82 @@ def advisor_client_finance_preview(car_id: int):
         advisor_preview=True,
     ))
     response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@client_billing_bp.route(
+    "/admin/cars/<int:car_id>/billing/estimate/<string:document_id>/issue",
+    methods=["GET", "POST"],
+)
+@login_required
+def advisor_review_issue_estimate(car_id: int, document_id: str):
+    """Separate adviser approval: Draft -> Issued, never publish or send."""
+    if current_user.role != "admin":
+        abort(403)
+    active = CarOwnership.query.filter_by(car_id=car_id, is_active=True).all()
+    if len(active) != 1 or active[0].user is None:
+        abort(404)
+    link = active[0]
+    if link.user.role != "user" or not link.user.is_active:
+        abort(404)
+    try:
+        detail = client_billing_document(
+            car_id=car_id, owner_user_id=link.user_id,
+            advisor_user_id=current_user.id, vin=link.car.vin,
+            document_id=document_id,
+        )
+    except BillingBridgeUnavailable:
+        return render_template("billing/document_unavailable.html", car=link.car), 503
+    if not detail or detail["document"]["kind"] != "estimate":
+        abort(404)
+    doc = detail["document"]
+    if doc["status"] != "draft" or doc["group"] != "job_record":
+        flash("This document is not an eligible native draft.", "error")
+        return redirect(url_for("client_billing.advisor_billing_workspace", car_id=car_id))
+    try:
+        total, upfront, balance = validate_estimate_delivery(
+            doc, 90, allow_draft=True,
+        )
+        validation_issue = None
+    except BillingBridgeUnavailable as exc:
+        validation_issue = str(exc)
+        total = Decimal(doc["total"])
+        upfront = (total * Decimal("0.90")).quantize(Decimal("0.01"))
+        balance = total - upfront
+
+    if request.method == "POST":
+        if validation_issue:
+            flash(validation_issue, "error")
+            return redirect(request.path)
+        if (request.form.get("confirmed") != "yes"
+            or request.form.get("expected_updated_at") != doc["updated_at"]
+            or request.form.get("expected_revision") != str(doc["revision"])
+            or request.form.get("expected_total") != doc["total"]):
+            flash("Review the current draft again before issuing it.", "error")
+            return redirect(request.path)
+        try:
+            approve_native_estimate_issue(
+                car_id=car_id, owner_user_id=link.user_id,
+                advisor_user_id=current_user.id, vin=link.car.vin,
+                document=doc,
+            )
+        except BillingBridgeUnavailable as exc:
+            flash(str(exc), "error")
+            return redirect(request.path)
+        flash(
+            "Estimate issued in Billing. No client publication, email, or payment "
+            "was performed. You can now review and send it separately.",
+            "success",
+        )
+        return redirect(url_for("client_billing.advisor_billing_workspace", car_id=car_id))
+
+    from flask import make_response
+    response = make_response(render_template(
+        "billing/advisor_estimate_issue.html", car=link.car,
+        owner=link.user, document=doc, total=total, upfront=upfront,
+        balance=balance, validation_issue=validation_issue,
+    ))
+    response.headers["Cache-Control"] = "private, no-store"
     return response
 
 

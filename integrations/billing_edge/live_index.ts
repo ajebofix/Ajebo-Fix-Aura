@@ -114,7 +114,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       payload.advisor_user_id < 1
     )) return respond(400, { error: "Invalid advisor request" });
     const grants = await fromBilling("aura_billing_publication_grants",
-      `select=billing_vehicle_id,billing_client_id&revoked_at=is.null&aura_car_id=eq.${carId}&aura_owner_user_id=eq.${ownerUserId}${(isAdvisorPreview || isAdvisorInventory) ? "" : "&published=eq.true"}&limit=2`);
+      `select=billing_vehicle_id,billing_client_id&revoked_at=is.null&aura_car_id=eq.${carId}&aura_owner_user_id=eq.${ownerUserId}${(isAdvisorPreview || isAdvisorInventory || isAdvisorIssue) ? "" : "&published=eq.true"}&limit=2`);
     if (grants.length !== 1) return respond(200, empty("not_published"));
     const { billing_vehicle_id: vehicleId, billing_client_id: clientId } = grants[0];
     if (!uuid(vehicleId) || !uuid(clientId)) throw new Error("Invalid link");
@@ -159,20 +159,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const targetId = payload?.document_id;
       const expectedRevision = payload?.expected_revision;
       const expectedTotal = String(payload?.expected_total ?? "");
+      const expectedUpdatedAt = String(payload?.expected_updated_at ?? "");
       if (!Number.isSafeInteger(advisorId) || advisorId < 1 || !uuid(targetId) ||
           !Number.isSafeInteger(expectedRevision) || expectedRevision < 1 ||
-          !/^[0-9]{1,12}(?:\\.[0-9]{1,2})?$/.test(expectedTotal)) {
+          !/^[0-9]{1,12}(?:\.[0-9]{1,2})?$/.test(expectedTotal) ||
+          !/^20[0-9]{2}-[0-9]{2}-[0-9]{2}T/.test(expectedUpdatedAt)) {
         return respond(400, { error: "Invalid issue confirmation" });
       }
       const candidates = await fromBilling("billing_documents",
-        `select=id,doc_type,doc_number,status,total,terms,revision_no,created_by,job_id,client_id,vehicle_id,superseded_at,share_revoked_at,valid_until&id=eq.${targetId}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=2`);
+        `select=id,doc_type,doc_number,status,total,terms,revision_no,created_by,job_id,client_id,vehicle_id,superseded_at,share_revoked_at,valid_until,updated_at&id=eq.${targetId}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=2`);
       if (candidates.length !== 1) return respond(404, {error:"Estimate not found"});
       const d = candidates[0];
       if (d.doc_type !== "estimate" || d.status !== "draft" ||
           !uuid(d.created_by) || !uuid(d.job_id) || d.superseded_at ||
           d.share_revoked_at || money(d.total) <= 0 ||
           Number(d.revision_no) !== expectedRevision ||
-          money(d.total) !== Number(expectedTotal) || !String(d.terms || "").trim()) {
+          money(d.total) !== Number(expectedTotal) ||
+          d.updated_at !== expectedUpdatedAt || !String(d.terms || "").trim()) {
         return respond(409, {error:"Native draft needs another review"});
       }
       const job = await fromBilling("billing_jobs",
@@ -193,48 +196,33 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const released = await fromBilling("aura_billing_published_documents",
         `select=document_id&document_id=eq.${targetId}&limit=1`);
       if (released.length) return respond(409, {error:"Draft publication conflict"});
-      // Optimistic status + amount + revision filter prevents stale review
-      // from issuing an estimate that was concurrently edited or superseded.
-      const issued = await fetch(
-        `${PROJECT_URL}/rest/v1/billing_documents?id=eq.${targetId}&status=eq.draft&total=eq.${encodeURIComponent(expectedTotal)}&revision_no=eq.${expectedRevision}&select=id,status`, {
-          method:"PATCH",
-          headers:{
-            apikey:SERVICE_KEY, authorization:`Bearer ${SERVICE_KEY}`,
-            "content-type":"application/json",
-            prefer:"return=representation",
-          },
-          body:JSON.stringify({status:"issued",updated_at:new Date().toISOString()}),
-          signal:AbortSignal.timeout(7000),
-        },
-      );
-      if (!issued.ok) throw new Error("Issue action unavailable");
-      const result = await issued.json();
-      if (!Array.isArray(result) || result.length !== 1 ||
-          result[0]?.id !== targetId || result[0]?.status !== "issued") {
-        return respond(409, {error:"Estimate changed during approval"});
-      }
-      // Existing billing_documents_activity trigger independently records
-      // the status transition; add the explicit Aura advisor provenance.
-      const log = await fetch(`${PROJECT_URL}/rest/v1/billing_activity_log`,{
+      // One service-only SQL transaction enforces the final status, amount,
+      // revision, document freshness, job version and full audit record.
+      const issued = await fetch(`${PROJECT_URL}/rest/v1/rpc/aura_issue_billing_estimate`, {
         method:"POST",
         headers:{
-          apikey:SERVICE_KEY,authorization:`Bearer ${SERVICE_KEY}`,
-          "content-type":"application/json",prefer:"return=minimal",
+          apikey:SERVICE_KEY,
+          authorization:`Bearer ${SERVICE_KEY}`,
+          "content-type":"application/json",
         },
         body:JSON.stringify({
-          entity_type:"document",entity_id:targetId,
-          action:"estimate_issued_by_aura_advisor",
-          metadata:{
-            aura_car_id:carId,aura_owner_user_id:ownerUserId,
-            aura_advisor_user_id:advisorId,
-            billing_job_id:String(d.job_id),
-            revision_no:expectedRevision,confirmed_total:money(d.total),
-            publication:false,email_sent:false,
-          },
+          p_document_id:targetId,
+          p_client_id:clientId,
+          p_vehicle_id:vehicleId,
+          p_job_id:String(d.job_id),
+          p_aura_car_id:carId,
+          p_aura_owner_user_id:ownerUserId,
+          p_aura_advisor_user_id:advisorId,
+          p_expected_revision:expectedRevision,
+          p_expected_total:Number(expectedTotal),
+          p_expected_updated_at:expectedUpdatedAt,
         }),
         signal:AbortSignal.timeout(7000),
       });
-      if (log.status !== 201) throw new Error("Issue audit unavailable");
+      if (!issued.ok) throw new Error("Issue transaction unavailable");
+      if (await issued.json() !== true) {
+        return respond(409,{error:"Estimate changed during approval"});
+      }
       return respond(200,{state:"issued",document_id:targetId});
     }
 
@@ -302,7 +290,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return respond(404, { error: "Document not available" });
       }
       const detail = await fromBilling("billing_documents",
-        `select=id,doc_type,doc_number,status,issue_date,due_date,valid_until,currency_symbol,total,amount_paid,vehicle_id,client_id,job_id,scope,sections,terms,revision_no,superseded_at,share_revoked_at&id=eq.${targetId}&vehicle_id=eq.${vehicleId}&client_id=eq.${clientId}&limit=2`);
+        `select=id,doc_type,doc_number,status,issue_date,due_date,valid_until,currency_symbol,total,amount_paid,vehicle_id,client_id,job_id,scope,sections,terms,revision_no,superseded_at,share_revoked_at,updated_at&id=eq.${targetId}&vehicle_id=eq.${vehicleId}&client_id=eq.${clientId}&limit=2`);
       if (detail.length !== 1) return respond(404, { error: "Document not available" });
       const d = detail[0];
       const kind = String(d.doc_type || "").toLowerCase();
@@ -364,7 +352,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         balance:String(Math.max(0,money(d.total)-money(d.amount_paid))),
         scope:String(d.scope||"").slice(0,1400),
         terms:String(d.terms||"").slice(0,2400),
-        revision:Number(d.revision_no||1), sections,
+        revision:Number(d.revision_no||1),
+        updated_at:action === "advisor_preview" ? String(d.updated_at||"").slice(0,60) : "",
+        sections,
       };
       return respond(200,{
         state:"linked", preview:isAdvisorPreview, document,

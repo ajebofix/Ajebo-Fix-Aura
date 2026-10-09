@@ -18,7 +18,8 @@ from services.client_repair_progress import client_published_progress
 from services.billing_accounts_delivery import (
     DELIVERY_PREFIX, already_delivered, publish_native_billing_estimate,
     send_accounts_estimate_via_resend, validate_estimate_delivery,
-    approve_native_estimate_issue,
+    approve_native_estimate_issue, publish_native_billing_document,
+    send_accounts_document_via_resend,
 )
 import json
 
@@ -114,7 +115,7 @@ def advisor_billing_workspace(car_id: int):
     documents = inventory["documents"]
     for item in documents:
         item["submitted_to_resend"] = (
-            item["kind"] == "estimate"
+            item["kind"] in {"estimate", "invoice", "receipt"}
             and already_delivered(
                 car_id=car_id, owner_user_id=ownership.user_id,
                 document_id=item["id"],
@@ -308,6 +309,147 @@ def advisor_client_finance_preview(car_id: int):
     ))
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@client_billing_bp.route(
+    "/admin/cars/<int:car_id>/billing/documents/<string:document_id>/delivery",
+    methods=["GET", "POST"],
+)
+@login_required
+def advisor_invoice_receipt_delivery(car_id: int, document_id: str):
+    """Review, publish and separately email a verified invoice or receipt.
+
+    Billing is authoritative. Publishing is owner-visible but does not send.
+    Sending is a second advisor action with duplicate submission prevention.
+    """
+    if current_user.role != "admin":
+        abort(403)
+    ownerships = CarOwnership.query.filter_by(car_id=car_id, is_active=True).all()
+    if len(ownerships) != 1 or ownerships[0].user is None:
+        abort(404)
+    link = ownerships[0]
+    owner = link.user
+    if (owner.role != "user" or not owner.is_active
+        or not getattr(owner, "email_verified_at", None) or not owner.email):
+        abort(409)
+    try:
+        inventory = advisor_billing_inventory(
+            car_id=car_id, owner_user_id=owner.id,
+            advisor_user_id=current_user.id, vin=link.car.vin,
+        )
+        matching = [item for item in inventory.get("documents", [])
+                    if item["id"] == document_id]
+        if len(matching) != 1:
+            abort(404)
+        entry = matching[0]
+        if (entry["kind"] not in {"invoice", "receipt"}
+            or not entry["native_created"] or not entry["job_linked"]):
+            abort(404)
+        detail = client_billing_document(
+            car_id=car_id, owner_user_id=owner.id,
+            advisor_user_id=current_user.id, vin=link.car.vin,
+            document_id=document_id,
+        )
+    except BillingBridgeUnavailable:
+        current_app.logger.warning("Billing delivery review unavailable car=%s", car_id)
+        return render_template("billing/document_unavailable.html", car=link.car), 503
+    if not detail or detail["document"]["kind"] != entry["kind"]:
+        abort(404)
+    doc = detail["document"]
+    eligible = {
+        "invoice": {"issued", "sent", "overdue", "partially_paid", "paid"},
+        "receipt": {"issued"},
+    }
+    if doc["status"] not in eligible[doc["kind"]]:
+        flash("This Billing document is not ready for publication.", "error")
+        return redirect(url_for("client_billing.advisor_billing_workspace",car_id=car_id))
+    was_sent = already_delivered(
+        car_id=car_id,owner_user_id=owner.id,document_id=doc["id"],
+    )
+
+    if request.method == "POST":
+        requested = request.form.get("action")
+        if (requested not in {"publish", "send"} or
+            request.form.get("confirmed") != "yes" or
+            request.form.get("expected_updated_at") != doc["updated_at"] or
+            request.form.get("expected_total") != doc["total"] or
+            request.form.get("expected_paid") != doc["paid"] or
+            request.form.get("expected_status") != doc["status"]):
+            flash("Document details changed. Review the current Billing record again.", "error")
+            return redirect(request.path)
+        if requested == "publish":
+            if entry["published"]:
+                flash("Document is already published. Use the separate send approval.", "error")
+                return redirect(request.path)
+            try:
+                publish_native_billing_document(
+                    car_id=car_id, owner_user_id=owner.id,
+                    advisor_user_id=current_user.id,
+                    vin=link.car.vin, document_id=doc["id"],
+                )
+                published = client_billing_document(
+                    car_id=car_id, owner_user_id=owner.id,
+                    vin=link.car.vin, document_id=doc["id"],
+                )
+                if not published or published["document"]["id"] != doc["id"]:
+                    raise BillingBridgeUnavailable("Owner publication not confirmed")
+                flash(
+                    f"{doc['kind'].title()} published in Aura. No email sent.",
+                    "success",
+                )
+            except BillingBridgeUnavailable as exc:
+                flash(str(exc), "error")
+            return redirect(request.path)
+
+        if not entry["published"] or was_sent:
+            flash("Publish this document first, or review its previous email.", "error")
+            return redirect(request.path)
+        try:
+            # Re-read strictly as the current owner, without advisor privileges.
+            published = client_billing_document(
+                car_id=car_id, owner_user_id=owner.id,
+                vin=link.car.vin, document_id=doc["id"],
+            )
+            if not published or published["document"]["id"] != doc["id"]:
+                raise BillingBridgeUnavailable("Owner document not available")
+            owner_doc = published["document"]
+            if (owner_doc["total"] != doc["total"]
+                or owner_doc["paid"] != doc["paid"]
+                or owner_doc["status"] != doc["status"]):
+                raise BillingBridgeUnavailable("Amounts changed. Review again before sending")
+            provider_id = send_accounts_document_via_resend(
+                to=owner.email, customer=owner_doc["billed_to"],
+                vehicle=link.car.rina_display_name,
+                document=owner_doc, car_id=car_id,
+            )
+            db.session.add(AdvisorNote(
+                user_id=owner.id,car_id=car_id,advisor_id=current_user.id,
+                note=DELIVERY_PREFIX+json.dumps({
+                    "event":"submitted",
+                    "document_id":doc["id"],"document_number":doc["number"],
+                    "document_kind":doc["kind"],"provider_message_id":provider_id,
+                    "actor_user_id":current_user.id,
+                    "paid":doc["paid"],"balance":doc["balance"],
+                },separators=(",",":")),
+            ))
+            db.session.commit()
+            flash(
+                f"Resend accepted the {doc['kind']} email (ID {provider_id}). "
+                "Delivery confirmation may follow.",
+                "success",
+            )
+        except BillingBridgeUnavailable as exc:
+            db.session.rollback()
+            flash(str(exc),"error")
+        return redirect(request.path)
+    from flask import make_response
+    result = make_response(render_template(
+        "billing/advisor_invoice_receipt_delivery.html",
+        car=link.car,owner=owner,document=doc,
+        published=entry["published"],sent_before=was_sent,
+    ))
+    result.headers["Cache-Control"] = "private, no-store"
+    return result
 
 
 @client_billing_bp.route(

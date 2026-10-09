@@ -56,7 +56,7 @@
         {% elif document.kind == 'estimate' and document.status == 'draft' and document.native_created and document.job_linked and not document.published %}
           <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_review_issue_estimate',car_id=car.id,document_id=document.id) }}">Review &amp; Issue Draft</a>
         {% elif document.kind == 'estimate' and document.status == 'draft' %}
-          <span class="muted">This draft is not eligible for Aura issuance. Review it in the original Billing application.</span>
+          <span class="muted">Complete and issue this draft in the original Billing application before sending. It is not eligible for Aura issuance.</span>
         {% endif %}
       </div>
     </div>

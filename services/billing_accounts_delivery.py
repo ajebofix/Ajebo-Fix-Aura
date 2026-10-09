@@ -98,7 +98,7 @@ def already_delivered(*, car_id: int, owner_user_id: int, document_id: str) -> b
 
 
 def validate_estimate_delivery(
-    document: dict, upfront_percentage: int,
+    document: dict, upfront_percentage: int, *, allow_draft: bool = False,
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Validate live Billing figures and the approved source terms before publication.
 
@@ -109,9 +109,8 @@ def validate_estimate_delivery(
         50, 60, 70, 80, 90, 100,
     }:
         raise BillingBridgeUnavailable("Invalid approved mobilisation percentage")
-    if document.get("kind") != "estimate" or document.get("status") not in {
-        "issued", "sent",
-    }:
+    eligible = {"issued", "sent"} | ({"draft"} if allow_draft else set())
+    if document.get("kind") != "estimate" or document.get("status") not in eligible:
         raise BillingBridgeUnavailable("Issue the revised estimate in Billing first")
     if document.get("group") != "job_record":
         raise BillingBridgeUnavailable("Estimate has no commercial job reference")

@@ -1,6 +1,6 @@
 """Advisory capacity checks for flexible Gulf pilot workforce and workspaces.
 
-Two distinct limits: daily completed/allocated jobs and oil changes happening
+Two distinct WORKSHOP limits: all daily completed/allocated oil-change jobs and oil changes happening
 at once. No presence, qualification, bay, or technician approval is inferred.
 This is NOT a reservation transaction; production callers must recheck every
 fact under an atomic lock and account for all non-Gulf workshop commitments.
@@ -130,8 +130,13 @@ def assess_slot(
     technicians: tuple[TechnicianAvailability, ...],
     bays: tuple[BayAvailability, ...],
     overlapping_oil_jobs: int = 0,
+    non_gulf_oil_jobs_today: int = 0,
 ) -> SlotCandidates:
     """Evaluate one potential Gulf oil-change hold, not a confirmed booking.
+
+    non_gulf_oil_jobs_today represents completed services, confirmed bookings
+    and unexpired holds for normal Ajebo Fix oil changes; these consume the
+    same total daily workshop oil-change capacity as Gulf jobs.
 
     overlapping_oil_jobs MUST include all oil-change jobs with intersecting
     windows: Gulf confirmed, in progress and unexpired holds, plus Ajebo Fix
@@ -143,6 +148,8 @@ def assess_slot(
     """
     if overlapping_oil_jobs < 0:
         raise ValueError("Overlapping oil jobs cannot be negative")
+    if non_gulf_oil_jobs_today < 0:
+        raise ValueError("Non-Gulf daily jobs cannot be negative")
 
     start_day = window.start.astimezone(LAGOS).date()
     end_day = window.end.astimezone(LAGOS).date()
@@ -150,7 +157,7 @@ def assess_slot(
 
     if start_day != end_day or start_day != policy.service_day:
         blockers.append("invalid_service_day")
-    if policy.counted_gulf_jobs >= policy.max_bookings:
+    if policy.counted_gulf_jobs + non_gulf_oil_jobs_today >= policy.max_bookings:
         blockers.append("daily_cap_reached")
     if overlapping_oil_jobs >= policy.max_concurrent_oil_jobs:
         blockers.append("concurrent_oil_capacity_reached")

@@ -6,8 +6,22 @@
 <style>
 .af-billing-document{background:#fff;color:#0a1628;border:1px solid #e5e8ef;border-radius:14px;overflow:hidden}
 .af-billing-head{background:#0a1628;color:#fff;padding:26px 22px}
-.af-billing-heading{display:flex;align-items:center;gap:18px;justify-content:space-between;flex-wrap:wrap}
-.af-billing-logo{width:56px;max-height:56px;object-fit:contain;background:#fff;padding:6px;border-radius:8px}
+.af-billing-heading{display:flex;align-items:center;gap:20px;justify-content:space-between;flex-wrap:wrap}
+.af-billing-brand{display:flex;align-items:center;gap:17px;min-width:0}
+.af-billing-logo-frame{display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #d8dee7;padding:8px;border-radius:7px;flex:0 0 auto;max-width:145px;min-height:68px}
+.af-billing-logo{display:block;width:auto;height:auto;max-width:126px;max-height:75px;object-fit:contain;object-position:center}
+.af-billing-brand-name{font-size:1.22rem;font-weight:750;line-height:1.3}
+.af-billing-brand-tagline{font-size:.84rem;opacity:.92;line-height:1.5;max-width:330px}
+.af-billing-doc-identity{text-align:right;overflow-wrap:anywhere}
+@media(max-width:600px){
+  .af-billing-heading{align-items:flex-start;gap:18px}
+  .af-billing-logo-frame{max-width:115px;min-height:58px;padding:6px}
+  .af-billing-logo{max-width:102px;max-height:65px}
+  .af-billing-brand{gap:11px}
+  .af-billing-brand-name{font-size:1.05rem}
+  .af-billing-brand-tagline{font-size:.72rem}
+  .af-billing-doc-identity{text-align:left;width:100%}
+}
 .af-billing-gold{color:#d4a017}
 .af-billing-body{padding:24px 22px}
 .af-billing-kv{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:22px}
@@ -30,7 +44,7 @@
 {% if advisor_preview|default(false) %}
 <section class="card" style="border-left:4px solid #d4a017">
   <h2>Advisor-only document preview</h2>
-  <p>This projection shows the Billing record for review. It is <strong>not</strong> a native Billing PDF or evidence that it was sent. The manually entered estimate remains unpublished to the client until reconciled and approved.</p>
+  <p>This is a read-only view of the original Billing record, and is <strong>not</strong> a native Billing PDF. The document status below comes from Billing. Client publication and Resend delivery are recorded separately in the <a href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}">Billing Workspace</a>. This preview does not send, revoke or change the document.</p>
 </section>
 {% endif %}
 <div class="af-billing-actions">
@@ -44,14 +58,16 @@
 <article class="af-billing-document">
   <header class="af-billing-head">
     <div class="af-billing-heading">
-      <div style="display:flex;align-items:center;gap:15px">
-        {% if brand.logo %}<img class="af-billing-logo" src="{{ brand.logo }}" alt="{{ brand.name }} logo">{% endif %}
+      <div class="af-billing-brand">
+        {% if brand.logo %}
+        <div class="af-billing-logo-frame"><img class="af-billing-logo" src="{{ brand.logo }}" alt="Official {{ brand.name }} logo" loading="eager" decoding="async"></div>
+        {% endif %}
         <div>
-          <div style="font-size:1.22rem;font-weight:750">{{ brand.name }}</div>
-          <div style="font-size:.86rem;opacity:.82">{{ brand.tagline }}</div>
+          <div class="af-billing-brand-name">{{ brand.name }}</div>
+          <div class="af-billing-brand-tagline">Premium Automotive Health &amp; Concierge</div>
         </div>
       </div>
-      <div style="text-align:right">
+      <div class="af-billing-doc-identity">
         <div class="af-billing-gold" style="font-size:.83rem;letter-spacing:.12em;text-transform:uppercase">{{ document.kind }}</div>
         <div style="font-weight:700">{{ document.number }}</div>
       </div>
@@ -101,6 +117,6 @@
     {% endif %}
     <p class="af-billing-label" style="margin-top:20px">This is a live, owner-authorised view of the existing Ajebo Fix Billing record. An issued estimate is not a receipt or confirmation that payment was received. Downloaded copies may not reflect later amendments or revocation; confirm the current version in Aura.</p>
   </div>
-  <footer class="af-billing-footer">{{ brand.footer }}{% if brand.website %} · {{ brand.website }}{% endif %}</footer>
+  <footer class="af-billing-footer">{{ brand.footer }}{% if brand.website %} · {{ brand.website }}{% endif %}<div style="font-size:.74rem;opacity:.82;margin-top:7px">Ajebo Fix Billing · Secure client access via Aura by Ajebo Fix</div></footer>
 </article>
 {% endblock %}

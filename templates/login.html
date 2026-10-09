@@ -94,7 +94,9 @@ Your vehicles, history and care — in one place.
                 <button
                     type="button"
                     class="password-toggle"
-                    onclick="togglePassword()"
+                    aria-controls="password"
+                    aria-pressed="false"
+                    onclick="togglePassword(this)"
                 >
                     Show
                 </button>
@@ -155,15 +157,17 @@ Your vehicles, history and care — in one place.
 
 
 <script>
-function togglePassword() {
-
-    const input =
-        document.getElementById("password");
-
-    if (input.type === "password") {
-        input.type = "text";
-    } else {
-        input.type = "password";
+function togglePassword(button) {
+    const input = document.getElementById("password");
+    if (!input) return;
+    const isVisible = input.type === "password";
+    input.type = isVisible ? "text" : "password";
+    if (button) {
+        button.textContent = isVisible ? "Hide" : "Show";
+        button.setAttribute("aria-pressed", String(isVisible));
+        button.setAttribute(
+            "aria-label", isVisible ? "Hide password" : "Show password"
+        );
     }
 }
 

@@ -13,6 +13,7 @@ from services.billing_accounts_delivery import (
     DELIVERY_PREFIX,
     already_delivered,
     publish_native_billing_estimate,
+    validate_estimate_delivery,
     send_accounts_estimate_via_resend,
 )
 from services.billing_client_bridge import BillingBridgeUnavailable
@@ -199,3 +200,86 @@ def test_audited_send_prevents_repeated_submission(app):
         car_id=car.id, owner_user_id=owner.id,
         document_id=str(uuid.uuid4()),
     ) is False
+
+
+def test_revised_estimate_uses_current_amounts_not_old_estimate(app, monkeypatch):
+    app.config["MAIL_SUPPRESS_SEND"] = False
+    monkeypatch.setenv("RESEND_API_KEY", "re_fake_value")
+    revision = {
+        **_document(),
+        "id": "44444444-4444-4444-8444-444444444444",
+        "total": "685000.00",
+        "revision": 3,
+        "terms": (
+            "An upfront mobilisation payment of 90% (₦616,500) is payable. "
+            "The remaining 10% (₦68,500) is due before vehicle release."
+        ),
+    }
+    captured = []
+
+    def fake_request(url, *, json, headers, timeout, allow_redirects):
+        captured.append((url, json, headers))
+        return FakeResponse(result={"id": "email_new_revision"})
+
+    monkeypatch.setattr(
+        "services.billing_accounts_delivery.requests.post", fake_request,
+    )
+    with app.app_context():
+        total, upfront, balance = validate_estimate_delivery(revision, 90)
+        assert (total, upfront, balance) == (685000, 616500, 68500)
+        result = send_accounts_estimate_via_resend(
+            to="owner@example.com",
+            customer="Christian Damilola Oyebola",
+            vehicle="2013 GLK 350",
+            document=revision,
+            car_id=3,
+            upfront_percentage=90,
+        )
+    assert result == "email_new_revision"
+    variables = captured[0][1]["template"]["variables"]
+    assert variables["TOTAL_AMOUNT"] == "₦685,000.00"
+    assert variables["UPFRONT_AMOUNT"] == "₦616,500.00"
+    assert variables["BALANCE_AMOUNT"] == "₦68,500.00"
+    assert revision["id"] in variables["DOCUMENT_URL"]
+
+
+def test_revised_estimate_stale_original_terms_block_publication(app):
+    outdated = {
+        **_document(),
+        "id": "44444444-4444-4444-8444-444444444444",
+        "total": "685000",
+        "revision": 3,
+        # Old native estimate's 585k/65k schedule must never authorize 685k.
+    }
+    with app.app_context():
+        with pytest.raises(BillingBridgeUnavailable, match="₦616,500"):
+            validate_estimate_delivery(outdated, 90)
+
+
+def test_send_review_template_uses_live_revision_terms(app):
+    from decimal import Decimal
+    from types import SimpleNamespace
+    from flask import render_template
+
+    revision = {
+        **_document(),
+        "total": "685000",
+        "terms": (
+            "90% (₦616,500) upfront, remaining 10% (₦68,500) "
+            "before vehicle release"
+        ),
+    }
+    with app.test_request_context():
+        markup = render_template(
+            "billing/advisor_estimate_send.html",
+            document=revision,
+            owner=SimpleNamespace(email="owner@example.com"),
+            car=SimpleNamespace(id=3, rina_display_name="GLK 350"),
+            sent_before=False,
+            upfront_90=Decimal("616500.00"),
+            balance_10=Decimal("68500.00"),
+            payment_terms_issue=None,
+        )
+    assert "616,500.00" in markup
+    assert "68,500.00" in markup
+    assert "585,000 for a ₦650,000" not in markup

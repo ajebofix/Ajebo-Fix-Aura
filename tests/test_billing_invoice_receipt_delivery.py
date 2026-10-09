@@ -1,17 +1,14 @@
 """Invoice and payment receipt publication is approved separately from sending."""
 from __future__ import annotations
 
-import json
 import re
-import uuid
 from unittest.mock import Mock
 
 import pytest
 
 from extensions import db
-from models import AdvisorNote
 from services.billing_accounts_delivery import (
-    DELIVERY_PREFIX, already_delivered, send_accounts_document_via_resend,
+    already_delivered, send_accounts_document_via_resend,
 )
 from services.billing_client_bridge import BillingBridgeUnavailable
 from test_rina_chat_cutover import _car, _own, _sign_in, _user

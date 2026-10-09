@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Review {{ document.kind|title }} Delivery | Ajebo Fix{% endblock %}
+{% block page_title %}Ajebo Fix Accounts{% endblock %}
+{% block page_subtitle %}Advisor approval · Native Billing document · Client delivery{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Review {{ document.kind|title }} before {% if published %}sending{% else %}publication{% endif %}</h2>
+  <p>This page uses the original Ajebo Fix Billing record. Publication makes an
+  authorised document visible to the verified Aura owner; it does not send an email.
+  Sending is a separate, explicitly confirmed action.</p>
+  <p><strong>{{ document.number }}</strong> · {{ document.status|replace('_',' ')|title }} · {{ document.job_number }}</p>
+  <div class="detail-grid">
+    <div><span class="muted">Billing customer</span><p><strong>{{ document.billed_to }}</strong></p></div>
+    <div><span class="muted">Verified owner email</span><p><strong>{{ owner.email }}</strong></p></div>
+    <div><span class="muted">Vehicle</span><p><strong>{{ car.rina_display_name }}</strong></p></div>
+    <div><span class="muted">{% if document.kind == 'receipt' %}Recorded payment acknowledged{% else %}Invoice total{% endif %}</span>
+      <p><strong>{{ document.currency }}{{ "{:,.2f}".format(document.total|float) }}</strong></p></div>
+    {% if document.kind == 'invoice' %}
+      <div><span class="muted">Paid in Billing</span><p><strong>{{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }}</strong></p></div>
+      <div><span class="muted">Remaining invoice balance</span><p><strong>{{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</strong></p></div>
+    {% endif %}
+  </div>
+  <h3>Billing scope</h3>
+  <p style="white-space:pre-wrap">{{ document.scope }}</p>
+  <h3>Source terms</h3>
+  <p style="white-space:pre-wrap">{{ document.terms }}</p>
+  <div class="button-stack">
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_document_preview',car_id=car.id,document_id=document.id) }}">Preview original record in Aura</a>
+    <a class="btn btn-secondary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open Billing to edit or share manually</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}">Back to vehicle workspace</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_client_finance_preview',car_id=car.id) }}">Preview client-visible records</a>
+  </div>
+</section>
+<section class="card">
+  {% if sent_before %}
+    <h2>Already submitted</h2>
+    <p class="banner banner-good">A Resend submission is already recorded for this exact document. Duplicate email sending is blocked.</p>
+  {% elif not published %}
+    <h2>Review &amp; Publish {{ document.kind|title }}</h2>
+    <p>This approves visibility to the currently verified Aura vehicle owner. No email will be sent.</p>
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="publish">
+      <input type="hidden" name="expected_total" value="{{ document.total }}">
+      <input type="hidden" name="expected_paid" value="{{ document.paid }}">
+      <input type="hidden" name="expected_status" value="{{ document.status }}">
+      <input type="hidden" name="expected_updated_at" value="{{ document.updated_at }}">
+      <label style="display:block;margin:15px 0">
+        <input type="checkbox" name="confirmed" value="yes" required>
+        I verified the original Billing {{ document.kind }}, client and vehicle,
+        total and recorded payment information. Publish this document to the
+        client's Aura account without emailing it.
+      </label>
+      <button class="btn btn-primary" type="submit">Confirm &amp; Publish {{ document.kind|title }}</button>
+    </form>
+  {% else %}
+    <h2>Review &amp; Send {{ document.kind|title }}</h2>
+    <p>Visible to the owner. The account records stay live in Billing; send this
+    email only after confirming the current payment position.</p>
+    <p>Secure client link: <code>https://aura.ajebofix.com/cars/{{ car.id }}/billing/documents/{{ document.id }}</code></p>
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="send">
+      <input type="hidden" name="expected_total" value="{{ document.total }}">
+      <input type="hidden" name="expected_paid" value="{{ document.paid }}">
+      <input type="hidden" name="expected_status" value="{{ document.status }}">
+      <input type="hidden" name="expected_updated_at" value="{{ document.updated_at }}">
+      <label style="display:block;margin:15px 0">
+        <input type="checkbox" name="confirmed" value="yes" required>
+        I approve emailing this specific {{ document.kind }} to the verified
+        owner's address above. I understand that email delivery does not record
+        another payment or imply full settlement.
+      </label>
+      <button class="btn btn-navy" type="submit">Send {{ document.kind|title }} via Resend</button>
+    </form>
+  {% endif %}
+  {% if document.kind == 'invoice' and document.status == 'partially_paid' %}
+    <p class="muted">For an individual payment receipt, use Billing's Payments page
+      to generate the receipt for the recorded transfer, then return here
+      to review, publish and send it separately.</p>
+  {% endif %}
+</section>
+{% endblock %}

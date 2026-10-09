@@ -7,6 +7,7 @@ from flask_login import current_user, login_required
 from models import CarOwnership, AdvisorNote, User, Car
 from extensions import db
 from sqlalchemy import or_
+from decimal import Decimal
 from services.billing_client_bridge import (
     BillingBridgeUnavailable,
     client_billing_snapshot,
@@ -16,7 +17,7 @@ from services.billing_client_bridge import (
 from services.client_repair_progress import client_published_progress
 from services.billing_accounts_delivery import (
     DELIVERY_PREFIX, already_delivered, publish_native_billing_estimate,
-    send_accounts_estimate_via_resend,
+    send_accounts_estimate_via_resend, validate_estimate_delivery,
 )
 import json
 
@@ -358,6 +359,10 @@ def advisor_issue_estimate_email(car_id: int, document_id: str):
             return redirect(request.path)
         try:
             percent = int(request.form.get("upfront_percentage", ""))
+            # Preflight the current native revision before publishing anything.
+            # In particular, an old 650k payment schedule must not be approved
+            # for a revised 685k estimate.
+            validate_estimate_delivery(doc, percent)
             publish_native_billing_estimate(
                 car_id=car_id, owner_user_id=owner.id,
                 advisor_user_id=current_user.id,
@@ -404,10 +409,21 @@ def advisor_issue_estimate_email(car_id: int, document_id: str):
     previously_submitted = already_delivered(
         car_id=car_id, owner_user_id=owner.id, document_id=doc["id"]
     )
+    payment_terms_issue = None
+    if doc.get("status") in {"issued", "sent"}:
+        try:
+            validate_estimate_delivery(doc, 90)
+        except BillingBridgeUnavailable as exc:
+            payment_terms_issue = str(exc)
+    total = Decimal(doc["total"])
+    upfront_90 = (total * Decimal("0.90")).quantize(Decimal("0.01"))
+    balance_10 = total - upfront_90
     response = render_template(
         "billing/advisor_estimate_send.html",
         car=owner_link.car, owner=owner, document=doc,
         sent_before=previously_submitted,
+        upfront_90=upfront_90, balance_10=balance_10,
+        payment_terms_issue=payment_terms_issue,
     )
     from flask import make_response
     result = make_response(response)

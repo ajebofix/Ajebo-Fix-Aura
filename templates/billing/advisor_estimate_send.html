@@ -23,18 +23,25 @@
 </section>
 <section class="card">
   <h2>Payment terms</h2>
+  <p><strong>Current revision:</strong> {{ document.currency }}{{ "{:,.2f}".format(document.total|float) }} total;
+    <strong>90% upfront:</strong> {{ document.currency }}{{ "{:,.2f}".format(upfront_90) }};
+    <strong>10% balance:</strong> {{ document.currency }}{{ "{:,.2f}".format(balance_10) }}.</p>
+  <p class="muted">These are calculated from the current native Billing revision, not an earlier estimate.</p>
   <p style="white-space:pre-wrap">{{ document.terms }}</p>
   <p>Client-facing link: <code>https://aura.ajebofix.com/cars/{{ car.id }}/billing/documents/{{ document.id }}</code></p>
   {% if sent_before %}
     <p class="banner banner-good">A Resend submission is already recorded for this estimate. Duplicate sending is blocked.</p>
   {% elif document.status not in ['issued', 'sent'] %}
     <p class="banner banner-warn">This estimate is not issued in Billing. Open the original Billing application and issue it before emailing.</p>
+  {% elif payment_terms_issue %}
+    <p class="banner banner-warn">{{ payment_terms_issue }}</p>
+    <p class="muted">Revise and issue the original Billing document with the corrected terms before approving any client publication or email.</p>
   {% else %}
     <form method="POST">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="label" for="upfront_percentage">Agreed mobilisation amount</label>
       <select class="input" id="upfront_percentage" name="upfront_percentage" required>
-        <option value="90" selected>90% upfront (₦585,000 for a ₦650,000 estimate)</option>
+        <option value="90" selected>90% upfront ({{ document.currency }}{{ "{:,.2f}".format(upfront_90) }} for this revision)</option>
       </select>
       <label style="display:block;margin-top:15px">
         <input type="checkbox" name="confirmed" value="yes" required>

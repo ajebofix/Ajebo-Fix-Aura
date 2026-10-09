@@ -23,6 +23,10 @@ on:
       - "app.py"
       - "tests/test_billing_client_bridge.py"
       - "tests/test_billing_accounts_delivery.py"
+      - "tests/test_billing_advisor_issue.py"
+      - "templates/billing/advisor_estimate_issue.html"
+      - "templates/billing/advisor_workspace.html"
+      - "integrations/billing_edge/live_index.ts"
       - ".github/workflows/billing-owner-bridge-ci.yml"
       - "requirements*.txt"
 
@@ -63,9 +67,10 @@ jobs:
           tests/test_billing_client_bridge.py
           tests/test_billing_accounts_delivery.py tests/test_aura_brand_splash.py
           tests/test_client_repair_progress.py
+          tests/test_billing_advisor_issue.py
           tests/test_aura_brand_splash.py
       - name: Run owner billing security and read-only tests
-        run: pytest -q --tb=short tests/test_billing_client_bridge.py tests/test_client_repair_progress.py tests/test_billing_accounts_delivery.py
+        run: pytest -q --tb=short tests/test_billing_client_bridge.py tests/test_client_repair_progress.py tests/test_billing_accounts_delivery.py tests/test_billing_advisor_issue.py
       - name: Ruff new billing code
         run: >-
           ruff check
@@ -74,6 +79,7 @@ jobs:
           services/client_repair_progress.py
           services/repair_progress.py
           tests/test_billing_client_bridge.py
+          tests/test_billing_advisor_issue.py
           tests/test_client_repair_progress.py
       - name: Bandit server boundary
         run: bandit -q -r services/billing_client_bridge.py services/billing_client_routes.py services/client_repair_progress.py services/repair_progress.py services/billing_accounts_delivery.py

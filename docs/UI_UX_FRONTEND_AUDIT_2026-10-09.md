@@ -29,6 +29,8 @@
 | UI-012 | Preventive | Cross-app links | No unified check of hardcoded Jinja route names across all page templates. | New `test_ui_control_contracts.py` and `ui-ux-contract-ci.yml` for all Jinja compile/link checks and shared styling invariants. | Automated CI |
 | UI-013 | High | Finalized vehicle health PDF | The health screen linked to `car_assessments.client_download_assessment_pdf`, but that blueprint endpoint is not registered in production. The Download Report button would fail with a Flask URL build error. | Point to the registered, owner-safe `assessment_reports.assessment_report_pdf` endpoint. | Template route test caught this, recheck CI after fix. |
 
+| UI-014 | High | Missing shared UI utility styles | Billing review panels use `.detail-grid`, `.banner-warn`, `.banner-good`, and password screens use `.password-wrap`/`.password-toggle`, but none were defined in the shared CSS imports; warnings and controls could look like raw text or awkwardly placed buttons. | Add `static/css/ui-utilities.css` to the shared stylesheet with accessible banners, detail grids and password layout; contain `.card::before` decoration inside its card. | CSS source contract and browser follow-up. |
+
 ## Still open / needs authenticated or device testing
 
 1. Run actual signed-in owner/admin/driver browser sessions on iPhone Safari and desktop for every navigation entry, button, form, error state, validation and confirmation. A source reference to a registered endpoint does **not** prove that the endpoint works in every runtime state.

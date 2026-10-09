@@ -30,7 +30,7 @@ class FlexibleCapacityTests(unittest.TestCase):
 
     def check(
         self, *, policy=None, techs=None, bays=None,
-        window=None, skill="standard", concurrent=0,
+        window=None, skill="standard", concurrent=0, non_gulf_today=0,
     ):
         return assess_slot(
             window=window or self.window,
@@ -39,6 +39,7 @@ class FlexibleCapacityTests(unittest.TestCase):
             technicians=(self.tech,) if techs is None else techs,
             bays=(self.bay,) if bays is None else bays,
             overlapping_oil_jobs=concurrent,
+            non_gulf_oil_jobs_today=non_gulf_today,
         )
 
     def test_six_is_conservative_daily_ceiling_not_guaranteed_capacity(self):
@@ -87,6 +88,31 @@ class FlexibleCapacityTests(unittest.TestCase):
     def test_sixth_daily_slot_is_possible_if_resources_exist(self):
         self.assertTrue(
             self.check(policy=DayPolicy(self.day, counted_gulf_jobs=5)).can_offer_tentative_hold
+        )
+
+    def test_regular_ajebo_fix_oil_changes_consume_same_daily_capacity(self):
+        # Regular paying clients may never be displaced by treating all six
+        # workshop oil-change slots as if they belong to Gulf alone.
+        self.assertTrue(self.check(
+            policy=DayPolicy(self.day, counted_gulf_jobs=3),
+            non_gulf_today=2,
+        ).can_offer_tentative_hold)
+        self.assertIn(
+            "daily_cap_reached",
+            self.check(
+                policy=DayPolicy(self.day, counted_gulf_jobs=4),
+                non_gulf_today=2,
+            ).blockers,
+        )
+
+    def test_seven_total_with_mixed_gulf_and_non_gulf_is_absolute_pilot_cap(self):
+        policy = DayPolicy(self.day, counted_gulf_jobs=3, authorised_day_cap=7)
+        self.assertTrue(
+            self.check(policy=policy, non_gulf_today=3).can_offer_tentative_hold
+        )
+        self.assertIn(
+            "daily_cap_reached",
+            self.check(policy=policy, non_gulf_today=4).blockers,
         )
 
     def test_seventh_daily_slot_requires_explicit_day_override(self):
@@ -194,6 +220,8 @@ class FlexibleCapacityTests(unittest.TestCase):
                 DayPolicy(self.day, **args)
         with self.assertRaises(ValueError):
             self.check(concurrent=-1)
+        with self.assertRaises(ValueError):
+            self.check(non_gulf_today=-1)
 
 
 if __name__ == "__main__":

@@ -628,7 +628,7 @@ def test_owner_and_driver_cannot_enter_advisor_billing(app,client,monkeypatch):
 
 
 
-def test_non_native_draft_has_no_resend_button(app,client,monkeypatch):
+def test_native_draft_offers_review_issue_not_resend(app,client,monkeypatch):
     _configure(monkeypatch)
     admin = _user(suffix=847,role="admin")
     owner = _user(suffix=848)
@@ -651,7 +651,7 @@ def test_non_native_draft_has_no_resend_button(app,client,monkeypatch):
     assert response.status_code == 200
     assert b"AJF-EST-DRAFT" in response.data
     assert b"Review &amp; Send via Resend" not in response.data
-    assert b"Complete and issue this draft" in response.data
+    assert b"Review &amp; Issue Draft" in response.data
 
 
 def test_driver_denied_owner_and_advisor_finance_indexes(app,client,monkeypatch):

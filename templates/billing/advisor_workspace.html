@@ -57,6 +57,17 @@
           <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_review_issue_estimate',car_id=car.id,document_id=document.id) }}">Review &amp; Issue Draft</a>
         {% elif document.kind == 'estimate' and document.status == 'draft' %}
           <span class="muted">Complete and issue this draft in the original Billing application before sending. It is not eligible for Aura issuance.</span>
+        {% elif document.kind in ['invoice','receipt'] and document.native_created and document.job_linked and
+             ((document.kind == 'invoice' and document.status in ['issued','sent','overdue','partially_paid','paid'])
+              or (document.kind == 'receipt' and document.status == 'issued')) %}
+          <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_invoice_receipt_delivery',car_id=car.id,document_id=document.id) }}">
+            {% if document.submitted_to_resend %}Review Resend Submission
+            {% elif document.published %}Review &amp; Send {{ document.kind|title }}
+            {% else %}Review &amp; Publish {{ document.kind|title }}{% endif %}
+          </a>
+        {% endif %}
+        {% if document.kind == 'invoice' and document.status in ['partially_paid','paid'] %}
+          <p class="muted">Payment amounts refresh from Billing after invoice publication. For a separate payment receipt, generate an individual payment receipt in Billing; then publish and send it here.</p>
         {% endif %}
       </div>
     </div>

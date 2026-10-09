@@ -53,8 +53,10 @@
           <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_issue_estimate_email',car_id=car.id,document_id=document.id) }}">
           {% if document.submitted_to_resend %}Review Resend Submission{% else %}Review &amp; Send via Resend{% endif %}
           </a>
+        {% elif document.kind == 'estimate' and document.status == 'draft' and document.native_created and document.job_linked and not document.published %}
+          <a class="btn btn-primary" href="{{ url_for('client_billing.advisor_review_issue_estimate',car_id=car.id,document_id=document.id) }}">Review &amp; Issue Draft</a>
         {% elif document.kind == 'estimate' and document.status == 'draft' %}
-          <span class="muted">Complete and issue this draft in the original Billing application before sending.</span>
+          <span class="muted">This draft is not eligible for Aura issuance. Review it in the original Billing application.</span>
         {% endif %}
       </div>
     </div>

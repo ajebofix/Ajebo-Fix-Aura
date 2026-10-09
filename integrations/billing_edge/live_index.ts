@@ -235,19 +235,50 @@ Deno.serve(async (req: Request): Promise<Response> => {
       // The caller is Aura's authenticated advisor route. The Ed25519 signed
       // payload is body-bound and nonce/replay guarded; no client can forge it.
       const candidates = await fromBilling("billing_documents",
-        `select=id,doc_type,status,created_by,job_id,client_id,vehicle_id,superseded_at,share_revoked_at,total&id=eq.${targetId}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=2`);
+        `select=id,doc_type,status,created_by,job_id,client_id,vehicle_id,superseded_at,share_revoked_at,total,source_document_id,receipt_kind&id=eq.${targetId}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=2`);
       if (candidates.length !== 1) return respond(404, { error: "Document not found" });
       const d = candidates[0];
-      // Native-UI / native-RPC-issued docs carry authenticated created_by.
-      // The previous direct-SQL inserted estimate does not and is ineligible.
-      if (d.doc_type !== "estimate" || !["issued", "sent"].includes(d.status) ||
-          !uuid(d.created_by) || !uuid(d.job_id) || d.superseded_at ||
-          d.share_revoked_at || money(d.total) <= 0) {
-        return respond(409, { error: "Native issued estimate required" });
+      // Release only native, independently sourced and eligible documents.
+      // Publishing does not email, acknowledge payment, or create a receipt.
+      const eligible: Record<string, string[]> = {
+        estimate:["issued","sent"],
+        invoice:["issued","sent","overdue","partially_paid","paid"],
+        receipt:["issued"],
+      };
+      const kind = String(d.doc_type || "");
+      if (!eligible[kind]?.includes(String(d.status)) ||
+          !uuid(d.created_by) || !uuid(d.job_id) ||
+          d.superseded_at || d.share_revoked_at || money(d.total) <= 0) {
+        return respond(409, {error:"Native document not eligible for publication"});
       }
       const job = await fromBilling("billing_jobs",
         `select=id,client_id,vehicle_id&id=eq.${d.job_id}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=2`);
-      if (job.length !== 1) return respond(409, { error: "Job identity mismatch" });
+      if (job.length !== 1) return respond(409, {error:"Job identity mismatch"});
+      if (kind === "receipt") {
+        // A receipt must reflect an existing payment against a previously
+        // published native invoice; it cannot invent a payment.
+        if (!uuid(d.source_document_id)) return respond(409,{error:"Receipt lacks source invoice"});
+        const invoices = await fromBilling("billing_documents",
+          `select=id,doc_type,job_id,client_id,vehicle_id,status&id=eq.${d.source_document_id}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=2`);
+        if (invoices.length !== 1 || invoices[0].doc_type !== "invoice" ||
+            invoices[0].job_id !== d.job_id) {
+          return respond(409,{error:"Receipt source invoice mismatch"});
+        }
+        const invoicePublished = await fromBilling("aura_billing_published_documents",
+          `select=document_id&document_id=eq.${d.source_document_id}&aura_car_id=eq.${carId}&revoked_at=is.null&limit=1`);
+        if (invoicePublished.length !== 1) return respond(409,{error:"Publish source invoice first"});
+        const payColumn = d.receipt_kind === "consolidated"
+          ? "consolidated_receipt_id" : d.receipt_kind === "payment"
+          ? "receipt_document_id" : null;
+        if (!payColumn) return respond(409,{error:"Receipt payment type unverified"});
+        const paymentRows = await fromBilling("billing_payments",
+          `select=id,amount&invoice_id=eq.${d.source_document_id}&${payColumn}=eq.${targetId}&limit=100`);
+        if (!paymentRows.length) return respond(409,{error:"Receipt has no recorded payment"});
+        const linkedTotal = paymentRows.reduce((sum,p) => sum + money(p.amount), 0);
+        if (Math.abs(linkedTotal - money(d.total)) > 0.01) {
+          return respond(409,{error:"Receipt amount differs from paid amount"});
+        }
+      }
       const already = await fromBilling("aura_billing_published_documents",
         `select=document_id,revoked_at,aura_car_id&document_id=eq.${targetId}&limit=2`);
       if (already.length > 0) {

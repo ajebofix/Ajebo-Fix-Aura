@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from unittest.mock import Mock
+import re
 
 import pytest
 
@@ -35,7 +36,8 @@ def test_owner_cannot_review_or_issue(app, client):
     _sign_in(client, owner)
     uri = f"/admin/cars/{car.id}/billing/estimate/{DOC_ID}/issue"
     assert client.get(uri).status_code == 403
-    assert client.post(uri, data={"confirmed": "yes"}).status_code == 403
+    # CSRF middleware rejects unauthorised POST requests before the view.
+    assert client.post(uri, data={"confirmed": "yes"}).status_code in {400, 403}
 
 
 def test_advisor_draft_preview_and_explicit_approval(app, client, monkeypatch):
@@ -59,9 +61,13 @@ def test_advisor_draft_preview_and_explicit_approval(app, client, monkeypatch):
     assert response.status_code == 200
     assert b"Confirm &amp; Issue Estimate" in response.data
     assert b"616,500" in response.data and b"68,500" in response.data
+    token = re.search(rb'name="csrf_token" value="([^"]+)"', response.data)
+    assert token is not None
+    csrf = token.group(1).decode("ascii")
 
     # Missing approval cannot mutate Billing.
     response = client.post(uri, data={
+        "csrf_token": csrf,
         "expected_total": draft()["total"],
         "expected_revision": "3",
         "expected_updated_at": draft()["updated_at"],
@@ -71,6 +77,7 @@ def test_advisor_draft_preview_and_explicit_approval(app, client, monkeypatch):
 
     # Stale source timestamp cannot mutate Billing.
     response = client.post(uri, data={
+        "csrf_token": csrf,
         "confirmed": "yes", "expected_total": draft()["total"],
         "expected_revision": "3",
         "expected_updated_at": "2026-10-08T15:00:00+00:00",

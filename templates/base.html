@@ -6,6 +6,46 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="csrf-token" content="{{ csrf_token() }}">
+<meta name="theme-color" content="#080D17">
+<link rel="preload" href="{{ url_for('static', filename='images/aura-icon-health.png') }}" as="image">
+<style>
+  /* First-paint only: a browser-controlled blank screen before HTML cannot be styled. */
+  html { background: #080d17; }
+  .aura-loading-screen { display: none; }
+  html.aura-starting .aura-loading-screen {
+    position: fixed; inset: 0; z-index: 99999;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px;
+    padding: 24px; text-align: center;
+    background: #080d17; color: #ecf2fa;
+  }
+  .aura-loading-symbol {
+    display: flex; align-items: center; justify-content: center;
+    width: 110px; height: 110px; border-radius: 50%;
+    background: #121d30; border: 1px solid rgba(44,172,241,.22);
+    box-shadow: 0 0 32px rgba(28,156,228,.12);
+    animation: aura-breathe 1.8s ease-in-out infinite;
+  }
+  .aura-loading-symbol img { width: 80px; height: 80px; object-fit: contain; }
+  .aura-loading-label { font: 600 22px/1.3 Inter,system-ui,sans-serif; letter-spacing: .035em; }
+  .aura-loading-context { font: 400 13px/1.6 Inter,system-ui,sans-serif; color: #abb9cc; }
+  .aura-loading-progress {
+    width: 104px; height: 2px; border-radius: 3px;
+    overflow: hidden; background: rgba(227,239,250,.13);
+  }
+  .aura-loading-progress:after {
+    content: ""; display: block; height: 100%; width: 35%;
+    background: #33a9ec; border-radius: 3px;
+    animation: aura-progress 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes aura-breathe { 0%,100% { opacity:.86; transform:scale(.98) } 50% { opacity:1; transform:scale(1.025) } }
+  @keyframes aura-progress { from { transform:translateX(0) } to { transform:translateX(190%) } }
+  @media (prefers-reduced-motion: reduce) {
+    .aura-loading-symbol, .aura-loading-progress:after { animation: none !important; }
+  }
+  @media print { .aura-loading-screen { display:none!important } }
+</style>
+<script>document.documentElement.classList.add('aura-starting');</script>
 
 <title>{% block title %}Ajebo Fix{% endblock %}</title>
 
@@ -33,6 +73,37 @@ rel="stylesheet">
 
 </head>
 <body>
+<div class="aura-loading-screen" role="status" aria-live="polite" aria-label="Loading Aura">
+  <div class="aura-loading-symbol">
+    <img src="{{ url_for('static', filename='images/aura-icon-health.png') }}" alt="Aura" width="80" height="80">
+  </div>
+  <div class="aura-loading-label">Aura</div>
+  <div class="aura-loading-context">Preparing your secure view…</div>
+  <div class="aura-loading-progress" aria-hidden="true"></div>
+</div>
+<script>
+(function () {
+  var root = document.documentElement;
+  function clearLoading() { root.classList.remove('aura-starting'); }
+  // Keep this a genuine loading indicator, not an artificial wait.
+  if (document.readyState === 'complete') clearLoading();
+  else window.addEventListener('load', clearLoading, { once: true });
+  // A failed asset must never leave the interface trapped behind a splash.
+  window.setTimeout(clearLoading, 6500);
+  window.addEventListener('pageshow', clearLoading);
+  document.addEventListener('click', function (event) {
+    var a = event.target.closest && event.target.closest('a[href]');
+    if (!a || event.defaultPrevented || event.button !== 0 || event.metaKey ||
+        event.ctrlKey || event.shiftKey || event.altKey ||
+        a.target === '_blank' || a.hasAttribute('download')) return;
+    try {
+      var url = new URL(a.href, location.href);
+      if (url.origin === location.origin && url.pathname !== location.pathname)
+        root.classList.add('aura-starting');
+    } catch (_) {}
+  });
+})();
+</script>
 
 {% if current_user.is_authenticated %}
     {% if current_user.role == 'admin' %}

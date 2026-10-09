@@ -6,6 +6,10 @@
 }
 
 @media (max-width: 900px) {
+    body.aura-menu-open {
+        overflow: hidden;
+    }
+
     .app-shell {
         display: block !important;
         overflow: visible;
@@ -58,6 +62,9 @@
 
     .sidebar-overlay {
         display: block;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
         position: fixed;
         inset: 0;
         z-index: 1050;

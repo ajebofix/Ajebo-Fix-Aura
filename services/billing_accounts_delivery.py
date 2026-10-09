@@ -97,6 +97,53 @@ def already_delivered(*, car_id: int, owner_user_id: int, document_id: str) -> b
     return False
 
 
+def validate_estimate_delivery(
+    document: dict, upfront_percentage: int,
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Validate live Billing figures and the approved source terms before publication.
+
+    Never reuse amounts from a previous estimate revision: each newly issued
+    document is independently reviewed against its own commercial terms.
+    """
+    if type(upfront_percentage) is not int or upfront_percentage not in {
+        50, 60, 70, 80, 90, 100,
+    }:
+        raise BillingBridgeUnavailable("Invalid approved mobilisation percentage")
+    if document.get("kind") != "estimate" or document.get("status") not in {
+        "issued", "sent",
+    }:
+        raise BillingBridgeUnavailable("Issue the revised estimate in Billing first")
+    if document.get("group") != "job_record":
+        raise BillingBridgeUnavailable("Estimate has no commercial job reference")
+
+    total = _money(document.get("total"))
+    if total <= 0:
+        raise BillingBridgeUnavailable("Estimate total must be positive")
+    upfront = (total * Decimal(upfront_percentage) / Decimal(100)).quantize(
+        Decimal("0.01")
+    )
+    balance = total - upfront
+
+    # Christian's negotiated 90/10 mobilisation schedule must be documented
+    # on the CURRENT native Billing revision, not just an earlier revision.
+    if document.get("job_number") == "JOB-2026-003":
+        terms = str(document.get("terms") or "")
+        upfront_text = f"{upfront:,.2f}".removesuffix(".00")
+        balance_text = f"{balance:,.2f}".removesuffix(".00")
+        if (
+            upfront_percentage != 90
+            or "90%" not in terms
+            or upfront_text not in terms
+            or balance_text not in terms
+        ):
+            raise BillingBridgeUnavailable(
+                "Update the current Billing estimate payment terms to "
+                f"90% upfront (₦{upfront_text}) and 10% balance "
+                f"(₦{balance_text}) before publication or email delivery."
+            )
+    return total, upfront, balance
+
+
 def send_accounts_estimate_via_resend(
     *, to: str, customer: str, vehicle: str, document: dict,
     car_id: int, upfront_percentage: int,
@@ -107,26 +154,9 @@ def send_accounts_estimate_via_resend(
     key = os.getenv("RESEND_API_KEY") or current_app.config.get("RESEND_API_KEY")
     if not key:
         raise BillingBridgeUnavailable("Resend key not configured")
-    if upfront_percentage not in {50, 60, 70, 80, 90, 100}:
-        raise BillingBridgeUnavailable("Invalid approved mobilisation percentage")
-    if document.get("kind") != "estimate" or document.get("status") not in {"issued", "sent"}:
-        raise BillingBridgeUnavailable("Only native issued estimates may be emailed")
-    if document.get("group") != "job_record":
-        raise BillingBridgeUnavailable("Estimate has no commercial job reference")
-    total = _money(document["total"])
-    upfront = (total * Decimal(upfront_percentage) / Decimal(100)).quantize(
-        Decimal("0.01")
+    total, upfront, balance = validate_estimate_delivery(
+        document, upfront_percentage,
     )
-    balance = total - upfront
-    terms = str(document.get("terms") or "").lower()
-    # Pilot contract is fixed at 90% and must be part of the SOURCE estimate.
-    if document.get("job_number") == "JOB-2026-003" and (
-        upfront_percentage != 90 or "90%" not in terms or
-        "585,000" not in terms or "65,000" not in terms
-    ):
-        raise BillingBridgeUnavailable(
-            "The native estimate must contain the approved 90% payment terms."
-        )
     doc_id = str(uuid.UUID(document["id"]))
     link = (
         f"https://aura.ajebofix.com/cars/{car_id}/billing/documents/{doc_id}"

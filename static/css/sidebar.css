@@ -34,8 +34,8 @@ display:flex;
 align-items:center;
 justify-content:center;
 box-shadow:
-0 12x 28px rgba(37,99,235,.22),
-0 0 2-px rgba(37,99,235,.18);
+0 12px 28px rgba(37,99,235,.22),
+0 0 2px rgba(37,99,235,.18);
 overflow:hidden;
 flex-shrink:0;
 animation: auraGlow 3s ease-in-out infinite,

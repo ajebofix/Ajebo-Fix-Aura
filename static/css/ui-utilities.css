@@ -1,0 +1,105 @@
+/* Cross-page controls used by Flask/Jinja templates.
+   Shared, accessible visual defaults; no role or status rules are changed. */
+.muted, .subtext, .hint {
+    color: var(--muted);
+}
+.subtext { line-height: 1.6; }
+.hint { font-size: 13px; margin: -3px 0 14px; }
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: 16px;
+    margin: 18px 0;
+}
+.detail-grid > * { min-width: 0; overflow-wrap: anywhere; }
+
+.banner {
+    padding: 14px 16px;
+    border-radius: 12px;
+    margin: 16px 0;
+    border: 1px solid transparent;
+    font-weight: 600;
+}
+.banner-warn, .banner-warning {
+    background: #fffbeb;
+    color: #78350f;
+    border-color: #fcd34d;
+}
+.banner-good, .banner-success {
+    background: #ecfdf5;
+    color: #065f46;
+    border-color: #6ee7b7;
+}
+.banner-error {
+    background: #fef2f2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+.label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+.input {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    font: inherit;
+    font-size: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+    line-height: 1.5;
+}
+.checkbox-row input[type="checkbox"] {
+    margin-top: 3px;
+    margin-right: 0;
+}
+
+.password-wrap {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+}
+.password-wrap input[type="password"],
+.password-wrap input[type="text"] {
+    padding-right: 92px;
+}
+.password-toggle {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    min-width: 72px;
+    min-height: 35px;
+    padding: 5px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    background: #eef2f7;
+    color: #102237;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.password-toggle:focus-visible {
+    outline: 3px solid #2563eb;
+    outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+    .detail-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .button-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

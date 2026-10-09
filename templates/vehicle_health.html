@@ -75,7 +75,7 @@ Vehicle Health Summary · Professional Monitoring Overview
             A finalized professional vehicle assessment is available.
         </p>
 
-        <a href="{{ url_for('car_assessments.client_download_assessment_pdf', assessment_id=assessment.id) }}"
+        <a href="{{ url_for('assessment_reports.assessment_report_pdf', assessment_id=assessment.id) }}"
            class="btn btn-primary">
             Download Health & Risk Report
         </a>

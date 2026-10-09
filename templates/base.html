@@ -122,33 +122,72 @@ rel="stylesheet">
     type="button"
     aria-label="Open navigation"
     aria-expanded="false"
+    aria-controls="aura-sidebar"
     onclick="toggleSidebar()"
 >☰</button>
 
-<div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+<button class="sidebar-overlay" type="button" aria-label="Close navigation" onclick="toggleSidebar(false)"></button>
 
 <script>
-    function toggleSidebar() {
+(function () {
+    function setSidebarOpen(open) {
         const sidebar = document.querySelector(".sidebar");
         const overlay = document.querySelector(".sidebar-overlay");
-        const mobileToggle = document.querySelector(".mobile-toggle");
-
-        const isOpen = sidebar.classList.toggle("open");
+        const toggle = document.querySelector(".mobile-toggle");
+        const close = document.querySelector(".sidebar-close");
+        if (!sidebar || !overlay || !toggle) return;
+        const isMobile = window.matchMedia("(max-width: 900px)").matches;
+        const isOpen = Boolean(open && isMobile);
+        sidebar.classList.toggle("open", isOpen);
         overlay.classList.toggle("open", isOpen);
-        mobileToggle.classList.toggle("open", isOpen);
-        mobileToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        toggle.classList.toggle("open", isOpen);
+        document.body.classList.toggle("aura-menu-open", isOpen);
+        toggle.setAttribute("aria-expanded", String(isOpen));
+        overlay.setAttribute("aria-hidden", String(!isOpen));
+        if (isOpen && close) close.focus();
+        else if (!isOpen && document.activeElement === close) toggle.focus();
     }
+    window.toggleSidebar = function (open) {
+        const sidebar = document.querySelector(".sidebar");
+        setSidebarOpen(typeof open === "boolean" ? open :
+            !(sidebar && sidebar.classList.contains("open")));
+    };
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" &&
+            document.querySelector(".sidebar.open")) {
+            event.preventDefault();
+            setSidebarOpen(false);
+            document.querySelector(".mobile-toggle")?.focus();
+        }
+    });
+    window.addEventListener("resize", function () {
+        if (window.innerWidth > 900) setSidebarOpen(false);
+    });
+    document.addEventListener("DOMContentLoaded", function () {
+        const currentPath = location.pathname.replace(/\/$/, "") || "/";
+        document.querySelectorAll(".side-nav .nav-item[href]").forEach(function (item) {
+            try {
+                const url = new URL(item.href, location.origin);
+                if (url.origin === location.origin &&
+                    (url.pathname.replace(/\/$/, "") || "/") === currentPath) {
+                    item.classList.add("active");
+                    item.setAttribute("aria-current", "page");
+                }
+            } catch (_) {}
+        });
+    });
+})();
 </script>
 
 <div class="app-shell">
 
-    <aside class="sidebar">
+    <aside class="sidebar" id="aura-sidebar" aria-label="Main navigation">
 
         <button
             class="sidebar-close"
             type="button"
             aria-label="Close navigation"
-            onclick="toggleSidebar()"
+            onclick="toggleSidebar(false)"
         >×</button>
 
         <div class="brand-block">

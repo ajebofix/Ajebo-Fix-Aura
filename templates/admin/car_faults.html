@@ -45,13 +45,13 @@
                 {% if fault.status == "reported" %}
                     <form method="POST"
                           action="{{ url_for('admin.admin_review_concern', concern_id=fault.id) }}">
-                        <button>Mark as Under Review</button>
+                        <button type="submit" class="btn btn-secondary">Mark as Under Review</button>
                     </form>
                 {% endif %}
 
                 <form method="POST"
                       action="{{ url_for('admin.admin_resolve_concern', concern_id=fault.id) }}">
-                    <button>Mark as Resolved</button>
+                    <button type="submit" class="btn btn-primary">Mark as Resolved</button>
                 </form>
             </div>
         {% endif %}

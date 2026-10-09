@@ -1,6 +1,7 @@
 /* static/css/cards.css */
 
 .card{
+position:relative;
 background:var(--glass-strong);
 backdrop-filter:blur(18px);
 -webkit-backdrop-filter:blur(18px);

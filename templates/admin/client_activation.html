@@ -47,13 +47,36 @@
 </section>
 
 <script>
-function copyActivationLink(button) {
+async function copyActivationLink(button) {
     const input = document.getElementById("activation-link");
-    navigator.clipboard.writeText(input.value).then(() => {
-        const original = button.textContent;
-        button.textContent = "Copied";
-        setTimeout(() => button.textContent = original, 1500);
-    });
+    if (!input || !button) return;
+    const original = button.textContent;
+    try {
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            throw new Error("Clipboard API unavailable");
+        }
+        await navigator.clipboard.writeText(input.value);
+    } catch (_) {
+        // Mobile in-app browsers may deny navigator.clipboard without warning.
+        input.focus();
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+        try {
+            if (!document.execCommand("copy")) {
+                button.textContent = "Select and copy the link above";
+                return;
+            }
+        } catch (_) {
+            button.textContent = "Select and copy the link above";
+            return;
+        }
+    }
+    button.textContent = "Copied";
+    button.setAttribute("role", "status");
+    window.setTimeout(() => {
+        button.textContent = original;
+        button.removeAttribute("role");
+    }, 2500);
 }
 </script>
 {% endblock %}

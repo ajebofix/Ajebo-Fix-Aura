@@ -327,8 +327,8 @@ def send_accounts_document_via_resend(
     money = lambda amount: f"₦{amount:,.2f}"
     if kind == "invoice":
         details = (
-            f"Invoice total: {money(total)}\\n"
-            f"Payments recorded: {money(paid)}\\n"
+            f"Invoice total: {money(total)}\n"
+            f"Payments recorded: {money(paid)}\n"
             f"Outstanding balance: {money(balance)}"
         )
         disclaimer = (
@@ -344,13 +344,13 @@ def send_accounts_document_via_resend(
         )
     subject = f"Ajebo Fix Accounts | {label} {document['number']}"
     body = (
-        f"Hello {customer},\\n\\n"
-        f"Your {label} for {vehicle} is available for private review.\\n\\n"
-        f"Document: {document['number']}\\n"
-        f"{details}\\n\\n"
-        f"View securely in Aura: {link}\\n\\n"
-        f"{disclaimer}\\n"
-        "This link requires signing into the verified Aura owner account.\\n\\n"
+        f"Hello {customer},\n\n"
+        f"Your {label} for {vehicle} is available for private review.\n\n"
+        f"Document: {document['number']}\n"
+        f"{details}\n\n"
+        f"View securely in Aura: {link}\n\n"
+        f"{disclaimer}\n"
+        "This link requires signing into the verified Aura owner account.\n\n"
         "Ajebo Fix Ltd · Accounts"
     )
     html = (

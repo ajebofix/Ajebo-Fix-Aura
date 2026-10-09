@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
+from html import escape
 import uuid
 from decimal import Decimal
 from urllib.parse import urlparse
@@ -74,6 +76,21 @@ def publish_native_billing_estimate(
     }:
         raise BillingBridgeUnavailable("Billing publication not confirmed")
     return result["state"]
+
+
+def publish_native_billing_document(
+    *, car_id: int, owner_user_id: int, advisor_user_id: int,
+    vin: str, document_id: str,
+) -> str:
+    """Explicitly publish an eligible estimate, invoice or receipt.
+
+    The restricted signed Billing gateway verifies the document's real kind,
+    status, linked job, verified owner and (for receipts) payment source.
+    """
+    return publish_native_billing_estimate(
+        car_id=car_id, owner_user_id=owner_user_id,
+        advisor_user_id=advisor_user_id, vin=vin, document_id=document_id,
+    )
 
 
 def approve_native_estimate_issue(
@@ -263,3 +280,123 @@ def send_accounts_estimate_via_resend(
     except (requests.RequestException, ValueError) as exc:
         current_app.logger.warning("Resend estimate submission failed")
         raise BillingBridgeUnavailable("Resend did not accept the email") from exc
+
+
+def send_accounts_document_via_resend(
+    *, to: str, customer: str, vehicle: str,
+    document: dict, car_id: int,
+) -> str:
+    """Send a published native invoice or payment receipt with a secure link.
+
+    The invoice reflects the live Billing total and paid/balance. A receipt
+    refers only to money already recorded in Billing. This function does
+    not issue documents, approve publication, or record a payment.
+    """
+    kind = document.get("kind")
+    status = document.get("status")
+    eligible = {
+        "invoice": {"issued", "sent", "overdue", "partially_paid", "paid"},
+        "receipt": {"issued"},
+    }
+    if kind not in eligible or status not in eligible[kind]:
+        raise BillingBridgeUnavailable("Invoice or receipt not eligible for delivery")
+    if document.get("group") != "job_record":
+        raise BillingBridgeUnavailable("Unlinked Billing document cannot be emailed")
+    if current_app.config.get("MAIL_SUPPRESS_SEND"):
+        raise BillingBridgeUnavailable("Sending disabled in this environment")
+    key = os.getenv("RESEND_API_KEY") or current_app.config.get("RESEND_API_KEY")
+    if not key:
+        raise BillingBridgeUnavailable("Resend key not configured")
+    try:
+        doc_id = str(uuid.UUID(document["id"]))
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        raise BillingBridgeUnavailable("Invalid Billing document ID") from exc
+    total = _money(document.get("total"))
+    paid = _money(document.get("paid"))
+    balance = _money(document.get("balance"))
+    if total <= 0 or paid < 0 or balance < 0:
+        raise BillingBridgeUnavailable("Invalid source payment amounts")
+    if kind == "invoice" and abs(total - (paid + balance)) > Decimal("0.01"):
+        raise BillingBridgeUnavailable("Invoice balances do not reconcile")
+    if kind == "invoice" and status == "partially_paid" and not (0 < paid < total):
+        raise BillingBridgeUnavailable("Partial payment not verified")
+    if kind == "receipt" and status != "issued":
+        raise BillingBridgeUnavailable("Receipt is not issued")
+    label = "invoice" if kind == "invoice" else "payment receipt"
+    link = f"https://aura.ajebofix.com/cars/{car_id}/billing/documents/{doc_id}"
+    money = lambda amount: f"₦{amount:,.2f}"
+    if kind == "invoice":
+        details = (
+            f"Invoice total: {money(total)}\\n"
+            f"Payments recorded: {money(paid)}\\n"
+            f"Outstanding balance: {money(balance)}"
+        )
+        disclaimer = (
+            "This invoice reflects the payment records available at the time "
+            "of sending. The secure document shows the current Billing balance."
+        )
+    else:
+        details = f"Payment acknowledged: {money(total)}"
+        disclaimer = (
+            "This receipt confirms only the stated recorded payment. "
+            "It does not certify full settlement unless the original Billing "
+            "records establish that."
+        )
+    subject = f"Ajebo Fix Accounts | {label} {document['number']}"
+    body = (
+        f"Hello {customer},\\n\\n"
+        f"Your {label} for {vehicle} is available for private review.\\n\\n"
+        f"Document: {document['number']}\\n"
+        f"{details}\\n\\n"
+        f"View securely in Aura: {link}\\n\\n"
+        f"{disclaimer}\\n"
+        "This link requires signing into the verified Aura owner account.\\n\\n"
+        "Ajebo Fix Ltd · Accounts"
+    )
+    html = (
+        '<div style="background:#f2f4f8;padding:24px;font-family:Arial,sans-serif">'
+        '<div style="max-width:600px;margin:auto;background:white;padding:26px">'
+        '<h2 style="color:#0a1628">AJEBO FIX · ACCOUNTS</h2>'
+        '<p>Private Automotive Health Management</p>'
+        f'<p>Hello {escape(customer)},</p>'
+        f'<p>Your {escape(label)} for {escape(vehicle)} is ready for private review.</p>'
+        f'<p><strong>{escape(str(document["number"]))}</strong></p>'
+        f'<p style="white-space:pre-line">{escape(details)}</p>'
+        f'<p><a href="{escape(link, quote=True)}">View document securely in Aura</a></p>'
+        f'<p>{escape(disclaimer)}</p>'
+        '<p style="font-size:12px">Sign-in is required. Ajebo Fix Ltd · Accounts</p>'
+        '</div></div>'
+    )
+    signature = hashlib.sha256(
+        f"{car_id}:{doc_id}:{to.lower()}:{kind}:v{document.get('revision',1)}".encode()
+    ).hexdigest()
+    payload = {
+        "from": "Ajebo Fix Accounts <accounts@updates.ajebofix.com>",
+        "to": [to], "reply_to": "ajebofix@gmail.com",
+        "subject": subject, "text": body, "html": html,
+        "tags": [
+            {"name":"source","value":"aura_billing"},
+            {"name":"type","value":kind},
+        ],
+    }
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "Idempotency-Key": f"aura-billing-{signature}",
+                "User-Agent": "AjeboFixAura/1.0",
+            },
+            timeout=12, allow_redirects=False,
+        )
+        response.raise_for_status()
+        result = response.json()
+        message_id = str(result.get("id") or "") if isinstance(result, dict) else ""
+        if not message_id:
+            raise BillingBridgeUnavailable("Resend did not confirm delivery submission")
+        return message_id
+    except (requests.RequestException, ValueError) as exc:
+        current_app.logger.warning("Resend document submission failed")
+        raise BillingBridgeUnavailable("Resend did not accept the document email") from exc

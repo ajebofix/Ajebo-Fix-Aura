@@ -51,3 +51,13 @@
 ## Operating rule
 
 **Automation complements manual control.** Users must always be able to take deliberate supported actions. Hidden items that are gated by role, document status or explicit approval must remain gated and should explain their unavailable state rather than masquerading as dead controls.
+
+## Authenticated administrator browser audit (9 October 2026)
+
+Saved administrator session successfully opened seven protected screens in a read-only browser run: `/admin/dashboard`, `/admin/clients`, `/admin/fleet/health`, `/chat/workspace`, `/admin/billing`, `/admin/cars/3/billing/workspace`, and an invoice preview from that workspace. Navigation and linked document preview opened without a confirmed broken route. The partially paid invoice showed ₦685,000 total, ₦200,000 paid and ₦485,000 outstanding.
+
+**Test coverage caveat:** No edit, POST, send, publish, password reset, chat submission, financial update, or account operation was performed. Visible and enabled is not equivalent to functionally tested. A zero-count summary widget or empty group has not been established as a defect.
+
+A second mobile-oriented browser run could not emulate or verify a 390px viewport. Its claims that Aura lacks a viewport meta tag, hamburger control, or media queries are **contradicted by production source**: `templates/base.html` defines both viewport metadata and `.mobile-toggle`; `static/css/style.css` imports `static/css/mobile.css`, which contains a 900px mobile breakpoint and drawer styles. These should NOT be counted as confirmed mobile defects. Real-device mobile interaction testing remains open.
+
+Next steps: genuine iPhone Safari screenshot/touch tests; owner and driver sign-in checks; safe test-record form/error-state testing; Billing issue/publish/send/receipt controls under test accounts; Rina error/loading and conversation persistence checks. Keep sensitive production records untouched.

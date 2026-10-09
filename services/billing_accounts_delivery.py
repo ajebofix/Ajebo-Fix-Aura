@@ -76,6 +76,60 @@ def publish_native_billing_estimate(
     return result["state"]
 
 
+def approve_native_estimate_issue(
+    *, car_id: int, owner_user_id: int, advisor_user_id: int,
+    vin: str, document: dict,
+) -> bool:
+    """Signed adviser issuance. No publication, payment or email is performed."""
+    validate_estimate_delivery(document, 90, allow_draft=True)
+    if document.get("status") != "draft":
+        raise BillingBridgeUnavailable("Document is no longer a draft")
+    doc_id = str(uuid.UUID(document["id"]))
+    stamp = str(document.get("updated_at") or "")
+    if not stamp or len(stamp) > 60:
+        raise BillingBridgeUnavailable("Missing document review version")
+    endpoint = os.getenv("AURA_BILLING_BRIDGE_URL", "").strip()
+    parsed = urlparse(endpoint)
+    if (parsed.scheme != "https" or
+        parsed.hostname != "odtctmjhkcphyaozpcup.supabase.co" or
+        parsed.path != "/functions/v1/aura-billing-bridge" or
+        parsed.username or parsed.password or parsed.query or parsed.fragment):
+        raise BillingBridgeUnavailable("Billing gateway unavailable")
+    norm_vin = _normalise_vin(vin)
+    if len(norm_vin) != 17 or min(car_id, owner_user_id, advisor_user_id) < 1:
+        raise BillingBridgeUnavailable("Invalid owner or vehicle")
+    body, sig_headers = sign_billing_request({
+        "action": "issue_document",
+        "car_id": car_id,
+        "owner_user_id": owner_user_id,
+        "advisor_user_id": advisor_user_id,
+        "vin": norm_vin,
+        "document_id": doc_id,
+        "expected_total": str(_money(document["total"])),
+        "expected_revision": int(document["revision"]),
+        "expected_updated_at": stamp,
+    })
+    try:
+        response = requests.post(
+            endpoint, data=body, headers={
+                **sig_headers, "Accept": "application/json",
+                "Content-Type": "application/json",
+            }, timeout=(3.05, 12), allow_redirects=False,
+        )
+        if response.status_code in (404, 409):
+            raise BillingBridgeUnavailable(
+                "The draft changed or is no longer eligible. Refresh and review again."
+            )
+        response.raise_for_status()
+        result = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise BillingBridgeUnavailable("Issuance could not be confirmed") from exc
+    if (not isinstance(result, dict) or result.get("state") != "issued"
+        or result.get("document_id") != doc_id):
+        raise BillingBridgeUnavailable("Billing did not confirm issuance")
+    return True
+
+
 def already_delivered(*, car_id: int, owner_user_id: int, document_id: str) -> bool:
     """Prevent a second dispatch after an accepted Resend provider response."""
     notes = AdvisorNote.query.filter_by(
@@ -98,7 +152,7 @@ def already_delivered(*, car_id: int, owner_user_id: int, document_id: str) -> b
 
 
 def validate_estimate_delivery(
-    document: dict, upfront_percentage: int,
+    document: dict, upfront_percentage: int, *, allow_draft: bool = False,
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Validate live Billing figures and the approved source terms before publication.
 
@@ -109,9 +163,8 @@ def validate_estimate_delivery(
         50, 60, 70, 80, 90, 100,
     }:
         raise BillingBridgeUnavailable("Invalid approved mobilisation percentage")
-    if document.get("kind") != "estimate" or document.get("status") not in {
-        "issued", "sent",
-    }:
+    eligible = {"issued", "sent"} | ({"draft"} if allow_draft else set())
+    if document.get("kind") != "estimate" or document.get("status") not in eligible:
         raise BillingBridgeUnavailable("Issue the revised estimate in Billing first")
     if document.get("group") != "job_record":
         raise BillingBridgeUnavailable("Estimate has no commercial job reference")

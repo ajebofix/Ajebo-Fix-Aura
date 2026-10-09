@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Review &amp; Issue Draft | Ajebo Fix{% endblock %}
+{% block page_title %}Review &amp; Issue Estimate{% endblock %}
+{% block page_subtitle %}Advisor approval · Native Billing record · No email sent{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Review before issuing</h2>
+  <p>Issuing turns the existing Billing draft into an official estimate. It does
+  <strong>not</strong> publish the document to a client, send an email,
+  confirm client acceptance or record payment.</p>
+  <p><strong>{{ document.number }}</strong> · Revision {{ document.revision }} · {{ document.job_number }}</p>
+  <div class="detail-grid">
+    <div><span class="muted">Billing customer</span><p><strong>{{ document.billed_to }}</strong></p></div>
+    <div><span class="muted">Owner's Aura account</span><p><strong>{{ owner.email }}</strong></p></div>
+    <div><span class="muted">Vehicle</span><p><strong>{{ car.rina_display_name }}</strong></p></div>
+    <div><span class="muted">Estimate total</span><p><strong>{{ document.currency }}{{ "{:,.2f}".format(total) }}</strong></p></div>
+    <div><span class="muted">Upfront 90%</span><p><strong>{{ document.currency }}{{ "{:,.2f}".format(upfront) }}</strong></p></div>
+    <div><span class="muted">Balance 10%</span><p><strong>{{ document.currency }}{{ "{:,.2f}".format(balance) }}</strong></p></div>
+    <div><span class="muted">Validity</span><p><strong>Through {{ document.valid_until or 'Not specified' }}</strong></p></div>
+  </div>
+  <h3>Source scope</h3>
+  <p style="white-space:pre-wrap">{{ document.scope }}</p>
+  <h3>Source payment terms</h3>
+  <p style="white-space:pre-wrap">{{ document.terms }}</p>
+  <div class="button-stack">
+    <a class="btn btn-secondary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open original Billing application</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}">Back to vehicle workspace</a>
+  </div>
+</section>
+<section class="card">
+  <h2>Confirm issuance</h2>
+  {% if validation_issue %}
+    <p class="banner banner-warn">{{ validation_issue }}</p>
+    <p>Correct the draft and its payment terms in Billing, then refresh this review.</p>
+  {% else %}
+    <p>The estimate is still a draft. This action issues the <em>current, reviewed revision only</em>.
+    Any change to the draft after this page loaded requires a fresh review.</p>
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="expected_total" value="{{ document.total }}">
+      <input type="hidden" name="expected_revision" value="{{ document.revision }}">
+      <input type="hidden" name="expected_updated_at" value="{{ document.updated_at }}">
+      <label style="display:block;margin:15px 0">
+        <input type="checkbox" name="confirmed" value="yes" required>
+        I have checked the source estimate, customer, vehicle, job, scope,
+        ₦{{ "{:,.2f}".format(total) }} total and payment terms. I authorise
+        issuing this revision, without sending it.
+      </label>
+      <button class="btn btn-primary" type="submit">Confirm &amp; Issue Estimate</button>
+    </form>
+  {% endif %}
+  <p class="muted">After issuance, return to the workspace for the separate
+  Review &amp; Send via Resend approval.</p>
+</section>
+{% endblock %}

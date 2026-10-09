@@ -262,6 +262,7 @@ def client_billing_document(
         "valid_until": str(doc.get("valid_until") or "")[:10],
         "due": str(doc.get("due") or "")[:10],
         "revision": int(doc.get("revision") or 1),
+        "updated_at": str(doc.get("updated_at") or "")[:60] if advisor_user_id else "",
         "currency": str(doc.get("currency") or "₦")[:5],
         "total": str(_money(doc.get("total"))),
         "paid": str(_money(doc.get("paid"))),

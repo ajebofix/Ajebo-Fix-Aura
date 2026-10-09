@@ -16,6 +16,9 @@ on:
       - "services/billing_client_routes.py"
       - "templates/billing/advisor_estimate_send.html"
       - "templates/billing/owner_vehicle.html"
+      - "templates/billing/owner_document.html"
+      - "templates/base.html"
+      - "tests/test_aura_brand_splash.py"
       - "templates/car_detail.html"
       - "app.py"
       - "tests/test_billing_client_bridge.py"
@@ -58,8 +61,9 @@ jobs:
           services/repair_progress.py
           services/treatment_action_routes.py
           tests/test_billing_client_bridge.py
-          tests/test_billing_accounts_delivery.py
+          tests/test_billing_accounts_delivery.py tests/test_aura_brand_splash.py
           tests/test_client_repair_progress.py
+          tests/test_aura_brand_splash.py
       - name: Run owner billing security and read-only tests
         run: pytest -q --tb=short tests/test_billing_client_bridge.py tests/test_client_repair_progress.py tests/test_billing_accounts_delivery.py
       - name: Ruff new billing code

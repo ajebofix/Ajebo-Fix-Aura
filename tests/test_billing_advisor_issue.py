@@ -86,6 +86,7 @@ def test_advisor_draft_preview_and_explicit_approval(app, client, monkeypatch):
     assert issued == []
 
     response = client.post(uri, data={
+        "csrf_token": csrf,
         "confirmed": "yes", "expected_total": draft()["total"],
         "expected_revision": "3",
         "expected_updated_at": draft()["updated_at"],

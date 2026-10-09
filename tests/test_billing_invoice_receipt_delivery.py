@@ -199,6 +199,8 @@ def test_send_invoice_discloses_actual_balance_not_90_percent(app,monkeypatch):
 
 
 def test_send_rejects_wrong_partpayment_status(app,monkeypatch):
+    app.config["MAIL_SUPPRESS_SEND"] = False
+    monkeypatch.setenv("RESEND_API_KEY", "re_fake")
     doc = {**_invoice(),"paid":"0.00","balance":"685000.00"}
     with app.app_context():
         with pytest.raises(BillingBridgeUnavailable,match="Partial payment"):

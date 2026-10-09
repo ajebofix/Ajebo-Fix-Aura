@@ -18,7 +18,9 @@ def test_splash_reuses_existing_logo_and_has_safe_exit():
 
 def test_owner_financial_document_uses_official_brand_asset_and_current_disclosure():
     document = (ROOT / "templates/billing/owner_document.html").read_text(encoding="utf-8")
-    assert 'src="{{ brand.logo }}"' in document
+    assert "images/ajebo-fix-official-mark.webp" in document
+    assert (ROOT / "static/images/ajebo-fix-official-mark.webp").is_file()
+    assert 'src="{{ brand.logo }}"' not in document
     assert "Official {{ brand.name }} logo" in document
     assert "Premium Automotive Health &amp; Concierge" in document
     assert "Ajebo Fix Billing · Secure client access via Aura by Ajebo Fix" in document

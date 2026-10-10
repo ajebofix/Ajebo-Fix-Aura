@@ -322,7 +322,17 @@ def send_accounts_document_via_resend(
         raise BillingBridgeUnavailable("Partial payment not verified")
     if kind == "receipt" and status != "issued":
         raise BillingBridgeUnavailable("Receipt is not issued")
-    label = "invoice" if kind == "invoice" else "payment receipt"
+    receipt_kind = document.get("receipt_kind") or ""
+    if receipt_kind not in {"", "payment", "consolidated"}:
+        raise BillingBridgeUnavailable("Unverified receipt category")
+    if kind == "receipt" and receipt_kind == "consolidated":
+        if not document.get("source_invoice_number") or (
+            _money(document.get("source_invoice_balance")) > Decimal("0.00")
+        ):
+            raise BillingBridgeUnavailable("Final settlement not established")
+    label = ("invoice" if kind == "invoice" else
+             "final settlement confirmation" if receipt_kind == "consolidated"
+             else "payment receipt")
     link = f"https://aura.ajebofix.com/cars/{car_id}/billing/documents/{doc_id}"
     money = lambda amount: f"₦{amount:,.2f}"
     if kind == "invoice":
@@ -335,12 +345,27 @@ def send_accounts_document_via_resend(
             "This invoice reflects the payment records available at the time "
             "of sending. The secure document shows the current Billing balance."
         )
+    elif receipt_kind == "consolidated":
+        details = (
+            f"Final invoice: {document['source_invoice_number']}\n"
+            f"Total settled: {money(total)}\n"
+            "Outstanding balance: ₦0.00"
+        )
+        disclaimer = (
+            "This consolidated confirmation is for the reconciled invoice. "
+            "It does not represent an additional payment."
+        )
     else:
         details = f"Payment acknowledged: {money(total)}"
+        if document.get("source_invoice_number"):
+            details += (
+                f"\nSource invoice: {document['source_invoice_number']}"
+                f"\nCurrent invoice balance: "
+                f"{money(_money(document.get('source_invoice_balance')))}"
+            )
         disclaimer = (
             "This receipt confirms only the stated recorded payment. "
-            "It does not certify full settlement unless the original Billing "
-            "records establish that."
+            "It is not evidence that the full invoice has been settled."
         )
     subject = f"Ajebo Fix Accounts | {label} {document['number']}"
     body = (
@@ -350,6 +375,8 @@ def send_accounts_document_via_resend(
         f"{details}\n\n"
         f"View securely in Aura: {link}\n\n"
         f"{disclaimer}\n"
+        "General service policies: https://ajebofix.com/service-terms\n"
+        "The specifically agreed terms of your job remain applicable.\n"
         "This link requires signing into the verified Aura owner account.\n\n"
         "Ajebo Fix Ltd · Accounts"
     )
@@ -364,6 +391,9 @@ def send_accounts_document_via_resend(
         f'<p style="white-space:pre-line">{escape(details)}</p>'
         f'<p><a href="{escape(link, quote=True)}">View document securely in Aura</a></p>'
         f'<p>{escape(disclaimer)}</p>'
+        '<p style="font-size:12px">General service policies: '
+        '<a href="https://ajebofix.com/service-terms">ajebofix.com/service-terms</a>. '
+        'Specifically agreed job terms remain applicable.</p>'
         '<p style="font-size:12px">Sign-in is required. Ajebo Fix Ltd · Accounts</p>'
         '</div></div>'
     )

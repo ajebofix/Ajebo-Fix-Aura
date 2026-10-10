@@ -123,8 +123,23 @@
         <div class="af-billing-row"><strong>Outstanding</strong><strong>{{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</strong></div>
       {% endif %}
     </div>
+    <section style="margin-top:22px;border:1px solid #dce4ef;border-radius:12px;padding:16px 18px;background:#f8fafc" aria-label="Document payment status and policies">
+      {% if document.kind == 'estimate' %}
+        <p><strong>Estimate, not a receipt.</strong> This document proposes the listed scope and price. Further chargeable work requires separate approval.</p>
+      {% elif document.kind == 'invoice' %}
+        <p><strong>{% if document.balance|float > 0 %}Partially paid / balance outstanding{% else %}Payment position settled{% endif %}.</strong> Recorded payments reduce this invoice's balance. A partial payment is not final settlement. A new invoice is not needed for every instalment.</p>
+      {% elif document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}
+        <p><strong>Final settlement confirmation.</strong> This consolidated receipt relates to invoice {{ document.source_invoice_number }} and is issued only after its recorded balance is cleared. Payments represented here should not be counted a second time.</p>
+      {% elif document.kind == 'receipt' %}
+        <p><strong>Individual payment acknowledgement.</strong> This receipt confirms only the amount stated, not settlement of all outstanding work.{% if document.source_invoice_number %} Source invoice: {{ document.source_invoice_number }}.{% endif %}</p>
+        {% if document.source_invoice_balance %}
+          <p style="margin-top:8px"><strong>Current source-invoice balance:</strong> {{ document.currency }}{{ "{:,.2f}".format(document.source_invoice_balance|float) }}. This live figure may change after a subsequent payment.</p>
+        {% endif %}
+      {% endif %}
+      <p style="margin-top:12px;font-size:.83rem">General policy information: <a href="https://ajebofix.com/service-terms" target="_blank" rel="noopener noreferrer" style="text-decoration:underline;color:#1a365d">ajebofix.com/service-terms</a>. The accepted document's specific scope, pricing and terms remain authoritative. This link does not amend an earlier agreement or constitute acceptance.</p>
+    </section>
     {% if document.terms %}
-      <h3 style="margin-top:24px">Terms and Conditions</h3>
+      <h3 style="margin-top:24px">Document-specific terms</h3>
       <p class="af-billing-terms">{{ document.terms }}</p>
     {% endif %}
     <p class="af-billing-label" style="margin-top:20px">This is a live, owner-authorised view of the existing Ajebo Fix Billing record. An issued estimate is not a receipt or confirmation that payment was received. Downloaded copies may not reflect later amendments or revocation; confirm the current version in Aura.</p>

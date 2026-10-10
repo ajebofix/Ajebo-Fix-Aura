@@ -300,7 +300,8 @@ def test_policy_reference_and_explicit_partial_payment_receipt_email(app,monkeyp
         )=="test_send_id"
     assert "Current invoice balance: ₦65,000.00" in sent[0]["text"]
     assert "not evidence that the full invoice has been settled" in sent[0]["text"]
-    assert "https://ajebofix.com/service-terms" in sent[0]["text"]
+    assert "https://ajebofix.com/service-terms" not in sent[0]["text"]
+    assert "specifically agreed terms of your job remain applicable" in sent[0]["text"].lower()
 
 
 def test_final_settlement_only_when_source_invoice_is_reconciled(app,monkeypatch):

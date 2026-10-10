@@ -321,7 +321,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return respond(404, { error: "Document not available" });
       }
       const detail = await fromBilling("billing_documents",
-        `select=id,doc_type,doc_number,status,issue_date,due_date,valid_until,currency_symbol,total,amount_paid,vehicle_id,client_id,job_id,scope,sections,terms,revision_no,superseded_at,share_revoked_at,updated_at&id=eq.${targetId}&vehicle_id=eq.${vehicleId}&client_id=eq.${clientId}&limit=2`);
+        `select=id,doc_type,doc_number,status,issue_date,due_date,valid_until,currency_symbol,total,amount_paid,gross_subtotal,adjustment_total,vat_amount,vehicle_id,client_id,job_id,scope,sections,terms,revision_no,superseded_at,share_revoked_at,updated_at&id=eq.${targetId}&vehicle_id=eq.${vehicleId}&client_id=eq.${clientId}&limit=2`);
       if (detail.length !== 1) return respond(404, { error: "Document not available" });
       const d = detail[0];
       const kind = String(d.doc_type || "").toLowerCase();
@@ -337,6 +337,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return respond(404, { error: "Document not available" });
       }
       const sections: object[] = [];
+      // Source discount rows are distinct from charge rows. Never project
+      // adjustment.note, which may contain confidential advisor negotiation.
+      const discountRows: {description:string,amount:string}[] = [];
       const rawSections = Array.isArray(d.sections) ? d.sections : [];
       if (rawSections.length > 25) throw new Error("Too many sections");
       for (const section of rawSections) {
@@ -346,6 +349,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
         if (sourceRows.length > 100) throw new Error("Too many rows");
         for (const item of sourceRows) {
           if (!item || typeof item !== "object") continue;
+          if (item.kind === "adjustment") {
+            const signedAmount = Number(item.amount);
+            if (!Number.isFinite(signedAmount)) throw new Error("Invalid Billing adjustment");
+            if (item.adjustment_type === "discount" && signedAmount < 0) {
+              if (discountRows.length >= 25) throw new Error("Too many discounts");
+              discountRows.push({
+                description:String(item.description||"Discount").slice(0,140),
+                amount:String(-signedAmount),
+              });
+            }
+            continue;
+          }
           if (item.kind !== "line") continue;
           rows.push({
             description:String(item.description||"").slice(0,220),
@@ -355,6 +370,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
           });
         }
         sections.push({title:String(section.title||"").slice(0,160),rows});
+      }
+      // Present a discount only when the authentic Billing totals reconcile.
+      // Never compute a new price or assume an owner's requested settlement.
+      let discountBreakdown: {gross_subtotal:string,discounts:object[]} | null = null;
+      if (discountRows.length && kind !== "receipt") {
+        const gross = money(d.gross_subtotal);
+        const discountSum = discountRows.reduce((sum,row) => sum + Number(row.amount), 0);
+        const adjustmentsTotal = money(d.adjustment_total);
+        const vat = money(d.vat_amount);
+        if (gross <= 0 || Math.abs(discountSum-adjustmentsTotal)>0.011 ||
+            Math.abs(gross-discountSum+vat-money(d.total))>0.011) {
+          throw new Error("Source discount and invoice amount do not reconcile");
+        }
+        discountBreakdown = {gross_subtotal:String(gross), discounts:discountRows};
       }
       const settings = await fromBilling("billing_settings",
         "select=business_name,tagline,logo_url,website,primary_color,secondary_color,accent_color,footer_strap&id=eq.true&limit=1");
@@ -381,6 +410,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         currency:String(d.currency_symbol||"₦").slice(0,5),
         total:String(money(d.total)), paid:String(money(d.amount_paid)),
         balance:String(Math.max(0,money(d.total)-money(d.amount_paid))),
+        ...(discountBreakdown || {}),
         scope:String(d.scope||"").slice(0,1400),
         terms:String(d.terms||"").slice(0,2400),
         revision:Number(d.revision_no||1),

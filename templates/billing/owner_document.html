@@ -105,7 +105,19 @@
       {% endfor %}
     {% endfor %}
     <div class="af-billing-total">
-      <div class="af-billing-row" style="padding-top:0"><strong>Total</strong><strong style="font-size:1.4rem">{{ document.currency }}{{ "{:,.2f}".format(document.total|float) }}</strong></div>
+      {% if document.discounts %}
+      <div class="af-billing-row" style="padding-top:0">
+        <span>Services subtotal before discount</span>
+        <strong>{{ document.currency }}{{ "{:,.2f}".format(document.gross_subtotal|float) }}</strong>
+      </div>
+      {% for discount in document.discounts %}
+      <div class="af-billing-row" style="color:#065f46">
+        <span>{{ discount.description }}</span>
+        <strong>−{{ document.currency }}{{ "{:,.2f}".format(discount.amount|float) }}</strong>
+      </div>
+      {% endfor %}
+      {% endif %}
+      <div class="af-billing-row"{% if not document.discounts %} style="padding-top:0"{% endif %}><strong>{% if document.discounts %}Total after discount{% else %}Total{% endif %}</strong><strong style="font-size:1.4rem">{{ document.currency }}{{ "{:,.2f}".format(document.total|float) }}</strong></div>
       {% if document.kind == 'invoice' %}
         <div class="af-billing-row"><span>Recorded payments</span><strong>{{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }}</strong></div>
         <div class="af-billing-row"><strong>Outstanding</strong><strong>{{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}</strong></div>

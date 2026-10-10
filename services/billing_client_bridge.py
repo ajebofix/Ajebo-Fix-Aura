@@ -400,4 +400,40 @@ def advisor_billing_inventory(
             "job_linked": item["job_linked"],
             "published": item["published"],
         })
-    return {"state": "linked", "documents": clean_docs}
+    source_payments = data.get("payments", [])
+    if not isinstance(source_payments, list) or len(source_payments) > 100:
+        raise BillingBridgeUnavailable("Invalid advisor payment inventory")
+    eligible_invoices = {d["id"] for d in clean_docs if (
+        d["kind"] == "invoice" and d["job_linked"]
+    )}
+    clean_payments = []
+    for item in source_payments:
+        if not isinstance(item, dict):
+            raise BillingBridgeUnavailable("Invalid payment inventory entry")
+        try:
+            payment_id = str(uuid.UUID(item.get("id", "")))
+            invoice_id = str(uuid.UUID(item.get("invoice_id", "")))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise BillingBridgeUnavailable("Invalid payment identity") from exc
+        if invoice_id not in eligible_invoices or type(item.get("has_receipt")) is not bool:
+            raise BillingBridgeUnavailable("Payment does not belong to advisor invoice")
+        receipt_id = None
+        if item["has_receipt"]:
+            try:
+                receipt_id = str(uuid.UUID(item.get("receipt_document_id", "")))
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise BillingBridgeUnavailable("Invalid payment receipt identity") from exc
+        elif item.get("receipt_document_id") is not None:
+            raise BillingBridgeUnavailable("Unexpected unverified receipt identity")
+        amount = _money(item.get("amount"))
+        if amount <= 0:
+            raise BillingBridgeUnavailable("Invalid recorded payment")
+        clean_payments.append({
+            "id": payment_id,
+            "invoice_id": invoice_id,
+            "amount": str(amount),
+            "paid_at": str(item.get("paid_at") or "")[:10],
+            "has_receipt": item["has_receipt"],
+            "receipt_document_id": receipt_id,
+        })
+    return {"state": "linked", "documents": clean_docs, "payments": clean_payments}

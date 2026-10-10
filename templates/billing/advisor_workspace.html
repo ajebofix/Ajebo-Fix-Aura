@@ -26,6 +26,24 @@
 {% elif inventory.state == 'unavailable' %}
 <section class="card"><h2>Billing temporarily unavailable</h2><p class="muted">The Billing document list cannot be reached right now. No documents or payment records have been changed.</p></section>
 {% else %}
+{% set pending_receipts = payment_receipts|selectattr('has_receipt', 'equalto', false)|list %}
+{% if pending_receipts %}
+<section class="card" id="payment-receipts">
+  <h2>New payments awaiting individual receipts</h2>
+  <p>These bank transfers are recorded in Billing, but an individual payment receipt has not yet been generated for each. Sending the invoice earlier does not block a new receipt.</p>
+  {% for payment in pending_receipts %}
+  <div class="list-item" style="padding:14px 0;border-bottom:1px solid var(--border,#e5e7eb)">
+    <strong>{{ "₦{:,.2f}".format(payment.amount|float) }}</strong>
+    <p class="muted">Recorded {{ payment.paid_at }} · Payment receipt not yet generated</p>
+  </div>
+  {% endfor %}
+  <p class="muted">To issue each receipt, open <strong>Billing → Payments</strong>, find the existing payment and use <strong>Generate Payment Receipt</strong>. This does not record another payment. Then refresh this workspace; each new receipt will have its own Review &amp; Publish and Review &amp; Send actions below.</p>
+  <div class="button-stack">
+    <a class="btn btn-primary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open Billing → Payments to Generate Receipts</a>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}#payment-receipts">Refresh Receipt Status</a>
+  </div>
+</section>
+{% endif %}
 <section class="card">
   <h2>Document register</h2>
   <p class="muted">This register includes native Billing drafts for advisor review, as well as published documents. Drafts are never visible to owners. An email submission is not evidence of acceptance or payment.</p>
@@ -67,7 +85,7 @@
           </a>
         {% endif %}
         {% if document.kind == 'invoice' and document.status in ['partially_paid','paid'] %}
-          <p class="muted">Payment amounts refresh from Billing after invoice publication. For a separate payment receipt, generate an individual payment receipt in Billing; then publish and send it here.</p>
+          <p class="muted">An invoice email can be submitted only once. For each subsequent payment, generate its own individual receipt using Billing → Payments. New receipts receive separate publication and send approvals and are not blocked by the earlier invoice email.</p>
         {% endif %}
       </div>
     </div>

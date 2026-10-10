@@ -34,7 +34,10 @@
 <section class="card">
   {% if sent_before %}
     <h2>Already submitted</h2>
-    <p class="banner banner-good">A Resend submission is already recorded for this exact document. Duplicate email sending is blocked.</p>
+    <p class="banner banner-good">This exact {{ document.kind }} has already been submitted via Resend. Sending the same document again is blocked.</p>
+    {% if document.kind == 'invoice' %}
+    <p>New payment receipts are independent of the earlier invoice email. Each receipt gets its own document and email approval.</p>
+    {% endif %}
   {% elif not published %}
     <h2>Review &amp; Publish {{ document.kind|title }}</h2>
     <p>This approves visibility to the currently verified Aura vehicle owner. No email will be sent.</p>
@@ -74,10 +77,24 @@
       <button class="btn btn-navy" type="submit">Send {{ document.kind|title }} via Resend</button>
     </form>
   {% endif %}
-  {% if document.kind == 'invoice' and document.status == 'partially_paid' %}
-    <p class="muted">For an individual payment receipt, use Billing's Payments page
-      to generate the receipt for the recorded transfer, then return here
-      to review, publish and send it separately.</p>
+  {% if document.kind == 'invoice' %}
+    {% set unreceipted = payment_receipts|selectattr('has_receipt','equalto',false)|list %}
+    <section style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border,#e5e7eb)" aria-labelledby="new-payment-receipts">
+      <h3 id="new-payment-receipts">New payment receipts</h3>
+      {% if unreceipted %}
+        <p><strong>{{ unreceipted|length }} recorded payment{% if unreceipted|length != 1 %}s{% endif %} without individual receipts.</strong></p>
+        {% for payment in unreceipted %}
+          <p><strong>{{ document.currency }}{{ "{:,.2f}".format(payment.amount|float) }}</strong> received {{ payment.paid_at }} — Receipt not yet generated.</p>
+        {% endfor %}
+      {% else %}
+        <p>No outstanding individual receipt creation is shown for this invoice. Check the vehicle document register for issued receipts.</p>
+      {% endif %}
+      <p>Open <strong>Billing → Payments</strong>, find the existing transfer and select <strong>Generate Payment Receipt</strong>. That action must not record another payment. Then refresh the Aura workspace and use the new receipt’s independent <strong>Review &amp; Publish Receipt</strong> and <strong>Review &amp; Send Receipt</strong> actions.</p>
+      <div class="button-stack">
+        <a class="btn btn-primary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open Billing → Payments</a>
+        <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace',car_id=car.id) }}#payment-receipts">Refresh and Find New Receipt</a>
+      </div>
+    </section>
   {% endif %}
 </section>
 {% endblock %}

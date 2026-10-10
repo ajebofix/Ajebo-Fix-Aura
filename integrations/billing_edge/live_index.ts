@@ -147,7 +147,35 @@ Deno.serve(async (req: Request): Promise<Response> => {
           published:published.has(d.id),
         });
       }
-      return respond(200, {state:"linked",documents});
+      // Each new recorded transfer is distinct from the invoice's previous
+      // email submission. Advisor-only payment inventory allows the UI to
+      // explain which individual receipts still need to be created in Billing.
+      // No customer-facing transaction identifiers, private notes or bank
+      // details are exposed, and this action is strictly read-only.
+      const invoiceIds = rows.filter(d =>
+        d.doc_type === "invoice" && uuid(d.id) && uuid(d.job_id) &&
+        !d.superseded_at && !d.share_revoked_at
+      ).map(d => d.id as string);
+      const payments: object[] = [];
+      if (invoiceIds.length) {
+        const allowedInvoices = new Set(invoiceIds);
+        const sourcePayments = await fromBilling("billing_payments",
+          `select=id,invoice_id,amount,paid_at,receipt_document_id&invoice_id=in.(${invoiceIds.join(",")})&order=paid_at.desc&limit=100`);
+        for (const p of sourcePayments) {
+          if (!uuid(p.id) || !allowedInvoices.has(p.invoice_id) ||
+              (p.receipt_document_id !== null && !uuid(p.receipt_document_id))) {
+            throw new Error("Invalid advisor payment reference");
+          }
+          payments.push({
+            id:p.id,invoice_id:p.invoice_id,
+            amount:String(money(p.amount)),
+            paid_at:String(p.paid_at||"").slice(0,10),
+            has_receipt:uuid(p.receipt_document_id),
+            receipt_document_id:uuid(p.receipt_document_id) ? p.receipt_document_id : null,
+          });
+        }
+      }
+      return respond(200, {state:"linked",documents,payments});
     }
 
     if (payload?.action === "issue_document") {

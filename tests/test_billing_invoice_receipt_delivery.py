@@ -205,3 +205,75 @@ def test_send_rejects_wrong_partpayment_status(app,monkeypatch):
                 to="owner@example.com",customer="Christian",
                 vehicle="GLK",document=doc,car_id=3,
             )
+
+
+def test_previously_emailed_invoice_shows_each_new_unreceipted_payment(
+    app, client, monkeypatch
+):
+    uri, owner, advisor, car, doc, entry = _setup(
+        app, client, monkeypatch, kind="invoice", published=True,
+    )
+    payments = [
+        {"id":"2e6fffbd-71ee-4360-a863-12e78de63931",
+         "invoice_id":doc["id"],"amount":"400000.00",
+         "paid_at":"2026-10-10","has_receipt":False,
+         "receipt_document_id":None},
+        {"id":"75a25e5a-295f-4baf-8149-1814e4e863ff",
+         "invoice_id":doc["id"],"amount":"200000.00",
+         "paid_at":"2026-10-09","has_receipt":False,
+         "receipt_document_id":None},
+    ]
+    monkeypatch.setattr(
+        "services.billing_client_routes.advisor_billing_inventory",
+        lambda **kwargs: {
+            "state": "linked", "documents": [entry], "payments": payments,
+        },
+    )
+    from models import AdvisorNote
+    from services.billing_accounts_delivery import DELIVERY_PREFIX
+    import json
+    db.session.add(AdvisorNote(
+        user_id=owner.id, car_id=car.id, advisor_id=advisor.id,
+        note=DELIVERY_PREFIX+json.dumps({
+            "event":"submitted","document_id":doc["id"],
+            "provider_message_id":"already-submitted-invoice",
+        }),
+    ))
+    db.session.commit()
+    view = client.get(uri)
+    assert view.status_code == 200
+    assert b"Already submitted" in view.data
+    assert b"New payment receipts" in view.data
+    assert b"400,000.00" in view.data
+    assert b"200,000.00" in view.data
+    assert b"Billing" in view.data
+    assert b"Generate Payment Receipt" in view.data
+    assert b"Send Invoice via Resend" not in view.data
+
+    workspace = client.get(f"/admin/cars/{car.id}/billing/workspace")
+    assert workspace.status_code == 200
+    assert b"New payments awaiting individual receipts" in workspace.data
+    assert b"400,000.00" in workspace.data
+    assert b"200,000.00" in workspace.data
+    assert b"Generate Receipts" in workspace.data
+
+
+def test_payment_receipt_status_does_not_unlock_original_invoice_resend(
+    app, client, monkeypatch
+):
+    uri, owner, advisor, car, doc, entry = _setup(
+        app, client, monkeypatch, kind="invoice", published=True,
+    )
+    payment = {"id":"2e6fffbd-71ee-4360-a863-12e78de63931",
+               "invoice_id":doc["id"],"amount":"400000.00",
+               "paid_at":"2026-10-10","has_receipt":True,
+               "receipt_document_id":"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"}
+    monkeypatch.setattr(
+        "services.billing_client_routes.advisor_billing_inventory",
+        lambda **kwargs: {"state": "linked", "documents": [entry],
+                          "payments": [payment]},
+    )
+    response = client.get(uri)
+    assert response.status_code == 200
+    assert b"0 recorded payments" not in response.data
+    assert b"No recorded payments currently await" in response.data

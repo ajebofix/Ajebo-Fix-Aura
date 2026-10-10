@@ -128,7 +128,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       // Only authenticated advisors can request this signed inventory.
       // The same grant + exact full VIN + active owner binding has been checked.
       const rows = await fromBilling("billing_documents",
-        `select=id,doc_type,doc_number,status,issue_date,currency_symbol,total,job_id,created_by,superseded_at,share_revoked_at&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&order=created_at.desc&limit=75`);
+        `select=id,doc_type,doc_number,status,issue_date,currency_symbol,total,job_id,receipt_kind,created_by,superseded_at,share_revoked_at&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&order=created_at.desc&limit=75`);
       const releases = await fromBilling("aura_billing_published_documents",
         `select=document_id&aura_car_id=eq.${carId}&revoked_at=is.null&limit=100`);
       const published = new Set(releases.map(p => p.document_id).filter(uuid));
@@ -141,6 +141,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         if (!["draft","issued","sent","accepted","paid","partially_paid","overdue"].includes(state)) continue;
         documents.push({
           id:d.id, kind, number:String(d.doc_number || "").slice(0,80),
+          receipt_kind:kind === "receipt" && ["payment","consolidated"].includes(String(d.receipt_kind)) ? String(d.receipt_kind) : "",
           status:state, issued:String(d.issue_date || "").slice(0,10),
           amount:String(money(d.total)), currency:String(d.currency_symbol || "₦").slice(0,5),
           native_created:uuid(d.created_by), job_linked:uuid(d.job_id),

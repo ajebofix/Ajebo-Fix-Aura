@@ -24,7 +24,7 @@
   <p style="white-space:pre-wrap">{{ document.scope }}</p>
   <h3>Document-specific terms</h3>
   <p style="white-space:pre-wrap">{{ document.terms }}</p>
-  <p class="muted">General Ajebo Fix service policies: <a href="https://ajebofix.com/service-terms" target="_blank" rel="noopener noreferrer">ajebofix.com/service-terms</a>. A website link does not replace accepted job terms or establish consent on its own.</p>
+  <p class="muted">Only the existing document-specific job terms apply to this transaction. New proposed website policies have not been attached to previously agreed work.</p>
   {% if document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}
     <p class="banner banner-good"><strong>Final settlement:</strong> The original invoice {{ document.source_invoice_number }} has a verified zero balance. This consolidated document must not be counted as a new payment.</p>
   {% elif document.kind == 'receipt' %}

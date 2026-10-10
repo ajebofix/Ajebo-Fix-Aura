@@ -126,6 +126,7 @@ def advisor_billing_workspace(car_id: int):
         "billing/advisor_workspace.html",
         car=ownership.car, ownership=ownership, inventory=inventory,
         documents=documents,
+        payment_receipts=inventory.get("payments", []),
     ))
     response.headers["Cache-Control"] = "private, no-store"
     return response
@@ -447,6 +448,10 @@ def advisor_invoice_receipt_delivery(car_id: int, document_id: str):
         "billing/advisor_invoice_receipt_delivery.html",
         car=link.car,owner=owner,document=doc,
         published=entry["published"],sent_before=was_sent,
+        payment_receipts=[
+            payment for payment in inventory.get("payments", [])
+            if payment["invoice_id"] == doc["id"]
+        ] if doc["kind"] == "invoice" else [],
     ))
     result.headers["Cache-Control"] = "private, no-store"
     return result

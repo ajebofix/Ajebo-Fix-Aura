@@ -337,3 +337,67 @@ def test_issued_receipt_review_has_policy_link(app,client,monkeypatch):
     page=client.get(uri)
     assert page.status_code==200
     assert b"Review &amp; Publish Receipt" in page.data
+
+
+def test_account_statement_is_independent_and_never_resends_invoice(
+    app,client,monkeypatch
+):
+    from models import AdvisorNote
+    from services.billing_accounts_delivery import DELIVERY_PREFIX
+    import json
+
+    uri, owner, advisor, car, doc, entry = _setup(
+        app,client,monkeypatch,kind="invoice",published=True
+    )
+    db.session.add(AdvisorNote(
+        user_id=owner.id,car_id=car.id,advisor_id=advisor.id,
+        note=DELIVERY_PREFIX+json.dumps({
+            "event":"submitted","document_id":doc["id"],
+            "provider_message_id":"existing_invoice_email",
+        }),
+    ))
+    db.session.commit()
+    account_emails=[]
+    monkeypatch.setattr(
+        "services.billing_client_routes.send_account_statement_via_resend",
+        lambda **kwargs: account_emails.append(kwargs) or "statement_provider_id",
+    )
+    monkeypatch.setattr(
+        "services.billing_client_routes.send_accounts_document_via_resend",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Original invoice must not resend")
+        ),
+    )
+    view=client.get(uri)
+    assert b"Already submitted" in view.data
+    assert b"Send Updated Account Statement" in view.data
+    form=_payload(doc,_csrf(view.data),"statement")
+    response=client.post(uri,data=form)
+    assert response.status_code == 302
+    assert len(account_emails)==1
+    assert account_emails[0]["document"]["balance"]=="485000.00"
+    followup=client.get(uri)
+    assert b"balance update for these exact amounts" in followup.data
+    assert b"Send Updated Account Statement" not in followup.data
+
+    # A genuinely different payment position may be communicated separately.
+    doc["paid"]="300000.00"
+    doc["balance"]="385000.00"
+    doc["updated_at"]="2026-10-10T19:20:00+00:00"
+    fresh=client.get(uri)
+    assert b"Send Updated Account Statement" in fresh.data
+    assert client.post(uri,data=_payload(doc,_csrf(fresh.data),"statement")).status_code==302
+    assert len(account_emails)==2
+
+
+def test_statement_rejects_ledger_mismatch_before_email(app,monkeypatch):
+    from services.billing_accounts_delivery import send_account_statement_via_resend
+    app.config["MAIL_SUPPRESS_SEND"]=False
+    monkeypatch.setenv("RESEND_API_KEY","re_mock")
+    with app.app_context():
+        with pytest.raises(BillingBridgeUnavailable,match="inconsistent"):
+            send_account_statement_via_resend(
+                to="client@example.com",customer="Client",vehicle="GLK",
+                document={**_invoice(),"paid":"600000","balance":"65000"},
+                car_id=3,
+            )

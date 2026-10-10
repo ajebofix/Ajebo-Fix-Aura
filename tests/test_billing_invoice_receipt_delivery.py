@@ -280,3 +280,60 @@ def test_payment_receipt_status_does_not_unlock_original_invoice_resend(
     assert response.status_code == 200
     assert b"0 recorded payments" not in response.data
     assert b"No outstanding individual receipt creation is shown" in response.data
+
+
+def test_policy_reference_and_explicit_partial_payment_receipt_email(app,monkeypatch):
+    app.config["MAIL_SUPPRESS_SEND"]=False
+    monkeypatch.setenv("RESEND_API_KEY","re_mock")
+    sent=[]
+    def fake(url,*,json,headers,timeout,allow_redirects):
+        sent.append(json)
+        return Mock(raise_for_status=lambda:None,json=lambda:{"id":"test_send_id"})
+    monkeypatch.setattr("services.billing_accounts_delivery.requests.post",fake)
+    receipt={**_receipt(),"receipt_kind":"payment",
+             "source_invoice_number":"AJF-INV-2026-1009-001",
+             "source_invoice_balance":"65000.00"}
+    with app.app_context():
+        assert send_accounts_document_via_resend(
+            to="client@example.com",customer="Client",vehicle="GLK",
+            document=receipt,car_id=3
+        )=="test_send_id"
+    assert "Current invoice balance: ₦65,000.00" in sent[0]["text"]
+    assert "not evidence that the full invoice has been settled" in sent[0]["text"]
+    assert "https://ajebofix.com/service-terms" in sent[0]["text"]
+
+
+def test_final_settlement_only_when_source_invoice_is_reconciled(app,monkeypatch):
+    app.config["MAIL_SUPPRESS_SEND"]=False
+    monkeypatch.setenv("RESEND_API_KEY","re_mock")
+    sent=[]
+    def fake(url,*,json,headers,timeout,allow_redirects):
+        sent.append(json)
+        return Mock(raise_for_status=lambda:None,json=lambda:{"id":"settlement_mock"})
+    monkeypatch.setattr("services.billing_accounts_delivery.requests.post",fake)
+    final={**_receipt(),"receipt_kind":"consolidated",
+           "source_invoice_number":"INV-TEST",
+           "source_invoice_balance":"0.00"}
+    with app.app_context():
+        assert send_accounts_document_via_resend(
+            to="client@example.com",customer="Client",vehicle="GLK",
+            document=final,car_id=3
+        )=="settlement_mock"
+        with pytest.raises(BillingBridgeUnavailable,match="Final settlement"):
+            send_accounts_document_via_resend(
+                to="client@example.com",customer="Client",vehicle="GLK",
+                document={**final,"source_invoice_balance":"65000.00"},car_id=3
+            )
+    assert len(sent)==1
+    assert "Final invoice: INV-TEST" in sent[0]["text"]
+    assert "Outstanding balance: ₦0.00" in sent[0]["text"]
+    assert "not represent an additional payment" in sent[0]["text"]
+
+
+def test_issued_receipt_review_has_policy_link(app,client,monkeypatch):
+    uri, owner, advisor, car, doc, entry=_setup(
+        app,client,monkeypatch,kind="receipt",published=False,
+    )
+    page=client.get(uri)
+    assert page.status_code==200
+    assert b"Review &amp; Publish Receipt" in page.data

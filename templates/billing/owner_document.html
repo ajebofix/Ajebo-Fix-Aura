@@ -127,7 +127,7 @@
       {% if document.kind == 'estimate' %}
         <p><strong>Estimate, not a receipt.</strong> This document proposes the listed scope and price. Further chargeable work requires separate approval.</p>
       {% elif document.kind == 'invoice' %}
-        <p><strong>{% if document.balance|float > 0 %}Partially paid / balance outstanding{% else %}Payment position settled{% endif %}.</strong> Recorded payments reduce this invoice's balance. A partial payment is not final settlement. A new invoice is not needed for every instalment.</p>
+        <p><strong>{% if document.balance|float <= 0 %}Paid in full{% elif document.paid|float > 0 %}Partially paid / balance outstanding{% else %}Unpaid / balance outstanding{% endif %}.</strong> Recorded payments reduce this invoice's balance. A partial payment is not final settlement. A new invoice is not needed for every instalment.</p>
       {% elif document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}
         <p><strong>Final settlement confirmation.</strong> This consolidated receipt relates to invoice {{ document.source_invoice_number }} and is issued only after its recorded balance is cleared. Payments represented here should not be counted a second time.</p>
       {% elif document.kind == 'receipt' %}

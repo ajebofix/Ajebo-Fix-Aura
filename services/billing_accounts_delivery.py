@@ -402,7 +402,6 @@ def send_accounts_document_via_resend(
         f"{details}\n\n"
         f"View securely in Aura: {link}\n\n"
         f"{disclaimer}\n"
-        "General service policies: https://ajebofix.com/service-terms\n"
         "The specifically agreed terms of your job remain applicable.\n"
         "This link requires signing into the verified Aura owner account.\n\n"
         "Ajebo Fix Ltd · Accounts"
@@ -418,9 +417,7 @@ def send_accounts_document_via_resend(
         f'<p style="white-space:pre-line">{escape(details)}</p>'
         f'<p><a href="{escape(link, quote=True)}">View document securely in Aura</a></p>'
         f'<p>{escape(disclaimer)}</p>'
-        '<p style="font-size:12px">General service policies: '
-        '<a href="https://ajebofix.com/service-terms">ajebofix.com/service-terms</a>. '
-        'Specifically agreed job terms remain applicable.</p>'
+        '<p style="font-size:12px">Specifically agreed job terms remain applicable.</p>'
         '<p style="font-size:12px">Sign-in is required. Ajebo Fix Ltd · Accounts</p>'
         '</div></div>'
     )
@@ -516,7 +513,6 @@ def send_account_statement_via_resend(
             f"Here is the current account position for {vehicle}.\n\n"
             f"{summary}\n\n{explanation}\n"
             f"View the current invoice securely in Aura: {link}\n"
-            "Service policies: https://ajebofix.com/service-terms\n"
             "Specifically agreed job terms remain applicable.\n\n"
             "Ajebo Fix Ltd · Accounts"
         ),
@@ -529,8 +525,6 @@ def send_account_statement_via_resend(
             f'<p style="white-space:pre-line">{escape(summary)}</p>'
             f'<p>{escape(explanation)}</p>'
             f'<p><a href="{escape(link,quote=True)}">View current invoice in Aura</a></p>'
-            '<p>Service policies: '
-            '<a href="https://ajebofix.com/service-terms">ajebofix.com/service-terms</a></p>'
             '<p>Specifically agreed job terms remain applicable.</p>'
             '</div></div>'
         ),

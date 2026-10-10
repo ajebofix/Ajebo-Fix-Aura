@@ -349,7 +349,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return respond(404, { error: "Document not available" });
       }
       const detail = await fromBilling("billing_documents",
-        `select=id,doc_type,doc_number,status,issue_date,due_date,valid_until,currency_symbol,total,amount_paid,gross_subtotal,adjustment_total,vat_amount,vehicle_id,client_id,job_id,scope,sections,terms,revision_no,superseded_at,share_revoked_at,updated_at&id=eq.${targetId}&vehicle_id=eq.${vehicleId}&client_id=eq.${clientId}&limit=2`);
+        `select=id,doc_type,doc_number,status,issue_date,due_date,valid_until,currency_symbol,total,amount_paid,gross_subtotal,adjustment_total,vat_amount,receipt_kind,source_document_id,vehicle_id,client_id,job_id,scope,sections,terms,revision_no,superseded_at,share_revoked_at,updated_at&id=eq.${targetId}&vehicle_id=eq.${vehicleId}&client_id=eq.${clientId}&limit=2`);
       if (detail.length !== 1) return respond(404, { error: "Document not available" });
       const d = detail[0];
       const kind = String(d.doc_type || "").toLowerCase();
@@ -425,6 +425,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const jobs = d.job_id && uuid(d.job_id) ? await fromBilling("billing_jobs",
         `select=id,job_number,sow_number,client_id,vehicle_id&id=eq.${d.job_id}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=1`) : [];
       if (d.job_id && jobs.length !== 1) throw new Error("Unverified Billing job");
+      // A payment receipt is not final settlement. Verify its source invoice
+      // independently so that a final-settlement claim requires a zero balance.
+      let receiptKind = "";
+      let sourceBalance = "";
+      let sourceInvoiceNumber = "";
+      if (kind === "receipt" && uuid(d.source_document_id) &&
+          (d.receipt_kind === "payment" || d.receipt_kind === "consolidated")) {
+        const origins = await fromBilling("billing_documents",
+          `select=id,doc_type,doc_number,total,amount_paid,client_id,vehicle_id&id=eq.${d.source_document_id}&client_id=eq.${clientId}&vehicle_id=eq.${vehicleId}&limit=2`);
+        if (origins.length !== 1 || origins[0].doc_type !== "invoice")
+          throw new Error("Receipt source invoice unavailable");
+        const origin = origins[0];
+        const outstanding = Math.max(0, money(origin.total) - money(origin.amount_paid));
+        if (d.receipt_kind === "consolidated" &&
+            (outstanding > 0.009 || Math.abs(money(d.total)-money(origin.total))>0.009))
+          throw new Error("Final settlement is not verified");
+        receiptKind = d.receipt_kind;
+        sourceBalance = String(outstanding);
+        sourceInvoiceNumber = String(origin.doc_number || "").slice(0,80);
+      }
       const document = {
         id:d.id, kind, group:d.job_id ? "job_record" : "vehicle_history",
         number:String(d.doc_number||"").slice(0,80), status:state,
@@ -438,6 +458,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         currency:String(d.currency_symbol||"₦").slice(0,5),
         total:String(money(d.total)), paid:String(money(d.amount_paid)),
         balance:String(Math.max(0,money(d.total)-money(d.amount_paid))),
+        receipt_kind: receiptKind,
+        source_invoice_balance: sourceBalance,
+        source_invoice_number: sourceInvoiceNumber,
         ...(discountBreakdown || {}),
         scope:String(d.scope||"").slice(0,1400),
         terms:String(d.terms||"").slice(0,2400),

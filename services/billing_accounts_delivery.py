@@ -493,10 +493,10 @@ def send_account_statement_via_resend(
     name = str(document.get("number") or "")[:80]
     money = lambda value: f"₦{value:,.2f}"
     summary = (
-        f"Original invoice: {name}\\n"
-        f"Invoice total: {money(total)}\\n"
-        f"Recorded payments: {money(paid)}\\n"
-        f"Outstanding: {money(balance)}\\n"
+        f"Original invoice: {name}\n"
+        f"Invoice total: {money(total)}\n"
+        f"Recorded payments: {money(paid)}\n"
+        f"Outstanding: {money(balance)}\n"
         f"Payment status: {'Settled' if balance == 0 else 'Partially paid / outstanding'}"
     )
     explanation = (
@@ -512,18 +512,18 @@ def send_account_statement_via_resend(
         "to": [to], "reply_to": "ajebofix@gmail.com",
         "subject": f"Ajebo Fix Accounts | balance update {name}",
         "text": (
-            f"Hello {customer},\\n\\n"
-            f"Here is the current account position for {vehicle}.\\n\\n"
-            f"{summary}\\n\\n{explanation}\\n"
-            f"View the current invoice securely in Aura: {link}\\n"
-            "Service policies: https://ajebofix.com/service-terms\\n"
-            "Specifically agreed job terms remain applicable.\\n\\n"
+            f"Hello {customer},\n\n"
+            f"Here is the current account position for {vehicle}.\n\n"
+            f"{summary}\n\n{explanation}\n"
+            f"View the current invoice securely in Aura: {link}\n"
+            "Service policies: https://ajebofix.com/service-terms\n"
+            "Specifically agreed job terms remain applicable.\n\n"
             "Ajebo Fix Ltd · Accounts"
         ),
         "html": (
             '<div style="background:#f2f4f8;padding:24px;font-family:Arial,sans-serif">'
             '<div style="max-width:600px;margin:auto;background:#fff;padding:26px">'
-            '<h2 style="color:#0a1628">AJebo Fix · Accounts</h2>'
+            '<h2 style="color:#0a1628">AJEBO FIX · ACCOUNTS</h2>'
             f'<p>Hello {escape(customer)},</p>'
             f'<p>Current account position for {escape(vehicle)}:</p>'
             f'<p style="white-space:pre-line">{escape(summary)}</p>'

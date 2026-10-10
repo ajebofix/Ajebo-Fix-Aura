@@ -248,6 +248,28 @@ def client_billing_document(
             "title": str(section.get("title") or "")[:160],
             "rows": safe_lines,
         })
+    # The signed Billing gateway already reconciles these discount lines
+    # against the source document. Validate the projection independently.
+    raw_discounts = doc.get("discounts", [])
+    if not isinstance(raw_discounts, list) or len(raw_discounts) > 25:
+        raise BillingBridgeUnavailable("Invalid Billing discount breakdown")
+    gross_subtotal = _money(doc.get("gross_subtotal") if raw_discounts else doc.get("total"))
+    safe_discounts = []
+    for discount in raw_discounts:
+        if not isinstance(discount, dict):
+            raise BillingBridgeUnavailable("Invalid discount entry")
+        amount = _money(discount.get("amount"))
+        if amount <= 0:
+            raise BillingBridgeUnavailable("Discount must be positive")
+        safe_discounts.append({
+            "description": str(discount.get("description") or "Discount")[:140],
+            "amount": str(amount),
+        })
+    if raw_discounts and (
+        gross_subtotal < _money(doc.get("total"))
+        or sum((Decimal(d["amount"]) for d in safe_discounts), Decimal("0")) > gross_subtotal
+    ):
+        raise BillingBridgeUnavailable("Discount exceeds Billing source amount")
     clean_doc = {
         "id": normalized_id,
         "kind": doc["kind"],
@@ -270,6 +292,8 @@ def client_billing_document(
         "scope": str(doc.get("scope") or "")[:1400],
         "terms": str(doc.get("terms") or "")[:2400],
         "sections": clean_sections,
+        "gross_subtotal": str(gross_subtotal),
+        "discounts": safe_discounts,
     }
     return {
         "document": clean_doc,

@@ -410,6 +410,8 @@ def advisor_billing_inventory(
         clean_docs.append({
             "id": doc_id,
             "kind": kind,
+            "receipt_kind": str(item.get("receipt_kind") or "") if kind == "receipt" and
+            item.get("receipt_kind") in ("payment", "consolidated") else "",
             "number": str(item.get("number") or "")[:80],
             "status": status,
             "issued": str(item.get("issued") or "")[:10],

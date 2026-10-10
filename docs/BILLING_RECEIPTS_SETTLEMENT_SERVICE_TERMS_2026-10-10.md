@@ -16,7 +16,7 @@ The commercial document workflow must distinguish an accepted estimate, one cont
 - Signed Billing bridge exposes `receipt_kind` from source for each receipt and independently checks the linked original invoice's amount paid and remaining balance.
 - For a consolidated receipt, the bridge rejects a stale/partially-paid invoice or a receipt whose total differs from the invoice total. The safe client-side projection rechecks that a final receipt is not attached to a positive invoice balance.
 - Owner/advisor views explain: estimate vs invoice; invoice balance and paid amounts; individual payment receipt with the **live source invoice balance**; or verified final settlement confirmation. Original document-specific terms remain visible.
-- General service-policy URL appears in owner/advisor previews and invoice/receipt Resend emails. The URL is informational and does not constitute agreement or retroactively change a job's accepted terms.
+- Policy URLs are deliberately **not** included in this pilot release. Source-specific accepted job terms remain visible, and no proposed website clause is imposed.
 - Administrator register identifies individual receipts and consolidated final settlement separately, without creating any new financial record.
 
 ## Not silently automated
@@ -25,7 +25,7 @@ The commercial document workflow must distinguish an accepted estimate, one cont
 - The present feature does not generate or send documents for the live partially-paid customer example.
 
 ## Website and Billing templates follow-up
-- After /service-terms is deployed live through Cloudflare Workers (official website uses a manual production deployment workflow), add short link + appropriate document-specific wording to **native Billing application** default estimate terms, invoice terms, receipt note and disclaimers; do not rewrite previously accepted document text or alter historical fees.
+- In a future, independent, expressly approved policy release (after /service-terms is live), add the short website link to **new** native Billing documents only. No current Billing settings or accepted documents change in this release.
 - Existing website Terms remain solely website-use conditions. The new Service Terms should receive Nigeria-qualified legal review, particularly on refunds, client-supplied parts, warranties, cancellation, vehicle release and consumer-protection law.
 - Until Cloudflare publishes the service terms route, do not send newly generated documents relying on the non-live reference.
 
@@ -34,10 +34,10 @@ The commercial document workflow must distinguish an accepted estimate, one cont
 2. A consolidated receipt requires linked invoice balance precisely zero and a matching settled invoice amount.
 3. Invoice status and payment totals are unchanged by preview/send logic.
 4. Owner permissions, separate publication/email approval and duplicate submission protection are unchanged.
-5. All approved document views link to website general policies and retain their source-specific terms.
+5. No current previews or messages link to the unpublished website page; all source-specific existing terms are retained.
 
 ## Release split — 10 October 2026 owner-authorised pilot deployment
 
-To ship financial improvements ahead of the unpublished website policy, PR #315 deliberately removes *all* client-preview, advisor-preview and outgoing Resend links to `https://ajebofix.com/service-terms`. Existing per-job terms remain visible; nothing is retroactively imposed. The prepared SQL `integrations/billing_edge/sql/20261010_service_policy_defaults_after_website_deploy.sql` is **not executed**, included for future review only. The website PR #102 and Aura Workmanship PR #316 remain independent and held.
+To ship financial improvements ahead of the unpublished website policy, PR #315 deliberately removes *all* client-preview, advisor-preview and outgoing Resend links to `https://ajebofix.com/service-terms`. Existing per-job terms remain visible; nothing is retroactively imposed. The proposed future policy-default SQL is excluded entirely from this release; no Billing settings update is applied. The website PR #102 and Aura Workmanship PR #316 remain independent and held.
 
 Only the separate account statement email, payment receipt classification and final settlement checks are in scope. No payment, receipt, email, legal acceptance or change in financial amount is created by deployment. Preserve the previous production gateway code/versions for rollback. Perform post-release smoke checks on health, Billing inventory and a real partially-paid invoice preview, without sending any emails or generating payments.

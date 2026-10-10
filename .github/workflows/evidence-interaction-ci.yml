@@ -47,7 +47,6 @@ jobs:
       SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
       APP_ENV: "testing"
       RATE_LIMIT_STORAGE_URI: "memory://"
-      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
       PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
       EVIDENCE_IMAGE_INTAKE_ENABLED: "0"
       EVIDENCE_RETRIEVAL_ENABLED: "0"
@@ -58,6 +57,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Generate ephemeral profile encryption key
+        run: python3 scripts/generate_ci_profile_encryption_key.py
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

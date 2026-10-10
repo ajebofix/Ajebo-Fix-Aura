@@ -250,6 +250,9 @@ def test_previously_emailed_invoice_shows_each_new_unreceipted_payment(
     assert b"Generate Payment Receipt" in view.data
     assert b"Send Invoice via Resend" not in view.data
 
+    entry["amount"] = doc["total"]
+    entry["currency"] = "₦"
+    entry["issued"] = "2026-10-09"
     workspace = client.get(f"/admin/cars/{car.id}/billing/workspace")
     assert workspace.status_code == 200
     assert b"New payments awaiting individual receipts" in workspace.data
@@ -276,4 +279,4 @@ def test_payment_receipt_status_does_not_unlock_original_invoice_resend(
     response = client.get(uri)
     assert response.status_code == 200
     assert b"0 recorded payments" not in response.data
-    assert b"No recorded payments currently await" in response.data
+    assert b"No outstanding individual receipt creation is shown" in response.data

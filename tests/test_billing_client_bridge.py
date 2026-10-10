@@ -667,3 +667,96 @@ def test_driver_denied_owner_and_advisor_finance_indexes(app,client,monkeypatch)
     assert client.get("/my-financial-records").status_code == 403
     assert client.get("/admin/billing").status_code == 403
     assert client.get(f"/admin/cars/{car.id}/billing/workspace").status_code == 403
+
+
+def test_owner_invoice_shows_real_service_discount_and_current_payments(
+    app, client, monkeypatch
+):
+    """The source discount is explicit; no private bargaining note is exposed."""
+    _configure(monkeypatch)
+    owner = _user(suffix=982)
+    car = _car(suffix=982)
+    _own(owner=owner, car=car, suffix=982)
+    db.session.commit()
+    doc_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+
+    def gateway(_endpoint, *, data, headers, timeout, allow_redirects):
+        assert json.loads(data)["action"] == "document"
+        assert headers["X-Aura-Signature"]
+        return FakeResponse({
+            "state": "linked",
+            "brand": {"name": "Ajebo Fix Ltd", "tagline": "",
+                      "footer": "Private Automotive Health",
+                      "website": "", "logo": ""},
+            "document": {
+                "id": doc_id, "kind": "invoice", "group": "job_record",
+                "number": "AJF-INV-2026-1009-001",
+                "billed_to": "Test Customer", "vin": car.vin,
+                "job_number": "JOB-2026-003", "sow_number": "SOW-2026-003",
+                "status": "partially_paid", "issued": "2026-10-09",
+                "due": "2026-10-16", "revision": 1,
+                "total": "665000", "paid": "600000", "balance": "65000",
+                "gross_subtotal": "685000",
+                "discounts": [{
+                    "description": "Discount on Service charge",
+                    "amount": "20000",
+                    "note": "PRIVATE: Client demanded 600k",
+                }],
+                "currency": "₦", "scope": "Collision repair",
+                "terms": "Outstanding balance payable before vehicle release.",
+                "sections": [{"title": "Restoration", "rows": [
+                    {"description": "Ajebo Fix professional service charge",
+                     "quantity": "1", "unit_price": "220000",
+                     "amount": "220000"},
+                ]}],
+            }
+        })
+
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", gateway)
+    _sign_in(client, owner)
+    response = client.get(f"/cars/{car.id}/billing/documents/{doc_id}")
+    assert response.status_code == 200
+    for text in (
+        "Services subtotal before discount",
+        "685,000.00",
+        "Discount on Service charge",
+        "20,000.00",
+        "Total after discount",
+        "665,000.00",
+        "600,000.00",
+        "65,000.00",
+    ):
+        assert text in response.get_data(as_text=True)
+    assert "PRIVATE" not in response.get_data(as_text=True)
+    assert "Client demanded" not in response.get_data(as_text=True)
+
+
+def test_negative_or_excessive_discount_projection_is_rejected(
+    app, client, monkeypatch
+):
+    _configure(monkeypatch)
+    owner = _user(suffix=983)
+    car = _car(suffix=983)
+    _own(owner=owner, car=car, suffix=983)
+    db.session.commit()
+    doc_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+
+    def bad(_endpoint, *, data, headers, timeout, allow_redirects):
+        return FakeResponse({
+            "state": "linked",
+            "brand": {"name": "Ajebo Fix Ltd"},
+            "document": {
+                "id": doc_id, "kind": "invoice",
+                "group": "job_record", "number": "INV-BAD",
+                "sections": [],
+                "total": "665000", "paid": "600000",
+                "gross_subtotal": "685000",
+                "discounts": [{"description": "Bad", "amount": "900000"}],
+            },
+        })
+
+    monkeypatch.setattr("services.billing_client_bridge.requests.post", bad)
+    _sign_in(client, owner)
+    response = client.get(f"/cars/{car.id}/billing/documents/{doc_id}")
+    assert response.status_code in {404, 503}
+    assert b"900,000" not in response.data

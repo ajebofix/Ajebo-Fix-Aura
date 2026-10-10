@@ -35,3 +35,9 @@ The commercial document workflow must distinguish an accepted estimate, one cont
 3. Invoice status and payment totals are unchanged by preview/send logic.
 4. Owner permissions, separate publication/email approval and duplicate submission protection are unchanged.
 5. All approved document views link to website general policies and retain their source-specific terms.
+
+## Release split — 10 October 2026 owner-authorised pilot deployment
+
+To ship financial improvements ahead of the unpublished website policy, PR #315 deliberately removes *all* client-preview, advisor-preview and outgoing Resend links to `https://ajebofix.com/service-terms`. Existing per-job terms remain visible; nothing is retroactively imposed. The prepared SQL `integrations/billing_edge/sql/20261010_service_policy_defaults_after_website_deploy.sql` is **not executed**, included for future review only. The website PR #102 and Aura Workmanship PR #316 remain independent and held.
+
+Only the separate account statement email, payment receipt classification and final settlement checks are in scope. No payment, receipt, email, legal acceptance or change in financial amount is created by deployment. Preserve the previous production gateway code/versions for rollback. Perform post-release smoke checks on health, Billing inventory and a real partially-paid invoice preview, without sending any emails or generating payments.

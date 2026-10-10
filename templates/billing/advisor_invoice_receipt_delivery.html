@@ -43,6 +43,28 @@
     <p class="banner banner-good">This exact {{ document.kind }} has already been submitted via Resend. Sending the same document again is blocked.</p>
     {% if document.kind == 'invoice' %}
     <p>New payment receipts are independent of the earlier invoice email. Each receipt gets its own document and email approval.</p>
+    <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)">
+      <h3>Updated account statement — not another invoice</h3>
+      <p>Current invoice: {{ document.currency }}{{ "{:,.2f}".format(document.total|float) }} · Total paid: {{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }} · Outstanding: {{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}.</p>
+      {% if statement_sent %}
+        <p class="banner banner-good">A balance update for these exact amounts has already been submitted. Another update becomes available when the recorded payment position changes.</p>
+      {% else %}
+        <p>Send a separate account update after a new payment, without creating another invoice. This requires your explicit approval.</p>
+        <form method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="statement">
+          <input type="hidden" name="expected_total" value="{{ document.total }}">
+          <input type="hidden" name="expected_paid" value="{{ document.paid }}">
+          <input type="hidden" name="expected_status" value="{{ document.status }}">
+          <input type="hidden" name="expected_updated_at" value="{{ document.updated_at }}">
+          <label style="display:block;margin:15px 0">
+            <input type="checkbox" name="confirmed" value="yes" required>
+            I verified this invoice's current payments and approve emailing a balance update, not a new invoice or receipt.
+          </label>
+          <button class="btn btn-navy" type="submit">Send Updated Account Statement</button>
+        </form>
+      {% endif %}
+    </div>
     {% endif %}
   {% elif not published %}
     <h2>Review &amp; Publish {{ document.kind|title }}</h2>

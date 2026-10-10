@@ -725,6 +725,8 @@ def test_owner_invoice_shows_real_service_discount_and_current_payments(
         "665,000.00",
         "600,000.00",
         "65,000.00",
+        "ajebofix.com/service-terms",
+        "A partial payment is not final settlement",
     ):
         assert text in response.get_data(as_text=True)
     assert "PRIVATE" not in response.get_data(as_text=True)

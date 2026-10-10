@@ -44,13 +44,14 @@ jobs:
       SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
       APP_ENV: "testing"
       RATE_LIMIT_STORAGE_URI: "memory://"
-      PROFILE_ENCRYPTION_KEY: "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0="
       PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
       RINA_OPENAI_PROVIDER_ENABLED: "false"
       AURA_BILLING_CLIENT_VIEW_ENABLED: "false"
 
     steps:
       - uses: actions/checkout@v4
+      - name: Generate ephemeral profile encryption key
+        run: python3 scripts/generate_ci_profile_encryption_key.py
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

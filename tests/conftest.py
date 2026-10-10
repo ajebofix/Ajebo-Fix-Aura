@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import os
+import secrets
 import sys
 from pathlib import Path
 
@@ -15,7 +17,7 @@ os.environ.setdefault("SQLALCHEMY_DATABASE_URI", "sqlite:///:memory:")
 os.environ.setdefault("APP_ENV", "testing")
 os.environ.setdefault(
     "PROFILE_ENCRYPTION_KEY",
-    "Xa3TmWWEgrSvl-KCaDY5lYoQHDk4OBsfx60fJXCf_i0=",
+    base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"),
 )
 os.environ.setdefault("PROFILE_ENCRYPTION_KEY_VERSION", "test-v1")
 

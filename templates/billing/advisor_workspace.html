@@ -52,7 +52,7 @@
     <div class="list-item" style="display:block;padding:16px 0;border-bottom:1px solid var(--border,#e5e7eb)">
       <div class="section-head">
         <div>
-          <h3>{{ document.kind|title }} · {{ document.number }}</h3>
+          <h3>{% if document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}Final Settlement Confirmation{% elif document.kind == 'receipt' and document.receipt_kind == 'payment' %}Individual Payment Receipt{% else %}{{ document.kind|title }}{% endif %} · {{ document.number }}</h3>
           <p class="muted">{{ document.status|replace('_',' ')|title }} · {{ document.issued }} · {% if document.published %}Published to owner{% else %}Not published{% endif %}</p>
         </div>
         <strong>{{ document.currency }}{{ "{:,.2f}".format(document.amount|float) }}</strong>
@@ -83,6 +83,9 @@
             {% elif document.published %}Review &amp; Send {{ document.kind|title }}
             {% else %}Review &amp; Publish {{ document.kind|title }}{% endif %}
           </a>
+        {% endif %}
+        {% if document.kind == 'invoice' and document.status == 'paid' %}
+          <p class="muted"><strong>Invoice settled:</strong> Once all transfers are reconciled, generate a separate consolidated final settlement receipt in Billing and approve its publication/send in Aura. Do not create a new payment or resend the original invoice.</p>
         {% endif %}
         {% if document.kind == 'invoice' and document.status in ['partially_paid','paid'] %}
           <p class="muted">An invoice email can be submitted only once. For each subsequent payment, generate its own individual receipt using Billing → Payments. New receipts receive separate publication and send approvals and are not blocked by the earlier invoice email.</p>

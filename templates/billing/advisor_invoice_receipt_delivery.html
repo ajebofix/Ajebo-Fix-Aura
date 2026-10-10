@@ -22,8 +22,14 @@
   </div>
   <h3>Billing scope</h3>
   <p style="white-space:pre-wrap">{{ document.scope }}</p>
-  <h3>Source terms</h3>
+  <h3>Document-specific terms</h3>
   <p style="white-space:pre-wrap">{{ document.terms }}</p>
+  <p class="muted">Only the existing document-specific job terms apply to this transaction. New proposed website policies have not been attached to previously agreed work.</p>
+  {% if document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}
+    <p class="banner banner-good"><strong>Final settlement:</strong> The original invoice {{ document.source_invoice_number }} has a verified zero balance. This consolidated document must not be counted as a new payment.</p>
+  {% elif document.kind == 'receipt' %}
+    <p class="banner banner-warn"><strong>Individual payment receipt:</strong> Confirms only this recorded payment, not full settlement.{% if document.source_invoice_number %} Source invoice {{ document.source_invoice_number }} currently has {{ document.currency }}{{ "{:,.2f}".format(document.source_invoice_balance|float) }} outstanding.{% endif %}</p>
+  {% endif %}
   <div class="button-stack">
     <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_document_preview',car_id=car.id,document_id=document.id) }}">Preview original record in Aura</a>
     <a class="btn btn-secondary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open Billing to edit or share manually</a>
@@ -37,6 +43,28 @@
     <p class="banner banner-good">This exact {{ document.kind }} has already been submitted via Resend. Sending the same document again is blocked.</p>
     {% if document.kind == 'invoice' %}
     <p>New payment receipts are independent of the earlier invoice email. Each receipt gets its own document and email approval.</p>
+    <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)">
+      <h3>Updated account statement — not another invoice</h3>
+      <p>Current invoice: {{ document.currency }}{{ "{:,.2f}".format(document.total|float) }} · Total paid: {{ document.currency }}{{ "{:,.2f}".format(document.paid|float) }} · Outstanding: {{ document.currency }}{{ "{:,.2f}".format(document.balance|float) }}.</p>
+      {% if statement_sent %}
+        <p class="banner banner-good">A balance update for these exact amounts has already been submitted. Another update becomes available when the recorded payment position changes.</p>
+      {% else %}
+        <p>Send a separate account update after a new payment, without creating another invoice. This requires your explicit approval.</p>
+        <form method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="statement">
+          <input type="hidden" name="expected_total" value="{{ document.total }}">
+          <input type="hidden" name="expected_paid" value="{{ document.paid }}">
+          <input type="hidden" name="expected_status" value="{{ document.status }}">
+          <input type="hidden" name="expected_updated_at" value="{{ document.updated_at }}">
+          <label style="display:block;margin:15px 0">
+            <input type="checkbox" name="confirmed" value="yes" required>
+            I verified this invoice's current payments and approve emailing a balance update, not a new invoice or receipt.
+          </label>
+          <button class="btn btn-navy" type="submit">Send Updated Account Statement</button>
+        </form>
+      {% endif %}
+    </div>
     {% endif %}
   {% elif not published %}
     <h2>Review &amp; Publish {{ document.kind|title }}</h2>

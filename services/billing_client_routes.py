@@ -20,6 +20,7 @@ from services.billing_accounts_delivery import (
     send_accounts_estimate_via_resend, validate_estimate_delivery,
     approve_native_estimate_issue, publish_native_billing_document,
     send_accounts_document_via_resend,
+    send_account_statement_via_resend, account_statement_already_submitted,
 )
 import json
 
@@ -368,9 +369,16 @@ def advisor_invoice_receipt_delivery(car_id: int, document_id: str):
         car_id=car_id,owner_user_id=owner.id,document_id=doc["id"],
     )
 
+    statement_sent = (
+        doc["kind"] == "invoice" and entry["published"] and
+        account_statement_already_submitted(
+            car_id=car_id, owner_user_id=owner.id, document_id=doc["id"],
+            paid=doc["paid"], balance=doc["balance"],
+        )
+    )
     if request.method == "POST":
         requested = request.form.get("action")
-        if (requested not in {"publish", "send"} or
+        if (requested not in {"publish", "send", "statement"} or
             request.form.get("confirmed") != "yes" or
             request.form.get("expected_updated_at") != doc["updated_at"] or
             request.form.get("expected_total") != doc["total"] or
@@ -399,6 +407,45 @@ def advisor_invoice_receipt_delivery(car_id: int, document_id: str):
                     "success",
                 )
             except BillingBridgeUnavailable as exc:
+                flash(str(exc), "error")
+            return redirect(request.path)
+
+        if requested == "statement":
+            if (doc["kind"] != "invoice" or not entry["published"] or
+                not was_sent or statement_sent):
+                flash("The original invoice must be published and emailed first, or the current balance statement has already been submitted.", "error")
+                return redirect(request.path)
+            try:
+                current = client_billing_document(
+                    car_id=car_id, owner_user_id=owner.id,
+                    vin=link.car.vin, document_id=doc["id"],
+                )
+                if not current or current["document"]["id"] != doc["id"]:
+                    raise BillingBridgeUnavailable("Owner's current invoice not available")
+                live = current["document"]
+                if (live["total"] != doc["total"] or live["paid"] != doc["paid"] or
+                    live["balance"] != doc["balance"] or live["status"] != doc["status"]):
+                    raise BillingBridgeUnavailable("Balance changed. Review again before sending")
+                provider_id = send_account_statement_via_resend(
+                    to=owner.email, customer=live["billed_to"],
+                    vehicle=link.car.rina_display_name,
+                    document=live, car_id=car_id,
+                )
+                db.session.add(AdvisorNote(
+                    user_id=owner.id, car_id=car_id,
+                    advisor_id=current_user.id,
+                    note=DELIVERY_PREFIX + json.dumps({
+                        "event":"statement_submitted",
+                        "document_id":doc["id"],
+                        "provider_message_id":provider_id,
+                        "actor_user_id":current_user.id,
+                        "paid":doc["paid"],"balance":doc["balance"],
+                    },separators=(",",":")),
+                ))
+                db.session.commit()
+                flash("Resend accepted the updated account statement. The invoice was not reissued.", "success")
+            except BillingBridgeUnavailable as exc:
+                db.session.rollback()
                 flash(str(exc), "error")
             return redirect(request.path)
 
@@ -448,6 +495,7 @@ def advisor_invoice_receipt_delivery(car_id: int, document_id: str):
         "billing/advisor_invoice_receipt_delivery.html",
         car=link.car,owner=owner,document=doc,
         published=entry["published"],sent_before=was_sent,
+        statement_sent=statement_sent,
         payment_receipts=[
             payment for payment in inventory.get("payments", [])
             if payment["invoice_id"] == doc["id"]

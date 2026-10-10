@@ -280,3 +280,125 @@ def test_payment_receipt_status_does_not_unlock_original_invoice_resend(
     assert response.status_code == 200
     assert b"0 recorded payments" not in response.data
     assert b"No outstanding individual receipt creation is shown" in response.data
+
+
+def test_policy_reference_and_explicit_partial_payment_receipt_email(app,monkeypatch):
+    app.config["MAIL_SUPPRESS_SEND"]=False
+    monkeypatch.setenv("RESEND_API_KEY","re_mock")
+    sent=[]
+    def fake(url,*,json,headers,timeout,allow_redirects):
+        sent.append(json)
+        return Mock(raise_for_status=lambda:None,json=lambda:{"id":"test_send_id"})
+    monkeypatch.setattr("services.billing_accounts_delivery.requests.post",fake)
+    receipt={**_receipt(),"receipt_kind":"payment",
+             "source_invoice_number":"AJF-INV-2026-1009-001",
+             "source_invoice_balance":"65000.00"}
+    with app.app_context():
+        assert send_accounts_document_via_resend(
+            to="client@example.com",customer="Client",vehicle="GLK",
+            document=receipt,car_id=3
+        )=="test_send_id"
+    assert "Current invoice balance: ₦65,000.00" in sent[0]["text"]
+    assert "not evidence that the full invoice has been settled" in sent[0]["text"]
+    assert "https://ajebofix.com/service-terms" not in sent[0]["text"]
+    assert "specifically agreed terms of your job remain applicable" in sent[0]["text"].lower()
+
+
+def test_final_settlement_only_when_source_invoice_is_reconciled(app,monkeypatch):
+    app.config["MAIL_SUPPRESS_SEND"]=False
+    monkeypatch.setenv("RESEND_API_KEY","re_mock")
+    sent=[]
+    def fake(url,*,json,headers,timeout,allow_redirects):
+        sent.append(json)
+        return Mock(raise_for_status=lambda:None,json=lambda:{"id":"settlement_mock"})
+    monkeypatch.setattr("services.billing_accounts_delivery.requests.post",fake)
+    final={**_receipt(),"receipt_kind":"consolidated",
+           "source_invoice_number":"INV-TEST",
+           "source_invoice_balance":"0.00"}
+    with app.app_context():
+        assert send_accounts_document_via_resend(
+            to="client@example.com",customer="Client",vehicle="GLK",
+            document=final,car_id=3
+        )=="settlement_mock"
+        with pytest.raises(BillingBridgeUnavailable,match="Final settlement"):
+            send_accounts_document_via_resend(
+                to="client@example.com",customer="Client",vehicle="GLK",
+                document={**final,"source_invoice_balance":"65000.00"},car_id=3
+            )
+    assert len(sent)==1
+    assert "Final invoice: INV-TEST" in sent[0]["text"]
+    assert "Outstanding balance: ₦0.00" in sent[0]["text"]
+    assert "not represent an additional payment" in sent[0]["text"]
+
+
+def test_issued_receipt_review_has_policy_link(app,client,monkeypatch):
+    uri, owner, advisor, car, doc, entry=_setup(
+        app,client,monkeypatch,kind="receipt",published=False,
+    )
+    page=client.get(uri)
+    assert page.status_code==200
+    assert b"Review &amp; Publish Receipt" in page.data
+
+
+def test_account_statement_is_independent_and_never_resends_invoice(
+    app,client,monkeypatch
+):
+    from models import AdvisorNote
+    from services.billing_accounts_delivery import DELIVERY_PREFIX
+    import json
+
+    uri, owner, advisor, car, doc, entry = _setup(
+        app,client,monkeypatch,kind="invoice",published=True
+    )
+    db.session.add(AdvisorNote(
+        user_id=owner.id,car_id=car.id,advisor_id=advisor.id,
+        note=DELIVERY_PREFIX+json.dumps({
+            "event":"submitted","document_id":doc["id"],
+            "provider_message_id":"existing_invoice_email",
+        }),
+    ))
+    db.session.commit()
+    account_emails=[]
+    monkeypatch.setattr(
+        "services.billing_client_routes.send_account_statement_via_resend",
+        lambda **kwargs: account_emails.append(kwargs) or "statement_provider_id",
+    )
+    monkeypatch.setattr(
+        "services.billing_client_routes.send_accounts_document_via_resend",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Original invoice must not resend")
+        ),
+    )
+    view=client.get(uri)
+    assert b"Already submitted" in view.data
+    assert b"Send Updated Account Statement" in view.data
+    form=_payload(doc,_csrf(view.data),"statement")
+    response=client.post(uri,data=form)
+    assert response.status_code == 302
+    assert len(account_emails)==1
+    assert account_emails[0]["document"]["balance"]=="485000.00"
+    followup=client.get(uri)
+    assert b"balance update for these exact amounts" in followup.data
+    assert b"Send Updated Account Statement" not in followup.data
+
+    # A genuinely different payment position may be communicated separately.
+    doc["paid"]="300000.00"
+    doc["balance"]="385000.00"
+    doc["updated_at"]="2026-10-10T19:20:00+00:00"
+    fresh=client.get(uri)
+    assert b"Send Updated Account Statement" in fresh.data
+    assert client.post(uri,data=_payload(doc,_csrf(fresh.data),"statement")).status_code==302
+    assert len(account_emails)==2
+
+
+def test_statement_rejects_ledger_mismatch_before_email(app,monkeypatch):
+    from services.billing_accounts_delivery import send_account_statement_via_resend
+    app.config["MAIL_SUPPRESS_SEND"]=False
+    monkeypatch.setenv("RESEND_API_KEY","re_mock")
+    with app.app_context():
+        with pytest.raises(BillingBridgeUnavailable,match="inconsistent"):
+            send_account_statement_via_resend(
+                to="client@example.com",customer="Client",vehicle="GLK",
+                document={**_invoice(),"paid":"600000","balance":"65000"},
+                car_id=3,
+            )

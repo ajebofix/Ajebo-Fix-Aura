@@ -270,9 +270,28 @@ def client_billing_document(
         or sum((Decimal(d["amount"]) for d in safe_discounts), Decimal("0")) > gross_subtotal
     ):
         raise BillingBridgeUnavailable("Discount exceeds Billing source amount")
+    receipt_kind = str(doc.get("receipt_kind") or "")
+    if receipt_kind not in {"", "payment", "consolidated"}:
+        raise BillingBridgeUnavailable("Unknown receipt classification")
+    if doc["kind"] != "receipt" and receipt_kind:
+        raise BillingBridgeUnavailable("Unexpected receipt label")
+    source_invoice_balance = ""
+    source_invoice_number = ""
+    if receipt_kind:
+        source_invoice_balance = str(_money(doc.get("source_invoice_balance")))
+        source_invoice_number = str(doc.get("source_invoice_number") or "")[:80]
+        if not source_invoice_number:
+            raise BillingBridgeUnavailable("Receipt missing its source invoice reference")
+        if receipt_kind == "consolidated" and (
+            _money(source_invoice_balance) > Decimal("0.00")
+        ):
+            raise BillingBridgeUnavailable("Final settlement remains outstanding")
     clean_doc = {
         "id": normalized_id,
         "kind": doc["kind"],
+        "receipt_kind": receipt_kind,
+        "source_invoice_balance": source_invoice_balance,
+        "source_invoice_number": source_invoice_number,
         "billed_to": str(doc.get("billed_to") or "")[:120],
         "vin": _normalise_vin(doc.get("vin"))[:17],
         "job_number": str(doc.get("job_number") or "")[:80],
@@ -391,6 +410,8 @@ def advisor_billing_inventory(
         clean_docs.append({
             "id": doc_id,
             "kind": kind,
+            "receipt_kind": str(item.get("receipt_kind") or "") if kind == "receipt" and
+            item.get("receipt_kind") in ("payment", "consolidated") else "",
             "number": str(item.get("number") or "")[:80],
             "status": status,
             "issued": str(item.get("issued") or "")[:10],

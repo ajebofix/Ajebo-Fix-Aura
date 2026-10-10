@@ -168,6 +168,33 @@ def already_delivered(*, car_id: int, owner_user_id: int, document_id: str) -> b
     return False
 
 
+def account_statement_already_submitted(
+    *, car_id: int, owner_user_id: int, document_id: str,
+    paid: str, balance: str,
+) -> bool:
+    """Prevent repeat balance-update email for an unchanged invoice snapshot."""
+    target_paid, target_balance = _money(paid), _money(balance)
+    notes = AdvisorNote.query.filter_by(
+        car_id=car_id, user_id=owner_user_id,
+    ).order_by(AdvisorNote.id.desc()).limit(300).all()
+    for record in notes:
+        if not str(record.note).startswith(DELIVERY_PREFIX):
+            continue
+        try:
+            payload = json.loads(record.note[len(DELIVERY_PREFIX):])
+        except (TypeError, ValueError):
+            continue
+        if (
+            payload.get("event") == "statement_submitted"
+            and payload.get("document_id") == document_id
+            and _money(payload.get("paid")) == target_paid
+            and _money(payload.get("balance")) == target_balance
+            and payload.get("provider_message_id")
+        ):
+            return True
+    return False
+
+
 def validate_estimate_delivery(
     document: dict, upfront_percentage: int, *, allow_draft: bool = False,
 ) -> tuple[Decimal, Decimal, Decimal]:
@@ -322,7 +349,17 @@ def send_accounts_document_via_resend(
         raise BillingBridgeUnavailable("Partial payment not verified")
     if kind == "receipt" and status != "issued":
         raise BillingBridgeUnavailable("Receipt is not issued")
-    label = "invoice" if kind == "invoice" else "payment receipt"
+    receipt_kind = document.get("receipt_kind") or ""
+    if receipt_kind not in {"", "payment", "consolidated"}:
+        raise BillingBridgeUnavailable("Unverified receipt category")
+    if kind == "receipt" and receipt_kind == "consolidated":
+        if not document.get("source_invoice_number") or (
+            _money(document.get("source_invoice_balance")) > Decimal("0.00")
+        ):
+            raise BillingBridgeUnavailable("Final settlement not established")
+    label = ("invoice" if kind == "invoice" else
+             "final settlement confirmation" if receipt_kind == "consolidated"
+             else "payment receipt")
     link = f"https://aura.ajebofix.com/cars/{car_id}/billing/documents/{doc_id}"
     money = lambda amount: f"₦{amount:,.2f}"
     if kind == "invoice":
@@ -335,12 +372,27 @@ def send_accounts_document_via_resend(
             "This invoice reflects the payment records available at the time "
             "of sending. The secure document shows the current Billing balance."
         )
+    elif receipt_kind == "consolidated":
+        details = (
+            f"Final invoice: {document['source_invoice_number']}\n"
+            f"Total settled: {money(total)}\n"
+            "Outstanding balance: ₦0.00"
+        )
+        disclaimer = (
+            "This consolidated confirmation is for the reconciled invoice. "
+            "It does not represent an additional payment."
+        )
     else:
         details = f"Payment acknowledged: {money(total)}"
+        if document.get("source_invoice_number"):
+            details += (
+                f"\nSource invoice: {document['source_invoice_number']}"
+                f"\nCurrent invoice balance: "
+                f"{money(_money(document.get('source_invoice_balance')))}"
+            )
         disclaimer = (
             "This receipt confirms only the stated recorded payment. "
-            "It does not certify full settlement unless the original Billing "
-            "records establish that."
+            "It is not evidence that the full invoice has been settled."
         )
     subject = f"Ajebo Fix Accounts | {label} {document['number']}"
     body = (
@@ -350,6 +402,7 @@ def send_accounts_document_via_resend(
         f"{details}\n\n"
         f"View securely in Aura: {link}\n\n"
         f"{disclaimer}\n"
+        "The specifically agreed terms of your job remain applicable.\n"
         "This link requires signing into the verified Aura owner account.\n\n"
         "Ajebo Fix Ltd · Accounts"
     )
@@ -364,6 +417,7 @@ def send_accounts_document_via_resend(
         f'<p style="white-space:pre-line">{escape(details)}</p>'
         f'<p><a href="{escape(link, quote=True)}">View document securely in Aura</a></p>'
         f'<p>{escape(disclaimer)}</p>'
+        '<p style="font-size:12px">Specifically agreed job terms remain applicable.</p>'
         '<p style="font-size:12px">Sign-in is required. Ajebo Fix Ltd · Accounts</p>'
         '</div></div>'
     )
@@ -400,3 +454,102 @@ def send_accounts_document_via_resend(
     except (requests.RequestException, ValueError) as exc:
         current_app.logger.warning("Resend document submission failed")
         raise BillingBridgeUnavailable("Resend did not accept the document email") from exc
+
+
+def send_account_statement_via_resend(
+    *, to: str, customer: str, vehicle: str, document: dict, car_id: int,
+) -> str:
+    """Send a separate source-backed balance update, never a second invoice.
+
+    Requires the advisor's second-step approval. No payment, document status,
+    supplier commitment or financial amount is modified.
+    """
+    if document.get("kind") != "invoice" or document.get("status") not in {
+        "issued", "sent", "partially_paid", "paid", "overdue",
+    }:
+        raise BillingBridgeUnavailable("Only issued invoices have account statements")
+    if document.get("group") != "job_record":
+        raise BillingBridgeUnavailable("Invoice must be linked to a job")
+    if current_app.config.get("MAIL_SUPPRESS_SEND"):
+        raise BillingBridgeUnavailable("Account emails are disabled")
+    key = os.getenv("RESEND_API_KEY") or current_app.config.get("RESEND_API_KEY")
+    if not key:
+        raise BillingBridgeUnavailable("Resend key not configured")
+    try:
+        doc_id = str(uuid.UUID(document["id"]))
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
+        raise BillingBridgeUnavailable("Invalid invoice reference") from exc
+    total = _money(document.get("total"))
+    paid = _money(document.get("paid"))
+    balance = _money(document.get("balance"))
+    if total <= 0 or paid < 0 or paid > total or balance < 0 or (
+        abs(total - paid - balance) > Decimal("0.01")
+    ):
+        raise BillingBridgeUnavailable("Invoice balance is inconsistent")
+    link = f"https://aura.ajebofix.com/cars/{car_id}/billing/documents/{doc_id}"
+    name = str(document.get("number") or "")[:80]
+    money = lambda value: f"₦{value:,.2f}"
+    summary = (
+        f"Original invoice: {name}\n"
+        f"Invoice total: {money(total)}\n"
+        f"Recorded payments: {money(paid)}\n"
+        f"Outstanding: {money(balance)}\n"
+        f"Payment status: {'Settled' if balance == 0 else 'Partially paid / outstanding'}"
+    )
+    explanation = (
+        "This is an updated account statement, not a new invoice or a new "
+        "charge. It does not by itself acknowledge another payment or change "
+        "the terms already agreed."
+    )
+    signature = hashlib.sha256(
+        f"{car_id}:{doc_id}:{to.lower()}:{total}:{paid}:{balance}:statement".encode()
+    ).hexdigest()
+    payload = {
+        "from": "Ajebo Fix Accounts <accounts@updates.ajebofix.com>",
+        "to": [to], "reply_to": "ajebofix@gmail.com",
+        "subject": f"Ajebo Fix Accounts | balance update {name}",
+        "text": (
+            f"Hello {customer},\n\n"
+            f"Here is the current account position for {vehicle}.\n\n"
+            f"{summary}\n\n{explanation}\n"
+            f"View the current invoice securely in Aura: {link}\n"
+            "Specifically agreed job terms remain applicable.\n\n"
+            "Ajebo Fix Ltd · Accounts"
+        ),
+        "html": (
+            '<div style="background:#f2f4f8;padding:24px;font-family:Arial,sans-serif">'
+            '<div style="max-width:600px;margin:auto;background:#fff;padding:26px">'
+            '<h2 style="color:#0a1628">AJEBO FIX · ACCOUNTS</h2>'
+            f'<p>Hello {escape(customer)},</p>'
+            f'<p>Current account position for {escape(vehicle)}:</p>'
+            f'<p style="white-space:pre-line">{escape(summary)}</p>'
+            f'<p>{escape(explanation)}</p>'
+            f'<p><a href="{escape(link,quote=True)}">View current invoice in Aura</a></p>'
+            '<p>Specifically agreed job terms remain applicable.</p>'
+            '</div></div>'
+        ),
+        "tags": [
+            {"name":"source","value":"aura_billing"},
+            {"name":"type","value":"balance_update"},
+        ],
+    }
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails", json=payload,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "Idempotency-Key": f"aura-statement-{signature}",
+                "User-Agent": "AjeboFixAura/1.0",
+            },
+            timeout=12, allow_redirects=False,
+        )
+        response.raise_for_status()
+        result = response.json()
+        provider_id = str(result.get("id") or "") if isinstance(result,dict) else ""
+        if not provider_id:
+            raise BillingBridgeUnavailable("Resend did not confirm the statement email")
+        return provider_id
+    except (requests.RequestException, ValueError) as exc:
+        current_app.logger.warning("Resend statement submission failed")
+        raise BillingBridgeUnavailable("Resend rejected the account statement") from exc

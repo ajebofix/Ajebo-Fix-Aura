@@ -22,8 +22,14 @@
   </div>
   <h3>Billing scope</h3>
   <p style="white-space:pre-wrap">{{ document.scope }}</p>
-  <h3>Source terms</h3>
+  <h3>Document-specific terms</h3>
   <p style="white-space:pre-wrap">{{ document.terms }}</p>
+  <p class="muted">General Ajebo Fix service policies: <a href="https://ajebofix.com/service-terms" target="_blank" rel="noopener noreferrer">ajebofix.com/service-terms</a>. A website link does not replace accepted job terms or establish consent on its own.</p>
+  {% if document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}
+    <p class="banner banner-good"><strong>Final settlement:</strong> The original invoice {{ document.source_invoice_number }} has a verified zero balance. This consolidated document must not be counted as a new payment.</p>
+  {% elif document.kind == 'receipt' %}
+    <p class="banner banner-warn"><strong>Individual payment receipt:</strong> Confirms only this recorded payment, not full settlement.{% if document.source_invoice_number %} Source invoice {{ document.source_invoice_number }} currently has {{ document.currency }}{{ "{:,.2f}".format(document.source_invoice_balance|float) }} outstanding.{% endif %}</p>
+  {% endif %}
   <div class="button-stack">
     <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_document_preview',car_id=car.id,document_id=document.id) }}">Preview original record in Aura</a>
     <a class="btn btn-secondary" href="https://ajebo-fix-billing.vercel.app" target="_blank" rel="noopener noreferrer">Open Billing to edit or share manually</a>

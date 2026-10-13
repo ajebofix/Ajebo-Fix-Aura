@@ -45,6 +45,8 @@ def test_public_homepage_desktop_and_mobile(app, tmp_path):
                 assert page.locator("a[href='/auth/login']").count() >= 1
                 assert page.locator("a[href='#request-access']").count() >= 1
                 assert page.locator(".hero-showcase .pill").inner_text() == "ILLUSTRATION"
+                assert page.locator(".record-node").count() == 3
+                assert page.locator(".record-flow-caption").inner_text() == "MEMORY BEFORE RECOMMENDATION"
 
                 # Verify real CSS is being served, layout is responsive and
                 # there are no overflowing columns on narrower devices.

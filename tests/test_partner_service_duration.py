@@ -1,4 +1,4 @@
-"""Gulf oil-change timing: brand-neutral, checklist-dependent, configurable."""
+"""Gulf pilot: actual oil-change time excludes inspection, photos and handover."""
 
 import unittest
 from dataclasses import replace
@@ -7,68 +7,102 @@ from partnerships.service_duration import ServiceTimePolicy, recommended_plannin
 
 
 class ServiceDurationTests(unittest.TestCase):
-    def test_observed_range_and_provisional_buffer(self):
+    def test_observed_oil_change_is_thirty_to_forty_five_minutes_only(self):
         policy = ServiceTimePolicy()
         self.assertEqual((policy.observed_min_minutes, policy.observed_max_minutes), (30, 45))
-        self.assertEqual(policy.base_provisional_minutes, 60)
 
-    def test_unknown_ten_point_check_blocks_final_duration(self):
+    def test_ninety_minute_internal_hold_is_not_confirmed_service_duration(self):
         policy = ServiceTimePolicy()
-        self.assertIsNone(policy.confirmed_scope_planning_minutes)
+        self.assertEqual(policy.provisional_hold_only_minutes, 90)
         self.assertIsNone(recommended_planning_minutes(policy))
 
-    def test_checklist_scope_agreed_but_inclusion_unknown_still_blocks(self):
+    def test_approved_checklist_does_not_fake_missing_timing_estimates(self):
         policy = ServiceTimePolicy(ten_point_scope_agreed=True)
-        self.assertIsNone(policy.confirmed_scope_planning_minutes)
+        self.assertIsNone(recommended_planning_minutes(policy))
 
-    def test_included_checklist_uses_sixty_minute_first_estimate(self):
+    def test_missing_one_extra_task_still_produces_unknown(self):
         policy = ServiceTimePolicy(
-            ten_point_scope_agreed=True, check_included_in_observed_minutes=True,
-        )
-        self.assertEqual(recommended_planning_minutes(policy), 60)
-
-    def test_separate_check_requires_measured_duration(self):
-        policy = ServiceTimePolicy(
-            ten_point_scope_agreed=True, check_included_in_observed_minutes=False,
+            ten_point_scope_agreed=True,
+            inspection_minutes=15, photo_minutes=5, service_record_minutes=5,
         )
         self.assertIsNone(recommended_planning_minutes(policy))
-        self.assertEqual(
-            recommended_planning_minutes(replace(policy, extra_check_minutes=12)),
-            72,
+
+    def test_all_approved_extra_steps_generate_end_to_end_planning_time(self):
+        policy = ServiceTimePolicy(
+            ten_point_scope_agreed=True,
+            inspection_minutes=15,
+            photo_minutes=5,
+            service_record_minutes=5,
+            handover_minutes=5,
+        )
+        self.assertEqual(recommended_planning_minutes(policy), 90)
+
+    def test_unapproved_checklist_blocks_even_if_someone_entered_durations(self):
+        policy = ServiceTimePolicy(
+            inspection_minutes=15, photo_minutes=5,
+            service_record_minutes=5, handover_minutes=5,
+        )
+        self.assertIsNone(recommended_planning_minutes(policy))
+
+    def test_more_work_can_exceed_internal_ninety_minute_placeholder(self):
+        policy = ServiceTimePolicy(
+            ten_point_scope_agreed=True,
+            inspection_minutes=30, photo_minutes=10,
+            service_record_minutes=10, handover_minutes=10,
+        )
+        self.assertEqual(recommended_planning_minutes(policy), 120)
+        self.assertGreater(
+            recommended_planning_minutes(policy),
+            policy.provisional_hold_only_minutes,
         )
 
-    def test_mercedes_not_automatically_slower_than_toyota(self):
+    def test_toyota_and_mercedes_do_not_have_default_brand_multipliers(self):
         policy = ServiceTimePolicy(
-            ten_point_scope_agreed=True, check_included_in_observed_minutes=True,
+            ten_point_scope_agreed=True,
+            inspection_minutes=15, photo_minutes=5,
+            service_record_minutes=5, handover_minutes=5,
         )
-        toyota_estimate = recommended_planning_minutes(policy)
-        mercedes_estimate = recommended_planning_minutes(policy)
-        self.assertEqual(toyota_estimate, mercedes_estimate)
+        toyota = recommended_planning_minutes(policy)
+        mercedes = recommended_planning_minutes(policy)
+        self.assertEqual(toyota, mercedes)
 
-    def test_vehicle_specific_extra_time_is_explicit_not_brand_assumption(self):
+    def test_justified_vehicle_specific_extra_time_is_possible(self):
         policy = ServiceTimePolicy(
-            ten_point_scope_agreed=True, check_included_in_observed_minutes=True,
+            ten_point_scope_agreed=True,
+            inspection_minutes=15, photo_minutes=5,
+            service_record_minutes=5, handover_minutes=5,
         )
         self.assertEqual(
             recommended_planning_minutes(policy, vehicle_specific_extra_minutes=20),
-            80,
+            110,
         )
 
-    def test_negative_or_invalid_durations_rejected(self):
-        for kwargs in (
+    def test_zero_task_time_can_be_recorded_if_work_precompleted(self):
+        policy = ServiceTimePolicy(
+            ten_point_scope_agreed=True,
+            inspection_minutes=10, photo_minutes=0,
+            service_record_minutes=0, handover_minutes=0,
+        )
+        self.assertEqual(recommended_planning_minutes(policy), 70)
+
+    def test_negative_and_invalid_durations_rejected(self):
+        cases = [
             {"observed_min_minutes": 0},
             {"observed_max_minutes": 20},
             {"provisional_buffer_minutes": -1},
-            {"extra_check_minutes": -2},
-            {"check_included_in_observed_minutes": True, "extra_check_minutes": 5},
-        ):
+            {"provisional_internal_hold_minutes": 0},
+            {"provisional_internal_hold_minutes": 40},
+            {"inspection_minutes": -1},
+            {"photo_minutes": -1},
+            {"service_record_minutes": -1},
+            {"handover_minutes": -1},
+        ]
+        for kwargs in cases:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 ServiceTimePolicy(**kwargs)
         with self.assertRaises(ValueError):
             recommended_planning_minutes(
-                ServiceTimePolicy(ten_point_scope_agreed=True,
-                                  check_included_in_observed_minutes=True),
-                vehicle_specific_extra_minutes=-3,
+                ServiceTimePolicy(), vehicle_specific_extra_minutes=-1
             )
 
 

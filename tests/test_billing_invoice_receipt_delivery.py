@@ -99,6 +99,8 @@ def test_invoice_is_separate_review_publish_then_review_send(app, client, monkey
     assert get.status_code == 200
     assert b"Review &amp; Publish Invoice" in get.data
     assert b"485,000.00" in get.data
+    assert b"https://ajebofix.com/service-terms" in get.data
+    assert b"not evidence of client acceptance" in get.data
     csrf = _csrf(get.data)
 
     # Explicit publication does not email and does not record a payment.
@@ -300,7 +302,9 @@ def test_policy_reference_and_explicit_partial_payment_receipt_email(app,monkeyp
         )=="test_send_id"
     assert "Current invoice balance: ₦65,000.00" in sent[0]["text"]
     assert "not evidence that the full invoice has been settled" in sent[0]["text"]
-    assert "https://ajebofix.com/service-terms" not in sent[0]["text"]
+    assert "https://ajebofix.com/service-terms" in sent[0]["text"]
+    assert "https://ajebofix.com/service-terms" in sent[0]["html"]
+    assert "does not change the agreed job terms or prove acceptance" in sent[0]["text"]
     assert "specifically agreed terms of your job remain applicable" in sent[0]["text"].lower()
 
 
@@ -402,3 +406,26 @@ def test_statement_rejects_ledger_mismatch_before_email(app,monkeypatch):
                 document={**_invoice(),"paid":"600000","balance":"65000"},
                 car_id=3,
             )
+
+
+def test_balance_update_email_links_published_policy_without_reissuing_invoice(app, monkeypatch):
+    from services.billing_accounts_delivery import send_account_statement_via_resend
+    app.config["MAIL_SUPPRESS_SEND"] = False
+    monkeypatch.setenv("RESEND_API_KEY", "re_mock")
+    sent = []
+
+    def fake(url, *, json, headers, timeout, allow_redirects):
+        sent.append(json)
+        return Mock(raise_for_status=lambda: None, json=lambda: {"id": "statement_mock"})
+
+    monkeypatch.setattr("services.billing_accounts_delivery.requests.post", fake)
+    with app.app_context():
+        assert send_account_statement_via_resend(
+            to="client@example.com", customer="Client", vehicle="GLK",
+            document=_invoice(), car_id=3,
+        ) == "statement_mock"
+    assert len(sent) == 1
+    assert "updated account statement, not a new invoice" in sent[0]["text"]
+    assert "https://ajebofix.com/service-terms" in sent[0]["text"]
+    assert "https://ajebofix.com/service-terms" in sent[0]["html"]
+    assert "does not change agreed job terms or prove acceptance" in sent[0]["text"]

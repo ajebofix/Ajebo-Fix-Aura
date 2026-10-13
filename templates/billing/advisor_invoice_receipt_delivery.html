@@ -24,7 +24,7 @@
   <p style="white-space:pre-wrap">{{ document.scope }}</p>
   <h3>Document-specific terms</h3>
   <p style="white-space:pre-wrap">{{ document.terms }}</p>
-  <p class="muted">Only the existing document-specific job terms apply to this transaction. Published <a href="https://ajebofix.com/service-terms" target="_blank" rel="noopener noreferrer">Automotive Service Terms &amp; Policies</a> are provided for general information. The link is not evidence of client acceptance and must not alter a previously agreed scope or terms. For any new job, disclose material limitations before authorisation and record the client\u0027s actual agreement separately.</p>
+  <p class="muted">Only the existing document-specific job terms apply to this transaction. Published <a href="https://ajebofix.com/service-terms" target="_blank" rel="noopener noreferrer">Automotive Service Terms &amp; Policies</a> are provided for general information. The link is not evidence of client acceptance and must not alter a previously agreed scope or terms. For any new job, disclose material limitations before authorisation and record the client's actual agreement separately.</p>
   {% if document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}
     <p class="banner banner-good"><strong>Final settlement:</strong> The original invoice {{ document.source_invoice_number }} has a verified zero balance. This consolidated document must not be counted as a new payment.</p>
   {% elif document.kind == 'receipt' %}

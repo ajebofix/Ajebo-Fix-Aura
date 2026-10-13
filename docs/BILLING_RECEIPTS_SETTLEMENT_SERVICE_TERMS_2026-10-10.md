@@ -41,3 +41,15 @@ The commercial document workflow must distinguish an accepted estimate, one cont
 To ship financial improvements ahead of the unpublished website policy, PR #315 deliberately removes *all* client-preview, advisor-preview and outgoing Resend links to `https://ajebofix.com/service-terms`. Existing per-job terms remain visible; nothing is retroactively imposed. The proposed future policy-default SQL is excluded entirely from this release; no Billing settings update is applied. The website PR #102 and Aura Workmanship PR #316 remain independent and held.
 
 Only the separate account statement email, payment receipt classification and final settlement checks are in scope. No payment, receipt, email, legal acceptance or change in financial amount is created by deployment. Preserve the previous production gateway code/versions for rollback. Perform post-release smoke checks on health, Billing inventory and a real partially-paid invoice preview, without sending any emails or generating payments.
+
+## 13 October 2026 — post-publication informational reference
+
+The public, versioned Service Terms page is now available at https://ajebofix.com/service-terms (effective 13 October 2026). A separate Aura-only presentation/communications follow-up:
+- Shows the published policy link in the authenticated owner estimate/invoice/receipt record and on advisor estimate/invoice/receipt approval screens.
+- Adds an informational reference to **future explicitly approved** invoice/receipt and updated-account-statement Resend emails; the separate estimate template is hosted by Resend and must be updated and republished independently, with its existing template variables preserved.
+- Keeps original native Billing scope, amounts, receipts, payment history, and accepted document-specific terms completely untouched; no automatic customer notification, no new payment or settlement status, no deemed acceptance, and no retroactive contract modification.
+- Keeps the existing advisor-only publication and sending approvals, duplicate blocking, source-balance checks, and current owner authorization.
+- Does **not** update native Billing's template defaults or generated PDFs. Any proposed new-document defaults need independent review, prospective-only application, and proof of customer pre-transaction disclosure and versioned affirmative acceptance.
+- Does not represent qualified Nigerian legal advice or a professional legal certification.
+
+Verification: run Billing CI for service-policy references in rendered owner/advisor pages, email payload wording (text+HTML), and unchanged settlement protections. Deploy only after mandatory checks pass. Never send a real email or publish an existing customer document as a deployment smoke test.

@@ -83,3 +83,16 @@ def test_private_access_form_rejects_unconsented_and_bad_input(app, client):
         assert client.post("/request-access", data=payload).status_code == 400
     with app.app_context():
         assert db.session.query(PrivateAccessRequest).count() == 0
+
+
+def test_public_enquiry_rate_limit_is_per_ip(client):
+    csrf = token(client)
+    for _ in range(3):
+        response = client.post("/request-access", data={
+            "csrf_token": csrf, "name": "X", "email": "invalid"
+        })
+        assert response.status_code == 400
+    blocked = client.post("/request-access", data={
+        "csrf_token": csrf, "name": "Different", "email": "other@example.com"
+    })
+    assert blocked.status_code == 429

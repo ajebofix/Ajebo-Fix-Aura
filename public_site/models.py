@@ -1,6 +1,6 @@
 """Private-access requests, separate from authenticated vehicle records."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from extensions import db
 

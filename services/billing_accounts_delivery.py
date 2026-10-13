@@ -25,6 +25,8 @@ from services.billing_client_bridge import (
 
 DELIVERY_PREFIX = "[AURA_BILLING_RESEND_DELIVERY_V1]"
 TEMPLATE_ID = "ajebo-accounts-secure-document"
+# Published general information; never part of stored job-specific contract terms.
+SERVICE_TERMS_URL = "https://ajebofix.com/service-terms"
 
 
 def publish_native_billing_estimate(
@@ -403,6 +405,8 @@ def send_accounts_document_via_resend(
         f"View securely in Aura: {link}\n\n"
         f"{disclaimer}\n"
         "The specifically agreed terms of your job remain applicable.\n"
+        f"Published general service policies (information only): {SERVICE_TERMS_URL}\n"
+        "This reference does not change the agreed job terms or prove acceptance of new terms.\n"
         "This link requires signing into the verified Aura owner account.\n\n"
         "Ajebo Fix Ltd · Accounts"
     )
@@ -418,6 +422,7 @@ def send_accounts_document_via_resend(
         f'<p><a href="{escape(link, quote=True)}">View document securely in Aura</a></p>'
         f'<p>{escape(disclaimer)}</p>'
         '<p style="font-size:12px">Specifically agreed job terms remain applicable.</p>'
+        f'<p style="font-size:12px">Published <a href="{SERVICE_TERMS_URL}">general service policies</a> are informational only and do not change agreed job terms or prove acceptance.</p>'
         '<p style="font-size:12px">Sign-in is required. Ajebo Fix Ltd · Accounts</p>'
         '</div></div>'
     )
@@ -513,7 +518,9 @@ def send_account_statement_via_resend(
             f"Here is the current account position for {vehicle}.\n\n"
             f"{summary}\n\n{explanation}\n"
             f"View the current invoice securely in Aura: {link}\n"
-            "Specifically agreed job terms remain applicable.\n\n"
+            "Specifically agreed job terms remain applicable.\n"
+            f"Published general service policies (information only): {SERVICE_TERMS_URL}\n"
+            "This reference does not change agreed job terms or prove acceptance of new terms.\n\n"
             "Ajebo Fix Ltd · Accounts"
         ),
         "html": (
@@ -526,6 +533,7 @@ def send_account_statement_via_resend(
             f'<p>{escape(explanation)}</p>'
             f'<p><a href="{escape(link,quote=True)}">View current invoice in Aura</a></p>'
             '<p>Specifically agreed job terms remain applicable.</p>'
+            f'<p>Published <a href="{SERVICE_TERMS_URL}">general service policies</a> are informational only and do not change agreed terms or prove acceptance.</p>'
             '</div></div>'
         ),
         "tags": [

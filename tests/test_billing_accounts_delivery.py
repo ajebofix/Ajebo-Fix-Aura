@@ -283,3 +283,5 @@ def test_send_review_template_uses_live_revision_terms(app):
     assert "616,500.00" in markup
     assert "68,500.00" in markup
     assert "585,000 for a ₦650,000" not in markup
+    assert "https://ajebofix.com/service-terms" in markup
+    assert "does not change the original estimate" in markup

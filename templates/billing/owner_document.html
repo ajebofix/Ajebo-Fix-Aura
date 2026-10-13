@@ -142,7 +142,19 @@
       <h3 style="margin-top:24px">Document-specific terms</h3>
       <p class="af-billing-terms">{{ document.terms }}</p>
     {% endif %}
-    <p class="af-billing-label" style="margin-top:20px">This is a live, owner-authorised view of the existing Ajebo Fix Billing record. An issued estimate is not a receipt or confirmation that payment was received. Downloaded copies may not reflect later amendments or revocation; confirm the current version in Aura.</p>
+    <p class="af-billing-label" style="margin-top:20px">
+      This is a live, owner-authorised view of the existing Ajebo Fix Billing record.
+      {% if document.kind == 'estimate' %}
+        This estimate proposes an agreed scope and price; it is not confirmation of payment.
+      {% elif document.kind == 'invoice' %}
+        This invoice shows the recorded payments and outstanding balance as currently available in Billing; it is not itself a payment receipt.
+      {% elif document.kind == 'receipt' and document.receipt_kind == 'consolidated' %}
+        This settlement confirmation summarises recorded payments and does not create a new payment.
+      {% elif document.kind == 'receipt' %}
+        This individual receipt acknowledges only its stated recorded payment and does not by itself confirm full settlement.
+      {% endif %}
+      Downloaded copies may not reflect later amendments or revocation; confirm the current version in Aura.
+    </p>
   </div>
   <footer class="af-billing-footer">{{ brand.footer }}{% if brand.website %} · {{ brand.website }}{% endif %}<div style="font-size:.74rem;opacity:.82;margin-top:7px">Ajebo Fix Billing · Secure client access via Aura by Ajebo Fix</div></footer>
 </article>

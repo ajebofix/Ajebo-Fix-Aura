@@ -15,11 +15,17 @@
         overflow: visible;
     }
 
+    /* Navigation stays in the page header area and scrolls away with the
+       document, instead of covering invoice text and controls on iOS. */
+    body {
+        position: relative;
+    }
+
     .mobile-toggle {
         display: flex;
         align-items: center;
         justify-content: center;
-        position: fixed;
+        position: absolute;
         top: max(12px, env(safe-area-inset-top));
         left: max(12px, env(safe-area-inset-left));
         z-index: 1200;

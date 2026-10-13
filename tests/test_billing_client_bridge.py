@@ -727,8 +727,10 @@ def test_owner_invoice_shows_real_service_discount_and_current_payments(
         "65,000.00",
         "No new or additional service conditions",
         "A partial payment is not final settlement",
+        "This invoice shows the recorded payments and outstanding balance",
     ):
         assert text in response.get_data(as_text=True)
+    assert "An issued estimate is not a receipt" not in response.get_data(as_text=True)
     assert "PRIVATE" not in response.get_data(as_text=True)
     assert "Client demanded" not in response.get_data(as_text=True)
 

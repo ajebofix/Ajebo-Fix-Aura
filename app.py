@@ -94,6 +94,9 @@ def create_app():
 
     app.config["APP_ENV"] = environment
     app.config["RUNTIME_COMMIT"] = runtime_commit
+    app.config["AURA_PRIVATE_ACCESS_ONLY"] = _environment_flag(
+        "AURA_PRIVATE_ACCESS_ONLY", default=is_production
+    )
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
     app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri(
         is_production=is_production
@@ -253,6 +256,7 @@ def create_app():
 
         return response
 
+    from public_site.routes import public_site_bp
     from auth.routes import auth_bp, advisor_bp
     from cars.routes import cars_bp
     from admin.routes import admin_bp
@@ -287,6 +291,7 @@ def create_app():
     from services.owner_driver_management import init_owner_driver_management
     from services.billing_client_routes import client_billing_bp
 
+    app.register_blueprint(public_site_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(advisor_bp)
     app.register_blueprint(email_verification_bp)
@@ -326,13 +331,6 @@ def create_app():
     @app.before_request
     def _ensure_historical_analysis_runner():
         ensure_historical_background_runner(app)
-
-    @app.get("/")
-    def home():
-        return {
-            "status": "ok",
-            "service": "Ajebo Fix Aura",
-        }
 
     @app.route("/login", methods=["GET", "POST"])
     def login_alias():

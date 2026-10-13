@@ -86,6 +86,7 @@ def register_rate_limits(app: Flask) -> None:
     endpoint_limits = {
         "auth.login": "5 per minute; 20 per hour",
         "auth.signup": "3 per hour",
+        "public_site.request_private_access": "3 per hour; 6 per day",
         "auth.forgot_password": "3 per hour",
         "auth.reset_password": "5 per hour",
         "auth.change_password": "5 per hour",

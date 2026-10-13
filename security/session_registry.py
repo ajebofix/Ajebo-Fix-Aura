@@ -254,7 +254,9 @@ def init_session_registry(app: Flask) -> None:
     def enforce_registered_session():
         public_endpoints = {
             "static",
-            "home",
+            "home",  # legacy compatibility
+            "public_site.home",
+            "public_site.request_private_access",
             "login_alias",
             "healthz",
             "version",

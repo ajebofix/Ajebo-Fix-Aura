@@ -126,12 +126,16 @@ def test_login_alias_preserves_post_method(client):
     assert response.headers["Location"].endswith("/auth/login")
 
 
-def test_root_does_not_disclose_internal_route_inventory(client):
+def test_root_is_public_homepage_without_internal_route_disclosure(client):
     response = client.get("/")
-    payload = response.get_json()
+    html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert payload == {"status": "ok", "service": "Ajebo Fix Aura"}
+    assert response.mimetype == "text/html"
+    assert "Your vehicle has a history" in html
+    assert "Request private access" in html
+    assert "flask" not in html.lower()
+    assert "SQLALCHEMY_DATABASE_URI" not in html
 
 
 def test_health_endpoint_validates_database_readiness(client):

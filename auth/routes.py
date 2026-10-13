@@ -220,7 +220,10 @@ def signup():
     if current_user.is_authenticated:
         return redirect_by_role(current_user)
 
+    private_only = current_app.config.get("AURA_PRIVATE_ACCESS_ONLY", False)
     if request.method == "GET":
+        if private_only and not request.args.get("access_code"):
+            return redirect(url_for("public_site.home") + "#request-access")
         return render_template("signup.html")
 
     name = request.form.get("name", "").strip()
@@ -228,6 +231,10 @@ def signup():
     phone_number = request.form.get("phone_number", "").strip()
     password = request.form.get("password", "")
     access_code = request.form.get("access_code", "").strip()
+
+    if private_only and not access_code:
+        flash("Private client onboarding is managed by Ajebo Fix. Please request access.", "info")
+        return redirect(url_for("public_site.home") + "#request-access", code=303)
 
     if not all([name, email, phone_number, password]):
         flash("All fields are required.", "error")

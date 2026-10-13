@@ -49,7 +49,7 @@ jobs:
         run: pytest -q --tb=short tests/test_ci_profile_key_generation.py
 
       - name: Compile changed Python sources
-        run: python -m compileall -q app.py models.py auth driver events ownership profiles onboarding historical_ingestion security services treatment migrations scripts tests
+        run: python -m compileall -q app.py models.py auth public_site driver events ownership profiles onboarding historical_ingestion security services treatment migrations scripts tests
 
       - name: Rehearse production schema reconciliation
         env:
@@ -163,6 +163,9 @@ jobs:
 
       - name: Test security foundation
         run: pytest -q --tb=short tests/test_security_foundation.py
+
+      - name: Test public homepage, private access and invite gate
+        run: pytest -q --tb=short tests/test_public_private_access.py
 
       - name: Test sensitive-route rate limiting
         run: pytest -q --tb=short tests/test_rate_limits.py

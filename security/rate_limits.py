@@ -86,6 +86,7 @@ def register_rate_limits(app: Flask) -> None:
     endpoint_limits = {
         "auth.login": "5 per minute; 20 per hour",
         "auth.signup": "3 per hour",
+        "public_site.request_private_access": "3 per hour; 6 per day",
         "auth.forgot_password": "3 per hour",
         "auth.reset_password": "5 per hour",
         "auth.change_password": "5 per hour",
@@ -109,7 +110,14 @@ def register_rate_limits(app: Flask) -> None:
     }
 
     for endpoint, limit_value in endpoint_limits.items():
-        _apply_limit(app, endpoint, limit_value)
+        # Anonymous public enquiries must be limited per IP, not per freely
+        # changeable submitted email address.
+        key_func = (
+            get_remote_address
+            if endpoint == "public_site.request_private_access"
+            else _endpoint_key
+        )
+        _apply_limit(app, endpoint, limit_value, key_func=key_func)
 
 
 def init_rate_limiting(app: Flask) -> None:

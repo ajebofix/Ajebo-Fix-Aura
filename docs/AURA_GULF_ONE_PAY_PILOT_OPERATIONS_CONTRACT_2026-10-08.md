@@ -10,6 +10,13 @@ Updated owner-reported capability (9 October): Ajebo Fix can potentially complet
 
 **Detailed source of truth:** [Gulf flexible workforce booking contract](AURA_GULF_FLEXIBLE_WORKFORCE_BOOKING_CONTRACT_2026-10-09.md). Its capacity policy is additive to all voucher, spec/product, evidence and settlement safety rules below. Internal contractor commission and Ebice sponsor settlement must remain separate records.
 
+## Service-timing and checklist scope update (13 October 2026)
+Owner-reported normal Toyota or Mercedes oil change: **30–45 minutes regardless of brand**, with differences by exact vehicle and available technician, not a default Mercedes surcharge of time. Provisionally consider **45 minutes work + 15 minutes configurable buffer = 60 minutes for planning only**; do not guarantee that the sponsor's separate 10-point check, photos, records and handover fit that window until explicitly scoped or measured.
+
+Public Ajebo Fix homepage/services/FAQ reviewed: no published itemised 10-point inspection located. Ebice's original brief promises a **free 10-point check**, naming seven broad categories (fluids, tyres, wipers, lights, belts, battery terminals and visible leaks), and has a *separate ten-step oil-service routine*; do not present the procedure as ten inspection items. Confirm Okwudili's intended exact checklist and additional time before launching the campaign or locking finished booking durations.
+
+See `partnerships/service_duration.py` and [flexible workforce contract](AURA_GULF_FLEXIBLE_WORKFORCE_BOOKING_CONTRACT_2026-10-09.md) for the conservative timing gate and daily/concurrent caps. No brand-based slot length is authorised by default.
+
 ## Purpose and decisive rules
 Prepare Aura to run the Gulf pilot without WhatsApp becoming the system of record. This document is an additive design contract, not authorisation to go live. The current Ebice PDF is a proposal, not a signed SLA. Meeting of 2026-10-08 supersedes the PDF's consignment assumption: **oil and filters stay in Yaba with Ebice and are dispatched per validated booking to Ajebo Fix**. Ajebo Fix is sole proposed Surulere campaign service partner, while Ebice works with others in Ikeja/Lekki. Oil-filter supplier/specification brief, commercial tariffs, signed agreement, authorisation and partner identity evidence are pending.
 

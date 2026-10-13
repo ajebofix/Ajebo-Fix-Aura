@@ -28,6 +28,7 @@
     <strong>10% balance:</strong> {{ document.currency }}{{ "{:,.2f}".format(balance_10) }}.</p>
   <p class="muted">These are calculated from the current native Billing revision, not an earlier estimate.</p>
   <p style="white-space:pre-wrap">{{ document.terms }}</p>
+  <p class="muted">Published <a href="https://ajebofix.com/service-terms" target="_blank" rel="noopener noreferrer">Automotive Service Terms &amp; Policies</a> are general information only. This link does not change the original estimate or establish client acceptance. For future new work, explain material conditions before the client agrees and preserve the actual versioned acceptance.</p>
   <p>Client-facing link: <code>https://aura.ajebofix.com/cars/{{ car.id }}/billing/documents/{{ document.id }}</code></p>
   {% if sent_before %}
     <p class="banner banner-good">A Resend submission is already recorded for this estimate. Duplicate sending is blocked.</p>

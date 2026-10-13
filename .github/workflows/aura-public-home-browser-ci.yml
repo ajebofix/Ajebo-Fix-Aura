@@ -1,0 +1,54 @@
+name: Aura Public Homepage Browser CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "public_site/**"
+      - "templates/public/**"
+      - "static/css/public-home.css"
+      - "tests/test_public_home_browser.py"
+      - ".github/workflows/aura-public-home-browser-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  homepage-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SECRET_KEY: "ci-public-home-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+      RINA_OPENAI_PROVIDER_ENABLED: "false"
+      AURA_BROWSER_SCREENSHOT_DIR: "aura-home-browser-screenshots"
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Generate ephemeral profile encryption key
+        run: python3 scripts/generate_ci_profile_encryption_key.py
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install -q --upgrade pip
+          pip install -q -r requirements-dev.txt playwright
+          python -m playwright install chromium --with-deps
+      - name: Run Chromium 375px / 768px / 1440px homepage review
+        run: pytest -q --tb=short tests/test_public_home_browser.py
+      - name: Preserve previews for visual approval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-public-home-browser-previews
+          path: aura-home-browser-screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 14

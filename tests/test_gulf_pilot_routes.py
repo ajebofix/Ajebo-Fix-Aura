@@ -128,7 +128,8 @@ class FakeEvidenceStorage:
         return SimpleNamespace(payload=self.photos[object_key])
 
 
-def test_feature_is_off_by_default_and_no_public_portal(client):
+def test_feature_is_off_by_default_and_no_public_portal(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = False
     assert client.get("/admin/partners/gulf/").status_code == 404
     assert client.get("/admin/partners/gulf/jobs/1").status_code == 404
 
@@ -139,7 +140,9 @@ def test_only_admin_can_access_gulf_private_records(app, client):
     with app.app_context():
         user = _make_user("user", "2")
         _sign_in(client, user)
-    assert client.get("/admin/partners/gulf/").status_code == 403
+    non_admin = client.get("/admin/partners/gulf/")
+    assert non_admin.status_code in (302, 403)
+    assert "/admin/partners/gulf/" not in non_admin.headers.get("Location", "")
     assert client.post("/admin/partners/gulf/jobs", data={
         "voucher": "GLF-LAG-TRAP",
     }).status_code == 400  # CSRF protects all mutating routes

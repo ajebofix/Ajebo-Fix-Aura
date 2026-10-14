@@ -26,6 +26,21 @@
 <div class="gulf-box">
 <h2>{{ job.make }} {{ job.model }}{% if job.model_year %} · {{ job.model_year }}{% endif %}</h2>
 <p><span class="gulf-badge">{{ job.state|replace('_',' ')|title }}</span><span class="gulf-badge">Dispatch {{ job.dispatch_state }}</span><span class="gulf-badge">Claim {{ job.claim_state }}</span></p>
+{% if job.repeat_plate_review %}
+<div class="gulf-warning">
+<strong>Repeat registration within 30 days — review required.</strong>
+{% if job.repeat_plate_cleared_at %}
+<p class="gulf-small">Cleared after partner review: {{ job.repeat_plate_reference }}</p>
+{% else %}
+<p class="gulf-small">Do not reserve this vehicle until Ebice confirms the repeat redemption is legitimate.</p>
+<form method="post" action="{{ url_for('gulf_pilot.job_action',job_id=job.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="clear_repeat">
+<label>Ebice clearance message/reference</label><input name="reference" maxlength="100" required>
+<button type="submit">Record repeat-redemption clearance</button>
+</form>
+{% endif %}
+</div>
+{% endif %}
 {% if not pilot_live %}<p class="gulf-warning">Preparation only: final campaign confirmation is disabled.</p>{% endif %}
 <div class="gulf-meta">
 <div><span class="gulf-small">Customer</span><div>{{ job.customer_name }}</div></div>

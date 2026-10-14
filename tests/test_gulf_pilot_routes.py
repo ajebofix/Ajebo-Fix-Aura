@@ -296,3 +296,42 @@ def test_wrong_dispatch_sequence_does_not_mark_oil_received(app, client):
     with app.app_context():
         assert GulfJob.query.one().products_received_at is None
         assert GulfJob.query.one().dispatch_state == "not_requested"
+
+
+def test_repeat_registration_is_flagged_without_exposing_plain_plate(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _job(client, "001")
+    _job(client, "002")
+    with app.app_context():
+        rows = GulfJob.query.order_by(GulfJob.id).all()
+        assert len(rows) == 2
+        assert rows[0].repeat_plate_review is False
+        assert rows[1].repeat_plate_review is True
+        assert rows[1].repeat_plate_cleared_at is None
+        assert "SUR 123" not in rows[1].plate_digest
+    _action(client, "clear_repeat", {"reference": "EBICE-REVIEW-002"}, job_id=2)
+    with app.app_context():
+        row = db.session.get(GulfJob, 2)
+        assert row.repeat_plate_reference == "EBICE-REVIEW-002"
+        assert row.repeat_plate_cleared_at is not None
+
+
+def test_staff_can_release_old_external_work_without_touching_service_records(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    day = _next_monday().isoformat()
+    _post(client, "/admin/partners/gulf/busy", {
+        "bay": "1", "starts_at": day + "T10:00", "ends_at": day + "T11:30",
+        "reason": "Existing Ajebo Fix vehicle", "is_oil_change": "1",
+    })
+    from partnerships.models import GulfBusySlot
+    with app.app_context():
+        assert GulfBusySlot.query.count() == 1
+    r = _post(client, "/admin/partners/gulf/busy/1/release")
+    assert r.status_code == 200
+    with app.app_context():
+        assert GulfBusySlot.query.count() == 0
+        assert GulfAudit.query.filter_by(action="existing_work_block_released").count() == 1

@@ -7,7 +7,6 @@ existing app-wide CSRF mechanism and are audited without customer PII.
 import csv
 from datetime import datetime
 from io import BytesIO, StringIO
-import re
 import uuid
 
 from flask import (

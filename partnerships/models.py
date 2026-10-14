@@ -15,7 +15,8 @@ class GulfTechnician(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     display_name = db.Column(db.String(100), nullable=False)
     phone_cipher = db.Column(db.Text)
-    qualified_classes = db.Column(db.String(100), nullable=False, default="standard")
+    qualified_classes = db.Column(db.String(100), nullable=False, default="car")
+    brand_specialties = db.Column(db.String(160), nullable=False, default="")
     is_intern = db.Column(db.Boolean, nullable=False, default=False)
     active = db.Column(db.Boolean, nullable=False, default=True)
 

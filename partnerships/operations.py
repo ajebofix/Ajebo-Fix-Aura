@@ -13,6 +13,7 @@ from flask import current_app
 from sqlalchemy import select
 
 from extensions import db
+from partnerships.technician_qualifications import classify_make
 from partnerships.capacity import (
     BayAvailability, DayPolicy, TechnicianAvailability, TimeWindow, assess_slot, LAGOS,
 )
@@ -125,10 +126,18 @@ def _accepted_shift(technician_id, start, end):
     ).first() is not None
 
 
-def _candidate_resources(job_id, technician_id, bay, start, end):
+def _candidate_resources(job_id, technician_id, bay, start, end, vehicle_make):
     technician = db.session.get(GulfTechnician, technician_id)
     if not technician or not technician.active or technician.is_intern:
         raise GulfOperationError("Assign an active qualified lead technician; interns may assist.")
+    vehicle_brand_class = classify_make(vehicle_make)
+    recorded_brand_skills = frozenset(
+        x.strip() for x in (technician.brand_specialties or "").split(",") if x.strip()
+    )
+    if vehicle_brand_class not in recorded_brand_skills:
+        raise GulfOperationError(
+            "Lead technician lacks the recorded brand specialisation for this vehicle."
+        )
     if not _accepted_shift(technician_id, start, end):
         raise GulfOperationError("Technician has not explicitly accepted this work window.")
     occupied = GulfBusySlot.query.filter(
@@ -197,7 +206,9 @@ def evaluate_reservation(job, technician_id, bay, start, end, actor_id):
     if start.date() != end.date():
         raise GulfOperationError("Appointments cannot cross a Lagos service day.")
     plan = _day_plan(start.date(), actor_id)
-    tech, work_bay, occupied, ongoing = _candidate_resources(job.id, technician_id, bay, start, end)
+    tech, work_bay, occupied, ongoing = _candidate_resources(
+        job.id, technician_id, bay, start, end, job.make
+    )
     jobs_today = GulfJob.query.filter(
         GulfJob.id != job.id,
         GulfJob.slot_start >= datetime.combine(start.date(), datetime.min.time()),

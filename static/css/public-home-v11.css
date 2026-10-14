@@ -57,3 +57,34 @@
 @media(max-width:660px){.section{padding-top:72px;padding-bottom:72px}.hero{padding-top:58px;padding-bottom:70px}.hero h1{font-size:clamp(36px,9.3vw,50px)}.hero-proofline{font-size:10px}.scenario-grid,.capability-grid{grid-template-columns:1fr}.scenario-grid article{padding:21px}.capability-grid article{min-height:0;padding:22px}.product-window{min-height:0}.demo-heading h2{font-size:17px}.product-tab{font-size:10px}.mini-identity small{display:none}.rina-demo{padding:14px}.request-section{grid-template-columns:1fr}.product-showcase{min-height:0}.section-lead{gap:0}.case-path{gap:4px 8px}}
 @media(max-width:390px){.product-panels{padding:14px 11px}.product-chrome{padding:11px}.demo-metrics{gap:6px}.demo-metrics>div{padding:9px}.demo-feed-row{padding:8px}.product-tab{padding:12px 1px;font-size:9px}.rina-demo{padding:11px}.chat-bubble{padding:12px}}
 @media(prefers-reduced-motion:reduce){.enquiry-pathways a{transition:none}}
+
+/* Public header: crop blank margins out of the existing Aura health mark.
+   Retains original brand artwork and a readable Aura wordmark. */
+.identity{gap:13px}
+.identity-mark{display:block;position:relative;flex:0 0 72px;width:72px;height:72px;overflow:hidden;border:1px solid rgba(162,193,175,.4);background:#111d18;border-radius:14px;box-shadow:0 0 0 1px rgba(26,52,39,.6)}
+.identity-mark img{position:absolute;display:block;max-width:none;width:150px;height:auto;left:50%;top:-49px;transform:translateX(-50%);object-fit:initial}
+.header-inner{min-height:96px}
+.identity>span:last-child{font-size:21px;line-height:1.23;letter-spacing:.17em}
+.identity>span:last-child small{font-size:10px;letter-spacing:.18em;margin-top:4px}
+.enquiry-pathways a{cursor:pointer;touch-action:manipulation}
+.enquiry-pathways a.is-selected{border-color:#a7c5ad;background:#243a2d;box-shadow:inset 3px 0 0 #a7c5ad}
+.enquiry-pathways a.is-selected strong{color:#fff}
+#request-form-panel{scroll-margin-top:18px}
+#request-form-panel:focus{outline:none}
+.form-intent-banner{padding:15px 17px;border:1px solid #aec4ae;border-left:4px solid #2c623b;background:#dce8d9;color:#1d3928;border-radius:5px;display:flex;flex-direction:column;gap:3px}
+.form-intent-eyebrow{font-size:9px!important;letter-spacing:.17em;font-weight:700;color:#496d4f}
+.form-intent-banner strong{font-size:16px;line-height:1.5}
+.form-intent-banner #request-intent-description{font-size:12px;line-height:1.7;color:#405b46}
+@media(max-width:660px){
+  .header-inner{min-height:86px}
+  .identity{gap:10px}
+  .identity-mark{flex-basis:66px;width:66px;height:66px;border-radius:13px}
+  .identity-mark img{width:138px;top:-45px}
+  .identity>span:last-child{font-size:20px;letter-spacing:.14em}
+  .identity>span:last-child small{font-size:9px;letter-spacing:.15em}
+}
+@media(max-width:365px){
+  .identity-mark{flex-basis:59px;width:59px;height:59px}
+  .identity-mark img{width:125px;top:-41px}
+  .identity>span:last-child{font-size:18px}
+}

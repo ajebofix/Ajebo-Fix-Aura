@@ -1,14 +1,13 @@
 """Gulf pilot admin integration: no public writes, guarded customer jobs and payments."""
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 from io import BytesIO
 from types import SimpleNamespace
 
 from PIL import Image
-from flask import current_app
 
 from extensions import db
 from models import User
-from partnerships.models import GulfJob, GulfAudit, GulfTechnician, GulfPhoto
+from partnerships.models import GulfJob, GulfAudit, GulfPhoto
 
 
 def _make_user(role="admin", suffix="1"):

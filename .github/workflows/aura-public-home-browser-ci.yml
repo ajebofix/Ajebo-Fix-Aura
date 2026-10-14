@@ -43,7 +43,7 @@ jobs:
           pip install -q -r requirements-dev.txt playwright
           python -m playwright install chromium --with-deps
       - name: Run Chromium 375px / 768px / 1440px homepage review
-        run: pytest -q --tb=short tests/test_public_home_browser.py
+        run: pytest -q --tb=short tests/test_public_home_browser.py tests/test_public_private_access.py
       - name: Preserve previews for visual approval
         if: always()
         uses: actions/upload-artifact@v4

@@ -21,7 +21,7 @@ from evidence.image_sanitizer import sanitize_evidence_image, EvidenceImageValid
 from evidence.storage import build_evidence_storage_provider, EvidenceStorageError
 from extensions import db
 from partnerships.models import (
-    GulfAudit, GulfBusySlot, GulfDayPlan, GulfJob, GulfPhoto, GulfShift, GulfTechnician,
+    GulfAudit, GulfBusySlot, GulfDayPlan, GulfJob, GulfPayment, GulfPhoto, GulfShift, GulfTechnician,
 )
 from partnerships.operations import (
     GulfOperationError, add_payment, audit, campaign_readiness, clean,
@@ -38,7 +38,7 @@ def feature_off_by_default():
     if not current_app.config.get("AURA_GULF_PILOT_ENABLED", False):
         abort(404)
     if not current_user.is_authenticated:
-        abort(401)
+        return redirect(url_for("auth.login"))
     if current_user.role != "admin":
         abort(403)
 
@@ -76,7 +76,7 @@ def _safe_action(action, go_to):
         db.session.rollback()
         current_app.logger.exception("gulf_private_photo_store_error")
         flash("Private image storage is temporarily unavailable.", "error")
-    return redirect(request.referrer or url_for("gulf_pilot.dashboard"))
+    return redirect(url_for("gulf_pilot.dashboard"))
 
 
 @gulf_bp.get("/")
@@ -215,10 +215,11 @@ def job_detail(job_id):
     audit_rows = GulfAudit.query.filter_by(job_id=job.id).order_by(GulfAudit.id.desc()).limit(40).all()
     photos = GulfPhoto.query.filter_by(job_id=job.id).order_by(GulfPhoto.id.desc()).all()
     technicians = GulfTechnician.query.filter_by(active=True).all()
+    payments = GulfPayment.query.filter_by(job_id=job.id).order_by(GulfPayment.id.desc()).all()
     points = current_app.config.get("AURA_GULF_CHECKLIST_ITEMS") or []
     return render_template(
         "admin/gulf_job.html", job=job, audit_rows=audit_rows, photos=photos,
-        technicians=technicians, points=points,
+        payments=payments, technicians=technicians, points=points,
         pilot_live=current_app.config.get("AURA_GULF_CAMPAIGN_ACTIVE", False),
     )
 
@@ -316,7 +317,8 @@ def job_action(job_id):
             add_payment(job, amount, current_user.id, reference=request.form.get("reference"))
         elif action == "commission":
             amount = nonnegative_money(request.form.get("amount_ngn"))
-            add_payment(job, amount, current_user.id, technician=True)
+            add_payment(job, amount, current_user.id, technician=True,
+                        reference=request.form.get("reference"))
         elif action == "cancel":
             if job.state not in {"new", "tentative", "confirmed"}:
                 raise GulfOperationError("A started service needs an exception review, not cancellation.")

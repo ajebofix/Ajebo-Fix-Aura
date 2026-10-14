@@ -7,7 +7,7 @@ from PIL import Image
 
 from extensions import db
 from models import User
-from partnerships.models import GulfJob, GulfAudit, GulfPhoto
+from partnerships.models import GulfJob, GulfAudit, GulfPhoto, GulfPayment
 
 
 def _make_user(role="admin", suffix="1"):
@@ -237,7 +237,7 @@ def test_successful_end_to_end_with_private_evidence_and_partial_payments(app, c
     _action(client, "claim")
     _action(client, "claim")  # can't create second claim
     _action(client, "payment", {"amount_ngn": "10000", "reference": "BANK-1"})
-    _action(client, "commission", {"amount_ngn": "8000"})
+    _action(client, "commission", {"amount_ngn": "8000", "reference": "WORKER-1"})
     with app.app_context():
         job = GulfJob.query.one()
         assert job.state == "handed_over"
@@ -245,9 +245,15 @@ def test_successful_end_to_end_with_private_evidence_and_partial_payments(app, c
         assert job.paid_kobo == 1000000
         assert job.commission_paid_kobo == 800000
         assert GulfAudit.query.filter_by(job_id=job.id, action="claim").count() == 1
+        assert GulfPayment.query.count() == 2
+    _action(client, "payment", {"amount_ngn": "10000", "reference": "BANK-1"})
+    with app.app_context():
+        assert GulfJob.query.one().paid_kobo == 1000000
+        assert GulfPayment.query.count() == 2
     _action(client, "payment", {"amount_ngn": "15000", "reference": "BANK-2"})
     with app.app_context():
         assert GulfJob.query.one().claim_state == "paid"
+        assert GulfPayment.query.count() == 3
     export = client.get("/admin/partners/gulf/settlement.csv")
     assert export.status_code == 200
     assert "Pilot Guest" not in export.get_data(as_text=True)

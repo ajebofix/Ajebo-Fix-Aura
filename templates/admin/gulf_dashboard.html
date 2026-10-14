@@ -113,6 +113,18 @@
 </form></details>
 <p class="gulf-muted">Staff registered: {{ technicians|length }}. Only qualified, explicitly available lead technicians can be assigned. Interns may assist under supervision.</p>
 {% for plan in plans[:6] %}<div class="gulf-muted">{{ plan.service_day }} · {{ plan.daily_cap }} daily / {{ plan.concurrent_cap }} parallel · {{ plan.reason }}</div>{% endfor %}
+<details><summary>Accepted technician windows ({{ shifts|length }})</summary>
+{% for shift in shifts %}
+<div class="gulf-job"><div class="gulf-muted">Technician #{{ shift.technician_id }} · {{ shift.starts_at.strftime('%d %b %H:%M') }}–{{ shift.ends_at.strftime('%H:%M') }} · {% if shift.accepted %}Accepted{% else %}Not yet accepted{% endif %}</div>
+<form method="post" action="{{ url_for('gulf_pilot.revoke_shift',shift_id=shift.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Revoke</button></form></div>
+{% else %}<p class="gulf-muted">No availability declarations.</p>{% endfor %}
+</details>
+<details><summary>Existing work / blocked windows ({{ blocks|length }})</summary>
+{% for slot in blocks %}
+<div class="gulf-job"><div class="gulf-muted">{{ slot.reason }} · {{ slot.starts_at.strftime('%d %b %H:%M') }}–{{ slot.ends_at.strftime('%H:%M') }} · Bay {{ slot.bay or 'mobile' }}{% if slot.is_oil_change %} · Counts toward oil capacity{% endif %}</div>
+<form method="post" action="{{ url_for('gulf_pilot.release_busy',block_id=slot.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Release</button></form></div>
+{% else %}<p class="gulf-muted">No recorded competing work.</p>{% endfor %}
+</details>
 </div>
 </section>
 {% endblock %}

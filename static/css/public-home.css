@@ -66,7 +66,7 @@
 .context-steps li span{font-size:10px;color:#b7d3b9;margin-right:12px}
 .scenario-bottom{margin-top:auto;border-top:1px solid rgba(215,233,217,.17);padding-top:14px;color:#e8e9d8;font-size:12px;font-weight:700;letter-spacing:.02em}
 .example-disclosure{font-size:11px!important;color:#aebcaf!important;margin:15px 0 0}
-.rina-section{background:radial-gradient(ellipse at 96% 0,rgba(46,80,55,.34),transparent 55%),#111916}
+.rina-section{display:block;background:radial-gradient(ellipse at 96% 0,rgba(46,80,55,.34),transparent 55%),#111916}
 .rina-layout{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:6%;align-items:center}
 .rina-copy h2{max-width:490px}
 .rina-copy>p:not(.eyebrow){font-size:15px;line-height:1.9}

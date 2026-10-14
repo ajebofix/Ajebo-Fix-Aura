@@ -53,3 +53,48 @@ jobs:
           tests/test_partner_service_duration.py
       - name: Ruff changed Gulf slice
         run: ruff check --output-format=concise partnerships/models.py partnerships/operations.py partnerships/routes.py tests/test_gulf_pilot_routes.py
+
+  gulf-pilot-postgres:
+    name: Gulf pilot PostgreSQL staging rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pilot_ci_only
+          POSTGRES_DB: gulf_pilot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gulf_pilot_ci"
+          --health-interval 10s --health-timeout 5s --health-retries 8
+    env:
+      SECRET_KEY: "gulf-postgres-ci-not-for-production"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: memory://
+      SQLALCHEMY_DATABASE_URI: "postgresql://postgres:pilot_ci_only@127.0.0.1:5432/gulf_pilot_ci"
+      GULF_CI_POSTGRES_URL: "postgresql://postgres:pilot_ci_only@127.0.0.1:5432/gulf_pilot_ci"
+      PROFILE_ENCRYPTION_KEY_VERSION: ci-v1
+      AURA_GULF_PILOT_ENABLED: "true"
+      AURA_GULF_CAMPAIGN_ACTIVE: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+      - name: Create ephemeral encryption key
+        run: python3 scripts/generate_ci_profile_encryption_key.py
+      - name: Apply entire current Alembic migration chain on disposable PostgreSQL
+        run: flask db upgrade
+      - name: Run Gulf route, capacity, inspection and settlement workflows on PostgreSQL
+        run: >-
+          pytest -q --tb=short
+          tests/test_gulf_pilot_routes.py
+          tests/test_partner_capacity.py
+          tests/test_partner_pilot_guards.py
+          tests/test_partner_service_duration.py

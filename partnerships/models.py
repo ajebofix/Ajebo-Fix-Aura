@@ -169,3 +169,18 @@ class GulfAudit(db.Model):
     action = db.Column(db.String(65), nullable=False)
     note = db.Column(db.String(240))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class GulfPayment(db.Model):
+    """Immutable individual sponsor/contractor transfers, not a mutable total."""
+    __tablename__ = "gulf_payments"
+    __table_args__ = (
+        db.UniqueConstraint("job_id", "kind", "reference", name="uq_gulf_payment_reference"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey("gulf_jobs.id"), nullable=False, index=True)
+    kind = db.Column(db.String(16), nullable=False)
+    amount_kobo = db.Column(db.Integer, nullable=False)
+    reference = db.Column(db.String(100), nullable=False)
+    recorded_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

@@ -67,6 +67,10 @@ def upgrade():
         sa.Column("name_cipher", sa.Text(), nullable=False),
         sa.Column("phone_cipher", sa.Text(), nullable=False),
         sa.Column("plate_cipher", sa.Text(), nullable=False),
+        sa.Column("plate_digest", sa.String(64), nullable=False),
+        sa.Column("repeat_plate_review", sa.Boolean(), nullable=False),
+        sa.Column("repeat_plate_cleared_at", sa.DateTime()),
+        sa.Column("repeat_plate_reference", sa.String(100)),
         sa.Column("make", sa.String(70), nullable=False),
         sa.Column("model", sa.String(90), nullable=False),
         sa.Column("model_year", sa.Integer()),
@@ -111,6 +115,7 @@ def upgrade():
         sa.UniqueConstraint("voucher_digest", name="uq_gulf_jobs_voucher_digest"),
     )
     op.create_index("ix_gulf_jobs_state", "gulf_jobs", ["state"])
+    op.create_index("ix_gulf_jobs_plate_digest", "gulf_jobs", ["plate_digest"])
     op.create_table(
         "gulf_photos",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -162,6 +167,7 @@ def downgrade():
     op.drop_table("gulf_audit")
     op.drop_index("ix_gulf_photos_job_id", table_name="gulf_photos")
     op.drop_table("gulf_photos")
+    op.drop_index("ix_gulf_jobs_plate_digest", table_name="gulf_jobs")
     op.drop_index("ix_gulf_jobs_state", table_name="gulf_jobs")
     op.drop_table("gulf_jobs")
     op.drop_table("gulf_day_plans")

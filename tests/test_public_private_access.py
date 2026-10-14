@@ -96,3 +96,21 @@ def test_public_enquiry_rate_limit_is_per_ip(client):
         "csrf_token": csrf, "name": "Different", "email": "other@example.com"
     })
     assert blocked.status_code == 429
+
+
+def test_public_enquiry_links_target_the_form_and_preserve_request_type(client):
+    page = client.get("/")
+    body = page.get_data(as_text=True)
+    for intent in ("private_access", "assessment", "fleet"):
+        assert f'data-request-type="{intent}"' in body
+        assert f'request_type={intent}#access-form' in body
+
+    for intent, label in (
+        ("private_access", "Private Aura access"),
+        ("assessment", "Professional vehicle assessment"),
+        ("fleet", "Fleet / partnership enquiry"),
+    ):
+        response = client.get(f"/?request_type={intent}")
+        assert response.status_code == 200
+        assert f'value="{intent}" selected'.encode() in response.data
+        assert label in response.get_data(as_text=True)

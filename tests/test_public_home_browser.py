@@ -67,11 +67,28 @@ def test_public_homepage_desktop_and_mobile(app, tmp_path):
                     "() => document.documentElement.scrollWidth <= window.innerWidth + 1"
                 ), f"Horizontal overflow at {width}px"
 
-                brand_image = page.locator("header .identity img")
+                brand_image = page.locator("header .identity-mark img")
                 assert brand_image.evaluate(
                     "(img) => img.complete && img.naturalWidth > 0"
                 ), f"Brand image failed to load at {width}px"
+                assert page.locator("header .identity-mark").evaluate(
+                    "(el) => el.getBoundingClientRect().width >= 58"
+                ), f"Brand mark is too small at {width}px"
                 assert page.locator("#request-access").is_visible()
+                for intent, title in (
+                    ("private_access", "Private Aura access"),
+                    ("assessment", "Professional vehicle assessment"),
+                    ("fleet", "Fleet / partnership enquiry"),
+                ):
+                    page.locator(f".enquiry-pathways a[data-request-type='{intent}']").click()
+                    assert page.locator("#request_type").input_value() == intent
+                    assert page.locator("#request-intent-title").inner_text() == title
+                    assert page.url.endswith(f"?request_type={intent}#access-form")
+                    assert page.locator("#request-form-panel").evaluate(
+                        "(el) => { const y = el.getBoundingClientRect();"
+                        " return y.top >= -1 && y.top < window.innerHeight; }"
+                    ), f"Enquiry form did not scroll into view on {width}px for {intent}"
+                page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="networkidle")
                 if image_dir:
                     page.screenshot(
                         path=os.path.join(image_dir, f"aura-home-{label}.png"),

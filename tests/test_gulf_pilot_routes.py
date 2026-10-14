@@ -1,5 +1,10 @@
 """Gulf pilot admin integration: no public writes, guarded customer jobs and payments."""
 from datetime import datetime, timedelta
+import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+import pytest
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -335,3 +340,70 @@ def test_staff_can_release_old_external_work_without_touching_service_records(ap
     with app.app_context():
         assert GulfBusySlot.query.count() == 0
         assert GulfAudit.query.filter_by(action="existing_work_block_released").count() == 1
+
+
+@pytest.mark.skipif(
+    not os.environ.get("GULF_CI_POSTGRES_URL"),
+    reason="PostgreSQL locking integration requires disposable CI database",
+)
+def test_concurrent_bookings_cannot_claim_same_bay(app):
+    """Two operators booking same bay must not both obtain reservations."""
+    with app.app_context():
+        admin = _make_user()
+    a, b = app.test_client(), app.test_client()
+    with app.app_context():
+        _sign_in(a, admin)
+        _sign_in(b, admin)
+    _job(a, "301")
+    _job(a, "302")
+    _action(a, "clear_repeat", {"reference": "EBICE-REVIEW-302"}, job_id=2)
+    start, end = _set_up_slot(a)
+    day = _next_monday()
+    _post(a, "/admin/partners/gulf/day-plan", {
+        "day": day.isoformat(), "daily_cap": "6",
+        "concurrent_cap": "2", "reason": "Available staff and service positions verified",
+    })
+    _post(a, "/admin/partners/gulf/technicians", {
+        "name": "Contractor B", "skills": "car,suv",
+    })
+    _post(a, "/admin/partners/gulf/shifts", {
+        "technician_id": "2",
+        "starts_at": day.isoformat() + "T09:00",
+        "ends_at": day.isoformat() + "T16:00",
+        "accepted": "1",
+    })
+    for job_id in (1, 2):
+        _action(a, "verify", {"reference": f"EBICE-V-{job_id}"}, job_id=job_id)
+        _action(a, "approve_oil", {
+            "oil_spec": "Test approved oil spec",
+            "oil_sku": "Approved SKU",
+            "litres": "4.1", "filter_part": "TEST-FILTER",
+            "human_approved": "1",
+        }, job_id=job_id)
+
+    barrier = Barrier(2)
+
+    def reserve(client, job_id, technician_id):
+        barrier.wait(timeout=10)
+        response = _action(
+            client, "hold",
+            {
+                "technician_id": str(technician_id), "bay": "1",
+                "starts_at": start, "ends_at": end,
+                "commission_ngn": "8000",
+            },
+            job_id=job_id,
+        )
+        return response.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f1 = pool.submit(reserve, a, 1, 1)
+        f2 = pool.submit(reserve, b, 2, 2)
+        assert f1.result(timeout=20) == 200
+        assert f2.result(timeout=20) == 200
+
+    with app.app_context():
+        rows = GulfJob.query.order_by(GulfJob.id).all()
+        assert sum(job.state == "tentative" for job in rows) == 1
+        assert sum(job.state == "new" for job in rows) == 1
+        assert all(job.state != "confirmed" for job in rows)

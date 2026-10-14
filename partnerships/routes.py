@@ -182,6 +182,38 @@ def busy():
     return _safe_action(save, url_for("gulf_pilot.dashboard"))
 
 
+@gulf_bp.post("/busy/<int:block_id>/release")
+@login_required
+@advisor_required
+def release_busy(block_id):
+    def save():
+        record = db.get_or_404(GulfBusySlot, block_id)
+        db.session.delete(record)
+        audit(None, current_user.id, "existing_work_block_released")
+    return _safe_action(save, url_for("gulf_pilot.dashboard"))
+
+
+@gulf_bp.post("/shifts/<int:shift_id>/revoke")
+@login_required
+@advisor_required
+def revoke_shift(shift_id):
+    def save():
+        record = db.get_or_404(GulfShift, shift_id)
+        active = GulfJob.query.filter(
+            GulfJob.technician_id == record.technician_id,
+            GulfJob.state.in_(("tentative", "confirmed", "in_service")),
+            GulfJob.slot_start < record.ends_at,
+            GulfJob.slot_end > record.starts_at,
+        ).all()
+        if any(j.state != "tentative" or
+               (j.hold_expires_at and j.hold_expires_at > datetime.utcnow())
+               for j in active):
+            raise GulfOperationError("Reassign or cancel affected Gulf bookings first.")
+        db.session.delete(record)
+        audit(None, current_user.id, "technician_availability_revoked")
+    return _safe_action(save, url_for("gulf_pilot.dashboard"))
+
+
 @gulf_bp.post("/day-plan")
 @login_required
 @advisor_required
@@ -232,7 +264,15 @@ def job_action(job_id):
     action = clean(request.form.get("action"), 32, required=True)
     def apply():
         now = datetime.utcnow()
-        if action == "verify":
+        if action == "clear_repeat":
+            if not job.repeat_plate_review or job.state not in {"new", "tentative"}:
+                raise GulfOperationError("No eligible repeat-plate review is pending.")
+            ref = clean(request.form.get("reference"), 100, required=True)
+            if len(ref) < 4:
+                raise GulfOperationError("Record an Ebice review reference.")
+            job.repeat_plate_reference = ref
+            job.repeat_plate_cleared_at = now
+        elif action == "verify":
             if job.state not in {"new", "tentative"}:
                 raise GulfOperationError("Voucher cannot be reverified after the service starts.")
             job.verification_reference = clean(request.form.get("reference"), 120, required=True)

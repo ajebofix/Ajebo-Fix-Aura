@@ -90,6 +90,7 @@ def upgrade():
         sa.Column("hold_expires_at", sa.DateTime()),
         sa.Column("technician_id", sa.Integer(), sa.ForeignKey("gulf_technicians.id")),
         sa.Column("bay", sa.String(32)),
+        sa.Column("customer_confirmed", sa.Boolean(), nullable=False),
         sa.Column("commission_kobo", sa.Integer()),
         sa.Column("labour_fee_kobo", sa.Integer()),
         sa.Column("actual_start", sa.DateTime()),

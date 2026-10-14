@@ -10,8 +10,7 @@ import hmac
 import re
 
 from flask import current_app
-from sqlalchemy import and_, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 
 from extensions import db
 from partnerships.capacity import (

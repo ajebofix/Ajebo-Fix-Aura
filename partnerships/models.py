@@ -44,7 +44,6 @@ class GulfBusySlot(db.Model):
     __tablename__ = "gulf_busy_slots"
     id = db.Column(db.Integer, primary_key=True)
     technician_id = db.Column(db.Integer, db.ForeignKey("gulf_technicians.id"))
-    customer_confirmed = db.Column(db.Boolean, nullable=False, default=False)
     bay = db.Column(db.String(32))
     starts_at = db.Column(db.DateTime, nullable=False)
     ends_at = db.Column(db.DateTime, nullable=False)
@@ -96,6 +95,7 @@ class GulfJob(db.Model):
     slot_end = db.Column(db.DateTime)
     hold_expires_at = db.Column(db.DateTime)
     technician_id = db.Column(db.Integer, db.ForeignKey("gulf_technicians.id"))
+    customer_confirmed = db.Column(db.Boolean, nullable=False, default=False)
     bay = db.Column(db.String(32))
     commission_kobo = db.Column(db.Integer)
     labour_fee_kobo = db.Column(db.Integer)

@@ -17,7 +17,7 @@ from partnerships.capacity import (
     BayAvailability, DayPolicy, TechnicianAvailability, TimeWindow, assess_slot, LAGOS,
 )
 from partnerships.models import (
-    GulfAudit, GulfBusySlot, GulfDayPlan, GulfJob, GulfShift, GulfTechnician,
+    GulfAudit, GulfBusySlot, GulfDayPlan, GulfJob, GulfPayment, GulfShift, GulfTechnician,
 )
 
 ACTIVE_STATES = ("tentative", "confirmed", "in_service", "completed", "handed_over")
@@ -182,7 +182,9 @@ def evaluate_reservation(job, technician_id, bay, start, end, actor_id):
     """Called in one DB transaction holding the day's plan row lock."""
     if end <= start or (end - start) > timedelta(hours=5):
         raise GulfOperationError("Reservation duration must be positive and realistic.")
-    if start < datetime.now() - timedelta(minutes=15):
+    if end - start < timedelta(minutes=90):
+        raise GulfOperationError("Hold at least 90 minutes until full service timing is approved.")
+    if start < datetime.now(LAGOS).replace(tzinfo=None) - timedelta(minutes=15):
         raise GulfOperationError("Cannot reserve a past appointment.")
     if not re.fullmatch(r"[1-4]", bay):
         raise GulfOperationError("Select a recognised service work position.")
@@ -296,11 +298,19 @@ def add_payment(job, amount_kobo, actor_id, *, technician=False, reference=None)
         existing = job.paid_kobo
     if amount_kobo <= 0 or amount_kobo + existing > maximum:
         raise GulfOperationError("Payment must be positive and not exceed the agreed amount.")
+    ref = clean(reference, 100, required=True)
+    kind = "technician" if technician else "partner"
+    if GulfPayment.query.filter_by(job_id=job.id, kind=kind, reference=ref).first():
+        raise GulfOperationError("This payment reference has already been recorded.")
+    db.session.add(GulfPayment(
+        job_id=job.id, kind=kind, amount_kobo=amount_kobo,
+        reference=ref, recorded_by=actor_id,
+    ))
     if technician:
         job.commission_paid_kobo += amount_kobo
         audit(job.id, actor_id, "technician_paid")
     else:
         job.paid_kobo += amount_kobo
         job.claim_state = "paid" if job.paid_kobo == maximum else "partial"
-        job.payment_reference = clean(reference, 100) or None
+        job.payment_reference = ref
         audit(job.id, actor_id, "partner_payment_recorded")

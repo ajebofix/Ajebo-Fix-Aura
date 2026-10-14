@@ -23,6 +23,9 @@ from extensions import db
 from partnerships.models import (
     GulfAudit, GulfBusySlot, GulfDayPlan, GulfJob, GulfPayment, GulfPhoto, GulfShift, GulfTechnician,
 )
+from partnerships.technician_qualifications import (
+    BRAND_SPECIALTIES, SERVICE_CLASSES, split_qualifications,
+)
 from partnerships.operations import (
     GulfOperationError, add_payment, audit, campaign_readiness, clean,
     confirm_job, create_request, nonnegative_money, parse_day, parse_local,
@@ -116,14 +119,25 @@ def new_job():
 def new_technician():
     def save():
         name = clean(request.form.get("name"), 100, required=True)
-        skills = clean(request.form.get("skills"), 100, required=True)
-        allowed = {"car", "suv", "exception"}
-        selected = {x.strip() for x in skills.split(",")}
-        if not selected.issubset(allowed) or not selected:
-            raise GulfOperationError("Select only car, suv or exception qualifications.")
+        # Vehicle class and manufacturer competence are separate questions.
+        # Parse checkbox values, not arbitrary comma-separated brand text.
+        raw_classes = request.form.getlist("service_classes")
+        raw_brands = request.form.getlist("brand_specialties")
+        try:
+            selected_classes = split_qualifications(
+                ",".join(raw_classes), SERVICE_CLASSES
+            )
+            selected_brands = split_qualifications(
+                ",".join(raw_brands), BRAND_SPECIALTIES
+            )
+        except ValueError as exc:
+            raise GulfOperationError(
+                "Select at least one service class and one brand specialisation."
+            ) from exc
         row = GulfTechnician(
             display_name=name,
-            qualified_classes=",".join(sorted(selected)),
+            qualified_classes=",".join(sorted(selected_classes)),
+            brand_specialties=",".join(sorted(selected_brands)),
             is_intern=bool(request.form.get("is_intern")),
         )
         row.phone = clean(request.form.get("phone"), 30)

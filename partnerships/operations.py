@@ -90,10 +90,16 @@ def create_request(data, actor_id):
     if year and (not year.isdigit() or not 1950 <= int(year) <= datetime.now().year + 1):
         raise GulfOperationError("Vehicle year is invalid.")
     digest = voucher_digest(voucher)
+    plate_key = voucher_digest(re.sub(r"[^A-Z0-9]", "", plate.upper()))
+    repeat_plate = GulfJob.query.filter(
+        GulfJob.plate_digest == plate_key,
+        GulfJob.created_at >= datetime.utcnow() - timedelta(days=30),
+    ).first() is not None
     if GulfJob.query.filter_by(voucher_digest=digest).first():
         raise GulfOperationError("This voucher already has a Gulf job record.")
     job = GulfJob(
         voucher_digest=digest, voucher_tail=voucher[-6:],
+        plate_digest=plate_key, repeat_plate_review=repeat_plate,
         make=make, model=model, model_year=int(year) if year else None,
         fuel=clean(data.get("fuel"), 30) or None,
         service_class=klass,
@@ -225,6 +231,10 @@ def evaluate_reservation(job, technician_id, bay, start, end, actor_id):
 
 
 def record_hold(job, data, actor_id):
+    if job.repeat_plate_review and not job.repeat_plate_cleared_at:
+        raise GulfOperationError(
+            "Repeat plate within 30 days: obtain Ebice review before scheduling."
+        )
     if job.state not in {"new", "tentative"}:
         raise GulfOperationError("Only unconfirmed requests can be scheduled.")
     if not job.voucher_verified_at or not job.technical_approved_at:

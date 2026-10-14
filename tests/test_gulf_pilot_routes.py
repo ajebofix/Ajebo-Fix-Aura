@@ -406,3 +406,34 @@ def test_concurrent_bookings_cannot_claim_same_bay(app):
         assert sum(job.state == "tentative" for job in rows) == 1
         assert sum(job.state == "new" for job in rows) == 1
         assert all(job.state != "confirmed" for job in rows)
+
+
+def test_gulf_mobile_dashboard_collapses_new_request_and_keeps_admin_controls(app, client):
+    """The intake form is reachable without occupying the entire phone screen."""
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    page = client.get("/admin/partners/gulf/")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert '<details class="gulf-card gulf-intake">' in html
+    assert "New Gulf booking request" in html
+    assert 'name="voucher"' in html
+    assert 'name="csrf_token"' in html
+    assert "Technician availability and capacity" in html
+    assert ".gulf-wrap .gulf-card h2" in html
+
+
+def test_gulf_mobile_job_card_uses_readable_scoped_heading_style(app, client):
+    """The individual job card retains its fields with legible headings."""
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _job(client)
+    page = client.get("/admin/partners/gulf/jobs/1")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert ".gulf-main .gulf-box h2" in html
+    assert "Record Ebice voucher verification" in html
+    assert "Technician and calendar reservation" in html
+    assert "Private campaign photo evidence" in html

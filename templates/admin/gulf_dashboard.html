@@ -5,6 +5,53 @@
 {% block content %}
 <style>
 .gulf-wrap{max-width:1040px;margin:0 auto;display:grid;gap:16px}
+
+/* Local scope keeps the public Aura theme and other admin pages untouched. */
+.gulf-wrap{color:#eaf0fa}
+.gulf-wrap .gulf-card,.gulf-wrap .gulf-stat{color:#eaf0fa}
+.gulf-wrap .gulf-card h2,.gulf-wrap .gulf-card h3{color:#f7f9fd;line-height:1.35}
+.gulf-wrap .gulf-card p,.gulf-wrap .gulf-card .gulf-muted{color:#c0ccdd}
+.gulf-wrap .gulf-card .gulf-muted strong{color:#fff}
+.gulf-wrap .gulf-stat .gulf-muted{color:#c1cede}
+.gulf-wrap .gulf-card a{color:#bcdafa;text-decoration:underline;text-underline-offset:3px}
+.gulf-wrap .gulf-card label{font-weight:600;margin:0 0 5px;color:#e2eaf6}
+.gulf-wrap .gulf-card input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.gulf-wrap .gulf-card select,.gulf-wrap .gulf-card textarea{
+    display:block;width:100%;max-width:100%;min-width:0;min-height:46px;
+    box-sizing:border-box;margin:0;padding:11px 13px;
+    border:1px solid #596a82;border-radius:9px;background:#202c40;color:#f5f7fc;
+    font:inherit;font-size:16px;color-scheme:dark;
+}
+.gulf-wrap .gulf-card input::placeholder,.gulf-wrap .gulf-card textarea::placeholder{color:#a4b5c9}
+.gulf-wrap .gulf-card input:focus-visible,.gulf-wrap .gulf-card select:focus-visible,
+.gulf-wrap .gulf-card textarea:focus-visible,.gulf-wrap .gulf-card summary:focus-visible,
+.gulf-wrap .gulf-card button:focus-visible{outline:3px solid #8dc0ff;outline-offset:2px}
+.gulf-wrap .gulf-card input[type="checkbox"]{width:19px;height:19px;min-width:19px;accent-color:#73afff}
+.gulf-wrap .gulf-card form{display:grid;gap:12px}
+.gulf-wrap .gulf-card .gulf-cols{gap:12px}
+.gulf-wrap .gulf-card button{font-size:14px;min-height:44px;width:max-content;max-width:100%;text-align:center;cursor:pointer}
+.gulf-wrap .gulf-card summary{color:#edf2fb;font-weight:700}
+.gulf-wrap .gulf-card summary::marker{color:#b3d9ff}
+.gulf-wrap .gulf-intake{padding:0}
+.gulf-wrap .gulf-intake > summary{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    cursor:pointer;padding:17px;color:#f6f8fb;font-size:17px;font-weight:750;
+    list-style:none
+}
+.gulf-wrap .gulf-intake > summary::-webkit-details-marker{display:none}
+.gulf-wrap .gulf-intake > summary::after{content:"+";font-size:24px;line-height:1;color:#bedbff}
+.gulf-wrap .gulf-intake[open] > summary::after{content:"−"}
+.gulf-wrap .gulf-intake > p,.gulf-wrap .gulf-intake > form{margin:0 16px 16px}
+.gulf-wrap .gulf-intake > summary > small{font-size:12px;color:#b7c9df;font-weight:500;flex:1}
+@media(max-width:650px){
+    .gulf-wrap{gap:12px}
+    .gulf-wrap .gulf-card{padding:14px}
+    .gulf-wrap .gulf-intake{padding:0}
+    .gulf-wrap .gulf-intake > summary{padding:15px;flex-wrap:wrap}
+    .gulf-wrap .gulf-stat{padding:13px}
+    .gulf-wrap .gulf-card button{width:100%}
+}
+
 .gulf-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .gulf-stat{background:#151e2d;border:1px solid #334050;border-radius:12px;padding:14px}
 .gulf-stat strong{display:block;font-size:25px;color:#f4f5f3}
@@ -41,8 +88,8 @@
   <div class="gulf-stat"><span class="gulf-muted">Awaiting Ebice dispatch</span><strong>{{ waiting }}</strong></div>
   <div class="gulf-stat"><span class="gulf-muted">Ebice receivable</span><strong>₦{{ "{:,}".format(due_naira) }}</strong></div>
 </div>
-<div class="gulf-card">
-<h2>New Gulf booking request</h2>
+<details class="gulf-card gulf-intake">
+<summary>New Gulf booking request <small>Tap to add a voucher</small></summary>
 <p class="gulf-muted">Request only — this does not create a confirmed customer appointment or Aura account.</p>
 <form method="post" action="{{ url_for('gulf_pilot.new_job') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -60,7 +107,7 @@
 </div>
 <button type="submit">Create service request</button>
 </form>
-</div>
+</details>
 <div class="gulf-card">
 <div style="display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap;align-items:center"><h2>Operational queue</h2><a href="{{ url_for('gulf_pilot.settlement_export') }}">Export Ebice claims (CSV)</a></div>
 {% for job in jobs %}
@@ -69,7 +116,7 @@
 <div><span class="gulf-status">{{ job.state|replace('_',' ')|title }}</span><span class="gulf-status">{{ job.dispatch_state|replace('_',' ')|title }}</span><span class="gulf-status">Claim: {{ job.claim_state }}</span></div>
 </div>
 {% else %}
-<p class="gulf-muted">No Gulf records yet. Create a test enquiry in staging before accepting real campaign data.</p>
+<p class="gulf-muted">No Gulf service requests yet. You can set up technicians and availability now. Keep real campaign vouchers out of the system until Ebice's agreement and approval steps are complete.</p>
 {% endfor %}
 </div>
 <div class="gulf-card">

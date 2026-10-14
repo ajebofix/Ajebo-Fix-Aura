@@ -10,6 +10,8 @@
   <link rel="canonical" href="https://aura.ajebofix.com/">
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/aura-icon-health.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-home.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/public-home-v11.css') }}">
+  <script src="{{ url_for('static', filename='js/public-home-v11.js') }}" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -20,8 +22,8 @@
         <span>AURA <small>BY AJEBO FIX</small></span>
       </a>
       <nav aria-label="Main navigation" class="site-nav">
-        <a href="#experience">The experience</a>
-        <a href="#how-it-works">How it works</a>
+        <a href="#experience">Explore Aura</a>
+        <a href="#continuity">Why it matters</a>
         <a href="#rina">A.J. Rina</a>
         <a href="https://ajebofix.com" rel="noopener">Ajebo Fix</a>
         <a class="signin" href="{{ url_for('auth.login') }}">Sign in <span aria-hidden="true">↗</span></a>
@@ -33,35 +35,60 @@
       <div class="hero-copy">
         <p class="eyebrow"><span class="pin"></span> PRIVATE AUTOMOTIVE HEALTH MANAGEMENT</p>
         <h1 id="hero-title">Your vehicle has a history. <em>Its care should have continuity.</em></h1>
-        <p class="hero-intro">Bring vehicle records, important observations and professional care decisions into one connected experience—built to help you understand what is known and what deserves attention.</p>
+        <p class="hero-intro">Aura connects vehicle history, reported concerns, advisor-led care and A.J. Rina in one place—so every next decision begins with what is already known.</p>
         <div class="actions">
           <a class="button primary" href="#request-access">Request private access <span aria-hidden="true">↗</span></a>
           <a class="button outline" href="{{ url_for('auth.login') }}">Existing client sign in</a>
         </div>
-        <p class="subnote">Developed by Ajebo Fix · Private onboarding · Lagos, Nigeria</p>
+        <p class="subnote">Built by Ajebo Fix · Human-governed vehicle intelligence · Private onboarding</p>
+        <div class="hero-proofline" aria-label="Aura's core capabilities">
+          <span>Vehicle memory</span><span>Care progression</span><span>Context-aware Rina</span>
+        </div>
       </div>
-      <div class="hero-showcase" aria-label="Illustrative example of Aura's vehicle care overview">
-        <div class="showcase-top"><span>THE AURA EXPERIENCE</span><span>01 / VEHICLE CONTEXT</span></div>
-        <div class="vehicle-figure" aria-hidden="true">
-          <div class="record-flow">
-            <div class="record-node"><strong>VEHICLE</strong><small>Identity & history</small></div>
-            <span class="record-arrow">→</span>
-            <div class="record-node"><strong>CONTEXT</strong><small>Recorded observations</small></div>
-            <span class="record-arrow">→</span>
-            <div class="record-node"><strong>REVIEW</strong><small>Advisor-guided care</small></div>
+      <div class="hero-showcase product-showcase" aria-label="Illustrative product demonstration based on Aura's implemented vehicle record workflows">
+        <div class="showcase-top"><span>INSIDE AURA</span><span>PRIVATE CARE WORKSPACE</span></div>
+        <div class="product-window">
+          <div class="product-chrome">
+            <span class="mini-identity"><span class="mini-mark">A</span> AURA <small>VEHICLE WORKSPACE</small></span>
+            <span class="pill">ILLUSTRATION</span>
           </div>
-          <p class="record-flow-caption">MEMORY BEFORE RECOMMENDATION</p>
-        </div>
-        <div class="sample-panel">
-          <div class="panel-heading"><span>Vehicle care overview</span><span class="pill">ILLUSTRATION</span></div>
-          <div class="sample-grid">
-            <div><small>Care status</small><strong>Review in progress</strong></div>
-            <div><small>Service history</small><strong>Documented records</strong></div>
-            <div><small>Concern</small><strong>Under observation</strong></div>
-            <div><small>Next action</small><strong>Advisor assessment</strong></div>
+          <div class="product-tabs" role="tablist" aria-label="Explore example Aura workspace views">
+            <button class="product-tab" type="button" role="tab" id="view-tab-overview" aria-controls="view-panel-overview" aria-selected="true" tabindex="0" data-tab="overview">Overview</button>
+            <button class="product-tab" type="button" role="tab" id="view-tab-history" aria-controls="view-panel-history" aria-selected="false" tabindex="-1" data-tab="history">Vehicle memory</button>
+            <button class="product-tab" type="button" role="tab" id="view-tab-care" aria-controls="view-panel-care" aria-selected="false" tabindex="-1" data-tab="care">Care review</button>
+          </div>
+          <div class="product-panels">
+            <section class="product-panel" id="view-panel-overview" role="tabpanel" aria-labelledby="view-tab-overview">
+              <div class="demo-heading"><div><small>EXAMPLE VEHICLE PROFILE</small><h2>Mercedes-Benz GLE</h2><p>One vehicle. Connected care context.</p></div><span class="demo-mark">01</span></div>
+              <div class="demo-metrics">
+                <div><span class="metric-icon">◷</span><small>Last recorded mileage</small><strong>Recorded, not live</strong></div>
+                <div><span class="metric-icon">▤</span><small>Service history</small><strong>Records on file</strong></div>
+              </div>
+              <div class="demo-feed"><div class="demo-feed-head"><span>CARE CONTEXT</span><span>Owner + advisor</span></div>
+                <div class="demo-feed-row"><span class="status-dot amber"></span><div><strong>Steering concern</strong><small>Reported — awaiting review</small></div><span class="feed-tail">Open</span></div>
+                <div class="demo-feed-row"><span class="status-dot"></span><div><strong>Previous work record</strong><small>Available for advisor context</small></div><span class="feed-tail">Recorded</span></div>
+              </div>
+            </section>
+            <section class="product-panel" id="view-panel-history" role="tabpanel" aria-labelledby="view-tab-history" hidden>
+              <div class="demo-heading"><div><small>EXAMPLE VEHICLE MEMORY</small><h2>History that carries forward</h2><p>A connected chronology, not a pile of receipts.</p></div><span class="demo-mark">02</span></div>
+              <ol class="demo-timeline">
+                <li><span class="timeline-index">01</span><div><strong>Service visit recorded</strong><small>Previous work and source added to the record</small></div></li>
+                <li><span class="timeline-index">02</span><div><strong>New observation reported</strong><small>Steering concern linked to vehicle context</small></div></li>
+                <li><span class="timeline-index">03</span><div><strong>Advisor review pending</strong><small>No completed repair or diagnosis implied</small></div></li>
+              </ol>
+            </section>
+            <section class="product-panel" id="view-panel-care" role="tabpanel" aria-labelledby="view-tab-care" hidden>
+              <div class="demo-heading"><div><small>EXAMPLE CARE PROGRESSION</small><h2>Clarity before intervention</h2><p>Separate reporting, review and approved work.</p></div><span class="demo-mark">03</span></div>
+              <div class="care-stages">
+                <div><span>01</span><strong>Concern reported</strong><small>Owner observation captured</small></div>
+                <div><span>02</span><strong>Advisor assessment</strong><small>Professional review is required</small></div>
+                <div><span>03</span><strong>Approved next action</strong><small>Only after appropriate review</small></div>
+              </div>
+            </section>
           </div>
         </div>
-        <p class="sample-note">Illustrative content, not a live vehicle or health assessment.</p>
+        <div class="showcase-foot"><span class="status-dot"></span><span>Built around Aura's current record and advisor workflows</span></div>
+        <p class="sample-note">Illustrative, fictional vehicle data — not a live account, automatic diagnosis or actual client record.</p>
       </div>
     </section>
     <section class="section problem-section" aria-labelledby="problem-title">
@@ -70,14 +97,31 @@
         <div><p>Service documents get scattered. Problems are explained more than once. Past decisions lose their context. The result is fragmented information around an asset you rely on every day.</p><p>Aura helps bring that history forward so the next conversation begins with context, not guesswork.</p></div>
       </div>
     </section>
+    <section id="continuity" class="section continuity-section" aria-labelledby="continuity-title">
+      <div class="wrap">
+        <div class="section-lead"><div><p class="eyebrow">WHY CONTINUITY CHANGES CARE</p><h2 id="continuity-title">The same concern. <em>A better starting point.</em></h2></div>
+          <p>Consider a steering concern that returns after previous workshop work. The difference is not an instant diagnosis. It is what the next person can see before making a decision.</p>
+        </div>
+        <div class="scenario-grid">
+          <article class="scenario-old"><span class="case-label">WITHOUT CONNECTED HISTORY</span><h3>Every visit begins again.</h3>
+            <p>The owner recalls parts of the story, paperwork is scattered, and earlier observations are difficult to place in sequence.</p><p class="case-outcome">More re-explaining. Less context.</p>
+          </article>
+          <article class="scenario-new"><span class="case-label">WITH AURA</span><h3>History enters the conversation.</h3>
+            <p>The reported concern, previous work and available evidence sit in one vehicle record. Rina can help explain that context; the advisor determines the assessment.</p>
+            <div class="case-path"><span>Reported concern</span><span aria-hidden="true">→</span><span>Recorded history</span><span aria-hidden="true">→</span><span>Advisor review</span></div>
+          </article>
+        </div>
+        <p class="scenario-disclaimer">Illustrative scenario only. Aura does not establish causation or determine mechanical faults from the chronology alone.</p>
+      </div>
+    </section>
     <section id="experience" class="section wrap" aria-labelledby="experience-title">
-      <p class="eyebrow">ANOTHER STANDARD OF CARE</p>
-      <h2 id="experience-title">One connected view. <em>More informed decisions.</em></h2>
-      <div class="features">
-        <article><span class="feature-index">01 / RECORD</span><h3>Vehicle memory</h3><p>Keep service history, recorded mileage, observations and care decisions together with their available sources.</p></article>
-        <article><span class="feature-index">02 / UNDERSTAND</span><h3>Health awareness</h3><p>Make sense of recorded concerns and advisor-reviewed information—without mistaking an observation for a diagnosis.</p></article>
-        <article><span class="feature-index">03 / COORDINATE</span><h3>Professional care</h3><p>Follow consultations, assessments, approved care actions and their documented progression.</p></article>
-        <article><span class="feature-index">04 / CONTINUE</span><h3>Long-term context</h3><p>Preserve useful history across future reviews and service decisions instead of starting over each time.</p></article>
+      <p class="eyebrow">WHAT AURA MAKES POSSIBLE</p>
+      <div class="section-lead"><h2 id="experience-title">More than a service log. <em>A connected care system.</em></h2><p>Built for vehicle owners and the advisors supporting them. Each capability adds context to the next—not a diagnosis by itself.</p></div>
+      <div class="features capability-grid">
+        <article><span class="feature-index">01 / REMEMBER</span><span class="feature-symbol" aria-hidden="true">▤</span><h3>Vehicle memory</h3><p>Bring recorded mileage, service work, observations and source-backed history into the vehicle's ongoing story.</p><span class="feature-detail">Know what was recorded.</span></article>
+        <article><span class="feature-index">02 / UNDERSTAND</span><span class="feature-symbol" aria-hidden="true">◎</span><h3>Health awareness</h3><p>See reported concerns, care signals and maintenance information with the limits of available evidence made clear.</p><span class="feature-detail">Distinguish known from unknown.</span></article>
+        <article><span class="feature-index">03 / COORDINATE</span><span class="feature-symbol" aria-hidden="true">⌁</span><h3>Advisor-guided care</h3><p>Connect consultations, assessments, authorised actions and documented outcomes to the relevant vehicle.</p><span class="feature-detail">Follow the care journey.</span></article>
+        <article><span class="feature-index">04 / EXPLAIN</span><span class="feature-symbol" aria-hidden="true">✳</span><h3>A.J. Rina</h3><p>Ask questions about recorded context, prepare for advisor conversations and understand available care information.</p><span class="feature-detail">Better questions, clearer context.</span></article>
       </div>
     </section>
     <section id="how-it-works" class="section soft-section">
@@ -91,20 +135,40 @@
         </ol>
       </div>
     </section>
-    <section id="rina" class="section wrap rina-section">
-      <div class="rina-symbol" aria-hidden="true"><span>R</span></div>
-      <div><p class="eyebrow">INTELLIGENCE, WITH OVERSIGHT</p><h2>Meet A.J. Rina.</h2><p>Rina is Aura's context-aware automotive care assistant. She can help explain recorded information, organise questions and recognise when professional review may be appropriate.</p><p class="muted">Rina does not independently diagnose vehicle faults, prescribe repairs or replace an Ajebo Fix advisor.</p></div>
+    <section id="rina" class="section wrap rina-v11" aria-labelledby="rina-title">
+      <div class="rina-v11-copy">
+        <p class="eyebrow">A.J. RINA / HUMAN-GOVERNED INTELLIGENCE</p>
+        <h2 id="rina-title">Not another chatbot. <em>Context for the conversation that matters.</em></h2>
+        <p>Rina works with the vehicle context that Aura makes available. She can help explain records, surface relevant history and prepare questions for professional review—while keeping uncertainty visible.</p>
+        <ul class="rina-strengths"><li><span>01</span><div><strong>Remember the context</strong><small>Bring forward the observations already on record.</small></div></li>
+          <li><span>02</span><div><strong>Make records understandable</strong><small>Explain the information without inventing a diagnosis.</small></div></li>
+          <li><span>03</span><div><strong>Prepare the next review</strong><small>Help an owner ask an advisor the right questions.</small></div></li></ul>
+        <p class="rina-caveat">Rina is decision support, not an autonomous mechanic. Her explanations do not replace physical inspection or advisor-verified findings.</p>
+      </div>
+      <div class="rina-demo" aria-label="Illustrative fictional chat showing how Rina explains vehicle context">
+        <div class="rina-demo-top"><div class="rina-identity"><span class="rina-avatar">R</span><div><strong>A.J. Rina</strong><small>Vehicle context assistant</small></div></div><span class="pill">EXAMPLE</span></div>
+        <div class="chat-divider">ILLUSTRATIVE CONVERSATION · NOT A LIVE CHAT</div>
+        <div class="chat-bubble chat-owner"><small>VEHICLE OWNER</small><p>My steering concern is back. Didn't we already work on this?</p></div>
+        <div class="chat-bubble chat-rina"><small>A.J. RINA</small><p>The example record contains a previous service entry and a later steering concern, but it doesn't confirm that the concern was resolved.</p><p>Before assuming the cause, I can help organise the sequence and questions for your Ajebo Fix advisor.</p></div>
+        <div class="rina-sources"><span class="status-dot"></span>Example sources: service record · reported concern · advisor follow-up</div>
+        <div class="rina-demo-foot"><span>Context, not conclusions.</span><a href="#request-access">Explore private access <span aria-hidden="true">↗</span></a></div>
+      </div>
     </section>
     <section class="section practice-section"><div class="wrap split">
-      <div><p class="eyebrow">BUILT ON REAL AUTOMOTIVE PRACTICE</p><h2>The intelligence of a platform. <em>The responsibility of a practice.</em></h2></div>
-      <div><p>Aura is developed by Ajebo Fix, a Lagos-based automotive health practice. The technology is designed to support documented, professional care—not replace the people accountable for it.</p><a class="text-link" href="https://ajebofix.com" rel="noopener">Learn about Ajebo Fix <span aria-hidden="true">↗</span></a></div>
+      <div><p class="eyebrow">BUILT ON REAL AUTOMOTIVE PRACTICE</p><h2>Technology with memory. <em>Care with accountability.</em></h2></div>
+      <div><p>Aura is developed by Ajebo Fix, a Lagos-based automotive health practice. Owners see clearer records; advisors retain professional responsibility for assessments and approved actions. Technology serves the practice—not the other way around.</p><a class="text-link" href="https://ajebofix.com" rel="noopener">Learn about Ajebo Fix <span aria-hidden="true">↗</span></a></div>
     </div></section>
     <section id="request-access" class="section wrap request-section" aria-labelledby="request-title">
       <div class="request-intro">
         <p class="eyebrow">PRIVATE ONBOARDING</p>
         <h2 id="request-title">Care begins <em>with a conversation.</em></h2>
-        <p>Tell us a little about your vehicle or fleet. Ajebo Fix will review your enquiry and contact you about the appropriate next step. Submitting a request does not create an account or guarantee admission.</p>
-        <p class="muted">Professional vehicle assessments start from ₦50,000 depending on the scope. Aura membership pricing and ongoing care arrangements are discussed separately where applicable.</p>
+        <p>Choose the type of conversation you need. An Aura access enquiry is not the same as booking a paid assessment—and neither automatically creates an account.</p>
+        <div class="enquiry-pathways" aria-label="Choose an enquiry path">
+          <a href="{{ url_for('public_site.home', request_type='private_access') }}#request-access"><span>01 · PRIVATE ACCESS</span><strong>Explore Aura</strong><small>For owners interested in structured, continuity-led vehicle care.</small></a>
+          <a href="{{ url_for('public_site.home', request_type='assessment') }}#request-access"><span>02 · ASSESSMENT</span><strong>Request professional assessment</strong><small>Paid evaluation of a vehicle concern, starting from ₦50,000.</small></a>
+          <a href="{{ url_for('public_site.home', request_type='fleet') }}#request-access"><span>03 · FLEET / PARTNERSHIP</span><strong>Discuss coordinated care</strong><small>For multiple vehicles and business collaborations.</small></a>
+        </div>
+        <p class="muted">Assessments start from ₦50,000 depending on the scope. Membership pricing and ongoing care arrangements are discussed separately where applicable.</p>
         <p class="subnote">Already have an account? <a href="{{ url_for('auth.login') }}">Sign in to Aura</a>.</p>
       </div>
       <div class="form-card">
@@ -125,16 +189,18 @@
             <div><label for="vehicle">Vehicle make / model (optional)</label><input id="vehicle" name="vehicle" maxlength="120" value="{{ request.form.get('vehicle', '') }}"></div>
           </div>
           <label for="request_type">I'm interested in <span>*</span></label>
-          <select id="request_type" name="request_type">
-            <option value="private_access" {% if request.form.get('request_type') == 'private_access' %}selected{% endif %}>Private Aura access</option>
-            <option value="assessment" {% if request.form.get('request_type') == 'assessment' %}selected{% endif %}>A professional vehicle assessment</option>
-            <option value="fleet" {% if request.form.get('request_type') == 'fleet' %}selected{% endif %}>Fleet or partnership enquiry</option>
+          {% set selected_interest = request.form.get('request_type', request.args.get('request_type', 'private_access')) %}
+          <select id="request_type" name="request_type" aria-describedby="request-type-help">
+            <option value="private_access" {% if selected_interest == 'private_access' %}selected{% endif %}>Private Aura access — enquiry</option>
+            <option value="assessment" {% if selected_interest == 'assessment' %}selected{% endif %}>Professional assessment — from ₦50,000</option>
+            <option value="fleet" {% if selected_interest == 'fleet' %}selected{% endif %}>Fleet or partnership enquiry</option>
           </select>
+          <p class="selection-help" id="request-type-help" aria-live="polite">Requesting access does not create an account. Ajebo Fix will review your enquiry.</p>
           <label for="message">What would you like us to know? (optional)</label>
           <textarea id="message" name="message" maxlength="1000" rows="3" placeholder="A short summary is enough; please don't include your VIN, plate number or sensitive records.">{{ request.form.get('message', '') }}</textarea>
           <label class="consent"><input type="checkbox" name="contact_consent" value="yes" required {% if request.form.get('contact_consent') == 'yes' %}checked{% endif %}><span>I agree to be contacted about this enquiry and have reviewed the <a href="https://ajebofix.com/privacy-policy" target="_blank" rel="noopener noreferrer">privacy policy</a>. <strong>*</strong></span></label>
           <button class="button primary form-submit" type="submit">Send private enquiry <span aria-hidden="true">↗</span></button>
-          <p class="fine-print">Your details are used to review and respond to this request, not to create an Aura account automatically.</p>
+          <p class="fine-print">Your details are used to review and respond to this request, not to create an Aura account automatically. This is not a confirmed booking or a payment request.</p>
         </form>
       </div>
     </section>

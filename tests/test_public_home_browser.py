@@ -45,8 +45,18 @@ def test_public_homepage_desktop_and_mobile(app, tmp_path):
                 assert page.locator("a[href='/auth/login']").count() >= 1
                 assert page.locator("a[href='#request-access']").count() >= 1
                 assert page.locator(".hero-showcase .pill").inner_text() == "ILLUSTRATION"
-                assert page.locator(".record-node").count() == 3
-                assert page.locator(".record-flow-caption").inner_text() == "MEMORY BEFORE RECOMMENDATION"
+                assert page.locator(".product-tab").count() == 3
+                assert page.locator(".product-panel:not([hidden])").count() == 1
+                assert page.locator(".rina-demo").count() == 1
+                assert page.locator(".scenario-grid article").count() == 2
+                page.get_by_role("tab", name="Vehicle memory").click()
+                assert page.get_by_role("tabpanel", name="Vehicle memory").is_visible()
+                assert page.get_by_role("tab", name="Vehicle memory").get_attribute("aria-selected") == "true"
+                page.get_by_role("tab", name="Care review").click()
+                assert page.get_by_role("tabpanel", name="Care review").is_visible()
+                assert page.get_by_role("tab", name="Overview").get_attribute("aria-selected") == "false"
+                page.get_by_role("tab", name="Overview").click()
+                assert page.get_by_role("tabpanel", name="Overview").is_visible()
 
                 # Verify real CSS is being served, layout is responsive and
                 # there are no overflowing columns on narrower devices.
@@ -73,3 +83,14 @@ def test_public_homepage_desktop_and_mobile(app, tmp_path):
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+def test_enquiry_pathways_prefill_without_changing_submission_contract(client):
+    page = client.get("/?request_type=assessment#request-access")
+    assert page.status_code == 200
+    assert b'value="assessment" selected' in page.data
+    assert b'from &#8358;50,000' in page.data or "₦50,000".encode() in page.data
+    assert b'name="csrf_token"' in page.data
+    invalid = client.get("/?request_type=not_a_real_option")
+    assert invalid.status_code == 200
+    assert b'value="not_a_real_option"' not in invalid.data

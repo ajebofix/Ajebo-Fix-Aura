@@ -5,6 +5,39 @@
 {% block content %}
 <style>
 .gulf-main{max-width:960px;margin:0 auto;display:grid;gap:13px}
+
+/* Gulf job card must override Aura's light-theme heading and field defaults. */
+.gulf-main{color:#eaf0f9}
+.gulf-main .gulf-box{color:#eaf0f9}
+.gulf-main .gulf-box h2,.gulf-main .gulf-box h3{color:#f8faff;line-height:1.35}
+.gulf-main .gulf-box p,.gulf-main .gulf-box .gulf-small{color:#bccbdd}
+.gulf-main .gulf-box .gulf-warning,.gulf-main .gulf-box .gulf-warning strong{color:#f5d9a7}
+.gulf-main .gulf-box label{margin:0 0 5px;font-weight:600;color:#e2eaf6}
+.gulf-main .gulf-box input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.gulf-main .gulf-box select,.gulf-main .gulf-box textarea{
+    display:block;width:100%;max-width:100%;min-width:0;min-height:46px;
+    box-sizing:border-box;margin:0;padding:11px 13px;border:1px solid #596a82;
+    border-radius:9px;background:#202c40;color:#f5f7fc;
+    font:inherit;font-size:16px;color-scheme:dark
+}
+.gulf-main .gulf-box input::placeholder,.gulf-main .gulf-box textarea::placeholder{color:#acbdd1}
+.gulf-main .gulf-box input:focus-visible,.gulf-main .gulf-box select:focus-visible,
+.gulf-main .gulf-box textarea:focus-visible,.gulf-main .gulf-box summary:focus-visible,
+.gulf-main .gulf-box button:focus-visible{outline:3px solid #8dc0ff;outline-offset:2px}
+.gulf-main .gulf-box input[type="checkbox"]{width:19px;height:19px;min-width:19px;accent-color:#73afff}
+.gulf-main .gulf-box form{display:grid;gap:12px}
+.gulf-main .gulf-box button{min-height:44px;width:max-content;max-width:100%;font-size:14px;cursor:pointer}
+.gulf-main .gulf-box summary{color:#f4f7fc}
+.gulf-main .gulf-box .gulf-row{color:#e2ebf7}
+.gulf-main .gulf-box a{color:#bcdafa;text-decoration:underline;text-underline-offset:3px}
+.gulf-main .gulf-meta>div{overflow-wrap:anywhere}
+.gulf-main .gulf-badge{color:#e3eaf5}
+@media(max-width:650px){
+    .gulf-main .gulf-box{padding:14px}
+    .gulf-main .gulf-box button{width:100%}
+    .gulf-main .gulf-meta{gap:12px}
+}
+
 .gulf-box{background:#111a27;border:1px solid #394458;border-radius:12px;padding:16px}
 .gulf-box h2{font-size:18px;margin:0 0 10px}
 .gulf-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}

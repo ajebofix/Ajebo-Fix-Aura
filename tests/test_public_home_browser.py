@@ -45,8 +45,13 @@ def test_public_homepage_desktop_and_mobile(app, tmp_path):
                 assert page.locator("a[href='/auth/login']").count() >= 1
                 assert page.locator("a[href='#request-access']").count() >= 1
                 assert page.locator(".hero-showcase .pill").inner_text() == "ILLUSTRATION"
-                assert page.locator(".record-node").count() == 3
-                assert page.locator(".record-flow-caption").inner_text() == "MEMORY BEFORE RECOMMENDATION"
+                assert page.locator(".preview-metric").count() == 3
+                assert page.locator(".preview-event").count() == 2
+                assert page.locator(".rina-question").count() == 1
+                assert page.locator(".rina-answer").count() == 1
+                assert "fictional scenario" in page.locator(".rina-demo-note").inner_text()
+                assert page.locator(".pathway-grid a").count() == 3
+                assert page.locator("#continuity .continuity-compare article").count() == 2
 
                 # Verify real CSS is being served, layout is responsive and
                 # there are no overflowing columns on narrower devices.
@@ -62,6 +67,16 @@ def test_public_homepage_desktop_and_mobile(app, tmp_path):
                     "(img) => img.complete && img.naturalWidth > 0"
                 ), f"Brand image failed to load at {width}px"
                 assert page.locator("#request-access").is_visible()
+                if label == "desktop":
+                    for intent in ("private_access", "assessment", "fleet"):
+                        path = f"/?intent={intent}#request-access"
+                        assert page.locator(f".pathway-grid a[href='{path}']").count() == 1
+                        page.goto(
+                            f"http://127.0.0.1:{server.server_port}{path}",
+                            wait_until="networkidle",
+                        )
+                        assert page.locator("select#request_type").input_value() == intent
+                    page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="networkidle")
                 if image_dir:
                     page.screenshot(
                         path=os.path.join(image_dir, f"aura-home-{label}.png"),

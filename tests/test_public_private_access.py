@@ -96,3 +96,30 @@ def test_public_enquiry_rate_limit_is_per_ip(client):
         "csrf_token": csrf, "name": "Different", "email": "other@example.com"
     })
     assert blocked.status_code == 429
+
+
+def test_enquiry_pathways_preserve_intent_without_creating_accounts(client):
+    labels = {
+        "private_access": b"Private Aura access",
+        "assessment": b"Professional assessment",
+        "fleet": b"Fleet or partnership discussion",
+    }
+    for intent, label in labels.items():
+        response = client.get(f"/?intent={intent}")
+        assert response.status_code == 200
+        assert label in response.data
+        assert f'value="{intent}" selected'.encode() in response.data
+    response = client.get("/?intent=unexpected")
+    assert b'value="private_access" selected' in response.data
+
+
+def test_public_demos_are_explicitly_illustrative(client):
+    body = client.get("/").get_data(as_text=True)
+    for phrase in (
+        "ILLUSTRATION",
+        "No live account or customer data.",
+        "fictional scenario",
+        "does not independently diagnose",
+        "Records help inform an assessment",
+    ):
+        assert phrase in body

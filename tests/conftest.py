@@ -26,9 +26,12 @@ from extensions import db  # noqa: E402
 @pytest.fixture()
 def app():
     application = create_app()
+    # An explicitly provisioned disposable CI database may exercise the
+    # same Gulf workflow on real PostgreSQL instead of SQLite semantics.
+    test_db_url = os.environ.get("GULF_CI_POSTGRES_URL", "sqlite:///:memory:")
     application.config.update(
         TESTING=True,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+        SQLALCHEMY_DATABASE_URI=test_db_url,
         WTF_CSRF_ENABLED=False,
     )
 

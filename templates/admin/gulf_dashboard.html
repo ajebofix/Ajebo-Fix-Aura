@@ -15,6 +15,14 @@
 .gulf-wrap .gulf-stat .gulf-muted{color:#c1cede}
 .gulf-wrap .gulf-card a{color:#bcdafa;text-decoration:underline;text-underline-offset:3px}
 .gulf-wrap .gulf-card label{font-weight:600;margin:0 0 5px;color:#e2eaf6}
+
+.gulf-wrap .gulf-select-set{min-width:0;border:1px solid #51647c;border-radius:10px;padding:12px;margin:0}
+.gulf-wrap .gulf-select-set legend{color:#f5f7fb;font-weight:700;padding:0 6px}
+.gulf-wrap .gulf-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.gulf-wrap .gulf-check-grid label{display:flex;align-items:center;gap:9px;line-height:1.4;margin:0;color:#e6eef9}
+.gulf-wrap .gulf-check-grid input[type="checkbox"]{flex:none}
+@media(max-width:650px){.gulf-wrap .gulf-check-grid{grid-template-columns:1fr}}
+
 .gulf-wrap .gulf-card input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
 .gulf-wrap .gulf-card select,.gulf-wrap .gulf-card textarea{
     display:block;width:100%;max-width:100%;min-width:0;min-height:46px;
@@ -126,7 +134,27 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <label>Display name</label><input name="name" required maxlength="100">
 <label>Phone (restricted)</label><input name="phone" type="tel">
-<label>Qualified service classes (comma separated)</label><input name="skills" value="car" placeholder="car,suv" required>
+<fieldset class="gulf-select-set">
+<legend>Qualified service classes</legend>
+<p class="gulf-muted">Choose every vehicle category this worker can independently service.</p>
+<div class="gulf-check-grid">
+<label><input type="checkbox" name="service_classes" value="car" checked> Cars</label>
+<label><input type="checkbox" name="service_classes" value="suv"> SUVs</label>
+<label><input type="checkbox" name="service_classes" value="exception"> Specialist exceptions</label>
+</div>
+</fieldset>
+<fieldset class="gulf-select-set">
+<legend>Brand specialisations</legend>
+<p class="gulf-muted">This is separate from the vehicle class. Select every make they are qualified to work on.</p>
+<div class="gulf-check-grid">
+<label><input type="checkbox" name="brand_specialties" value="mercedes"> Mercedes-Benz</label>
+<label><input type="checkbox" name="brand_specialties" value="toyota"> Toyota</label>
+<label><input type="checkbox" name="brand_specialties" value="lexus"> Lexus</label>
+<label><input type="checkbox" name="brand_specialties" value="bmw"> BMW</label>
+<label><input type="checkbox" name="brand_specialties" value="japanese_other"> Other Japanese makes</label>
+<label><input type="checkbox" name="brand_specialties" value="other"> Other / unlisted makes</label>
+</div>
+</fieldset>
 <label><input type="checkbox" name="is_intern" value="1">Intern / supervised support only</label>
 <button type="submit">Add worker</button>
 </form></details>
@@ -159,6 +187,14 @@
 <button type="submit">Save daily capacity</button>
 </form></details>
 <p class="gulf-muted">Staff registered: {{ technicians|length }}. Only qualified, explicitly available lead technicians can be assigned. Interns may assist under supervision.</p>
+{% for technician in technicians %}
+<div class="gulf-job">
+<div>
+<strong>{{ technician.display_name }}</strong>
+<div class="gulf-muted">Classes: {{ technician.qualified_classes|replace(',', ', ') }} · Brands: {{ (technician.brand_specialties or 'Needs review')|replace('_', ' ')|replace(',', ', ') }}{% if technician.is_intern %} · Supervised intern{% endif %}</div>
+</div>
+</div>
+{% endfor %}
 {% for plan in plans[:6] %}<div class="gulf-muted">{{ plan.service_day }} · {{ plan.daily_cap }} daily / {{ plan.concurrent_cap }} parallel · {{ plan.reason }}</div>{% endfor %}
 <details><summary>Accepted technician windows ({{ shifts|length }})</summary>
 {% for shift in shifts %}

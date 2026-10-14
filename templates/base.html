@@ -232,6 +232,11 @@ rel="stylesheet">
             <a href="/admin/dashboard" class="nav-item">
                 Advisor Console
             </a>
+            {% if config.get('AURA_GULF_PILOT_ENABLED', false) and current_user.is_authenticated and current_user.role == 'admin' %}
+            <a href="{{ url_for('gulf_pilot.dashboard') }}" class="nav-item">
+                Gulf Pilot Operations
+            </a>
+            {% endif %}
 
             <a href="{{ url_for('admin.admin_clients') }}" class="nav-item">
                 Clients

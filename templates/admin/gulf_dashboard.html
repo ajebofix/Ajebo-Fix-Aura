@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Aura | Gulf Pilot Operations{% endblock %}
+{% block page_title %}Gulf Pilot Operations{% endblock %}
+{% block page_subtitle %}Ebice One-Pay · Surulere · Internal operations{% endblock %}
+{% block content %}
+<style>
+.gulf-wrap{max-width:1040px;margin:0 auto;display:grid;gap:16px}
+.gulf-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.gulf-stat{background:#151e2d;border:1px solid #334050;border-radius:12px;padding:14px}
+.gulf-stat strong{display:block;font-size:25px;color:#f4f5f3}
+.gulf-card{border:1px solid #334050;background:#111a27;border-radius:13px;padding:16px}
+.gulf-card h2{margin:0 0 10px;font-size:19px}
+.gulf-card label{display:block;font-size:14px;margin:8px 0 3px;color:#c6d0da}
+.gulf-card input,.gulf-card select,.gulf-card textarea{width:100%;min-width:0;box-sizing:border-box;border-radius:8px;padding:11px;background:#0b1220;color:#f8f8f4;border:1px solid #526073;font-size:16px}
+.gulf-card input[type=checkbox]{width:auto;margin-right:6px}
+.gulf-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.gulf-card button{background:#d9d6c9;color:#121925;padding:11px 14px;border:0;border-radius:8px;font-weight:700;margin-top:10px;cursor:pointer}
+.gulf-job{border-bottom:1px solid #394453;padding:13px 0;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.gulf-job a{color:#eef4fa;font-weight:700}
+.gulf-muted{color:#aebbcb;font-size:13px}
+.gulf-status{display:inline-block;padding:5px 9px;border-radius:18px;background:#293348;color:#d9e0e7;font-size:12px}
+.gulf-card details{margin:10px 0}
+.gulf-card summary{cursor:pointer;padding:9px 0;color:#f4f2e8;font-weight:650}
+@media(max-width:650px){.gulf-grid{grid-template-columns:repeat(2,1fr)}.gulf-cols{grid-template-columns:1fr}.gulf-job{align-items:flex-start;flex-direction:column}}
+</style>
+<section class="gulf-wrap">
+<div class="gulf-card">
+<h2>Campaign readiness</h2>
+{% if pilot_live %}
+<p class="gulf-muted">Campaign activation switch is on. Verify partner documents, prices, product approvals and ten-point checklist before offering appointments.</p>
+{% else %}
+<p class="gulf-muted"><strong>Preparation only.</strong> Gulf bookings cannot be finally confirmed until signed partnership, agreed pricing, filter approvals and the ten-point checklist are activated. Regular customers cannot see this workspace.</p>
+{% endif %}
+<p class="gulf-muted">Daily workshop oil-change baseline: 6 including regular clients; 2 concurrent, amendable by authorised operator. Saturday must be checked manually.</p>
+</div>
+<div class="gulf-grid">
+  <div class="gulf-stat"><span class="gulf-muted">New enquiries</span><strong>{{ stats.new }}</strong></div>
+  <div class="gulf-stat"><span class="gulf-muted">Tentative</span><strong>{{ stats.tentative }}</strong></div>
+  <div class="gulf-stat"><span class="gulf-muted">Confirmed</span><strong>{{ stats.confirmed }}</strong></div>
+  <div class="gulf-stat"><span class="gulf-muted">In service</span><strong>{{ stats.in_service }}</strong></div>
+  <div class="gulf-stat"><span class="gulf-muted">Awaiting Ebice dispatch</span><strong>{{ waiting }}</strong></div>
+  <div class="gulf-stat"><span class="gulf-muted">Ebice receivable</span><strong>₦{{ "{:,}".format(due_naira) }}</strong></div>
+</div>
+<div class="gulf-card">
+<h2>New Gulf booking request</h2>
+<p class="gulf-muted">Request only — this does not create a confirmed customer appointment or Aura account.</p>
+<form method="post" action="{{ url_for('gulf_pilot.new_job') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="gulf-cols">
+<div><label>Ebice voucher code</label><input name="voucher" maxlength="80" required autocomplete="off"></div>
+<div><label>Customer name</label><input name="customer_name" maxlength="120" required></div>
+<div><label>Customer phone</label><input name="phone" type="tel" maxlength="30" required></div>
+<div><label>Registration / plate</label><input name="plate" maxlength="40" required></div>
+<div><label>Make</label><input name="make" maxlength="70" required></div>
+<div><label>Model</label><input name="model" maxlength="90" required></div>
+<div><label>Model year (if known)</label><input name="model_year" inputmode="numeric" maxlength="4"></div>
+<div><label>Fuel / engine (if known)</label><input name="fuel" maxlength="30"></div>
+<div><label>Service class</label><select name="service_class"><option value="car">Car</option><option value="suv">SUV</option><option value="exception">Specialist exception — quote separately</option></select></div>
+<div><label>Preferred day</label><input type="date" name="requested_day"></div>
+</div>
+<button type="submit">Create service request</button>
+</form>
+</div>
+<div class="gulf-card">
+<div style="display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap;align-items:center"><h2>Operational queue</h2><a href="{{ url_for('gulf_pilot.settlement_export') }}">Export Ebice claims (CSV)</a></div>
+{% for job in jobs %}
+<div class="gulf-job">
+<div><a href="{{ url_for('gulf_pilot.job_detail',job_id=job.id) }}">#{{ job.id }} · {{ job.make }} {{ job.model }}</a><div class="gulf-muted">Voucher …{{ job.voucher_tail }} · Requested {{ job.requested_day or "not set" }} · {{ job.created_at.strftime("%d %b %H:%M") }}</div></div>
+<div><span class="gulf-status">{{ job.state|replace('_',' ')|title }}</span><span class="gulf-status">{{ job.dispatch_state|replace('_',' ')|title }}</span><span class="gulf-status">Claim: {{ job.claim_state }}</span></div>
+</div>
+{% else %}
+<p class="gulf-muted">No Gulf records yet. Create a test enquiry in staging before accepting real campaign data.</p>
+{% endfor %}
+</div>
+<div class="gulf-card">
+<h2>Technician availability and capacity</h2>
+<details><summary>Add qualified technician</summary>
+<form method="post" action="{{ url_for('gulf_pilot.new_technician') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label>Display name</label><input name="name" required maxlength="100">
+<label>Phone (restricted)</label><input name="phone" type="tel">
+<label>Qualified service classes (comma separated)</label><input name="skills" value="car" placeholder="car,suv" required>
+<label><input type="checkbox" name="is_intern" value="1">Intern / supervised support only</label>
+<button type="submit">Add worker</button>
+</form></details>
+<details><summary>Record accepted technician availability</summary>
+<form method="post" action="{{ url_for('gulf_pilot.new_shift') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label>Technician</label><select name="technician_id" required>{% for t in technicians %}<option value="{{ t.id }}">{{ t.display_name }}{% if t.is_intern %} (intern){% endif %}</option>{% endfor %}</select>
+<div class="gulf-cols"><div><label>Start · Lagos</label><input type="datetime-local" name="starts_at" required></div><div><label>End · Lagos</label><input type="datetime-local" name="ends_at" required></div></div>
+<label><input type="checkbox" name="accepted" value="1" required>Worker explicitly accepted this date and time window</label>
+<button type="submit">Record accepted time</button>
+</form></details>
+<details><summary>Block existing Ajebo Fix jobs / home services</summary>
+<form method="post" action="{{ url_for('gulf_pilot.busy') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label>Assigned technician (optional)</label><select name="technician_id"><option value="">Not assigned</option>{% for t in technicians %}<option value="{{ t.id }}">{{ t.display_name }}</option>{% endfor %}</select>
+<label>Occupied work position (optional)</label><select name="bay"><option value="">No workshop bay</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+<div class="gulf-cols"><div><label>Start · Lagos</label><input type="datetime-local" name="starts_at" required></div><div><label>End · Lagos</label><input type="datetime-local" name="ends_at" required></div></div>
+<label>Brief internal reason</label><input name="reason" maxlength="100" required placeholder="Existing client booking or home service">
+<label><input type="checkbox" name="is_oil_change" value="1">Counts as an existing non-Gulf oil change</label>
+<button type="submit">Block window</button>
+</form></details>
+<details><summary>Approve day-specific workshop capacity</summary>
+<form method="post" action="{{ url_for('gulf_pilot.day_plan') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label>Service day</label><input type="date" name="day" required>
+<div class="gulf-cols"><div><label>Total oil changes/day (0–7)</label><input type="number" name="daily_cap" value="6" min="0" max="7" required></div><div><label>Simultaneous oil changes (0–4)</label><input type="number" name="concurrent_cap" value="2" min="0" max="4" required></div></div>
+<label><input type="checkbox" name="saturday_verified" value="1">Saturday staffing specifically verified</label>
+<label><input type="checkbox" name="sunday_open" value="1">Explicitly approve Sunday operation</label>
+<label>Reason and evidence for limit change</label><textarea name="reason" maxlength="240" required placeholder="Confirmed bays and qualified staff, regular client reservations checked"></textarea>
+<button type="submit">Save daily capacity</button>
+</form></details>
+<p class="gulf-muted">Staff registered: {{ technicians|length }}. Only qualified, explicitly available lead technicians can be assigned. Interns may assist under supervision.</p>
+{% for plan in plans[:6] %}<div class="gulf-muted">{{ plan.service_day }} · {{ plan.daily_cap }} daily / {{ plan.concurrent_cap }} parallel · {{ plan.reason }}</div>{% endfor %}
+<details><summary>Accepted technician windows ({{ shifts|length }})</summary>
+{% for shift in shifts %}
+<div class="gulf-job"><div class="gulf-muted">Technician #{{ shift.technician_id }} · {{ shift.starts_at.strftime('%d %b %H:%M') }}–{{ shift.ends_at.strftime('%H:%M') }} · {% if shift.accepted %}Accepted{% else %}Not yet accepted{% endif %}</div>
+<form method="post" action="{{ url_for('gulf_pilot.revoke_shift',shift_id=shift.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Revoke</button></form></div>
+{% else %}<p class="gulf-muted">No availability declarations.</p>{% endfor %}
+</details>
+<details><summary>Existing work / blocked windows ({{ blocks|length }})</summary>
+{% for slot in blocks %}
+<div class="gulf-job"><div class="gulf-muted">{{ slot.reason }} · {{ slot.starts_at.strftime('%d %b %H:%M') }}–{{ slot.ends_at.strftime('%H:%M') }} · Bay {{ slot.bay or 'mobile' }}{% if slot.is_oil_change %} · Counts toward oil capacity{% endif %}</div>
+<form method="post" action="{{ url_for('gulf_pilot.release_busy',block_id=slot.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Release</button></form></div>
+{% else %}<p class="gulf-muted">No recorded competing work.</p>{% endfor %}
+</details>
+</div>
+</section>
+{% endblock %}

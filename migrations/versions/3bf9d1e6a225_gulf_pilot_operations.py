@@ -125,6 +125,18 @@ def upgrade():
     )
     op.create_index("ix_gulf_photos_job_id", "gulf_photos", ["job_id"])
     op.create_table(
+        "gulf_payments",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("job_id", sa.Integer(), sa.ForeignKey("gulf_jobs.id"), nullable=False),
+        sa.Column("kind", sa.String(16), nullable=False),
+        sa.Column("amount_kobo", sa.Integer(), nullable=False),
+        sa.Column("reference", sa.String(100), nullable=False),
+        sa.Column("recorded_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.UniqueConstraint("job_id", "kind", "reference", name="uq_gulf_payment_reference"),
+    )
+    op.create_index("ix_gulf_payments_job_id", "gulf_payments", ["job_id"])
+    op.create_table(
         "gulf_audit",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("job_id", sa.Integer(), sa.ForeignKey("gulf_jobs.id")),
@@ -139,11 +151,13 @@ def upgrade():
 def downgrade():
     connection = op.get_bind()
     for table in (
-        "gulf_jobs", "gulf_photos", "gulf_audit",
+        "gulf_jobs", "gulf_photos", "gulf_audit", "gulf_payments",
         "gulf_technicians", "gulf_shifts", "gulf_busy_slots", "gulf_day_plans",
     ):
         if connection.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar():
             raise RuntimeError("Gulf pilot data exists; refusing destructive downgrade.")
+    op.drop_index("ix_gulf_payments_job_id", table_name="gulf_payments")
+    op.drop_table("gulf_payments")
     op.drop_index("ix_gulf_audit_job_id", table_name="gulf_audit")
     op.drop_table("gulf_audit")
     op.drop_index("ix_gulf_photos_job_id", table_name="gulf_photos")

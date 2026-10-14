@@ -12,7 +12,7 @@ from PIL import Image
 
 from extensions import db
 from models import User
-from partnerships.models import GulfJob, GulfAudit, GulfPhoto, GulfPayment
+from partnerships.models import GulfJob, GulfAudit, GulfPhoto, GulfPayment, GulfTechnician
 
 
 def _make_user(role="admin", suffix="1"):
@@ -78,7 +78,8 @@ def _set_up_slot(client):
     start = monday.isoformat() + "T10:00"
     end = monday.isoformat() + "T11:30"
     _post(client, "/admin/partners/gulf/technicians", {
-        "name": "Contractor A", "phone": "+2348110000012", "skills": "car,suv",
+        "name": "Contractor A", "phone": "+2348110000012",
+        "service_classes": ["car", "suv"], "brand_specialties": ["toyota", "lexus"],
     })
     _post(client, "/admin/partners/gulf/shifts", {
         "technician_id": "1", "starts_at": monday.isoformat() + "T09:00",
@@ -363,7 +364,8 @@ def test_concurrent_bookings_cannot_claim_same_bay(app):
         "concurrent_cap": "2", "reason": "Available staff and service positions verified",
     })
     _post(a, "/admin/partners/gulf/technicians", {
-        "name": "Contractor B", "skills": "car,suv",
+        "name": "Contractor B", "service_classes": ["car", "suv"],
+        "brand_specialties": ["toyota"],
     })
     _post(a, "/admin/partners/gulf/shifts", {
         "technician_id": "2",
@@ -437,3 +439,69 @@ def test_gulf_mobile_job_card_uses_readable_scoped_heading_style(app, client):
     assert "Record Ebice voucher verification" in html
     assert "Technician and calendar reservation" in html
     assert "Private campaign photo evidence" in html
+
+
+def test_technician_can_register_cars_suvs_and_mercedes_specialisation(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    result = _post(client, "/admin/partners/gulf/technicians", {
+        "name": "Qualified Mercedes Technician",
+        "phone": "+2348110000044",
+        "service_classes": ["car", "suv"],
+        "brand_specialties": ["mercedes"],
+    })
+    assert result.status_code == 200
+    assert "Qualified Mercedes Technician" in result.get_data(as_text=True)
+    with app.app_context():
+        row = GulfTechnician.query.one()
+        assert row.qualified_classes == "car,suv"
+        assert row.brand_specialties == "mercedes"
+        assert row.is_intern is False
+
+
+def test_technician_form_rejects_invalid_categories_without_creating_worker(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    result = _post(client, "/admin/partners/gulf/technicians", {
+        "name": "Incorrect List",
+        "service_classes": ["car", "mercedes"],
+        "brand_specialties": ["mercedes"],
+    })
+    assert "Select at least one service class" in result.get_data(as_text=True)
+    with app.app_context():
+        assert GulfTechnician.query.count() == 0
+
+
+def test_brand_skill_mismatch_blocks_assignment_even_when_class_matches(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _job(client)
+    start, end = _set_up_slot(client)  # Toyota specialist
+    _verify_and_approve(client)
+    with app.app_context():
+        row = GulfJob.query.one()
+        row.make = "Mercedes-Benz"
+        db.session.commit()
+    response = _action(client, "hold", {
+        "technician_id": "1", "bay": "1", "starts_at": start,
+        "ends_at": end, "commission_ngn": "8000",
+    })
+    assert "lacks the recorded brand specialisation" in response.get_data(as_text=True)
+    with app.app_context():
+        assert GulfJob.query.one().state == "new"
+
+
+def test_admin_technician_form_has_separate_brand_checkboxes(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    response = client.get("/admin/partners/gulf/")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'name="service_classes"' in html
+    assert 'name="brand_specialties"' in html
+    assert 'value="mercedes"' in html
+    assert 'name="skills"' not in html

@@ -80,7 +80,7 @@
           if (window.history && window.history.replaceState) {
             window.history.replaceState(null, '', link.href);
           }
-          formPanel.scrollIntoView({ behavior: 'auto', block: 'start' });
+          formPanel.scrollIntoView({ behavior: 'instant', block: 'start' });
           formPanel.focus({ preventScroll: true });
         });
       });

@@ -84,10 +84,11 @@ def test_public_homepage_desktop_and_mobile(app, tmp_path):
                     assert page.locator("#request_type").input_value() == intent
                     assert page.locator("#request-intent-title").inner_text() == title
                     assert page.url.endswith(f"?request_type={intent}#access-form")
-                    assert page.locator("#request-form-panel").evaluate(
-                        "(el) => { const y = el.getBoundingClientRect();"
-                        " return y.top >= -1 && y.top < window.innerHeight; }"
-                    ), f"Enquiry form did not scroll into view on {width}px for {intent}"
+                    page.wait_for_function(
+                        "() => { const y = document.getElementById('request-form-panel').getBoundingClientRect();"
+                        " return y.top >= -1 && y.top < window.innerHeight; }",
+                        timeout=2500,
+                    )
                 page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="networkidle")
                 if image_dir:
                     page.screenshot(

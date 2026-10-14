@@ -348,10 +348,9 @@ def test_staff_can_release_old_external_work_without_touching_service_records(ap
 )
 def test_concurrent_bookings_cannot_claim_same_bay(app):
     """Two operators booking same bay must not both obtain reservations."""
-    with app.app_context():
-        admin = _make_user()
     a, b = app.test_client(), app.test_client()
     with app.app_context():
+        admin = _make_user()
         _sign_in(a, admin)
         _sign_in(b, admin)
     _job(a, "301")

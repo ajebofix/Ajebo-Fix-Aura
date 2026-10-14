@@ -174,9 +174,16 @@
 <form method="post" action="{{ url_for('gulf_pilot.job_action',job_id=job.id) }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="commission">
 <label>Amount paid to technician · ₦</label><input type="number" name="amount_ngn" min="1" step="1" required>
+<label>Transaction/reference number</label><input name="reference" maxlength="100" required>
 <button type="submit">Record technician payment</button></form></details>
 {% endif %}
 {% endif %}
+<h3>Recorded individual payments</h3>
+{% for payment in payments %}
+<div class="gulf-row">{{ payment.kind|title }} · ₦{{ "{:,}".format(payment.amount_kobo//100) }} · {{ payment.reference }} <span class="gulf-small">({{ payment.created_at.strftime('%d %b %Y %H:%M') }} UTC)</span></div>
+{% else %}
+<p class="gulf-small">No payments entered yet.</p>
+{% endfor %}
 </div>
 <div class="gulf-box">
 <h2>Operational history</h2>

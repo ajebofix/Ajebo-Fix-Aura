@@ -1,7 +1,6 @@
 """Gulf pilot: actual oil-change time excludes inspection, photos and handover."""
 
 import unittest
-from dataclasses import replace
 
 from partnerships.service_duration import ServiceTimePolicy, recommended_planning_minutes
 

@@ -146,6 +146,25 @@ def create_app():
     app.config["R2_ACCESS_KEY_ID"] = os.getenv("R2_ACCESS_KEY_ID")
     app.config["R2_SECRET_ACCESS_KEY"] = os.getenv("R2_SECRET_ACCESS_KEY")
     app.config["R2_BUCKET"] = os.getenv("R2_BUCKET")
+    # Gulf One-Pay is an internal draft until partner authorisation is complete.
+    app.config["AURA_GULF_PILOT_ENABLED"] = _environment_flag(
+        "AURA_GULF_PILOT_ENABLED", default=False,
+    )
+    app.config["AURA_GULF_CAMPAIGN_ACTIVE"] = _environment_flag(
+        "AURA_GULF_CAMPAIGN_ACTIVE", default=False,
+    )
+    for gulf_approval in (
+        "AURA_GULF_PARTNER_SIGNED", "AURA_GULF_FILTERS_APPROVED",
+        "AURA_GULF_RATES_APPROVED",
+    ):
+        app.config[gulf_approval] = _environment_flag(gulf_approval, default=False)
+    app.config["AURA_GULF_CAR_FEE_NGN"] = os.getenv("AURA_GULF_CAR_FEE_NGN")
+    app.config["AURA_GULF_SUV_FEE_NGN"] = os.getenv("AURA_GULF_SUV_FEE_NGN")
+    app.config["AURA_GULF_CHECKLIST_ITEMS"] = [
+        part.strip() for part in os.getenv("AURA_GULF_CHECKLIST_ITEMS", "").split("|")
+        if part.strip()
+    ]
+
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError("SECRET_KEY is not set. Check your environment variables.")
@@ -205,6 +224,7 @@ def create_app():
 
     from models import User
     from profiles.models import ClientProfile, ProfileAuditEvent  # noqa: F401
+    import partnerships.models  # noqa: F401 — Gulf admin-only database metadata
     from historical_ingestion.models import HistoricalServiceEpisode  # noqa: F401
 
     @login_manager.user_loader
@@ -256,6 +276,7 @@ def create_app():
     from auth.routes import auth_bp, advisor_bp
     from cars.routes import cars_bp
     from admin.routes import admin_bp
+    from partnerships.routes import gulf_bp
     from admin.progression_routes import concern_progression_bp
     from admin.rina_operations import rina_operations_bp
     from routes.chat import chat_bp
@@ -306,6 +327,7 @@ def create_app():
     app.register_blueprint(advisor_evidence_timeline_bp)
 
     app.register_blueprint(admin_bp)
+    app.register_blueprint(gulf_bp)
     app.register_blueprint(concern_progression_bp)
     app.register_blueprint(rina_operations_bp)
     app.register_blueprint(chat_bp)

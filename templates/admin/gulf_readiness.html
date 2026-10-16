@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Aura | Gulf Pilot Readiness{% endblock %}
+{% block page_title %}Gulf Pilot Readiness{% endblock %}
+{% block page_subtitle %}Ebice One-Pay · Surulere · Administrator preparation{% endblock %}
+{% block content %}
+<style>
+.gread{max-width:990px;margin:0 auto;display:grid;gap:16px;color:#f3f6fd}
+.gread .r-card{background:#111a27;border:1px solid #3d4a5b;border-radius:14px;padding:16px;color:#e7edf9}
+.gread .r-card h2,.gread .r-card h3{color:#f8faff;line-height:1.3;margin:0 0 10px}
+.gread .r-card h2{font-size:19px}
+.gread .r-card h3{font-size:16px}
+.gread .r-muted{color:#c2d0e2;line-height:1.6;font-size:14px}
+.gread .r-meta{color:#b1c4dd;font-size:12px}
+.gread .r-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.gread .r-stat{padding:14px;border-radius:11px;background:#1e2c40}
+.gread .r-stat strong{display:block;font-size:24px;color:#fff}
+.gread .r-pill{display:inline-block;border-radius:14px;padding:5px 10px;background:#304057;color:#f4f6fd;font-size:12px;font-weight:700}
+.gread .r-danger{color:#ffd1c9}
+.gread .r-pending{color:#f7db9e}
+.gread .r-done{color:#bdf0d8}
+.gread .r-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.gread .r-requirement{border-bottom:1px solid #35475d;padding:15px 0}
+.gread .r-requirement:last-child{border-bottom:0}
+.gread .r-requirement details{margin-top:10px}
+.gread .r-requirement summary{cursor:pointer;font-weight:700;color:#b9dcff;padding:8px 0}
+.gread .r-card form{display:grid;gap:10px;margin-top:8px}
+.gread .r-card label{display:block;font-size:14px;color:#e4ebf9;font-weight:650}
+.gread .r-card select,.gread .r-card input:not([type=checkbox]),.gread .r-card textarea{width:100%;box-sizing:border-box;min-height:44px;background:#202e42;border:1px solid #7084a0;border-radius:8px;padding:10px;font-size:16px;color:#f4f7fd;color-scheme:dark}
+.gread .r-card textarea{min-height:75px}
+.gread .r-card button{background:#ece5d6;color:#122037;font-weight:750;border:0;border-radius:8px;padding:12px;cursor:pointer;min-height:44px}
+.gread .r-card input[type=checkbox]{width:20px;height:20px;accent-color:#79b9ff}
+.gread .r-attest{display:flex!important;gap:8px;align-items:flex-start;font-weight:500!important}
+.gread .r-card a{color:#b4d8ff;text-decoration:underline;text-underline-offset:3px}
+.gread .r-card :focus-visible{outline:3px solid #92c5ff;outline-offset:2px}
+.gread .r-check{border-bottom:1px solid #324158;padding:8px 0;color:#eef3ff}
+.gread .r-check:last-child{border-bottom:0}
+.gread .r-overdue{border-left:4px solid #e1ad73;padding-left:12px}
+.gread .r-foot{font-size:12px;color:#adbed3}
+@media(max-width:600px){.gread .r-grid{grid-template-columns:1fr 1fr}.gread .r-card{padding:14px}}
+</style>
+<section class="gread">
+<div><a href="{{ url_for('gulf_pilot.dashboard') }}">← Return to Gulf Operations</a></div>
+<div class="r-card">
+<h2>Campaign preparation, not campaign activation</h2>
+<p class="r-muted"><strong>Proposed launch: Sunday, 1 November 2026.</strong> This is only a date mentioned by Ebice. Whether customers will arrive that day is not confirmed. Do not request shifts or approve Sunday operation on that assumption.</p>
+<p class="r-muted">This internal ledger records preparation notes and confirmations. Marking an item confirmed does <strong>not</strong> sign an agreement, approve a vehicle, authorise pricing, request products or enable Gulf bookings.</p>
+<div class="r-grid">
+<div class="r-stat"><span class="r-meta">Required areas</span><strong>{{ counters.required }}</strong></div>
+<div class="r-stat"><span class="r-meta">Documented</span><strong>{{ counters.confirmed }}</strong></div>
+<div class="r-stat"><span class="r-meta">Outstanding</span><strong>{{ counters.outstanding }}</strong></div>
+</div>
+</div>
+<div class="r-card">
+<h2>Actual launch gates</h2>
+<p class="r-muted">These are the application’s existing release settings, shown for visibility only. This page cannot change them.</p>
+{% for name, enabled in launch_checks.items() %}
+<div class="r-row r-check"><span>{{ name }}</span><span class="{% if enabled %}r-done{% else %}r-pending{% endif %}">{{ 'Configured' if enabled else 'Not authorised' }}</span></div>
+{% endfor %}
+<p class="r-meta">{% if not pilot_active %}Customer confirmation remains disabled by the campaign switch.{% else %}The campaign switch is on. Verify every commercial and technical gate independently before taking customers.{% endif %}</p>
+</div>
+<div class="r-card">
+<h2>What is awaiting confirmation?</h2>
+<p class="r-muted">Update only when there is something concrete to record. There is no need to request technician availability yet.</p>
+{% for group in ['Commercial', 'Campaign', 'Technical', 'Service', 'Operations', 'Workforce', 'Branding'] %}
+<h3 style="margin-top:20px">{{ group }}</h3>
+{% for requirement in requirements if requirement.group == group %}
+{% set record = records.get(requirement.key) %}
+{% set status = record.status if record else defaults[requirement.key] %}
+<div class="r-requirement" id="requirement-{{ requirement.key }}">
+<div class="r-row">
+<strong>{{ requirement.title }}</strong>
+<span class="r-pill">{{ status.replace('_', ' ').title() }}</span>
+</div>
+<div class="r-meta">Responsible: {{ requirement.owner }}{% if not requirement.launch_critical %} · Optional for launch{% endif %}</div>
+<p class="r-muted">{{ requirement.description }}</p>
+{% if record and record.evidence_reference %}
+<p class="r-meta">Reference: {{ record.evidence_reference }}</p>
+{% endif %}
+{% if record and record.internal_note %}
+<p class="r-muted">{{ record.internal_note }}</p>
+{% endif %}
+<details>
+<summary>Update preparation status</summary>
+<form method="post" action="{{ url_for('gulf_pilot.update_readiness', key=requirement.key) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label>Status</label>
+<select name="status" required>
+{% for option in ['not_started', 'waiting_on_partner', 'in_progress', 'blocked', 'confirmed'] %}
+<option value="{{ option }}" {% if option == status %}selected{% endif %}>{{ option.replace('_',' ').title() }}</option>
+{% endfor %}
+</select>
+<label>Document or written confirmation reference</label>
+<input name="evidence_reference" maxlength="240" value="{{ record.evidence_reference if record and record.evidence_reference else '' }}" placeholder="{{ requirement.evidence_hint }}">
+<label>Internal note (no customer information)</label>
+<textarea name="internal_note" maxlength="600" placeholder="What changed, who is following up and what happens next?">{{ record.internal_note if record and record.internal_note else '' }}</textarea>
+<label class="r-attest"><input type="checkbox" name="human_attested" value="1"> I personally reviewed supporting evidence if marking this confirmed</label>
+<button type="submit">Save preparation update</button>
+<p class="r-foot">Evidence references must be recorded for Confirmed status. Do not paste bank details, passwords, sensitive customer data or private identification documents.</p>
+</form>
+</details>
+</div>
+{% endfor %}
+{% endfor %}
+</div>
+<div class="r-card">
+<h2>Recent internal updates</h2>
+{% for change in changes %}
+<div class="r-check">
+<strong>{{ change.key.replace('_',' ').title() }}</strong> · {{ change.from_status.replace('_',' ').title() }} → {{ change.to_status.replace('_',' ').title() }}
+<div class="r-meta">{{ change.created_at.strftime('%d %b %Y, %H:%M') }} UTC · Administrator #{{ change.actor_id }}</div>
+</div>
+{% else %}
+<p class="r-muted">No updates recorded yet. The default statuses are planning placeholders, not completed approvals.</p>
+{% endfor %}
+</div>
+</section>
+{% endblock %}

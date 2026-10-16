@@ -24,6 +24,11 @@ from evidence.storage import build_evidence_storage_provider, EvidenceStorageErr
 from extensions import db
 from partnerships.models import (
     GulfAudit, GulfBusySlot, GulfDayPlan, GulfJob, GulfPayment, GulfPhoto, GulfShift, GulfTechnician,
+    GulfReadinessRecord, GulfReadinessHistory,
+)
+from partnerships.readiness import (
+    BY_KEY, DEFAULT_STATUS, REQUIREMENTS, STATUSES,
+    launch_configuration, readiness_summary,
 )
 from partnerships.technician_qualifications import (
     BRAND_SPECIALTIES, SERVICE_CLASSES, split_qualifications,
@@ -82,6 +87,64 @@ def _safe_action(action, go_to):
         current_app.logger.exception("gulf_private_photo_store_error")
         flash("Private image storage is temporarily unavailable.", "error")
     return redirect(url_for("gulf_pilot.dashboard"))
+
+
+@gulf_bp.get("/readiness")
+@login_required
+@advisor_required
+def readiness_dashboard():
+    records = {x.key: x for x in GulfReadinessRecord.query.all()}
+    history = (GulfReadinessHistory.query
+               .order_by(GulfReadinessHistory.created_at.desc(), GulfReadinessHistory.id.desc())
+               .limit(25).all())
+    counters = readiness_summary(records.values())
+    return render_template(
+        "admin/gulf_readiness.html",
+        requirements=REQUIREMENTS, records=records, defaults=DEFAULT_STATUS,
+        counters=counters, changes=history, launch_checks=launch_configuration(current_app.config),
+        pilot_active=bool(current_app.config.get("AURA_GULF_CAMPAIGN_ACTIVE", False)),
+    )
+
+
+@gulf_bp.post("/readiness/<key>")
+@login_required
+@advisor_required
+def update_readiness(key):
+    def save():
+        if key not in BY_KEY:
+            raise GulfOperationError("Unknown Gulf preparation requirement.")
+        status = clean(request.form.get("status"), 32, required=True)
+        if status not in STATUSES:
+            raise GulfOperationError("Choose a recognised preparation status.")
+        evidence = clean(request.form.get("evidence_reference"), 240)
+        note = clean(request.form.get("internal_note"), 600)
+        if status == "confirmed":
+            if len(evidence) < 6:
+                raise GulfOperationError(
+                    "A documented confirmation requires a written reference."
+                )
+            if request.form.get("human_attested") != "1":
+                raise GulfOperationError(
+                    "Confirm you personally reviewed the supporting evidence."
+                )
+        record = GulfReadinessRecord.query.filter_by(key=key).with_for_update().first()
+        previous = record.status if record else DEFAULT_STATUS[key]
+        if record is None:
+            record = GulfReadinessRecord(key=key, updated_by=current_user.id)
+            db.session.add(record)
+        record.status = status
+        record.evidence_reference = evidence or None
+        record.internal_note = note or None
+        record.updated_by = current_user.id
+        record.updated_at = datetime.utcnow()
+        db.session.add(GulfReadinessHistory(
+            key=key, from_status=previous, to_status=status,
+            evidence_reference=evidence or None, note=note or None,
+            actor_id=current_user.id,
+        ))
+        # No launch flag, commercial fee, booking or product approval is changed.
+        audit(None, current_user.id, "readiness_updated", note=f"{key}:{status}")
+    return _safe_action(save, url_for("gulf_pilot.readiness_dashboard"))
 
 
 @gulf_bp.get("/")

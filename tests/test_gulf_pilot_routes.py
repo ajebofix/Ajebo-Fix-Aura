@@ -12,7 +12,7 @@ from PIL import Image
 
 from extensions import db
 from models import User
-from partnerships.models import GulfJob, GulfAudit, GulfPhoto, GulfPayment, GulfTechnician, GulfShift
+from partnerships.models import GulfJob, GulfAudit, GulfPhoto, GulfPayment, GulfTechnician, GulfShift, GulfReadinessRecord, GulfReadinessHistory
 
 
 def _make_user(role="admin", suffix="1"):
@@ -600,3 +600,95 @@ def test_unaccepted_intern_does_not_count_as_staffing(app, client):
     page = client.get("/admin/partners/gulf/").get_data(as_text=True)
     assert "Accepted interns: 1" in page
     assert "No qualified lead has accepted a work window" in page
+
+
+def test_readiness_defaults_are_visible_and_do_not_create_staff_shifts(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    response = client.get("/admin/partners/gulf/readiness")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Campaign preparation, not campaign activation" in html
+    assert "Campaign labour pricing" in html
+    assert "Sakura supplier and stock" in html
+    assert "Sunday, 1 November 2026" in html
+    assert "Customer confirmation remains disabled" in html
+    with app.app_context():
+        assert GulfReadinessRecord.query.count() == 0
+        assert GulfShift.query.count() == 0
+    home = client.get("/admin/partners/gulf/").get_data(as_text=True)
+    assert "Open Pilot Readiness Dashboard" in home
+
+
+def test_readiness_requires_evidence_and_human_attestation_for_confirmed(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    endpoint = "/admin/partners/gulf/readiness/agreement"
+    r = _post(client, endpoint, {"status": "confirmed"})
+    assert "requires a written reference" in r.get_data(as_text=True)
+    r = _post(client, endpoint, {"status": "confirmed",
+                                  "evidence_reference": "LETTER-10-2026"})
+    assert "personally reviewed" in r.get_data(as_text=True)
+    with app.app_context():
+        assert GulfReadinessRecord.query.count() == 0
+        assert GulfReadinessHistory.query.count() == 0
+    r = _post(client, endpoint, {"status": "confirmed",
+                                  "evidence_reference": "SIGNED-REFERENCE-1",
+                                  "human_attested": "1"})
+    assert r.status_code == 200
+    with app.app_context():
+        rec = GulfReadinessRecord.query.one()
+        assert rec.key == "agreement"
+        assert rec.status == "confirmed"
+        assert GulfReadinessHistory.query.count() == 1
+        assert not app.config.get("AURA_GULF_CAMPAIGN_ACTIVE", False)
+        assert not app.config.get("AURA_GULF_PARTNER_SIGNED", False)
+    view = client.get("/admin/partners/gulf/readiness").get_data(as_text=True)
+    assert "Documented" in view
+    assert "Signed partner approval flag" in view
+    assert "Not authorised" in view
+
+
+def test_readiness_revision_is_audited_without_touching_launch_controls(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    endpoint = "/admin/partners/gulf/readiness/labour_rates"
+    _post(client, endpoint, {"status": "in_progress",
+                             "internal_note": "Rates still need agreement"})
+    _post(client, endpoint, {"status": "waiting_on_partner",
+                             "internal_note": "Awaiting written response"})
+    with app.app_context():
+        rec = GulfReadinessRecord.query.one()
+        assert rec.status == "waiting_on_partner"
+        assert GulfReadinessHistory.query.count() == 2
+        history = GulfReadinessHistory.query.order_by(GulfReadinessHistory.id).all()
+        assert history[0].to_status == "in_progress"
+        assert history[1].from_status == "in_progress"
+        assert history[1].to_status == "waiting_on_partner"
+        assert not app.config.get("AURA_GULF_RATES_APPROVED", False)
+
+
+def test_readiness_bad_keys_and_non_admin_denied(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    r = _post(client, "/admin/partners/gulf/readiness/not_a_real_item",
+              {"status": "confirmed", "evidence_reference": "made-up", "human_attested": "1"})
+    assert "Unknown Gulf preparation requirement" in r.get_data(as_text=True)
+    with app.app_context():
+        assert GulfReadinessRecord.query.count() == 0
+
+
+def test_readiness_notes_are_escaped_in_html(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _post(client, "/admin/partners/gulf/readiness/dispatch", {
+        "status": "in_progress", "internal_note": "<script>alert('x')</script>"
+    })
+    body = client.get("/admin/partners/gulf/readiness").get_data(as_text=True)
+    assert "<script>alert('x')</script>" not in body
+    assert "&lt;script&gt;" in body

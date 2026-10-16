@@ -189,3 +189,27 @@ class GulfPayment(db.Model):
     reference = db.Column(db.String(100), nullable=False)
     recorded_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class GulfReadinessRecord(db.Model):
+    """Internal evidence ledger; NEVER activates a commercial/technical gate."""
+    __tablename__ = "gulf_readiness_records"
+    key = db.Column(db.String(48), primary_key=True)
+    status = db.Column(db.String(32), nullable=False)
+    evidence_reference = db.Column(db.String(240))
+    internal_note = db.Column(db.String(600))
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class GulfReadinessHistory(db.Model):
+    """Append-only preparation changes with actor and timestamp."""
+    __tablename__ = "gulf_readiness_history"
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(48), nullable=False, index=True)
+    from_status = db.Column(db.String(32), nullable=False)
+    to_status = db.Column(db.String(32), nullable=False)
+    evidence_reference = db.Column(db.String(240))
+    note = db.Column(db.String(600))
+    actor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

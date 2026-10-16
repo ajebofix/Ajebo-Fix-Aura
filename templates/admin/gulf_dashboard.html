@@ -21,6 +21,15 @@
 .gulf-wrap .gulf-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .gulf-wrap .gulf-check-grid label{display:flex;align-items:center;gap:9px;line-height:1.4;margin:0;color:#e6eef9}
 .gulf-wrap .gulf-check-grid input[type="checkbox"]{flex:none}
+
+.gulf-wrap .gulf-workforce-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.gulf-wrap .gulf-day-row{padding:12px 0;border-top:1px solid #36475e;display:grid;grid-template-columns:minmax(105px,1fr) 2fr;gap:14px}
+.gulf-wrap .gulf-day-row strong{color:#f5f8ff}
+.gulf-wrap .gulf-day-row small{color:#b6c6da;display:block;margin-top:2px;line-height:1.4}
+.gulf-wrap .gulf-workforce-note{color:#f3d3a0;font-weight:650}
+.gulf-wrap .gulf-pending{border-left:3px solid #e3bc78;padding-left:9px}
+@media(max-width:650px){.gulf-wrap .gulf-day-row{grid-template-columns:1fr;gap:4px}}
+
 @media(max-width:650px){.gulf-wrap .gulf-check-grid{grid-template-columns:1fr}}
 
 .gulf-wrap .gulf-card input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
@@ -128,6 +137,26 @@
 {% endfor %}
 </div>
 <div class="gulf-card">
+<h2>21-day workforce preparation</h2>
+<p class="gulf-muted">Registered staff are NOT assumed available. These counts show only recorded windows and existing bookings, not guaranteed customer appointment slots.</p>
+<details>
+<summary>Open upcoming daily staffing overview ({{ staff_days|length }} days)</summary>
+{% for day in staff_days %}
+<div class="gulf-day-row">
+<div>
+<strong>{{ day.day.strftime('%a %d %b') }}</strong>
+<small>Planning ceiling: {{ day.daily_ceiling }} oil changes/day, {{ day.parallel_ceiling }} simultaneous</small>
+</div>
+<div>
+<div>Accepted lead technicians: <strong>{{ day.accepted_leads }}</strong> · Awaiting response: <strong>{{ day.pending_leads }}</strong> · Accepted interns: {{ day.accepted_interns }}</div>
+<small>Existing oil changes blocked: {{ day.blocked_regular_oil_jobs }} · Gulf reservations: {{ day.booked_gulf_jobs }}</small>
+<small class="gulf-workforce-note">{{ day.scheduling_note }}</small>
+</div>
+</div>
+{% endfor %}
+</details>
+</div>
+<div class="gulf-card">
 <h2>Technician availability and capacity</h2>
 <details><summary>Add qualified technician</summary>
 <form method="post" action="{{ url_for('gulf_pilot.new_technician') }}">
@@ -158,13 +187,14 @@
 <label><input type="checkbox" name="is_intern" value="1">Intern / supervised support only</label>
 <button type="submit">Add worker</button>
 </form></details>
-<details><summary>Record accepted technician availability</summary>
+<details><summary>Request or record technician availability</summary>
 <form method="post" action="{{ url_for('gulf_pilot.new_shift') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <label>Technician</label><select name="technician_id" required>{% for t in technicians %}<option value="{{ t.id }}">{{ t.display_name }}{% if t.is_intern %} (intern){% endif %}</option>{% endfor %}</select>
 <div class="gulf-cols"><div><label>Start · Lagos</label><input type="datetime-local" name="starts_at" required></div><div><label>End · Lagos</label><input type="datetime-local" name="ends_at" required></div></div>
-<label><input type="checkbox" name="accepted" value="1" required>Worker explicitly accepted this date and time window</label>
-<button type="submit">Record accepted time</button>
+<p class="gulf-muted">Leave the box unchecked if you are only asking the technician to work. Pending windows do not allow a booking.</p>
+<label><input type="checkbox" name="accepted" value="1"> Technician explicitly confirmed this exact date and time window</label>
+<button type="submit">Save availability window</button>
 </form></details>
 <details><summary>Block existing Ajebo Fix jobs / home services</summary>
 <form method="post" action="{{ url_for('gulf_pilot.busy') }}">
@@ -196,11 +226,28 @@
 </div>
 {% endfor %}
 {% for plan in plans[:6] %}<div class="gulf-muted">{{ plan.service_day }} · {{ plan.daily_cap }} daily / {{ plan.concurrent_cap }} parallel · {{ plan.reason }}</div>{% endfor %}
-<details><summary>Accepted technician windows ({{ shifts|length }})</summary>
+<details><summary>Technician availability windows ({{ shifts|length }})</summary>
 {% for shift in shifts %}
-<div class="gulf-job"><div class="gulf-muted">Technician #{{ shift.technician_id }} · {{ shift.starts_at.strftime('%d %b %H:%M') }}–{{ shift.ends_at.strftime('%H:%M') }} · {% if shift.accepted %}Accepted{% else %}Not yet accepted{% endif %}</div>
-<form method="post" action="{{ url_for('gulf_pilot.revoke_shift',shift_id=shift.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Revoke</button></form></div>
-{% else %}<p class="gulf-muted">No availability declarations.</p>{% endfor %}
+<div class="gulf-job">
+<div class="{% if not shift.accepted %}gulf-pending{% endif %}">
+<strong>{{ shift.technician.display_name }}</strong>
+<div class="gulf-muted">{{ shift.starts_at.strftime('%d %b %H:%M') }}–{{ shift.ends_at.strftime('%H:%M') }} · {% if shift.accepted %}Worker accepted{% else %}Awaiting technician acceptance (does not count){% endif %}</div>
+</div>
+<div>
+{% if not shift.accepted %}
+<form method="post" action="{{ url_for('gulf_pilot.accept_shift',shift_id=shift.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label><input type="checkbox" name="confirmed_with_worker" value="1" required> Worker confirmed</label>
+<button type="submit">Mark accepted</button>
+</form>
+{% endif %}
+<form method="post" action="{{ url_for('gulf_pilot.revoke_shift',shift_id=shift.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<button type="submit">Remove window</button>
+</form>
+</div>
+</div>
+{% else %}<p class="gulf-muted">No availability declarations. Start with pending requests, then confirm directly with each technician.</p>{% endfor %}
 </details>
 <details><summary>Existing work / blocked windows ({{ blocks|length }})</summary>
 {% for slot in blocks %}

@@ -5,7 +5,7 @@ explicit launch gate controls appointment confirmation. All mutations use the
 existing app-wide CSRF mechanism and are audited without customer PII.
 """
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 import uuid
 
@@ -14,6 +14,8 @@ from flask import (
     request, send_file, url_for,
 )
 from flask_login import current_user, login_required
+from partnerships.capacity import LAGOS
+from partnerships.availability_overview import staff_day_overview
 from sqlalchemy.exc import IntegrityError
 
 from admin.utils import advisor_required
@@ -91,6 +93,29 @@ def dashboard():
     shifts = GulfShift.query.order_by(GulfShift.starts_at.desc()).limit(25).all()
     blocks = GulfBusySlot.query.order_by(GulfBusySlot.starts_at.desc()).limit(25).all()
     plans = GulfDayPlan.query.order_by(GulfDayPlan.service_day.desc()).limit(14).all()
+    # A 21-day staffing PREPARATION board; it does not create calendar slots.
+    now_lagos = datetime.now(LAGOS)
+    start_day = now_lagos.date()
+    start_at = datetime.combine(start_day, datetime.min.time())
+    end_at = start_at + timedelta(days=21)
+    planning_shifts = GulfShift.query.filter(
+        GulfShift.starts_at >= start_at, GulfShift.starts_at < end_at,
+    ).all()
+    planning_blocks = GulfBusySlot.query.filter(
+        GulfBusySlot.starts_at >= start_at, GulfBusySlot.starts_at < end_at,
+    ).all()
+    planning_jobs = GulfJob.query.filter(
+        GulfJob.slot_start >= start_at, GulfJob.slot_start < end_at,
+    ).all()
+    planning_plans = GulfDayPlan.query.filter(
+        GulfDayPlan.service_day >= start_day,
+        GulfDayPlan.service_day < (start_day + timedelta(days=21)),
+    ).all()
+    staff_days = staff_day_overview(
+        start_day, technicians=technicians, shifts=planning_shifts,
+        busy_slots=planning_blocks, plans=planning_plans, jobs=planning_jobs,
+        as_of=datetime.utcnow(),
+    )
     stats = {status: sum(j.state == status for j in jobs) for status in
              ("new", "tentative", "confirmed", "in_service", "completed", "handed_over")}
     waiting = sum(j.dispatch_state in {"requested", "dispatched"} for j in jobs)
@@ -99,6 +124,7 @@ def dashboard():
     return render_template(
         "admin/gulf_dashboard.html", jobs=jobs, technicians=technicians,
         shifts=shifts, blocks=blocks, plans=plans, stats=stats,
+        staff_days=staff_days,
         waiting=waiting, due_naira=due // 100, pilot_live=current_app.config.get("AURA_GULF_CAMPAIGN_ACTIVE", False),
     )
 
@@ -159,12 +185,27 @@ def new_shift():
         start = parse_local(request.form.get("starts_at"))
         end = parse_local(request.form.get("ends_at"))
         if end <= start or start.date() != end.date():
-            raise GulfOperationError("Accepted availability requires a same-day time range.")
+            raise GulfOperationError("Availability must use a same-day time range.")
+        if start < datetime.now(LAGOS).replace(tzinfo=None):
+            raise GulfOperationError("Only future technician windows can be recorded.")
+        if end - start > timedelta(hours=14):
+            raise GulfOperationError("Please confirm a realistic same-day time window.")
+        # A pending request is NOT accepted availability. Disallow accidental
+        # duplicates/overlapping records that could misstate workforce capacity.
+        overlap = GulfShift.query.filter(
+            GulfShift.technician_id == worker_id,
+            GulfShift.starts_at < end,
+            GulfShift.ends_at > start,
+        ).first()
+        if overlap:
+            raise GulfOperationError("This technician already has an overlapping availability window.")
+        verified = request.form.get("accepted") == "1"
         db.session.add(GulfShift(
             technician_id=worker_id, starts_at=start, ends_at=end,
-            accepted=bool(request.form.get("accepted")), recorded_by=current_user.id,
+            accepted=verified, recorded_by=current_user.id,
         ))
-        audit(None, current_user.id, "technician_availability_recorded")
+        audit(None, current_user.id,
+              "technician_window_accepted" if verified else "technician_window_requested")
     return _safe_action(save, url_for("gulf_pilot.dashboard"))
 
 
@@ -204,6 +245,26 @@ def release_busy(block_id):
         record = db.get_or_404(GulfBusySlot, block_id)
         db.session.delete(record)
         audit(None, current_user.id, "existing_work_block_released")
+    return _safe_action(save, url_for("gulf_pilot.dashboard"))
+
+
+@gulf_bp.post("/shifts/<int:shift_id>/accept")
+@login_required
+@advisor_required
+def accept_shift(shift_id):
+    def save():
+        shift = db.get_or_404(GulfShift, shift_id)
+        worker = db.session.get(GulfTechnician, shift.technician_id)
+        if not worker or not worker.active:
+            raise GulfOperationError("The technician is not active.")
+        if shift.starts_at < datetime.now(LAGOS).replace(tzinfo=None):
+            raise GulfOperationError("This availability window has already started or expired.")
+        if shift.accepted:
+            raise GulfOperationError("Technician has already accepted this window.")
+        if request.form.get("confirmed_with_worker") != "1":
+            raise GulfOperationError("Confirm the worker explicitly accepted the day and times.")
+        shift.accepted = True
+        audit(None, current_user.id, "technician_window_accepted")
     return _safe_action(save, url_for("gulf_pilot.dashboard"))
 
 

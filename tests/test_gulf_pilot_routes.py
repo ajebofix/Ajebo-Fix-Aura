@@ -12,7 +12,7 @@ from PIL import Image
 
 from extensions import db
 from models import User
-from partnerships.models import GulfJob, GulfAudit, GulfPhoto, GulfPayment, GulfTechnician
+from partnerships.models import GulfJob, GulfAudit, GulfPhoto, GulfPayment, GulfTechnician, GulfShift
 
 
 def _make_user(role="admin", suffix="1"):
@@ -505,3 +505,98 @@ def test_admin_technician_form_has_separate_brand_checkboxes(app, client):
     assert 'name="brand_specialties"' in html
     assert 'value="mercedes"' in html
     assert 'name="skills"' not in html
+
+
+def test_pending_staff_window_requires_explicit_worker_acceptance(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _job(client)
+    future = _next_monday().isoformat()
+    _post(client, "/admin/partners/gulf/technicians", {
+        "name": "Flexible Contractor", "service_classes": ["car"],
+        "brand_specialties": ["toyota"],
+    })
+    window = {
+        "technician_id": "1",
+        "starts_at": future + "T09:00",
+        "ends_at": future + "T16:00",
+    }
+    r = _post(client, "/admin/partners/gulf/shifts", window)
+    assert r.status_code == 200
+    with app.app_context():
+        shift = GulfShift.query.one()
+        assert not shift.accepted
+        sid = shift.id
+    _verify_and_approve(client)
+    attempt = _action(client, "hold", {
+        "technician_id": "1", "bay": "1", "starts_at": future + "T10:00",
+        "ends_at": future + "T11:30", "commission_ngn": "8000",
+    })
+    assert "has not explicitly accepted" in attempt.get_data(as_text=True)
+    # Just clicking without confirmation must not grant availability.
+    _post(client, f"/admin/partners/gulf/shifts/{sid}/accept", {})
+    with app.app_context():
+        assert not db.session.get(GulfShift, sid).accepted
+    confirm = _post(client, f"/admin/partners/gulf/shifts/{sid}/accept", {
+        "confirmed_with_worker": "1",
+    })
+    assert confirm.status_code == 200
+    with app.app_context():
+        assert db.session.get(GulfShift, sid).accepted
+
+
+def test_staff_board_shows_pending_and_does_not_infer_availability(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _post(client, "/admin/partners/gulf/technicians", {
+        "name": "Unscheduled Worker", "service_classes": ["car"],
+        "brand_specialties": ["toyota"],
+    })
+    page = client.get("/admin/partners/gulf/").get_data(as_text=True)
+    assert "21-day workforce preparation" in page
+    assert "Accepted lead technicians" in page
+    assert "Awaiting response" in page
+    assert "No qualified lead has accepted a work window" in page
+    assert "No availability declarations" in page
+
+
+def test_duplicate_technician_window_is_rejected(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _post(client, "/admin/partners/gulf/technicians", {
+        "name": "Flexible Worker", "service_classes": ["car"],
+        "brand_specialties": ["mercedes"],
+    })
+    future = _next_monday().isoformat()
+    form = {
+        "technician_id": "1", "starts_at": future + "T09:00",
+        "ends_at": future + "T16:00",
+    }
+    _post(client, "/admin/partners/gulf/shifts", form)
+    response = _post(client, "/admin/partners/gulf/shifts", {
+        **form, "starts_at": future + "T10:00",
+    })
+    assert "overlapping availability" in response.get_data(as_text=True)
+    with app.app_context():
+        assert GulfShift.query.count() == 1
+
+
+def test_unaccepted_intern_does_not_count_as_staffing(app, client):
+    app.config["AURA_GULF_PILOT_ENABLED"] = True
+    with app.app_context():
+        _sign_in(client, _make_user())
+    _post(client, "/admin/partners/gulf/technicians", {
+        "name": "Support Intern", "service_classes": ["car"],
+        "brand_specialties": ["mercedes"], "is_intern": "1",
+    })
+    future = _next_monday().isoformat()
+    _post(client, "/admin/partners/gulf/shifts", {
+        "technician_id": "1", "starts_at": future + "T09:00",
+        "ends_at": future + "T16:00", "accepted": "1",
+    })
+    page = client.get("/admin/partners/gulf/").get_data(as_text=True)
+    assert "Accepted interns: 1" in page
+    assert "No qualified lead has accepted a work window" in page

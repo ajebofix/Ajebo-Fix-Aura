@@ -14,7 +14,8 @@ from admin.routes import admin_bp
 from admin.utils import advisor_required
 from cars.routes import cars_bp
 from extensions import db
-from models import CarOwnership, TreatmentPlan
+from models import Car, CarOwnership, TreatmentPlan
+from treatment.reconciliation_models import TreatmentReconciliation
 from services.treatment_plan_lifecycle import (
     TreatmentPlanAuthorityError,
     TreatmentPlanLifecycleError,
@@ -136,9 +137,35 @@ def owner_treatment_plans():
             .all()
         )
 
+    summaries = {}
+    if plans:
+        history = (
+            TreatmentReconciliation.query.filter(
+                TreatmentReconciliation.treatment_plan_id.in_([plan.id for plan in plans])
+            )
+            .order_by(TreatmentReconciliation.id.asc()).all()
+        )
+        for row in history:
+            summary = summaries.setdefault(
+                row.treatment_plan_id,
+                {"actions": {}, "handover": False, "has_historical_work": False},
+            )
+            if row.kind == "action":
+                summary["actions"][row.treatment_action_id] = row.finding
+            if row.finding in {"performed", "not_performed", "handed_over"}:
+                summary["has_historical_work"] = True
+            if row.kind == "handover":
+                summary["handover"] = True
+
+    vehicle_labels = {
+        car.id: car.rina_display_name
+        for car in Car.query.filter(Car.id.in_(car_ids)).all()
+    } if car_ids else {}
     return render_template(
         "treatment_plans/owner_index.html",
         treatment_plans=plans,
+        retrospective_summaries=summaries,
+        vehicle_labels=vehicle_labels,
     )
 
 

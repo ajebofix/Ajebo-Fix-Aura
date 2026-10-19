@@ -56,6 +56,8 @@ Vehicle Health Record
         </div>
     </div>
     <div class="button-stack">
+        <a href="{{ url_for('admin.admin_add_concern', car_id=car.id) }}"
+           class="btn btn-primary">Record Reported Concern</a>
         <a
             href="{{ url_for('admin.repair_progress_console', car_id=car.id) }}"
             class="btn btn-primary"

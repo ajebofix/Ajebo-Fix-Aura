@@ -177,3 +177,29 @@ def test_all_completed_attestations_do_not_claim_outcomes_or_payment(app):
     assert plan.status == "proposed"
     assert first.status == second.status == "planned"
     assert len(plan.outcomes) == 0
+
+
+def test_owner_sees_historical_summary_and_cannot_reauthorise_old_work(app, client):
+    advisor, owner, car, plan, first, second = _setup()
+    record_reconciliation(
+        plan_id=plan.id, actor_user_id=advisor.id,
+        kind="action", action_id=first.id, finding="performed",
+        provenance="advisor_firsthand",
+        description="I personally verified the panel alignment was completed earlier.",
+        operation_key=secrets.token_urlsafe(18),
+    )
+    db.session.commit()
+    _sign_in(client, owner)
+    page = client.get("/cars/treatment-plans")
+    assert page.status_code == 200
+    assert b"Advisor" in page.data
+    assert b"Historically performed" in page.data
+    assert b"Do not authorize it as a new future repair" in page.data
+    assert b"Authorize Treatment Plan" not in page.data
+
+    denied = client.post(
+        f"/cars/treatment-plans/{plan.id}/authorize",
+        data={"csrf_token": _csrf_token(client)},
+    )
+    assert denied.status_code == 302
+    assert db.session.get(TreatmentPlan, plan.id).status == "proposed"

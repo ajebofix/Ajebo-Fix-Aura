@@ -13,20 +13,28 @@
         <a class="btn btn-secondary" href="{{ url_for('chat.rina_workspace', car_id=plan.car_id) }}">
             Tell Rina
         </a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.admin_add_concern', car_id=plan.car_id) }}">
+            Record Reported Concern
+        </a>
     </div>
     <div class="section-head">
         <div>
             <h2>{{ plan.title }}</h2>
-            <p class="muted">{{ plan.car.decoded_display_name if plan.car else "Vehicle" }}</p>
+            <p class="muted">{{ vehicle.rina_display_name if vehicle else "Vehicle #" ~ plan.car_id ~ " — identity unavailable" }}</p>
         </div>
         <span class="pill">{{ plan.status|replace("_", " ")|title }}</span>
     </div>
     {% if plan.client_summary %}<p>{{ plan.client_summary }}</p>{% endif %}
     {% if plan.internal_instructions %}
-    <div class="list-item">
-        <strong>Advisor-only plan context</strong>
+    <details class="list-item">
+        <summary><strong>Advisor-only plan context</strong></summary>
         <p>{{ plan.internal_instructions }}</p>
-    </div>
+    </details>
+    {% endif %}
+    {% if plan.status == "proposed" %}
+    <p class="muted">This is a proposal. Individual actions cannot be scheduled
+       until owner authorization and lawful plan progression are established.
+       Do not advance a historical job merely to populate its record.</p>
     {% endif %}
 
     {% if plan.status in ["authorized", "approved"] %}
@@ -81,16 +89,15 @@
 
 <section class="card fade-up">
     <h2>Treatment Actions</h2>
+    <p class="muted">Tap an action to expand its details and permitted controls. A planned action is not evidence of work performed.</p>
     {% if actions %}
         {% for action in actions %}
-        <div class="list-item">
-            <div class="section-head">
-                <div>
-                    <strong>{{ action.title }}</strong>
-                    <p class="muted">{{ action.visibility|title }} visibility</p>
-                </div>
-                <span class="pill">{{ action.status|replace("_", " ")|title }}</span>
-            </div>
+        <details class="list-item">
+            <summary>
+                <strong>{{ action.title }}</strong> ·
+                {{ action.status|replace("_", " ")|title }}
+                <span class="muted">({{ action.visibility|title }})</span>
+            </summary>
 
             {% if action.client_summary %}<p>{{ action.client_summary }}</p>{% endif %}
             {% if action.internal_instructions %}
@@ -101,7 +108,7 @@
             <p class="muted">Scheduled: {{ action.scheduled_for.strftime("%Y-%m-%d %H:%M") }}</p>
             {% endif %}
 
-            {% if action.status in ["planned", "deferred"] %}
+            {% if action.status in ["planned", "deferred"] and plan.status in ["scheduled", "in_progress"] %}
             <form method="POST" action="{{ url_for('admin.schedule_treatment_action', action_id=action.id) }}">
                 <div class="form-group">
                     <label class="label">Schedule date/time</label>
@@ -110,6 +117,10 @@
                 <input type="hidden" name="operation_key" value="action-schedule-{{ action.id }}">
                 <button class="btn btn-secondary" type="submit">Schedule Action</button>
             </form>
+            {% endif %}
+
+            {% if action.status in ["planned", "deferred"] and plan.status not in ["scheduled", "in_progress"] %}
+            <p class="muted">Scheduling unavailable until the Treatment Plan is authorised and scheduled.</p>
             {% endif %}
 
             {% if action.status == "scheduled" and plan.status == "in_progress" %}
@@ -156,7 +167,7 @@
                 <button class="btn btn-secondary" type="submit">Link Evidence</button>
             </form>
             {% endif %}
-        </div>
+        </details>
         {% endfor %}
     {% else %}
         <p class="muted">No Treatment Actions recorded yet.</p>

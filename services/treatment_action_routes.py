@@ -276,6 +276,7 @@ def treatment_plan_actions(plan_id: int):
     return render_template(
         "treatment_actions/advisor_plan.html",
         plan=plan,
+        vehicle=db.session.get(Car, plan.car_id),
         actions=list(plan.actions),
         outcomes=list(plan.outcomes),
         accepted_evidence=evidence,

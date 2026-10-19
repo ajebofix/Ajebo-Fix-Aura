@@ -105,9 +105,9 @@ def record_reconciliation(
         raise RetrospectiveReconciliationError(
             "Reviewed-evidence provenance requires an accepted evidence attachment."
         )
-    if provenance == "client_report" and finding in {"performed", "handed_over"}:
+    if provenance == "client_report" and finding != "unverified":
         raise RetrospectiveReconciliationError(
-            "Client statements alone cannot verify work or handover."
+            "Client statements alone cannot verify whether work was performed or omitted."
         )
 
     recipient = (recipient or "").strip()[:200] or None

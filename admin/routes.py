@@ -769,7 +769,7 @@ def admin_add_concern(car_id):
             flash(str(exc), "error")
             return redirect(url_for("admin.admin_add_concern", car_id=car.id))
         flash(f"Reported Concern #{concern.id} recorded for professional review.", "success")
-        return redirect(url_for("admin.admin_vehicle_concerns", car_id=car.id))
+        return redirect(url_for("admin.admin_reported_concerns", car_id=car.id))
 
     return render_template(
         "admin/add_concern.html",

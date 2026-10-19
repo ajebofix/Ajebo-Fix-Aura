@@ -2178,7 +2178,7 @@ def chat():
                 )
             category = (
                 "suspension_steering"
-                if re.search(r"\\bsteer(?:ing)?\\b", concern_description, re.IGNORECASE)
+                if re.search(r"\bsteer(?:ing)?\b", concern_description, re.IGNORECASE)
                 else "other"
             )
             concern, created = record_advisor_reported_concern(

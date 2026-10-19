@@ -94,6 +94,10 @@ from rina.providers.base import RinaProviderError
 from services.rina_orchestrator import orchestrate_rina
 from services.rina_speaker import account_help, describe_speaker, speaker_identity
 from services.repair_progress import RepairProgressError, record_repair_progress
+from services.reported_concern_capture import (
+    ConcernCaptureError,
+    record_advisor_reported_concern,
+)
 from services.live_collision_plan import (
     LiveCollisionPlanError,
     propose_live_collision_plan,
@@ -142,6 +146,23 @@ def _repair_progress_command(message: str) -> str | None:
         return None
     summary = " ".join(str(match.group("summary") or "").strip().split())
     return summary or None
+
+
+# Only an explicit, structured advisor command can write a reported concern.
+# Ordinary discussion and paraphrased suggestions remain read-only.
+_REPORTED_CONCERN_COMMAND_RE = re.compile(
+    r"^\s*(?:rina\s*[,,:-]?\s*)?"
+    r"(?:record|log|add)\s+"
+    r"(?:(?:this|the)\s+client['\u2019]s\s+)?"
+    r"(?:(?:new|post[- ]delivery)\s+)?"
+    r"(?:reported\s+)?concern\s*:\s*(?P<summary>.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _reported_concern_command(message: str) -> str | None:
+    match = _REPORTED_CONCERN_COMMAND_RE.match(str(message or ""))
+    return match.group("summary").strip() if match else None
 
 
 _COLLISION_PLAN_COMMAND_RE = re.compile(
@@ -2135,6 +2156,111 @@ def chat():
     conversation_id = (
         _conversation_id_for(car_id) if car_id is not None else _new_conversation_id()
     )
+
+    concern_description = _reported_concern_command(message)
+    if concern_description is not None:
+        if car_id is None:
+            return jsonify({
+                "reply": "Select the vehicle before recording a Reported Concern.",
+                "intent": "reported_concern",
+                "state": RINA_STATE_VEHICLE_REQUIRED,
+                "car_id": None,
+                "conversation_id": None,
+            }), 400
+
+        try:
+            context = resolve_rina_vehicle_context(
+                user_id=current_user.id, car_id=car_id,
+            )
+            if context.authority not in {"advisor", "administrator"}:
+                raise ConcernCaptureError(
+                    "Only an authorised advisor can record a client's report here."
+                )
+            category = (
+                "suspension_steering"
+                if re.search(r"\bsteer(?:ing)?\b", concern_description, re.IGNORECASE)
+                else "other"
+            )
+            concern, created = record_advisor_reported_concern(
+                car_id=context.car_id,
+                actor_user_id=current_user.id,
+                description=concern_description,
+                category=category,
+                source="rina",
+                dedupe_recent=True,
+            )
+            conversation_id = _bind_rina_vehicle(
+                car_id=context.car_id, conversation_id=conversation_id,
+            )
+            reply = (
+                f"Reported Concern #{concern.id} "
+                + ("recorded" if created else "already recorded (retry detected)")
+                + ". These are the client's statements, not verified findings or a "
+                "steering diagnosis. The concern is awaiting professional review. "
+                "The prior treatment, handover and Billing records are unchanged."
+            )
+            if "steer" in concern_description.lower() and (
+                "hard" in concern_description.lower()
+                or "malfunction" in concern_description.lower()
+            ):
+                reply += (
+                    " Loss of steering assistance may be unsafe: advise the "
+                    "client not to drive and arrange professional assessment or recovery."
+                )
+            save_rina_chat_turn(
+                user_id=current_user.id, car_id=context.car_id,
+                conversation_id=conversation_id, role="user",
+                content=message, channel="in_app", commit=False,
+            )
+            save_rina_chat_turn(
+                user_id=current_user.id, car_id=context.car_id,
+                conversation_id=conversation_id, role="assistant",
+                content=reply, channel="in_app", commit=False,
+            )
+            record_rina_audit(
+                request_id=_new_conversation_id(),
+                user_id=current_user.id,
+                car_id=context.car_id,
+                authority=context.authority,
+                state=RINA_STATE_ANSWERED,
+                outcome="answered",
+                action_family="reported_concern_record",
+                provider_status="not_called",
+                evidence_refs=({"type": "reported_concern", "id": concern.id},),
+                metadata={"channel": "in_app", "provider_attempted": False},
+                commit=False,
+            )
+            db.session.commit()
+            return jsonify({
+                "reply": reply,
+                "intent": "reported_concern",
+                "state": RINA_STATE_ANSWERED,
+                "authority": context.authority,
+                "car_id": context.car_id,
+                "conversation_id": conversation_id,
+                "reported_concern": {
+                    "id": concern.id, "status": concern.status, "created": created,
+                },
+            }), 200
+        except (ConcernCaptureError, RinaAuthorityError, RinaContextResolutionError) as exc:
+            db.session.rollback()
+            return jsonify({
+                "reply": str(exc), "intent": "reported_concern",
+                "state": RINA_STATE_AUTHORITY_DENIED,
+                "car_id": car_id,
+            }), 403
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "Rina reported concern capture failed user_id=%s car_id=%s",
+                current_user.id, car_id,
+            )
+            return jsonify({
+                "reply": "I couldn't record that concern safely. No record was added.",
+                "intent": "reported_concern",
+                "state": RINA_STATE_PROVIDER_UNAVAILABLE,
+                "car_id": car_id,
+            }), 503
 
     collision_plan_request = _collision_plan_command(message)
     if collision_plan_request is not None:

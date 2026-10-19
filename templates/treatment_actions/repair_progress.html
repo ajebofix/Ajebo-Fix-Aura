@@ -10,7 +10,7 @@
         <div>
             <h2>Live Repair Journey</h2>
             <p class="muted">
-                Record what is happening to this vehicle now. Progress updates do not
+                Record a live or retrospective journey fact with its true occurrence date. Progress updates do not
                 imply diagnosis, payment, completed repair or successful outcome unless
                 those facts are recorded separately.
             </p>
@@ -34,6 +34,23 @@
         In Rina, use a direct instruction such as:
         <strong>Record repair progress: vehicle received from police custody and moved to the panel beater.</strong>
     </p>
+</section>
+
+<section class="card fade-up">
+    <h2>Post-delivery review &amp; handover reconciliation</h2>
+    <p class="muted">An owner-reported issue after delivery is a new Reported Concern,
+       even when the earlier collision repair has been completed. Recording it does not
+       reopen a completed Treatment Action, establish causation or change a payment balance.</p>
+    <div class="button-grid">
+        <a class="btn btn-primary" href="{{ url_for('admin.admin_add_concern', car_id=car.id) }}">Record new concern</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.admin_reported_concerns', car_id=car.id) }}">Review concerns</a>
+        <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace', car_id=car.id) }}">Open separate Billing ledger</a>
+    </div>
+    <p class="muted">To reconcile an earlier handover, select <strong>Delivered</strong> below
+       only when evidence supports custody transfer. Enter its actual occurrence date and
+       describe the recipient, location, evidence, outstanding advisories and any uncertainty.
+       Aura records when the note was added separately. A payment promise is not settlement;
+       only the authorised Billing ledger can establish payment.</p>
 </section>
 
 <section class="card fade-up">

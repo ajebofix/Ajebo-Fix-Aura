@@ -2,17 +2,17 @@
 
 {% extends "base.html" %}
 
-{% block title %}Record Observation — Advisor{% endblock %}
+{% block title %}Record Reported Concern — Advisor{% endblock %}
 
-{% block page_title %}Record Observation{% endblock %}
+{% block page_title %}Record Reported Concern{% endblock %}
 
 {% block page_subtitle %}
-Advisor-only internal record captured during consultation or review.
+Advisor-recorded owner or driver report. Available before, during or after a consultation; it is not a diagnosis.
 {% endblock %}
 
 {% block content %}
 
-<h1>Record Observation</h1>
+<h1>Record Reported Concern</h1>
 
 <!-- FLASH MESSAGES -->
  {% with messages = get_flashed_messages(with_categories=true) %}
@@ -33,8 +33,7 @@ Advisor-only internal record captured during consultation or review.
 <section class="card">
 
 <p class="muted">
-    Advisor observation recorded during consultation.
-    Use clear language and document facts precisely.
+    Record what the client actually said, with the dates and times they provided. Do not turn a reported symptom into a verified diagnosis. This does not change a Treatment Plan, handover or invoice.
 </p>
 
 </section>
@@ -73,7 +72,7 @@ Advisor-only internal record captured during consultation or review.
         <div class="metric-card">
             <span class="metric-label">Under Care Since</span>
             <span class="metric-value">
-                {{ ownership.start_date.strftime("%Y-%m-%d") if ownership.start_date else "-" }}
+                {{ ownership.start_date.strftime("%Y-%m-%d") if ownership and ownership.start_date else "—" }}
             </span>
         </div>
 
@@ -89,6 +88,7 @@ Advisor-only internal record captured during consultation or review.
         <h2>Observation Details</h2>
 
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <div class="form-grid">
 
@@ -100,7 +100,7 @@ Advisor-only internal record captured during consultation or review.
                         <option value="engine">Engine</option>
                         <option value="transmission">Transmission</option>
                         <option value="brakes">Brakes</option>
-                        <option value="suspension">Suspension & Steering</option>
+                        <option value="suspension_steering">Suspension & Steering</option>
                         <option value="electrical">Electrical</option>
                         <option value="cooling">Cooling System</option>
                         <option value="body">Body / Exterior</option>
@@ -110,7 +110,7 @@ Advisor-only internal record captured during consultation or review.
                 </div>
 
                 <div>
-                    <label for="observed_at">Date Observed (optional)</label>
+                    <label for="observed_at">Date the client noticed it (optional)</label>
 
                     <input
                         type="date"
@@ -125,14 +125,15 @@ Advisor-only internal record captured during consultation or review.
             <textarea
                 id="description"
                 name="description"
-                placeholder="Describe the observation or symptoms noticed"
+                maxlength="3000"
+                placeholder="Client reported an electric steering warning and heavy steering at 17:54 on 18 Oct 2026; at 20:17 reported an exposed wire. None verified yet."
                 required
             ></textarea>
 
             <div class="button-grid">
 
                 <button type="submit" class="btn btn-primary">
-                    Save Observation
+                    Save Reported Concern
                 </button>
 
                 <a

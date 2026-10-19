@@ -1,8 +1,8 @@
 """Advisor-governed capture of reported concerns, including post-delivery reports.
 
 A report is not a diagnosis, completed repair, inspection result or payment event.
-The existing CarFault session integration emits the canonical concern.reported
-event in the same transaction when the caller commits.
+The canonical concern.reported event is emitted explicitly within the same
+transaction so Rina can receive the new concern ID before committing.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from extensions import db
 from models import Car, CarFault
 from security.access import resolve_vehicle_authority
+from services.event_emission import emit_vehicle_event
 
 
 class ConcernCaptureError(ValueError):
@@ -84,4 +85,25 @@ def record_advisor_reported_concern(
     )
     db.session.add(concern)
     db.session.flush()
+    # The CarFault before_commit integration watches session.new. Because
+    # Rina needs the concern ID to audit the same transaction, this explicit
+    # emission follows the same canonical contract after flush.
+    emit_vehicle_event(
+        car_id=car_id,
+        event_type="concern.reported",
+        subject_type="reported_concern",
+        subject_id=concern.id,
+        actor_type="user",
+        actor_user_id=actor_user_id,
+        visibility="client",
+        source=source,
+        occurred_at=concern.reported_at,
+        title="Reported concern recorded",
+        progression_direction="insufficient_evidence",
+        idempotency_key=f"reported_concern:{concern.id}:reported",
+        previous_state=None,
+        new_state="reported",
+        evidence_refs=[{"type": "reported_concern", "id": concern.id}],
+        data={"category": category, "reported_source": source},
+    )
     return concern, True

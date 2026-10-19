@@ -40,6 +40,10 @@ from services import whatsapp
 from services.vehicle_intelligence import calculate_vehicle_health
 from .utils import advisor_required
 from services.consultation_guard import require_active_consultation
+from services.reported_concern_capture import (
+    ConcernCaptureError,
+    record_advisor_reported_concern,
+)
 from services.assessment_report_builder import build_assessment_report
 from services.assessment_risk_engine import calculate_assessment_risk
 from services.rina_escalation_engine import RinaEscalationEngine
@@ -735,49 +739,37 @@ def admin_vehicle_records_pdf(car_id):
 @login_required
 @advisor_required
 def admin_add_concern(car_id):
-    car = Car.query.get_or_404(car_id)
+    # A new reported concern is an intake record, not a treatment or an
+    # assessment. It must remain available after a consultation has closed.
+    car = require_vehicle_access(
+        car_id, allow_owner=False, allow_driver=False, allow_advisor=True
+    )
     ownership = CarOwnership.query.filter_by(
-        car_id=car.id,
-        is_active=True,
-    ).first_or_404()
-
-    # AUTHORITY GATE
-    try:
-        require_active_consultation(car_id)
-    except PermissionError as e:
-        flash(str(e), "error")
-        return redirect(url_for("admin.view_vehicle", car_id=car.id))
+        car_id=car.id, is_active=True,
+    ).first()
 
     if request.method == "POST":
-        description = request.form.get("description", "").strip()
-        category = request.form.get("category", "other")
-        observed_at_raw = request.form.get("observed_at")
-
-        if not description:
-            flash("Observation description is required.", "error")
-            return redirect(request.referrer)
-
-        observed_at = (
-            datetime.fromisoformat(observed_at_raw) if observed_at_raw else None
-        )
-
-        concern = CarFault(
-            car_id=car.id,
-            title="Advisor observation",
-            category=category,
-            description=description,
-            status="under_review",
-            observed_at=observed_at,
-            reported_by=current_user.id,
-            reported_at=datetime.utcnow(),
-            source="admin",
-        )
-
-        db.session.add(concern)
-        db.session.commit()
-
-        flash("Observation recorded.", "success")
-        return redirect(url_for("admin.admin_vehicle_records", car_id=car.id))
+        observed_at_raw = (request.form.get("observed_at") or "").strip()
+        try:
+            observed_at = (
+                datetime.fromisoformat(observed_at_raw)
+                if observed_at_raw else None
+            )
+            concern, _created = record_advisor_reported_concern(
+                car_id=car.id,
+                actor_user_id=current_user.id,
+                description=request.form.get("description", ""),
+                category=request.form.get("category", "other"),
+                observed_at=observed_at,
+                source="admin",
+            )
+            db.session.commit()
+        except (ValueError, ConcernCaptureError) as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return redirect(url_for("admin.admin_add_concern", car_id=car.id))
+        flash(f"Reported Concern #{concern.id} recorded for professional review.", "success")
+        return redirect(url_for("admin.admin_vehicle_concerns", car_id=car.id))
 
     return render_template(
         "admin/add_concern.html",

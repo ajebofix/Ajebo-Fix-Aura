@@ -47,6 +47,11 @@ from services.client_repair_progress import (
     revoke_client_progress,
 )
 from treatment.models import TreatmentAction
+from services.treatment_retrospective_reconciliation import (
+    RetrospectiveReconciliationError,
+    record_reconciliation,
+    reconciliation_overview,
+)
 
 
 def _plan(plan_id: int) -> TreatmentPlan:
@@ -273,8 +278,17 @@ def treatment_plan_actions(plan_id: int):
         .order_by(VehicleEvidence.uploaded_at.desc(), VehicleEvidence.id.desc())
         .all()
     )
+    reconciled_actions, reconciled_handover, reconciliation_history = (
+        reconciliation_overview(plan.id)
+    )
+    keys = {action.id: secrets.token_urlsafe(18) for action in plan.actions}
     return render_template(
         "treatment_actions/advisor_plan.html",
+        reconciled_actions=reconciled_actions,
+        reconciled_handover=reconciled_handover,
+        reconciliation_history=reconciliation_history,
+        reconciliation_keys=keys,
+        handover_key=secrets.token_urlsafe(18),
         plan=plan,
         vehicle=db.session.get(Car, plan.car_id),
         actions=list(plan.actions),
@@ -283,6 +297,46 @@ def treatment_plan_actions(plan_id: int):
         action_creation_key=secrets.token_urlsafe(18),
         outcome_recording_key=secrets.token_urlsafe(18),
     )
+
+
+@admin_bp.post("/treatment-plans/<int:plan_id>/retrospective-reconciliation")
+@login_required
+@advisor_required
+def record_retrospective_reconciliation(plan_id: int):
+    _plan(plan_id)
+    try:
+        action_value = (request.form.get("action_id") or "").strip()
+        action_id = int(action_value) if action_value else None
+        record, created = record_reconciliation(
+            plan_id=plan_id,
+            actor_user_id=current_user.id,
+            kind=request.form.get("kind", ""),
+            action_id=action_id,
+            finding=request.form.get("finding", ""),
+            provenance=request.form.get("provenance", ""),
+            occurred_on=request.form.get("occurred_on"),
+            evidence_id=request.form.get("evidence_id"),
+            description=request.form.get("description", ""),
+            recipient=request.form.get("recipient"),
+            location=request.form.get("location"),
+            operation_key=request.form.get("operation_key", ""),
+        )
+        db.session.commit()
+        flash(
+            (
+                f"Retrospective {record.kind} entry #{record.id} saved as an advisor "
+                + ("attestation." if created else "attestation (retry recognised).")
+                + " Treatment workflow, reported concerns and Billing remain unchanged."
+            ),
+            "success",
+        )
+    except (RetrospectiveReconciliationError, ValueError, TypeError) as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    except Exception:
+        db.session.rollback()
+        raise
+    return _detail_redirect(plan_id)
 
 
 @admin_bp.post("/treatment-plans/<int:plan_id>/schedule")

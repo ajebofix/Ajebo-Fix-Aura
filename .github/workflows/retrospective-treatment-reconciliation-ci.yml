@@ -1,0 +1,43 @@
+name: Aura Retrospective Treatment Reconciliation CI
+
+on:
+  pull_request:
+    paths:
+      - "treatment/reconciliation_models.py"
+      - "services/treatment_retrospective_reconciliation.py"
+      - "services/treatment_action_routes.py"
+      - "templates/treatment_actions/advisor_plan.html"
+      - "migrations/versions/a6e4d9b2c731_treatment_retrospective_reconciliation.py"
+      - "tests/test_treatment_retrospective_reconciliation.py"
+      - ".github/workflows/retrospective-treatment-reconciliation-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  reconciliation-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: testing
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY_VERSION: ci-v1
+      RINA_OPENAI_PROVIDER_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate ephemeral profile encryption key
+        run: python3 scripts/generate_ci_profile_encryption_key.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+      - name: Compile changes
+        run: python -m compileall -q treatment/reconciliation_models.py services/treatment_retrospective_reconciliation.py services/treatment_action_routes.py tests/test_treatment_retrospective_reconciliation.py migrations/versions/a6e4d9b2c731_treatment_retrospective_reconciliation.py
+      - name: Reconciliation regression tests
+        run: pytest -q --tb=short tests/test_treatment_retrospective_reconciliation.py tests/test_treatment_action_lifecycle.py
+      - name: New-code lint
+        run: ruff check treatment/reconciliation_models.py services/treatment_retrospective_reconciliation.py tests/test_treatment_retrospective_reconciliation.py migrations/versions/a6e4d9b2c731_treatment_retrospective_reconciliation.py

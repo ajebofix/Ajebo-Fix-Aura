@@ -87,6 +87,68 @@
 </section>
 {% endif %}
 
+{% if plan.record_origin == "live" and plan.status in ["proposed", "authorized", "scheduled", "in_progress", "monitoring"] %}
+<section class="card fade-up" id="retrospective-reconciliation">
+    <h2>Retrospective Treatment Reconciliation</h2>
+    <p class="muted">For care performed before these digital actions were created.
+       Document each intervention from firsthand knowledge or accepted evidence.
+       An attestation is not an automatic Treatment Action completion, successful
+       outcome, new owner authorization or payment record.</p>
+    <p><strong>{{ reconciled_actions|length }} of {{ actions|length }} actions reviewed.</strong>
+       {% set confirmed_count = reconciled_actions.values()|selectattr("finding", "equalto", "performed")|list|length %}
+       {{ confirmed_count }} marked performed by retrospective attestation.
+    </p>
+    {% if plan.status == "proposed" %}
+    <p class="muted"><strong>Original digital plan state: Proposed.</strong>
+       This state is preserved because owner authorization of this newly created
+       plan was never recorded. Review the actual prior repair below without backdating consent.</p>
+    {% endif %}
+    {% if reconciled_handover %}
+    <p><strong>Handover attested:</strong> {{ reconciled_handover.recipient }}
+       {% if reconciled_handover.occurred_on %}on {{ reconciled_handover.occurred_on.strftime("%d %b %Y") }}{% else %}(exact handover date not yet established){% endif %}.
+       Recorded on {{ reconciled_handover.created_at.strftime("%d %b %Y %H:%M") }}.
+    </p>
+    {% else %}
+    <p class="muted">Vehicle handover is not yet attested in this reconciliation.
+       Repair completion and actual custody transfer are separate records.</p>
+    {% endif %}
+    <details>
+       <summary><strong>Reconcile vehicle handover</strong></summary>
+       <form method="POST" action="{{ url_for('admin.record_retrospective_reconciliation', plan_id=plan.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="operation_key" value="{{ handover_key }}">
+          <input type="hidden" name="kind" value="handover">
+          <input type="hidden" name="finding" value="handed_over">
+          <label class="label" for="handover-recipient">Recipient (required)</label>
+          <input class="input" id="handover-recipient" name="recipient" maxlength="200" required placeholder="Actual person who received the vehicle">
+          <label class="label" for="handover-date">Actual handover date (if known)</label>
+          <input class="input" type="date" id="handover-date" name="occurred_on">
+          <label class="label" for="handover-location">Actual location (if known)</label>
+          <input class="input" id="handover-location" name="location" maxlength="240">
+          <label class="label" for="handover-source">Basis of handover confirmation</label>
+          <select class="input" id="handover-source" name="provenance" required>
+             <option value="advisor_firsthand">I personally handed over the vehicle</option>
+             <option value="reviewed_evidence">Accepted documentary evidence</option>
+          </select>
+          <label class="label" for="handover-evidence">Accepted evidence (required if using documentary evidence)</label>
+          <select class="input" id="handover-evidence" name="evidence_id">
+             <option value="">None — firsthand attestation</option>
+             {% for evidence in accepted_evidence %}
+             <option value="{{ evidence.id }}">{{ evidence.safe_display_name }}</option>
+             {% endfor %}
+          </select>
+          <label class="label" for="handover-details">Handover details and unresolved advisories</label>
+          <textarea class="input" id="handover-details" name="description" minlength="12" maxlength="3000" required
+             placeholder="State actual custody transfer, items returned, known limitations, and any uncertainty."></textarea>
+          <p class="muted">Do not claim a signature, exact time or date you cannot verify. This does not settle an invoice.</p>
+          <button class="btn btn-primary" type="submit">Save historical handover attestation</button>
+       </form>
+    </details>
+    <p class="muted">Repair Journey custody notes, Treatment Outcomes, the October 18 steering concern, and the Billing ledger remain independent. Record payment only in Billing.</p>
+    <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace', car_id=plan.car_id) }}">Open separate Billing ledger</a>
+</section>
+{% endif %}
+
 <section class="card fade-up">
     <h2>Treatment Actions</h2>
     <p class="muted">Tap an action to expand its details and permitted controls. A planned action is not evidence of work performed.</p>
@@ -99,6 +161,55 @@
                 <span class="muted">({{ action.visibility|title }})</span>
             </summary>
 
+            {% set reviewed = reconciled_actions.get(action.id) %}
+            {% if reviewed %}
+            <p><strong>Retrospective review:</strong>
+               {{ reviewed.finding|replace("_", " ")|title }}
+               · {{ reviewed.provenance|replace("_", " ")|title }}
+               {% if reviewed.occurred_on %}· actual date {{ reviewed.occurred_on.strftime("%d %b %Y") }}{% else %}· actual date not established{% endif %}
+            </p>
+            <p class="muted">{{ reviewed.description }}</p>
+            <p class="muted">Retrospective entry recorded {{ reviewed.created_at.strftime("%d %b %Y %H:%M") }}.
+               Original workflow state is {{ action.status|replace("_", " ")|title }}.</p>
+            {% endif %}
+            {% if plan.record_origin == "live" and plan.status in ["proposed", "authorized", "scheduled", "in_progress", "monitoring"] and action.status not in ["completed", "cancelled"] %}
+            <details>
+               <summary><strong>{{ "Add corrective reconciliation" if reviewed else "Reconcile work actually performed" }}</strong></summary>
+               <form method="POST" action="{{ url_for('admin.record_retrospective_reconciliation', plan_id=plan.id) }}">
+                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                   <input type="hidden" name="kind" value="action">
+                   <input type="hidden" name="action_id" value="{{ action.id }}">
+                   <input type="hidden" name="operation_key" value="{{ reconciliation_keys[action.id] }}">
+                   <label class="label">Verified historical finding</label>
+                   <select class="input" name="finding" required>
+                      <option value="" selected disabled>Select what actually happened</option>
+                      <option value="performed">Intervention performed (not necessarily successful)</option>
+                      <option value="not_performed">Not performed / not required</option>
+                      <option value="unverified">Still unverified</option>
+                   </select>
+                   <label class="label">Source of verification</label>
+                   <select class="input" name="provenance" required>
+                      <option value="advisor_firsthand">Advisor's direct firsthand knowledge</option>
+                      <option value="reviewed_evidence">Accepted supporting evidence</option>
+                      <option value="client_report">Client statement only (cannot verify performed)</option>
+                   </select>
+                   <label class="label">Actual performance date (if known)</label>
+                   <input class="input" type="date" name="occurred_on">
+                   <label class="label">Supporting accepted evidence (if available)</label>
+                   <select class="input" name="evidence_id">
+                      <option value="">None</option>
+                      {% for evidence in accepted_evidence %}
+                      <option value="{{ evidence.id }}">{{ evidence.safe_display_name }}</option>
+                      {% endfor %}
+                   </select>
+                   <label class="label">What happened and how it was verified</label>
+                   <textarea class="input" name="description" minlength="12" maxlength="3000" required
+                     placeholder="State what was actually done, parts checked or supplied, observations, and any uncertainty."></textarea>
+                   <p class="muted">If the date is unknown, leave it blank. Entries are append-only: record a correction rather than rewriting history.</p>
+                   <button class="btn btn-secondary" type="submit">Save retrospective action finding</button>
+               </form>
+            </details>
+            {% endif %}
             {% if action.client_summary %}<p>{{ action.client_summary }}</p>{% endif %}
             {% if action.internal_instructions %}
             <p><strong>Advisor-only:</strong> {{ action.internal_instructions }}</p>
@@ -137,14 +248,14 @@
             </form>
             {% endif %}
 
-            {% if action.status in ["planned", "scheduled"] %}
+            {% if action.status in ["planned", "scheduled"] and plan.status != "proposed" %}
             <form method="POST" action="{{ url_for('admin.transition_treatment_action', action_id=action.id, operation='defer') }}">
                 <input type="hidden" name="operation_key" value="action-defer-{{ action.id }}">
                 <button class="btn btn-secondary" type="submit">Defer Action</button>
             </form>
             {% endif %}
 
-            {% if action.status in ["planned", "scheduled", "deferred"] %}
+            {% if action.status in ["planned", "scheduled", "deferred"] and plan.status != "proposed" %}
             <form method="POST" action="{{ url_for('admin.transition_treatment_action', action_id=action.id, operation='cancel') }}">
                 <input type="hidden" name="operation_key" value="action-cancel-{{ action.id }}">
                 <button class="btn btn-secondary" type="submit">Cancel Action</button>

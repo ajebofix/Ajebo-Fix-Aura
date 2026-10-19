@@ -20,13 +20,14 @@ Professional care pathways awaiting or following your authorization.
 {% if treatment_plans %}
     {% for plan in treatment_plans %}
     {% set client_actions = plan.actions|selectattr("visibility", "equalto", "client")|list %}
+    {% set retrospective = retrospective_summaries.get(plan.id) %}
     {% set client_outcomes = plan.outcomes|selectattr("visibility", "equalto", "client")|list %}
     <section class="card fade-up">
         <div class="section-head">
             <div>
                 <h2>{{ plan.title }}</h2>
                 <p class="muted">
-                    {{ plan.car.decoded_display_name if plan.car else "Vehicle" }}
+                    {{ vehicle_labels.get(plan.car_id, "Vehicle identity unavailable") }}
                 </p>
             </div>
             <span class="pill">
@@ -38,7 +39,27 @@ Professional care pathways awaiting or following your authorization.
         <p>{{ plan.client_summary }}</p>
         {% endif %}
 
-        {% if plan.status == "proposed" %}
+        {% if retrospective %}
+        <div class="list-item">
+          <strong>Advisor's historical work reconciliation</strong>
+          <p class="muted">
+            {{ retrospective.actions|length }} of {{ client_actions|length }} visible actions reviewed;
+            {{ retrospective.actions.values()|select("equalto", "performed")|list|length }}
+            attested performed,
+            {{ retrospective.actions.values()|select("equalto", "not_performed")|list|length }}
+            recorded not performed/not required.
+            {% if retrospective.handover %}Vehicle handover separately attested.{% endif %}
+          </p>
+          <p class="muted">The Proposed/Planned labels describe the digital workflow
+             created after the historical work. Advisor attestations are not independent
+             proof of outcome or settlement; new concerns and Billing remain separate.</p>
+        </div>
+        {% endif %}
+
+        {% if plan.status == "proposed" and retrospective and retrospective.has_historical_work %}
+        <p class="muted"><strong>Existing work is under retrospective review.</strong>
+           Do not authorize it as a new future repair. Discuss any new work with your advisor.</p>
+        {% elif plan.status == "proposed" %}
         <div class="list-item">
             <strong>Owner authorization required</strong>
             <p class="muted">
@@ -111,7 +132,17 @@ Professional care pathways awaiting or following your authorization.
             <div class="list-item">
                 <div class="section-head">
                     <strong>{{ action.title }}</strong>
-                    <span class="pill">{{ action.status|replace("_", " ")|title }}</span>
+                    <span class="pill">
+                     {% if retrospective and retrospective.actions.get(action.id) == "performed" %}
+                       Historically performed (advisor-attested)
+                     {% elif retrospective and retrospective.actions.get(action.id) == "not_performed" %}
+                       Historically not performed/not required
+                     {% elif retrospective and retrospective.actions.get(action.id) == "unverified" %}
+                       Historical status unverified
+                     {% else %}
+                       {{ action.status|replace("_", " ")|title }}
+                     {% endif %}
+                    </span>
                 </div>
                 {% if action.client_summary %}<p>{{ action.client_summary }}</p>{% endif %}
                 {% if action.scheduled_for %}

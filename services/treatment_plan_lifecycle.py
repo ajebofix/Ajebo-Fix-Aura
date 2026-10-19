@@ -208,6 +208,21 @@ class TreatmentPlanLifecycleService:
         cls._require_owner(plan, actor_user_id)
         cls._require_scope(plan)
 
+        # Historical work confirmed after delivery cannot retroactively be
+        # authorised as a newly proposed future procedure.
+        from treatment.reconciliation_models import TreatmentReconciliation
+        if plan.status == cls.PROPOSED and (
+            TreatmentReconciliation.query.filter_by(treatment_plan_id=plan.id)
+            .filter(TreatmentReconciliation.finding.in_(
+                ["performed", "not_performed", "handed_over"]
+            ))
+            .first() is not None
+        ):
+            raise TreatmentPlanStateError(
+                "This plan has retrospective work or handover attestations. "
+                "Do not authorize already performed work as new treatment."
+            )
+
         if plan.status == cls.AUTHORIZED:
             return plan
         if plan.status not in {cls.PROPOSED, cls.DEFERRED}:

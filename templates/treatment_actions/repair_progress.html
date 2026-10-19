@@ -43,7 +43,7 @@
        reopen a completed Treatment Action, establish causation or change a payment balance.</p>
     <div class="button-grid">
         <a class="btn btn-primary" href="{{ url_for('admin.admin_add_concern', car_id=car.id) }}">Record new concern</a>
-        <a class="btn btn-secondary" href="{{ url_for('admin.admin_vehicle_concerns', car_id=car.id) }}">Review concerns</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.admin_reported_concerns', car_id=car.id) }}">Review concerns</a>
         <a class="btn btn-secondary" href="{{ url_for('client_billing.advisor_billing_workspace', car_id=car.id) }}">Open separate Billing ledger</a>
     </div>
     <p class="muted">To reconcile an earlier handover, select <strong>Delivered</strong> below

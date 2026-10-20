@@ -1,0 +1,52 @@
+name: Aura Workmanship Assurance Policy CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "services/workmanship_assurance_policy.py"
+      - "tests/test_workmanship_assurance_policy.py"
+      - "docs/WORKMANSHIP_ASSURANCE_ASSESSMENT_FOUNDATION_2026-10-10.md"
+      - ".github/workflows/workmanship-assurance-policy-ci.yml"
+      - "requirements*.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "aura-workmanship-assurance-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  evidence-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SECRET_KEY: "ci-secret-key-not-for-production"
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
+      APP_ENV: "testing"
+      RATE_LIMIT_STORAGE_URI: "memory://"
+      PROFILE_ENCRYPTION_KEY_VERSION: "ci-v1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create test encryption key
+        run: python3 scripts/generate_ci_profile_encryption_key.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+      - name: Compile evidence policy contract
+        run: python -m compileall -q services/workmanship_assurance_policy.py tests/test_workmanship_assurance_policy.py
+      - name: Run anonymised assurance scenarios
+        run: pytest -q --tb=short tests/test_workmanship_assurance_policy.py
+      - name: Ruff
+        run: ruff check services/workmanship_assurance_policy.py tests/test_workmanship_assurance_policy.py
+      - name: Security static analysis
+        run: bandit -q services/workmanship_assurance_policy.py

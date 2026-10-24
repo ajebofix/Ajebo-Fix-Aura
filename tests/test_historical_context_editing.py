@@ -67,6 +67,7 @@ def _setup_notes(*, suffix: int):
 def test_manual_advisor_correction_keeps_source_and_history_unchanged(app, client):
     admin, _owner, car, extraction = _setup_notes(suffix=551)
     original = reconciliation_payload(extraction)
+    reviewed_before = reconciliation_payload(extraction, reviewed=True)
     _sign_in(client, admin)
     path = f"/admin/cars/{car.id}/historical-reviews/{extraction.id}/context"
 
@@ -95,7 +96,7 @@ def test_manual_advisor_correction_keeps_source_and_history_unchanged(app, clien
     assert result.status_code == 302
     updated = reconciliation_payload(extraction, reviewed=True)
     assert updated["advisor_context_notes"][2]["context_status"] == "superseded"
-    assert updated["advisor_context_notes"][2]["note"] == original["advisor_context_notes"][2]["note"]
+    assert updated["advisor_context_notes"][2]["note"] == reviewed_before["advisor_context_notes"][2]["note"]
     assert updated["context_correction_audit"][-1]["actor_user_id"] == admin.id
     assert updated["context_correction_audit"][-1]["before"]["note"] == note["note"]
     assert reconciliation_payload(extraction) == original

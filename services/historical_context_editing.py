@@ -11,7 +11,6 @@ from copy import deepcopy
 from datetime import date, datetime
 from hashlib import sha256
 import json
-import uuid
 
 from extensions import db
 from historical_ingestion.reconciliation import (

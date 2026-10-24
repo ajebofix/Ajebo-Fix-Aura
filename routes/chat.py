@@ -62,6 +62,11 @@ from services.rina_historical_review import (
     update_review_from_interpretation,
     validate_ready_to_apply as validate_historical_review_ready,
 )
+from services.historical_context_editing import (
+    HistoricalContextEditError,
+    context_editor_snapshot,
+    revise_context_note,
+)
 from services.rina_audit import record_rina_audit
 from services.rina_authority import (
     ACTION_APPLY_ADVISOR_APPROVED_HISTORY,
@@ -127,6 +132,31 @@ def detect_intent(message: str) -> str:
 
 def _normalise_chat_command(message: str) -> str:
     return " ".join(str(message or "").strip().lower().split())
+
+
+_CONTEXT_EDIT_RE = re.compile(
+    r"^\\s*(?:rina\\s*[,,:-]?\\s*)?"
+    r"(?P<verb>correct|replace|supersede|remove)\\s+"
+    r"(?:the\\s+)?(?:historical\\s+)?context\\s+(?:note\\s+)?"
+    r"\\#(?P<position>\\d{1,2})\\s*:\\s*(?P<detail>.+)\\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _historical_context_edit_command(message: str) -> dict[str, object] | None:
+    """Explicit, numbered advisor command; ordinary chat cannot mutate notes."""
+    match = _CONTEXT_EDIT_RE.fullmatch(str(message or "").strip())
+    if match is None:
+        return None
+    verb = match.group("verb").lower()
+    detail = match.group("detail").strip()
+    if not detail:
+        return None
+    return {
+        "operation": "supersede" if verb in {"remove", "supersede"} else "correct",
+        "position": int(match.group("position")),
+        "detail": detail,
+    }
 
 
 _REPAIR_PROGRESS_COMMAND_RE = re.compile(
@@ -1085,6 +1115,59 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
         actor_user_id=current_user.id,
         car_id=context.car_id,
     )
+
+    context_command = _historical_context_edit_command(message)
+    if context_command is not None:
+        # Deterministic draft edit, never an LLM-initiated deletion or final apply.
+        snapshot = context_editor_snapshot(
+            extraction_id=extraction_id,
+            car_id=context.car_id,
+            actor_user_id=current_user.id,
+        )
+        position = int(context_command["position"])
+        if not 1 <= position <= len(snapshot["notes"]):
+            raise HistoricalContextEditError(
+                "That historical context note number is unavailable. "
+                "Open the latest draft to see the correct numbers."
+            )
+        selected = snapshot["notes"][position - 1]
+        operation = str(context_command["operation"])
+        detail = str(context_command["detail"])
+        revise_context_note(
+            extraction_id=extraction_id,
+            car_id=context.car_id,
+            actor_user_id=current_user.id,
+            position=position,
+            operation=operation,
+            note=detail if operation == "correct" else None,
+            category=str(selected.get("category") or ""),
+            occurred_at=selected.get("occurred_at"),
+            reason=(
+                "Advisor explicitly corrected this context through Rina."
+                if operation == "correct" else detail
+            ),
+            revision=snapshot["revision"],
+            source="rina_explicit_command",
+        )
+        updated = summarize_historical_review(
+            extraction_id=extraction_id,
+            actor_user_id=current_user.id,
+            car_id=context.car_id,
+        )
+        return {
+            "reply": (
+                "The selected historical context note was updated in the "
+                "advisor draft. No permanent vehicle history changed.\\n\\n"
+                + historical_review_preview(updated)
+            ),
+            "phase": "awaiting_apply_confirmation" if updated.all_reviewed else "reviewing",
+            "extraction_id": extraction_id,
+            "candidate_id": updated.next_candidate_id,
+            "provider_status": "not_called",
+            "provider": None,
+            "provider_model": None,
+            "provider_request_id": None,
+        }
 
     if _explicit_historical_apply_confirmation(message):
         if not state.all_reviewed:

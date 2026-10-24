@@ -64,6 +64,7 @@ from services.rina_historical_review import (
 )
 from services.historical_context_editing import (
     HistoricalContextEditError,
+    context_command_already_applied,
     context_editor_snapshot,
     revise_context_note,
 )
@@ -1118,6 +1119,35 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
 
     context_command = _historical_context_edit_command(message)
     if context_command is not None:
+        # A repeated mobile retry must not remove a different note after the
+        # visible list has renumbered. Same advisor/vehicle/draft/command only.
+        operation_key = str(uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{context.car_id}:{extraction_id}:{current_user.id}:"
+            f"{_normalise_chat_command(message)}",
+        ))
+        if context_command_already_applied(
+            extraction_id=extraction_id,
+            car_id=context.car_id,
+            actor_user_id=current_user.id,
+            operation_key=operation_key,
+        ):
+            return {
+                "reply": (
+                    "That historical context command was already saved in this "
+                    "review. No further notes were changed.\\n\\n"
+                    + historical_review_preview(state)
+                ),
+                "phase": (
+                    "awaiting_apply_confirmation" if state.all_reviewed else "reviewing"
+                ),
+                "extraction_id": extraction_id,
+                "candidate_id": state.next_candidate_id,
+                "provider_status": "not_called",
+                "provider": None,
+                "provider_model": None,
+                "provider_request_id": None,
+            }
         # Deterministic draft edit, never an LLM-initiated deletion or final apply.
         snapshot = context_editor_snapshot(
             extraction_id=extraction_id,
@@ -1148,6 +1178,7 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             ),
             revision=snapshot["revision"],
             source="rina_explicit_command",
+            operation_key=operation_key,
         )
         updated = summarize_historical_review(
             extraction_id=extraction_id,

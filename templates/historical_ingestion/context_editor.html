@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Correct Historical Context{% endblock %}
+{% block page_title %}Correct Historical Context{% endblock %}
+{% block page_subtitle %}
+{{ car.decoded_display_name }} — draft #{{ snapshot.extraction_id }} · advisor-only review
+{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h2>Review the historical context</h2>
+    <p class="muted">
+        These notes explain reports, observations, decisions and uncertainty;
+        they are <strong>not</strong> completed repair actions. Edit or supersede
+        inaccurate notes before confirming the historical reconciliation with Rina.
+        The original uploaded evidence remains unchanged.
+    </p>
+    <p class="muted">
+        {{ snapshot.notes|length }} active context notes ·
+        {{ snapshot.correction_count }} saved corrections ·
+        no permanent vehicle history is changed by this screen
+    </p>
+    <div class="button-stack" style="margin-top:12px">
+        <a class="btn btn-secondary"
+           href="{{ url_for('chat.rina_workspace', car_id=car.id) }}">
+            Return to Rina
+        </a>
+        <a class="btn btn-secondary"
+           href="{{ url_for('historical_ingestion.source_library', car_id=car.id) }}">
+            Historical Source Library
+        </a>
+    </div>
+</section>
+
+{% for item in snapshot.notes %}
+<section class="card">
+    <h3>Context note {{ item.display_number }}</h3>
+    <p class="muted">
+        Reference: {{ item.context_note_id }} ·
+        {{ item.category|replace('_', ' ')|title }}
+        {% if item.occurred_at %} · {{ item.occurred_at }}{% endif %}
+    </p>
+    <form method="POST"
+          action="{{ url_for('historical_ingestion.edit_historical_context',
+                            car_id=car.id, extraction_id=snapshot.extraction_id) }}">
+        <input type="hidden" name="context_note_id" value="{{ item.context_note_id }}">
+        <input type="hidden" name="revision" value="{{ snapshot.revision }}">
+        <label for="operation_{{ loop.index }}">Action</label>
+        <select id="operation_{{ loop.index }}" name="operation" required>
+            <option value="correct" selected>Correct this draft note</option>
+            <option value="supersede">Supersede — remove from final history</option>
+        </select>
+
+        <label for="category_{{ loop.index }}">Context category</label>
+        <select id="category_{{ loop.index }}" name="category">
+            {% for key in categories %}
+            <option value="{{ key }}" {% if item.category == key %}selected{% endif %}>
+                {{ key|replace('_', ' ')|title }}
+            </option>
+            {% endfor %}
+        </select>
+
+        <label for="date_{{ loop.index }}">Verified date (optional)</label>
+        <input id="date_{{ loop.index }}" type="date"
+               name="occurred_at" value="{{ item.occurred_at or '' }}">
+
+        <label for="note_{{ loop.index }}">Historical context</label>
+        <textarea id="note_{{ loop.index }}" name="note" rows="5"
+                  maxlength="1200">{{ item.note }}</textarea>
+
+        <label for="reason_{{ loop.index }}">Reason for this correction</label>
+        <textarea id="reason_{{ loop.index }}" name="reason" rows="2"
+                  maxlength="1000" required
+                  placeholder="Explain what was wrong and why this change is justified."></textarea>
+        <p class="muted">
+            Supersede keeps this note in encrypted correction history but excludes
+            it from the final preview and any subsequent reconciliation apply.
+        </p>
+        <button class="btn btn-primary btn-block" type="submit">Save draft correction</button>
+    </form>
+</section>
+{% else %}
+<section class="card">
+    <p>No active context notes remain. Check the completed-work candidates with Rina
+       before any final confirmation.</p>
+</section>
+{% endfor %}
+{% endblock %}

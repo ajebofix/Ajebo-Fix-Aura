@@ -135,10 +135,10 @@ def _normalise_chat_command(message: str) -> str:
 
 
 _CONTEXT_EDIT_RE = re.compile(
-    r"^\\s*(?:rina\\s*[,,:-]?\\s*)?"
-    r"(?P<verb>correct|replace|supersede|remove)\\s+"
-    r"(?:the\\s+)?(?:historical\\s+)?context\\s+(?:note\\s+)?"
-    r"\\#(?P<position>\\d{1,2})\\s*:\\s*(?P<detail>.+)\\s*$",
+    r"^\s*(?:rina\s*[,,:-]?\s*)?"
+    r"(?P<verb>correct|replace|supersede|remove)\s+"
+    r"(?:the\s+)?(?:historical\s+)?context\s+(?:note\s+)?"
+    r"\#(?P<position>\d{1,2})\s*:\s*(?P<detail>.+)\s*$",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -1157,7 +1157,7 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
         return {
             "reply": (
                 "The selected historical context note was updated in the "
-                "advisor draft. No permanent vehicle history changed.\\n\\n"
+                "advisor draft. No permanent vehicle history changed.\n\n"
                 + historical_review_preview(updated)
             ),
             "phase": "awaiting_apply_confirmation" if updated.all_reviewed else "reviewing",

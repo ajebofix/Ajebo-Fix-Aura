@@ -77,7 +77,6 @@ from historical_ingestion.whatsapp_bundle import (
 from models import Car
 from services.historical_context_editing import (
     ALLOWED_CONTEXT_CATEGORIES,
-    HistoricalContextEditError,
     context_editor_snapshot,
     revise_context_note,
 )

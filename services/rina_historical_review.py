@@ -1658,15 +1658,38 @@ def review_preview(state: HistoricalReviewState) -> str:
         row
         for row in state.payload.get("advisor_context_notes") or []
         if isinstance(row, dict)
+        and row.get("context_status", "active") != "superseded"
     ]
     if context_notes:
         lines.append("### Historical context — not completed work")
-        for row in context_notes:
-            detail = f"- **{str(row.get('category') or 'context').replace('_', ' ').title()}**"
+        for position, row in enumerate(context_notes, start=1):
+            detail = (
+                f"- **Context #{position} · "
+                f"{str(row.get('category') or 'context').replace('_', ' ').title()}**"
+            )
             if row.get("occurred_at"):
                 detail += f" — {row.get('occurred_at')}"
             detail += f": {row.get('note') or ''}"
             lines.append(detail)
+
+    # Editable context is not completed work: make the manual review path
+    # available from the final preview and keep precise Rina commands deterministic.
+    if context_notes:
+        extraction = db.session.get(EvidenceExtraction, state.extraction_id)
+        if extraction is not None and extraction.evidence is not None:
+            editor_url = (
+                f"/admin/cars/{extraction.evidence.car_id}/historical-reviews/"
+                f"{state.extraction_id}/context"
+            )
+            lines.append(
+                f"[Correct or supersede context notes in the advisor editor]({editor_url})"
+            )
+            lines.append(
+                "Through Rina you can also say: "
+                "**Correct historical context #1: [replacement text]** or "
+                "**Supersede historical context #1: [reason]**. "
+                "Numbers refer to the active notes shown above."
+            )
 
     if state.intake_required:
         lines.append(

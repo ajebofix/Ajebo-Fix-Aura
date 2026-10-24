@@ -75,6 +75,11 @@ from historical_ingestion.whatsapp_bundle import (
     restart_whatsapp_bundle_analysis,
 )
 from models import Car
+from services.historical_context_editing import (
+    ALLOWED_CONTEXT_CATEGORIES,
+    context_editor_snapshot,
+    revise_context_note,
+)
 from services.treatment_action_addenda import (
     TreatmentActionAddendumError,
     add_treatment_action_addendum,
@@ -82,6 +87,65 @@ from services.treatment_action_addenda import (
 
 
 historical_ingestion_bp = Blueprint("historical_ingestion", __name__)
+
+
+@historical_ingestion_bp.route(
+    "/admin/cars/<int:car_id>/historical-reviews/<int:extraction_id>/context",
+    methods=["GET", "POST"],
+)
+@login_required
+@advisor_required
+def edit_historical_context(car_id: int, extraction_id: int):
+    """Manual counterpart to Rina's supervised draft-only context corrections."""
+    car = Car.query.get_or_404(car_id)
+    if request.method == "POST":
+        try:
+            result = revise_context_note(
+                extraction_id=extraction_id,
+                car_id=car.id,
+                actor_user_id=current_user.id,
+                note_id=request.form.get("context_note_id", "").strip(),
+                operation=request.form.get("operation", "").strip(),
+                note=request.form.get("note"),
+                category=request.form.get("category"),
+                occurred_at=request.form.get("occurred_at"),
+                reason=request.form.get("reason", ""),
+                revision=request.form.get("revision"),
+                source="advisor_manual",
+            )
+            db.session.commit()
+            flash(
+                "Context note corrected in the pending review; vehicle history "
+                "is unchanged." if result["operation"] == "correct"
+                else "Context note superseded in the pending review; the "
+                     "original evidence is preserved.",
+                "success",
+            )
+        except HistoricalReconciliationError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+        return redirect(url_for(
+            "historical_ingestion.edit_historical_context",
+            car_id=car.id,
+            extraction_id=extraction_id,
+        ))
+
+    try:
+        snapshot = context_editor_snapshot(
+            extraction_id=extraction_id,
+            car_id=car.id,
+            actor_user_id=current_user.id,
+        )
+    except HistoricalReconciliationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("admin.view_vehicle", car_id=car.id))
+    return render_template(
+        "historical_ingestion/context_editor.html",
+        car=car,
+        snapshot=snapshot,
+        categories=sorted(ALLOWED_CONTEXT_CATEGORIES),
+    )
 
 
 def _validate_historical_source_upload(

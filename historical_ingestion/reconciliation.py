@@ -826,6 +826,7 @@ def apply_reconciliation(
         row
         for row in reviewed.get("advisor_context_notes") or []
         if isinstance(row, dict)
+        and row.get("context_status", "active") != "superseded"
     ]
     context_lines: list[str] = []
     for row in context_notes[:40]:

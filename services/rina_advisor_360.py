@@ -261,7 +261,7 @@ def _reconciliation_summary(
 
     context_notes: list[dict[str, Any]] = []
     for row in (payload.get("advisor_context_notes") or [])[:40]:
-        if not isinstance(row, dict):
+        if not isinstance(row, dict) or row.get("context_status", "active") == "superseded":
             continue
         note = _clip(row.get("note"), limit=1200)
         if not note:

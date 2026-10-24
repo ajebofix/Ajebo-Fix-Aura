@@ -1135,7 +1135,7 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             return {
                 "reply": (
                     "That historical context command was already saved in this "
-                    "review. No further notes were changed.\\n\\n"
+                    "review. No further notes were changed.\n\n"
                     + historical_review_preview(state)
                 ),
                 "phase": (

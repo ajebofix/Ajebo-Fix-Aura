@@ -194,6 +194,18 @@ def test_rina_explicit_numbered_command_edits_only_pending_draft(app, client):
     assert reviewed["context_correction_audit"][-1]["source"] == "rina_explicit_command"
     assert TreatmentPlan.query.count() == 0
 
+    # A mobile resend of an ordinal command must be idempotent even though
+    # active notes have renumbered after the first supersession.
+    repeated = _post_json(client, "/chat", {
+        "car_id": car.id,
+        "message": "Supersede historical context #3: Malformed duplicate fragment.",
+    })
+    assert repeated.status_code == 200
+    assert "already saved" in repeated.json["reply"]
+    reviewed = reconciliation_payload(extraction, reviewed=True)
+    assert len(reviewed["context_correction_audit"]) == 1
+    assert reviewed["advisor_context_notes"][1].get("context_status") != "superseded"
+
     correction = _post_json(client, "/chat", {
         "car_id": car.id,
         "message": (

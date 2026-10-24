@@ -1662,8 +1662,11 @@ def review_preview(state: HistoricalReviewState) -> str:
     ]
     if context_notes:
         lines.append("### Historical context — not completed work")
-        for row in context_notes:
-            detail = f"- **{str(row.get('category') or 'context').replace('_', ' ').title()}**"
+        for position, row in enumerate(context_notes, start=1):
+            detail = (
+                f"- **Context #{position} · "
+                f"{str(row.get('category') or 'context').replace('_', ' ').title()}**"
+            )
             if row.get("occurred_at"):
                 detail += f" — {row.get('occurred_at')}"
             detail += f": {row.get('note') or ''}"

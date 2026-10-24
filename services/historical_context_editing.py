@@ -108,6 +108,21 @@ def context_editor_snapshot(
     }
 
 
+def context_command_already_applied(
+    *, extraction_id: int, car_id: int, actor_user_id: int, operation_key: str
+) -> bool:
+    """Guard numbered Rina commands against accidental replay after renumbering."""
+    _extraction, payload = _read_draft(
+        extraction_id=extraction_id, car_id=car_id, actor_user_id=actor_user_id
+    )
+    return any(
+        isinstance(row, dict)
+        and row.get("operation_key") == operation_key
+        and row.get("actor_user_id") == actor_user_id
+        for row in payload.get("context_correction_audit") or []
+    )
+
+
 def revise_context_note(
     *,
     extraction_id: int,
@@ -122,6 +137,7 @@ def revise_context_note(
     category: str | None = None,
     occurred_at: str | None = None,
     source: str = "advisor_manual",
+    operation_key: str | None = None,
 ) -> dict:
     """Stage an explicit correction or supersession; caller commits/rolls back.
 
@@ -141,6 +157,13 @@ def revise_context_note(
     extraction, payload = _read_draft(
         extraction_id=extraction_id, car_id=car_id, actor_user_id=actor_user_id
     )
+    if operation_key and any(
+        isinstance(entry, dict)
+        and entry.get("operation_key") == operation_key
+        and entry.get("actor_user_id") == actor_user_id
+        for entry in payload.get("context_correction_audit") or []
+    ):
+        return {"operation": operation, "already_applied": True}
     if revision is not None and revision != _draft_digest(payload):
         raise HistoricalContextEditError(
             "The draft changed in another review. Reopen it before saving this edit."
@@ -224,6 +247,7 @@ def revise_context_note(
         "operation": operation,
         "reason": reason,
         "source": source,
+        "operation_key": operation_key,
         "actor_user_id": actor_user_id,
         "recorded_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "before": before,

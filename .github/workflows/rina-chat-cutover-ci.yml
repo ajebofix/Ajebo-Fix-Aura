@@ -31,6 +31,7 @@ on:
       - "services/rina_speaker.py"
       - "templates/chat/workspace.html"
       - "tests/test_rina_orchestrator.py"
+      - "scripts/check_rina_chat_inline_js.py"
       - "scripts/verify_rina_chat_cutover_postgres.py"
       - ".github/workflows/rina-chat-cutover-ci.yml"
       - "requirements*.txt"
@@ -88,6 +89,9 @@ jobs:
           services/rina_speaker.py
           tests/test_rina_orchestrator.py
           scripts/verify_rina_chat_cutover_postgres.py
+
+      - name: Check Rina inline browser JavaScript parses and editor link matches
+        run: python3 scripts/check_rina_chat_inline_js.py
 
       - name: Test Rina chat cutover and underlying authority stack
         run: >-

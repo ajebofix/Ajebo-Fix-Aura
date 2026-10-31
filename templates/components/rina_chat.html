@@ -322,7 +322,7 @@
             // Markdown text. Do not turn arbitrary model-generated links into
             // navigation controls.
             const editorMatch = line.match(
-                /^\\[Correct or supersede context notes in the advisor editor\\]\\((\\/admin\\/cars\\/(\\d+)\\/historical-reviews\\/(\\d+)\\/context)\\)$/
+                /^\[Correct or supersede context notes in the advisor editor\]\((\/admin\/cars\/(\d+)\/historical-reviews\/(\d+)\/context)\)$/
             );
             if (editorMatch && isProfessional) {
                 const linkCarId = Number(editorMatch[2]);

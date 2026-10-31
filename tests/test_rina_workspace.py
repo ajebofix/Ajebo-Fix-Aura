@@ -963,3 +963,39 @@ def test_owner_cannot_rebuild_historical_intelligence(app, client, monkeypatch):
     )
     assert response.status_code == 403
 
+
+
+def test_rina_chat_renders_historical_context_editor_as_scoped_button(app, client):
+    """A historical-review action must be tappable in Aura, not raw Markdown."""
+    admin = _user(suffix=389, role="admin")
+    owner = _user(suffix=390)
+    car = _car(suffix=389)
+    _own(owner=owner, car=car, suffix=389)
+    db.session.commit()
+    _sign_in(client, admin)
+
+    page = client.get("/chat/workspace", query_string={"car_id": car.id})
+    assert page.status_code == 200
+    html = page.text
+    assert "Correct or supersede context notes in the advisor editor" in html
+    assert "editorMatch" in html
+    assert 'editorLink.textContent = "Correct Historical Context"' in html
+    assert "linkCarId === selectedCarId" in html
+    assert "isProfessional" in html
+    assert 'editorLink.className = "btn btn-primary btn-block"' in html
+    assert "editorLink.href = editorMatch[1]" in html
+
+
+def test_rina_chat_context_editor_button_not_exposed_to_owner(app, client):
+    """Owner chat receives the renderer, but the privileged link is gated."""
+    _user(suffix=391, role="admin")
+    owner = _user(suffix=392)
+    car = _car(suffix=391)
+    _own(owner=owner, car=car, suffix=391)
+    db.session.commit()
+    _sign_in(client, owner)
+
+    page = client.get("/chat/workspace", query_string={"car_id": car.id})
+    assert page.status_code == 200
+    assert 'data-professional="false"' in page.text
+    assert "editorMatch && isProfessional" in page.text

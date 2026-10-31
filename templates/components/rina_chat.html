@@ -317,6 +317,29 @@
         for (const rawLine of lines) {
             const line = rawLine.trim();
 
+            // One trusted, vehicle-scoped action emitted by Aura's historical
+            // review. Render a real touch-friendly button rather than raw
+            // Markdown text. Do not turn arbitrary model-generated links into
+            // navigation controls.
+            const editorMatch = line.match(
+                /^\\[Correct or supersede context notes in the advisor editor\\]\\((\\/admin\\/cars\\/(\\d+)\\/historical-reviews\\/(\\d+)\\/context)\\)$/
+            );
+            if (editorMatch && isProfessional) {
+                const linkCarId = Number(editorMatch[2]);
+                const extractionId = Number(editorMatch[3]);
+                if (linkCarId === selectedCarId && Number.isSafeInteger(extractionId) && extractionId > 0) {
+                    closeList();
+                    const editorLink = document.createElement("a");
+                    editorLink.className = "btn btn-primary btn-block";
+                    editorLink.href = editorMatch[1];
+                    editorLink.textContent = "Correct Historical Context";
+                    editorLink.style.margin = "12px 0";
+                    editorLink.setAttribute("aria-label", "Open the advisor historical context correction editor");
+                    container.appendChild(editorLink);
+                    continue;
+                }
+            }
+
             if (!line) {
                 // Markdown often puts a blank line between a numbered item
                 // and its explanation. Keep the list until its next item or

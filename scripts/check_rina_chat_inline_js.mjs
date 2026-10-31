@@ -24,8 +24,8 @@ assert.ok(match, "Trusted editor link must match");
 assert.equal(match[1], "/admin/cars/3/historical-reviews/533/context");
 assert.equal(match[2], "3");
 assert.equal(match[3], "533");
-assert.equal("[Correct or supersede context notes in the advisor editor]"
-  + "(https://example.com/bad)".match(matcher), null);
-assert.equal("[Correct or supersede context notes in the advisor editor]"
-  + "(/admin/cars/3/historical-reviews/533/context?next=evil)".match(matcher), null);
+assert.equal(("[Correct or supersede context notes in the advisor editor]"
+  + "(https://example.com/bad)").match(matcher), null);
+assert.equal(("[Correct or supersede context notes in the advisor editor]"
+  + "(/admin/cars/3/historical-reviews/533/context?next=evil)").match(matcher), null);
 console.log("Rina chat inline JavaScript and editor link: PASS");

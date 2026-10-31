@@ -43,8 +43,8 @@ def main() -> None:
         + "if (!match || match[1] !== '/admin/cars/3/historical-reviews/533/context' "
         + "|| match[2] !== '3' || match[3] !== '533') "
         + "throw new Error('historical context editor link is not matched');\n"
-        + "if ('[Correct or supersede context notes in the advisor editor]' "
-        + "'(https://example.com/bad)'.match(" + pattern + ")) "
+        + "if ('[Correct or supersede context notes in the advisor editor]"
+        + "(https://example.com/bad)'.match(" + pattern + ")) "
         + "throw new Error('external link was accepted');\n"
     )
     with tempfile.TemporaryDirectory(prefix="aura-rina-js-") as tmp:

@@ -988,7 +988,7 @@ def test_rina_chat_renders_historical_context_editor_as_scoped_button(app, clien
 
 def test_rina_chat_context_editor_button_not_exposed_to_owner(app, client):
     """Owner chat receives the renderer, but the privileged link is gated."""
-    admin = _user(suffix=391, role="admin")
+    _user(suffix=391, role="admin")
     owner = _user(suffix=392)
     car = _car(suffix=391)
     _own(owner=owner, car=car, suffix=391)

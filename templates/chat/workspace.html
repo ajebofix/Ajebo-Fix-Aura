@@ -3,7 +3,7 @@
 {% block page_title %}A.J. Rina{% endblock %}
 {% block page_subtitle %}{% if professional %}Your advisor workspace, grounded in explicit vehicle context.{% else %}A quiet space for your vehicle questions and care decisions.{% endif %}{% endblock %}
 {% block content %}
-<main class="rina-workspace-page">
+<div class="rina-workspace-page">
     <section class="rina-workspace-intro" aria-labelledby="rina-workspace-intro-title">
         <div>
             <p class="eyebrow">A more personal kind of intelligence</p>
@@ -16,5 +16,5 @@
         <span class="rina-context-reassurance">Private vehicle care</span>
     </section>
     {% include "components/rina_chat.html" %}
-</main>
+</div>
 {% endblock %}

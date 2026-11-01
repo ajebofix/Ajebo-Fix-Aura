@@ -1,0 +1,322 @@
+/* Aura Signature UI — Phase 1
+   A restrained, accessible design layer for the existing Flask/Jinja product.
+   No change to care states, data, permissions, or vehicle intelligence.
+   Last import intentionally overrides older visual rules without removing them.
+*/
+:root {
+  --navy: #111820;
+  --blue: #315d76;
+  --blue2: #91acbc;
+  --green: #18765c;
+  --gold: #946523;
+  --red: #b14242;
+  --bg1: #f4f3f0;
+  --bg2: #eceeec;
+  --white: #ffffff;
+  --glass: #ffffff;
+  --glass-strong: #ffffff;
+  --border: #dfe3e4;
+  --muted: #56636d;
+  --text: #1a252e;
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --shadow-sm: 0 2px 9px rgba(15,25,35,.035);
+  --shadow-md: 0 9px 30px rgba(15,25,35,.045);
+  --shadow-lg: 0 16px 42px rgba(15,25,35,.075);
+  --transition: .18s ease;
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+}
+
+html { background: var(--bg1); }
+body {
+  background: var(--bg1);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { font-weight: 650; letter-spacing: -.025em; line-height: 1.25; }
+p { color: var(--muted); }
+a, button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid #477f9a; outline-offset: 3px; }
+::selection { background: #c5dae4; color: #101f29; }
+
+/* Application frame — calm architectural grid, not an animated glass dashboard. */
+.app-shell { grid-template-columns: 258px minmax(0, 1fr); }
+.main-panel { padding: 34px clamp(22px, 3.6vw, 62px) 30px; }
+.topbar, .content-area, .footer-bar { max-width: 1420px; margin-left: auto; margin-right: auto; }
+.topbar {
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 5px 0 23px;
+  margin-bottom: 25px;
+}
+.page-title { font-size: clamp(27px, 3vw, 36px); letter-spacing: -.045em; font-weight: 670; }
+.page-subtitle { font-size: 13px; line-height: 1.6; margin-top: 7px; }
+.content-area { margin-top: 0; }
+.footer-bar { font-size: 12px; margin-top: 54px; padding-top: 18px; }
+
+/* Dark obsidian navigation. Active position is always explicit. */
+.sidebar {
+  width: 258px;
+  padding: 29px 16px 23px;
+  background: #111820;
+  border-right: 1px solid #28343e;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  color: #f3f5f4;
+}
+.brand-block { align-items: center; gap: 12px; margin: 0 6px 32px; }
+.brand-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #202d38;
+  border: 1px solid #334450;
+  box-shadow: none;
+  animation: none;
+}
+.brand-logo-img { animation: none; }
+.brand-name { font-size: 14px; line-height: 1.2; font-weight: 680; letter-spacing: -.02em; }
+.brand-sub { color: #a5b3bb; font-size: 10px; line-height: 1.5; letter-spacing: .025em; }
+.side-nav { gap: 4px; }
+.nav-item {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 11px 14px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 560;
+  color: #b9c3ca;
+  background: transparent;
+  letter-spacing: -.005em;
+}
+.nav-item:hover {
+  background: #202d38;
+  color: #fff;
+  box-shadow: none;
+  transform: none;
+}
+.nav-item.active, .nav-item[aria-current="page"] {
+  background: #263947;
+  color: #fff;
+  box-shadow: inset 2px 0 0 #9cb8c8;
+}
+.sidebar-user { border-top: 1px solid #33404a; padding: 19px 8px 0; }
+.sidebar-user .user-name { color: #f2f5f6; font-weight: 640; font-size: 13px; }
+.sidebar-user .user-role { color: #aab7c0; font-size: 11px; }
+.sidebar-user .btn-dark { color: #eef4f5; background: #273642; border: 1px solid #40505b; }
+.sidebar-user .btn-dark:hover { background: #334955; }
+
+/* Low-noise surfaces and generous typographic hierarchy. */
+.card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: clamp(19px, 2vw, 27px);
+  box-shadow: var(--shadow-sm);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transform: none;
+  transform-style: flat;
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+.card::before { display: none; }
+.card:hover { transform: none; box-shadow: var(--shadow-md); }
+.section-head { gap: 12px; margin-bottom: 14px; }
+.card h2 { font-size: clamp(19px, 2vw, 23px); }
+.card h3 { font-size: 17px; }
+.metric-value { font-weight: 650; }
+.meta, .reassurance, .subtext { line-height: 1.6; }
+.pill {
+  display: inline-flex;
+  background: #e9eff1;
+  color: #31556b;
+  border: 1px solid #d6e2e7;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .015em;
+  padding: 6px 12px;
+}
+.health-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-weight: 650;
+  font-size: 11px;
+  letter-spacing: .01em;
+  line-height: 1.2;
+}
+.health-green { background: #e6f4ec; color: #15573e; }
+.health-gold { background: #fff1d9; color: #784e0e; }
+.health-red { background: #fce9e8; color: #8f2828; }
+
+/* Tactile but restrained iOS-style controls. */
+.btn {
+  min-height: 44px;
+  padding: 11px 17px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: -.005em;
+  font-weight: 650;
+  box-shadow: none;
+  animation: none;
+  transition: background-color var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+.btn:hover { transform: none; box-shadow: none; }
+.btn-primary { background: #315d76; color: #fff; border: 1px solid #315d76; }
+.btn-primary:hover { background: #244d65; border-color: #244d65; }
+.btn-dark, .btn-navy { background: #172630; color: #fff; border: 1px solid #172630; }
+.btn-dark:hover, .btn-navy:hover { background: #273e4b; }
+.btn-secondary, .btn-outline, .btn-ghost {
+  background: #f5f7f7; color: #25495d; border: 1px solid #d3dcdf;
+}
+.btn-secondary:hover, .btn-outline:hover, .btn-ghost:hover { background: #e9eff1; border-color: #b8cad2; }
+.btn-success { background: #18765c; color: #fff; }
+.btn-warning { background: #946523; color: #fff; }
+.btn-danger { background: #b14242; color: #fff; }
+.btn:disabled { opacity: .6; }
+.btn:focus-visible, .nav-item:focus-visible, .mobile-toggle:focus-visible,
+.sidebar-close:focus-visible { outline: 2px solid #80b6d3; outline-offset: 3px; }
+
+/* Fields: clear boundaries, visible labels and a predictable focus state. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea {
+  border: 1px solid #ccd5d9;
+  border-radius: 12px;
+  color: var(--text);
+  background: #fff;
+  box-shadow: none;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  border-color: #315d76;
+  outline: 2px solid #86b3cb;
+  outline-offset: 1px;
+}
+input[type="checkbox"], input[type="radio"] { accent-color: #315d76; }
+label { font-weight: 620; font-size: 13px; }
+.auth-card { border: 1px solid var(--border); border-radius: 20px; }
+.profile-avatar { background: #315d76; box-shadow: none; }
+
+/* Clear, confident owner dashboard. No synthetic health figures. */
+.aura-hero {
+  min-height: 250px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  isolation: isolate;
+  background: radial-gradient(circle at 87% 10%, #2c4857 0, transparent 45%), #111d26;
+  border: 1px solid #1e3442;
+  border-radius: 24px;
+  padding: clamp(27px, 4vw, 54px);
+  margin-bottom: 20px;
+  color: #f9fbfa;
+}
+.aura-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: -95px;
+  top: -130px;
+  width: min(450px, 65vw);
+  aspect-ratio: 1;
+  border: 1px solid rgba(210,229,237,.20);
+  box-shadow: 0 0 0 40px rgba(210,229,237,.035), 0 0 0 94px rgba(210,229,237,.022);
+  border-radius: 50%;
+}
+.aura-hero-copy { max-width: 645px; }
+.aura-eyebrow {
+  color: #a9c5d2;
+  font-size: 10px;
+  font-weight: 680;
+  text-transform: uppercase;
+  letter-spacing: .18em;
+  margin-bottom: 18px;
+}
+.aura-hero h2 {
+  max-width: 580px;
+  color: #fff;
+  font-size: clamp(27px, 4vw, 43px);
+  line-height: 1.14;
+  font-weight: 610;
+  letter-spacing: -.05em;
+}
+.aura-hero p {
+  color: #cad6dc;
+  margin-top: 14px;
+  font-size: 14px;
+  max-width: 490px;
+  line-height: 1.72;
+}
+.aura-hero-actions { margin-top: 23px; display: flex; flex-wrap: wrap; gap: 10px; }
+.aura-hero .btn-primary { color: #14232d; background: #e3ecf0; border-color: #e3ecf0; }
+.aura-hero .btn-primary:hover { background: #fff; border-color: #fff; }
+.aura-hero .btn-ghost { color: #ebf2f4; background: transparent; border: 1px solid #657983; }
+.aura-hero .btn-ghost:hover { background: #263b48; }
+.aura-relationship-card { border-color: #e4e8e9; }
+.aura-relationship-card .meta { font-size: 11px; text-transform: uppercase; letter-spacing: .10em; font-weight: 630; }
+.aura-dashboard-grid { margin-top: 10px; }
+.aura-vehicle-card { box-shadow: none; }
+.aura-vehicle-card.active {
+  border-color: #8faebd;
+  box-shadow: 0 0 0 1px rgba(81,120,139,.12);
+}
+.aura-vehicle-card .vehicle-name { font-size: clamp(18px, 2.1vw, 23px); font-weight: 660; letter-spacing: -.035em; }
+.aura-vehicle-card .vehicle-header { align-items: flex-start; }
+.aura-vehicle-card .vehicle-date { font-size: 12px; margin: 13px 0; }
+.aura-vehicle-card .vehicle-note { padding: 15px 0; border-top: 1px solid #e9eded; color: #5a6770; }
+.aura-vehicle-card .vehicle-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.aura-vehicle-card .vehicle-actions > * { flex: 1 1 165px; width: auto; }
+.aura-action-card .mini-health-icon,
+.aura-rina-panel .mini-health-icon,
+.mini-health-icon, .shimmer { animation: none; }
+.mini-health-wrap::before, .mini-health-wrap::after { animation: none; }
+.aura-action-card .btn { margin-top: 12px; }
+.aura-rina-panel { border-color: #d6e2e7; }
+.glow-blue { box-shadow: var(--shadow-sm); }
+
+@media (max-width: 900px) {
+  .main-panel { padding: 10px 14px 24px !important; }
+  .topbar { border-radius: 0; padding: 66px 5px 19px !important; }
+  .sidebar { width: min(320px, calc(100vw - 44px)); }
+  .mobile-toggle {
+    background: #182b37;
+    border: 1px solid #334c5b;
+    color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 3px 11px rgba(0,0,0,.13);
+  }
+  .sidebar-close { background: #293e4b; color: #fff; }
+  .sidebar-overlay { background: rgba(12,20,27,.62); }
+  .card { padding: 19px; }
+  .aura-hero { min-height: 0; padding: 27px 24px; border-radius: 20px; }
+  .aura-hero::before { right: -190px; top: -120px; opacity: .55; }
+  .aura-hero h2 { font-size: clamp(27px, 7vw, 35px); }
+}
+@media (max-width: 520px) {
+  .aura-hero-actions { flex-direction: column; align-items: stretch; }
+  .aura-hero-actions .btn { width: 100%; }
+  .aura-vehicle-card .vehicle-actions { flex-direction: column; }
+  .aura-vehicle-card .vehicle-actions > * { flex: auto; width: 100%; }
+  .aura-vehicle-card .vehicle-header { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}

@@ -22,3 +22,6 @@
 @import url("ui-utilities.css");
 @import url("mobile.css");
 @import url("animations.css");
+
+/* Phase 1: premium visual system, loaded last to avoid destructive CSS rewrites. */
+@import url("aura-signature.css");

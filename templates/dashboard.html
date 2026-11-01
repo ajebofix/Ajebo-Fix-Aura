@@ -4,7 +4,7 @@
 
 {% block title %}Aura | Home{% endblock %}
 
-{% block page_title %}Dashboard{% endblock %}
+{% block page_title %}{% if dashboard_mode == 'owner' %}Your garage{% elif dashboard_mode == 'driver' %}Driver overview{% else %}Dashboard{% endif %}{% endblock %}
 
 {% block page_subtitle %}
 {% if dashboard_mode == 'driver' %}
@@ -26,7 +26,24 @@ Your vehicle is under professional care.
 </div>
 {% endif %}
 
-<div class="card" style="margin-bottom: 18px;">
+{% if dashboard_mode == 'owner' %}
+<section class="aura-hero" aria-labelledby="aura-hero-title">
+    <div class="aura-hero-copy">
+        <div class="aura-eyebrow">Aura · Private Automotive Health</div>
+        <h2 id="aura-hero-title">A clearer view of the road ahead.</h2>
+        <p>
+            Your vehicle history, concerns and professional care,
+            thoughtfully kept together in one private space.
+        </p>
+        <div class="aura-hero-actions">
+            <a class="btn btn-primary" href="{{ url_for('chat.rina_workspace') }}">Speak with A.J. Rina</a>
+            <a class="btn btn-ghost" href="{{ url_for('cars.my_vehicles') }}">My vehicle records</a>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<div class="card aura-relationship-card" style="margin-bottom: 18px;">
     <div class="section-head">
         <div>
             <div class="meta">Current Aura relationship</div>
@@ -50,7 +67,7 @@ Your vehicle is under professional care.
 
 {% if vehicles %}
 
-<div class="stats-grid aura-dashboard-grid">
+<div class="stats-grid aura-dashboard-grid" id="aura-vehicles">
 
     {% for v in vehicles %}
 

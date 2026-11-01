@@ -9,10 +9,12 @@ TEMPLATES = ROOT / "templates"
 def test_signature_stylesheet_is_loaded_last():
     imports = (CSS / "style.css").read_text(encoding="utf-8")
     assert '@import url("aura-signature.css");' in imports
-    assert imports.rstrip().endswith('@import url("aura-vehicle-record.css");')
+    assert '@import url("aura-vehicle-record.css");' in imports
+    assert imports.rstrip().endswith('@import url("aura-rina-presence.css");')
     assert imports.index('@import url("aura-signature.css");') < imports.index('@import url("aura-vehicle-record.css");')
     assert (CSS / "aura-signature.css").exists()
     assert (CSS / "aura-vehicle-record.css").exists()
+    assert (CSS / "aura-rina-presence.css").exists()
 
 
 def test_signature_ui_keeps_status_and_accessibility_semantics():
@@ -79,3 +81,41 @@ def test_vehicle_record_original_actions_and_evidence_are_preserved():
     ):
         if marker != "CSRF":
             assert marker in record
+
+
+def test_rina_signature_presence_respects_actual_activity_and_context():
+    workspace = (TEMPLATES / "chat" / "workspace.html").read_text(encoding="utf-8")
+    chat = (TEMPLATES / "components" / "rina_chat.html").read_text(encoding="utf-8")
+    stylesheet = (CSS / "aura-rina-presence.css").read_text(encoding="utf-8")
+
+    assert 'class="rina-workspace-page"' in workspace
+    assert 'include "components/rina_chat.html"' in workspace
+    assert 'class="rina-presence"' in chat
+    assert 'aria-hidden="true"' in chat
+    assert 'id="rina-presence-status"' in chat
+    assert 'role="status"' in chat
+    assert 'shell.dataset.busy = loading ? "true" : "false"' in chat
+    assert 'Working with your request' in chat
+    assert '.rina-shell[data-busy="true"] .rina-presence-orb' in stylesheet
+    assert '@media (prefers-reduced-motion: reduce)' in stylesheet
+
+
+def test_rina_signature_keeps_existing_authority_and_chat_contracts():
+    chat = (TEMPLATES / "components" / "rina_chat.html").read_text(encoding="utf-8")
+    for marker in (
+        'data-page-car-id="{{ rina_page_car_id or \'\' }}"',
+        'data-csrf-token="{{ csrf_token() }}"',
+        'id="rina-vehicle-select"',
+        'id="rina-vehicle-search"',
+        'id="rina-authority-banner"',
+        'id="rina-messages"',
+        'id="rina-input"',
+        'id="rina-send"',
+        'const isProfessional = shell.dataset.professional === "true"',
+        'function updateAuthorityBanner()',
+        'function renderAssistantMarkdown(container, text)',
+        'function sendToRina()',
+        'fetchJson(selectedCarId ? "/chat" : "/chat/account"',
+        'role === "user" ? "user" : "assistant"',
+    ):
+        assert marker in chat

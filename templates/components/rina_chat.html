@@ -16,21 +16,23 @@
 
     <div class="rina-header">
 
-        <div class="rina-avatar" aria-hidden="true">
-            A.J
+        <div class="rina-presence" aria-hidden="true">
+            <span class="rina-presence-orb"></span>
         </div>
 
-        <div>
-
+        <div class="rina-header-copy">
+            <p class="rina-header-eyebrow">Aura intelligence / A.J. Rina</p>
             <h3 class="rina-title">
-                {% if current_user.role in ["admin", "advisor"] %}Advisor Workspace — A.J. Rina{% else %}Private Consultation — A.J. Rina{% endif %}
+                {% if current_user.role in ["admin", "advisor"] %}Your advisor workspace{% else %}Your private vehicle concierge{% endif %}
             </h3>
 
             <p class="rina-subtitle">
-                I help interpret recorded vehicle health, reported concerns,
-                and recommended next steps clearly and calmly.
+                Clear answers grounded in the vehicle records you choose.
+                Calm guidance, with professional judgment where it matters.
             </p>
-
+            <p class="rina-presence-status" id="rina-presence-status" role="status" aria-live="polite">
+                Ready for your questions
+            </p>
         </div>
 
     </div>
@@ -200,6 +202,7 @@
 
     const shell = document.getElementById("rina-chat-shell");
     if (!shell) return;
+    const presenceStatusEl = document.getElementById("rina-presence-status");
 
     const messagesEl = document.getElementById("rina-messages");
     const jumpLatestEl = document.getElementById("rina-jump-latest");
@@ -497,6 +500,12 @@
     }
 
     function setChatEnabled(enabled) {
+        shell.dataset.busy = loading ? "true" : "false";
+        if (presenceStatusEl) {
+            presenceStatusEl.textContent = loading
+                ? "Working with your request"
+                : "Ready for your questions";
+        }
         inputEl.disabled = !enabled || loading;
         if (vehicleSelectEl) vehicleSelectEl.disabled = loading;
         if (vehicleSearchEl) vehicleSearchEl.disabled = loading;

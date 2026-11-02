@@ -1,0 +1,221 @@
+/* Aura Signature UI — Vehicle Record
+   Progressive visual layer; it does not change records, authorisation or endpoints.
+*/
+.aura-record-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0,1.35fr) minmax(255px,.75fr);
+  gap: clamp(24px, 3vw, 48px);
+  padding: clamp(28px, 3.8vw, 48px);
+  color: #f3f7f8;
+  background: radial-gradient(circle at 95% 0%, #315061, transparent 45%), #101d27;
+  border: 1px solid #2b424e;
+  border-radius: 24px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.aura-record-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -138px;
+  right: -116px;
+  width: 420px;
+  aspect-ratio: 1;
+  border: 1px solid rgba(180,207,218,.16);
+  border-radius: 50%;
+  box-shadow: 0 0 0 48px rgba(223,238,244,.03), 0 0 0 98px rgba(223,238,244,.015);
+}
+.aura-record-eyebrow {
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #aec9d6;
+  margin-bottom: 16px;
+}
+.aura-record-hero h2 {
+  font-size: clamp(27px, 3.6vw, 42px);
+  font-weight: 640;
+  letter-spacing: -.048em;
+  line-height: 1.13;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.aura-record-hero-desc {
+  margin-top: 13px;
+  color: #d1dbe0;
+  font-size: 13px;
+  line-height: 1.75;
+  max-width: 530px;
+}
+.aura-record-hero-actions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 25px;
+}
+.aura-record-hero-actions .btn-primary {
+  background: #e2edf1;
+  border-color: #e2edf1;
+  color: #1c3543;
+}
+.aura-record-hero-actions .btn-primary:hover {
+  background: #fff;
+  border-color: #fff;
+}
+.aura-record-hero-actions .btn-ghost {
+  background: transparent;
+  color: #ebf2f5;
+  border: 1px solid #8196a1;
+}
+.aura-record-hero-actions .btn-ghost:hover { background: #2e4654; }
+
+.aura-record-summary {
+  align-self: stretch;
+  border: 1px solid rgba(199,220,228,.23);
+  border-radius: 18px;
+  background: rgba(239,248,251,.055);
+  padding: 22px;
+  min-width: 0;
+}
+.aura-record-summary-label {
+  font-size: 10px;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: #a9bfca;
+  margin-bottom: 11px;
+  font-weight: 630;
+}
+.aura-record-state {
+  display: inline-block;
+  font-size: 17px;
+  line-height: 1.45;
+  letter-spacing: -.025em;
+  font-weight: 620;
+  color: #f2f5f5;
+  margin-bottom: 20px;
+}
+.aura-record-state[data-state="healthy"] { color: #b6e4cf; }
+.aura-record-state[data-state="attention"] { color: #ffe1a4; }
+.aura-record-state[data-state="critical"] { color: #ffc4c1; }
+.aura-record-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0,.7fr) minmax(0,1.3fr);
+  gap: 13px;
+  border-top: 1px solid rgba(206,226,235,.17);
+  padding-top: 15px;
+}
+.aura-record-summary-grid > div { min-width: 0; }
+.aura-record-summary-grid span {
+  display: block;
+  color: #afc0c9;
+  font-size: 10px;
+  margin-bottom: 5px;
+}
+.aura-record-summary-grid strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.aura-record-summary-note {
+  margin-top: 14px;
+  font-size: 10px;
+  color: #b8c8d0;
+  line-height: 1.6;
+}
+.aura-record-next {
+  display: grid;
+  grid-template-columns: 150px minmax(0,1fr);
+  align-items: start;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid #dfe5e6;
+  border-radius: 18px;
+  padding: 19px 23px;
+  margin-bottom: 16px;
+}
+.aura-record-next-label {
+  color: #355c71;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.aura-record-next p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #23343d;
+  margin: 0;
+}
+.aura-record-next small {
+  display: block;
+  color: #64717a;
+  margin-top: 7px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.aura-record-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid #dfe3e5;
+}
+.aura-record-links > a {
+  font-size: 12px;
+  font-weight: 610;
+  color: #31566b;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.aura-record-links > a:hover {
+  background: #e5ecef;
+  border-color: #d5e1e6;
+}
+.aura-record-support-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 19px; }
+.aura-record-support-actions .btn { width: auto; }
+
+.aura-record-page #record-identity { gap: 17px; margin-bottom: 17px; }
+.aura-record-page #record-identity > .card { box-shadow: none; }
+.aura-record-page #record-health,
+.aura-record-page #record-care,
+.aura-record-page #record-history { scroll-margin-top: 18px; }
+.aura-record-page #record-health { border-color: #cbdce3; box-shadow: var(--shadow-sm); }
+.aura-record-page #record-health > h2 { margin-top: 12px; }
+.aura-record-page #record-health > h3 { margin-top: 18px; }
+.aura-record-page #record-health .pill { margin-top: 12px; }
+.aura-record-page .info-row { overflow-wrap: anywhere; }
+.aura-record-page .info-row .value { overflow-wrap: anywhere; }
+.aura-record-page .timeline-item { border-bottom: 1px solid #e5e9eb; }
+.aura-record-page .timeline-item:last-child { border-bottom: none; }
+
+@media (max-width: 1080px) {
+  .aura-record-hero { grid-template-columns: 1fr; }
+  .aura-record-summary { max-width: 610px; }
+}
+@media (max-width: 600px) {
+  .aura-record-hero { padding: 26px 20px; border-radius: 20px; gap: 24px; }
+  .aura-record-hero-actions { flex-direction: column; }
+  .aura-record-hero-actions .btn { width: 100%; }
+  .aura-record-summary { padding: 18px; }
+  .aura-record-next { grid-template-columns: 1fr; padding: 18px; gap: 8px; }
+  .aura-record-links { gap: 3px; }
+  .aura-record-links > a { padding: 9px; min-height: 44px; display: inline-flex; align-items: center; }
+  .aura-record-support-actions { flex-direction: column; }
+  .aura-record-support-actions .btn { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aura-record-page *, .aura-record-page *::before, .aura-record-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

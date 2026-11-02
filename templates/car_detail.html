@@ -2,50 +2,90 @@
 
 {% extends "base.html" %}
 
-{% block title %}Vehicle Profile Health Record{% endblock %}
+{% block title %}Vehicle Record | Aura{% endblock %}
 
-{% block page_title %}
-{{ car.rina_display_name }}
-{% endblock %}
+{% block page_title %}Vehicle record{% endblock %}
 
-{% block page_subtitle %}
-Vehicle Health Record
-{% endblock %}
+{% block page_subtitle %}A private view of your vehicle's care and history.{% endblock %}
 
 {% block content %}
-<p><a class="btn btn-primary" href="#rina-chat-shell">Discuss this vehicle with Rina</a></p>
-{% if not is_admin_view %}
-<p><a class="btn btn-secondary" href="{{ url_for('client_billing.owner_repair_progress', car_id=car.id) }}">Repair Journey</a></p>
-{% endif %}
-{% if not is_admin_view and current_user.role == 'user' and billing_portal_enabled|default(false) %}
-<p><a class="btn btn-primary" href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">Financial Records · Estimates, Invoices &amp; Receipts</a></p>
-{% endif %}
+<div class="aura-record-page">
+{% set aura_health_state = health.health_status|default("unknown", true) %}
 
-<!-- ========================= -->
-<!-- HERO HEADER -->
-<!-- ========================= -->
-
-<section class="page-header aura-vehicle-hero">
-
-    <div>
-
-        <h1 class="page-heading">
-
-            {{ car.rina_display_name }}
-
-            {% if is_admin_view %}
-            <span class="pill">ADVISOR</span>
-            {% endif %}
-
-        </h1>
-
-        <p class="muted">
-            Private automotive health profile.
+<section class="aura-record-hero" aria-labelledby="aura-record-title">
+    <div class="aura-record-hero-primary">
+        <p class="aura-record-eyebrow">
+            Aura / {{ "Advisor vehicle record" if is_admin_view else "Private vehicle record" }}
         </p>
-
+        <h2 id="aura-record-title">{{ car.rina_display_name }}</h2>
+        <p class="aura-record-hero-desc">
+            One place for your vehicle's identity, recorded health,
+            care decisions and history.
+        </p>
+        <div class="aura-record-hero-actions">
+            <a href="#record-health" class="btn btn-primary">Health overview</a>
+            <a href="#record-history" class="btn btn-ghost">Care history</a>
+            <a href="{{ url_for('chat.rina_workspace', car_id=car.id) }}"
+               class="btn btn-ghost">A.J. Rina</a>
+        </div>
     </div>
-
+    <div class="aura-record-summary" aria-label="Recorded vehicle overview">
+        <p class="aura-record-summary-label">Health overview</p>
+        <strong class="aura-record-state" data-state="{{ aura_health_state }}">
+            {{ health.label or health.health_status or "Not yet assessed" }}
+        </strong>
+        <div class="aura-record-summary-grid">
+            <div>
+                <span>Model year</span>
+                <strong>{{ car.year or "—" }}</strong>
+            </div>
+            <div>
+                <span>Recorded mileage</span>
+                <strong>
+                    {% if car.current_mileage is not none %}
+                        {{ car.current_mileage }} km
+                    {% else %}
+                        Not yet recorded
+                    {% endif %}
+                </strong>
+            </div>
+        </div>
+        <p class="aura-record-summary-note">
+            Based on Aura's available records, not a live vehicle reading or mechanical diagnosis.
+        </p>
+    </div>
 </section>
+
+<section class="aura-record-next" aria-label="Recommended next step">
+    <div class="aura-record-next-label">Next step</div>
+    <div>
+        <p>{{ health.next_action or "No next step is recorded yet." }}</p>
+        <small>Guidance depends on the records available to Aura and professional review.</small>
+    </div>
+</section>
+
+<nav class="aura-record-links" aria-label="Jump to vehicle record section">
+    <a href="#record-identity">Vehicle identity</a>
+    <a href="#record-health">Health &amp; concerns</a>
+    <a href="#record-care">Care pathway</a>
+    <a href="#record-history">History</a>
+</nav>
+
+<div class="aura-record-support-actions">
+    <a class="btn btn-secondary" href="#rina-chat-shell">Discuss with Rina on this page</a>
+    {% if not is_admin_view %}
+        <a class="btn btn-secondary"
+           href="{{ url_for('client_billing.owner_repair_progress', car_id=car.id) }}">
+            Repair journey
+        </a>
+    {% endif %}
+    {% if not is_admin_view and current_user.role == 'user' and billing_portal_enabled|default(false) %}
+        <a class="btn btn-secondary"
+           href="{{ url_for('client_billing.owner_vehicle_billing', car_id=car.id) }}">
+            Financial records
+        </a>
+    {% endif %}
+</div>
 
 {% if is_admin_view %}
 <section class="card fade-up">
@@ -259,7 +299,7 @@ Vehicle Health Record
 <!-- TOP GRID -->
 <!-- ========================= -->
 
-<section class="dashboard-grid">
+<section class="dashboard-grid" id="record-identity">
 
     <!-- VEHICLE ID -->
     <div class="card fade-up">
@@ -374,7 +414,7 @@ Vehicle Health Record
 <!-- HEALTH -->
 <!-- ========================= -->
 
-<section class="card glow-blue fade-up">
+<section class="card glow-blue fade-up" id="record-health">
 
     <div class="mini-health-wrap">
 
@@ -628,7 +668,7 @@ Vehicle Health Record
 <!-- CARE PATHWAY -->
 <!-- ========================= -->
 
-<section class="card fade-up">
+<section class="card fade-up" id="record-care">
 
     <h2>Care Pathway</h2>
 
@@ -1336,7 +1376,7 @@ Vehicle Health Record
 <!-- HISTORY -->
 <!-- ========================= -->
 
-<section class="card fade-up">
+<section class="card fade-up" id="record-history">
 
     <h2>Vehicle Care History</h2>
 
@@ -1634,5 +1674,5 @@ Vehicle Health Record
 
 </section>
 
+</div>
 {% endblock %}
-

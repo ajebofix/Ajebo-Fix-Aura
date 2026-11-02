@@ -10,6 +10,9 @@ on:
       - "tests/test_ui_control_contracts.py"
       - "tests/test_signature_ui_contracts.py"
       - "tests/test_signature_ui_preservation.py"
+      - "tests/test_vehicle_hero.py"
+      - "services/vehicle_hero.py"
+      - "static/vehicle-heroes/**"
       - ".github/workflows/ui-ux-contract-ci.yml"
       - "app.py"
       - "requirements*.txt"
@@ -46,12 +49,14 @@ jobs:
           tests/test_ui_control_contracts.py
           tests/test_signature_ui_contracts.py
           tests/test_signature_ui_preservation.py
+          tests/test_vehicle_hero.py
       - name: Test all templates, routes and controls
         run: >-
           pytest -q --tb=short
           tests/test_ui_control_contracts.py
           tests/test_signature_ui_contracts.py
           tests/test_signature_ui_preservation.py
+          tests/test_vehicle_hero.py
           tests/test_authority_product_surfaces.py
       - name: Lint UI contract tests
         run: >-
@@ -59,4 +64,5 @@ jobs:
           tests/test_ui_control_contracts.py
           tests/test_signature_ui_contracts.py
           tests/test_signature_ui_preservation.py
+          tests/test_vehicle_hero.py
           tests/test_authority_product_surfaces.py

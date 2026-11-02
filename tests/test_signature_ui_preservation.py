@@ -177,3 +177,43 @@ def test_owner_and_advisor_context_semantics_remain_explicit():
     assert "Owner financial and approval authority are not available" in rina
     assert "Rina uses recorded Aura data and does not diagnose mechanical faults." in rina
     assert "Physical inspection and advisor review remain necessary" in rina
+
+
+def test_signed_in_owner_can_still_open_vehicle_record_and_original_actions(app, client):
+    """Render the actual protected page with ephemeral test records.
+
+    Static source contracts cannot guarantee that an authenticated Jinja view
+    builds its buttons, or that the record page even responds successfully.
+    """
+    from extensions import db
+    from test_authority_product_surfaces import _car, _own, _sign_in, _user
+
+    with app.app_context():
+        owner = _user(suffix=971)
+        car = _car(suffix=971)
+        _own(owner=owner, car=car, suffix=971)
+        db.session.commit()
+        car_id = car.id
+        _sign_in(client, owner)
+
+    response = client.get(f"/cars/{car_id}")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    for text in (
+        "Vehicle Identification",
+        "Health Overview",
+        "Diagnostic Trouble Codes",
+        "Care Pathway",
+        "Priority Scheduling",
+        "Vehicle Care History",
+        "Report Concern",
+        "Driver Management",
+        "Treatment Plans",
+        'id="rina-chat-shell"',
+        'id="rina-send"',
+        'id="record-health"',
+        'id="record-history"',
+    ):
+        assert text in body
+    assert f"/cars/{car_id}" in body
+    assert f'data-page-car-id="{car_id}"' in body

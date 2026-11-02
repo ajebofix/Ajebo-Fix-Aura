@@ -320,3 +320,55 @@ label { font-weight: 620; font-size: 13px; }
     transition-duration: .01ms !important;
   }
 }
+
+
+/* QA-driven refinement from iPhone staging review.
+   Preserve every form field, action, label, help link and role-specific nav. */
+.sidebar { justify-content: flex-start; }
+.sidebar-user { margin-top: auto; }
+.side-nav { flex: 0 0 auto; }
+
+.auth-wrap { width: 100%; max-width: 460px; margin: 0 auto; padding: 10px 0 24px; }
+.aura-login-card { width: 100%; min-width: 0; }
+.aura-login-card .login-head { text-align: center; margin-bottom: 22px; }
+.aura-login-card .login-logo-wrap {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+.aura-login-card .login-mini-logo {
+  display: block;
+  width: min(168px, 54%);
+  height: 132px;
+  max-width: 100%;
+  max-height: 132px;
+  object-fit: contain;
+  object-position: center;
+}
+.aura-login-card .login-title {
+  margin: 0 0 7px;
+  font-size: clamp(23px, 5vw, 28px);
+  line-height: 1.2;
+  color: #1a252e;
+}
+.aura-login-card .login-subtitle {
+  max-width: 320px;
+  margin: 0 auto;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.aura-login-card .login-form { min-width: 0; }
+.aura-login-card .login-footer { margin-top: 18px; font-size: 13px; }
+.aura-login-card .login-options { flex-wrap: wrap; gap: 10px; }
+@media (max-width: 900px) {
+  .sidebar { justify-content: flex-start; }
+  .sidebar .side-nav { flex: 0 0 auto; margin-top: 0; }
+  .auth-wrap { padding-top: 0; }
+}
+@media (max-width: 520px) {
+  .aura-login-card { padding: 22px 20px; }
+  .aura-login-card .login-mini-logo { height: 112px; max-height: 112px; width: min(145px, 50%); }
+  .aura-login-card .login-head { margin-bottom: 18px; }
+}

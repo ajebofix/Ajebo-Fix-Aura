@@ -219,3 +219,76 @@
     transition: none !important;
   }
 }
+
+
+/* Vehicle-aware identity: a quiet progressive layer, not a simulated
+   scan, live telemetry feed, health signal, or interactive car model. */
+.aura-record-hero-primary { min-width: 0; }
+.aura-vehicle-identity {
+  margin: 20px 0 0;
+  width: min(100%, 620px);
+  min-width: 0;
+}
+.aura-vehicle-visual-stage {
+  position: relative;
+  width: 100%;
+  height: clamp(140px, 18vw, 206px);
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 50% 83%, rgba(102,145,168,.20), transparent 62%),
+    linear-gradient(125deg, rgba(195,219,231,.055), rgba(105,142,167,.025));
+  border: 1px solid rgba(166,199,214,.16);
+}
+.aura-vehicle-visual-art {
+  position: absolute;
+  inset: -7% 0 0;
+  width: 100%;
+  height: 116%;
+  max-width: 100%;
+  object-fit: contain;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+  animation: aura-car-presence 12s ease-in-out infinite;
+}
+.aura-vehicle-visual-sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 29%, rgba(202,228,237,.075) 49%, transparent 66%);
+  transform: translateX(-105%);
+  pointer-events: none;
+  animation: aura-car-light 13s ease-in-out infinite;
+}
+.aura-vehicle-visual-caption {
+  margin: 7px 0 0;
+  font-size: 10px;
+  line-height: 1.55;
+  letter-spacing: .01em;
+  color: #a9c0cd;
+}
+@keyframes aura-car-presence {
+  0%, 100% { transform: translate3d(0,0,0); }
+  50% { transform: translate3d(0,-2px,0); }
+}
+@keyframes aura-car-light {
+  0%, 17% { transform: translateX(-105%); }
+  56%, 100% { transform: translateX(115%); }
+}
+@media (max-width: 1080px) {
+  .aura-vehicle-identity { max-width: 620px; }
+  .aura-vehicle-visual-stage { height: clamp(142px, 28vw, 190px); }
+}
+@media (max-width: 600px) {
+  .aura-vehicle-identity { margin-top: 17px; }
+  .aura-vehicle-visual-stage { height: clamp(120px, 38vw, 164px); }
+  .aura-vehicle-visual-art { height: 116%; }
+  .aura-vehicle-visual-caption { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aura-vehicle-visual-art, .aura-vehicle-visual-sweep {
+    animation: none !important;
+    transform: none !important;
+  }
+  .aura-vehicle-visual-sweep { display: none; }
+}

@@ -1,0 +1,27 @@
+{# Decorative identity layer. All record controls/permissions remain in the parent view. #}
+{% set hero = resolve_vehicle_hero(car) %}
+<figure class="aura-vehicle-identity"
+        data-vehicle-family="{{ hero.family }}"
+        data-hero-match="{{ hero.match }}">
+    <div class="aura-vehicle-visual-stage">
+        <img
+            class="aura-vehicle-visual-art"
+            src="{{ url_for('static', filename=hero.asset) }}"
+            width="640"
+            height="280"
+            alt="{{ hero.label }}"
+            decoding="async"
+            fetchpriority="low"
+        >
+        <span class="aura-vehicle-visual-sweep" aria-hidden="true"></span>
+    </div>
+    <figcaption class="aura-vehicle-visual-caption">
+        {% if hero.match == "family" %}
+            Family-style illustration · not an exact year or trim rendering
+        {% elif hero.match == "category" %}
+            Vehicle category illustration · specific model artwork not yet available
+        {% else %}
+            General illustration · vehicle-specific artwork not yet available
+        {% endif %}
+    </figcaption>
+</figure>

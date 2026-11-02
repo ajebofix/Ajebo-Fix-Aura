@@ -1,7 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Aura | Ask Rina{% endblock %}
-{% block page_title %}Ask A.J. Rina{% endblock %}
-{% block page_subtitle %}{% if professional %}Advisor-wide help and explicit vehicle context, in one workspace.{% else %}Account help and recorded vehicle care, in one workspace.{% endif %}{% endblock %}
+{% block title %}Aura | A.J. Rina{% endblock %}
+{% block page_title %}A.J. Rina{% endblock %}
+{% block page_subtitle %}{% if professional %}Your advisor workspace, grounded in explicit vehicle context.{% else %}A quiet space for your vehicle questions and care decisions.{% endif %}{% endblock %}
 {% block content %}
-{% include "components/rina_chat.html" %}
+<div class="rina-workspace-page">
+    <section class="rina-workspace-intro" aria-labelledby="rina-workspace-intro-title">
+        <div>
+            <p class="eyebrow">A more personal kind of intelligence</p>
+            <h2 id="rina-workspace-intro-title">Clarity, in conversation.</h2>
+            <p>
+                No crowded dashboards. Just a grounded conversation with
+                A.J. Rina — drawing on the records you explicitly select.
+            </p>
+        </div>
+        <span class="rina-context-reassurance">Private vehicle care</span>
+    </section>
+    {% include "components/rina_chat.html" %}
+</div>
 {% endblock %}

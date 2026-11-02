@@ -1,0 +1,274 @@
+/* Aura Signature — Rina Presence.
+   Calm intelligent instrument, not sci-fi theater.
+   Appearance and truthful activity only; chat authorization and behavior remain unchanged. */
+
+.rina-workspace-page { max-width: 1120px; margin: 0 auto; min-width: 0; }
+.rina-workspace-intro {
+  padding: 5px 1px 22px;
+  display: flex; align-items: end; justify-content: space-between; gap: 16px;
+}
+.rina-workspace-intro .eyebrow {
+  margin: 0 0 9px; font-size: 10px; letter-spacing: .17em;
+  color: #537487; font-weight: 750; text-transform: uppercase;
+}
+.rina-workspace-intro h2 {
+  color: #182b35; letter-spacing: -.044em;
+  font-weight: 625; font-size: clamp(26px, 3.2vw, 38px); line-height: 1.13;
+  margin: 0;
+}
+.rina-workspace-intro p {
+  font-size: 13px; color: #5b6b74; line-height: 1.68;
+  margin: 10px 0 0; max-width: 640px;
+}
+.rina-workspace-intro .rina-context-reassurance {
+  flex: 0 0 auto; color: #436175; font-size: 11px; font-weight: 635;
+  padding: 8px 12px; border: 1px solid #d5e1e5; border-radius: 999px;
+  background: #fff;
+}
+
+.rina-shell {
+  --rina-ink: #132530;
+  --rina-muted: #536873;
+  --rina-line: #dce6e9;
+  padding: 0 !important;
+  border: 1px solid #dbe2e5 !important;
+  border-radius: 24px !important;
+  background: #fff !important;
+  overflow: hidden;
+  min-width: 0;
+  box-shadow: 0 18px 55px rgba(22,37,47,.055) !important;
+}
+.rina-shell:hover { box-shadow: 0 18px 55px rgba(22,37,47,.055) !important; }
+
+.rina-shell .rina-header {
+  isolation: isolate;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: clamp(16px,2.5vw,28px);
+  min-width: 0;
+  padding: clamp(22px,3.3vw,36px);
+  background: radial-gradient(ellipse at 94% 0%, #294958 0, transparent 54%), #111f29;
+  border-bottom: 1px solid #304650;
+  color: #f2f6f6;
+  overflow: hidden;
+}
+.rina-shell .rina-header::before {
+  position: absolute; content: ""; pointer-events: none; z-index: -1;
+  width: 300px; height: 300px; top: -158px; right: -115px;
+  border: 1px solid rgba(211,232,240,.12); border-radius: 50%;
+  box-shadow: 0 0 0 43px rgba(201,228,238,.018), 0 0 0 103px rgba(201,228,238,.018);
+}
+.rina-shell .rina-avatar {
+  display: none; /* Replaced with a distinctive abstract Aura presence, not a face */
+}
+.rina-shell .rina-presence {
+  flex: 0 0 74px; position: relative;
+  height: 74px; width: 74px;
+  display: grid; place-items: center;
+  border: 1px solid rgba(181,208,222,.3);
+  border-radius: 24px;
+  background: rgba(158,192,209,.07);
+}
+.rina-shell .rina-presence-orb {
+  display: block; width: 37px; height: 37px; position: relative;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 29%, #f3fbfd 0%, #b5d1dc 21%, #64899c 49%, #294c63 75%, #1d4054 100%);
+  box-shadow: inset -7px -9px 16px rgba(5,27,44,.25), 0 0 20px rgba(157,207,229,.3);
+  animation: rina-presence-breathe 8s ease-in-out infinite;
+}
+.rina-shell .rina-presence-orb::after {
+  content: ""; position: absolute; inset: -9px; border-radius: 50%;
+  border: 1px solid rgba(185,223,236,.35);
+  transition: transform .35s ease, opacity .35s ease;
+}
+.rina-shell[data-busy="true"] .rina-presence-orb {
+  animation: rina-presence-review 2.8s ease-in-out infinite;
+}
+.rina-shell[data-busy="true"] .rina-presence-orb::after {
+  transform: scale(1.1); opacity: 1; border-color: rgba(217,240,249,.65);
+}
+@keyframes rina-presence-breathe {
+  0%,100% { filter: brightness(.99); transform: scale(1); }
+  50% { filter: brightness(1.09); transform: scale(1.035); }
+}
+@keyframes rina-presence-review {
+  0%,100% { filter: brightness(1); box-shadow: 0 0 16px rgba(130,183,206,.25); }
+  50% { filter: brightness(1.17); box-shadow: 0 0 29px rgba(167,211,230,.48); }
+}
+.rina-shell .rina-header-copy { flex: 1 1 auto; min-width: 0; }
+.rina-shell .rina-header-eyebrow {
+  margin: 0 0 8px;
+  color: #acc9d6;
+  font-size: 10px; line-height: 1.35;
+  font-weight: 740; letter-spacing: .17em;
+  text-transform: uppercase;
+}
+.rina-shell .rina-title {
+  color: #fff; margin: 0;
+  font-size: clamp(20px,2.6vw,28px);
+  font-weight: 640; letter-spacing: -.039em; line-height: 1.2;
+}
+.rina-shell .rina-subtitle {
+  color: #c4d2d9; font-size: 12.5px;
+  line-height: 1.7; max-width: 570px; margin: 8px 0 0;
+}
+.rina-shell .rina-presence-status {
+  margin: 10px 0 0; display: flex; align-items: center; gap: 8px;
+  color: #cedfe6; font-size: 11px;
+  line-height: 1.5; letter-spacing: .015em;
+}
+.rina-shell .rina-presence-status::before {
+  content: ""; display: inline-block; width: 6px; height: 6px;
+  flex: 0 0 6px; border-radius: 50%; background: #a4cec1;
+}
+.rina-shell[data-busy="true"] .rina-presence-status::before { background: #d9cfac; }
+
+.rina-shell #rina-authority-banner {
+  margin: 22px 28px 4px !important; padding: 13px 16px;
+  border-radius: 12px; border: 1px solid #d9e7e8; background: #eff5f5;
+  font-size: 12px; line-height: 1.65; color: #31535b;
+}
+.rina-shell #rina-authority-banner strong { color: #1e424b; }
+.rina-shell .rina-context-row { padding: 22px 28px 15px; margin: 0 !important; }
+.rina-shell .rina-context-row > .label {
+  display: block; color: #4a6371; font-size: 11px; font-weight: 715;
+  text-transform: uppercase; letter-spacing: .095em; margin-bottom: 8px;
+}
+.rina-shell .rina-context-row .input {
+  width: 100%; min-height: 46px;
+  background: #fafcfc; border: 1px solid #cbd8dd;
+  color: #223742; border-radius: 12px;
+  font-size: 13px; padding: 11px 13px;
+}
+.rina-shell .rina-context-row .button-grid { gap: 9px; }
+.rina-shell #rina-current-context {
+  background: #f2f7f7; border: 1px solid #d7e3e5;
+  border-radius: 11px; padding: 12px 14px;
+  font-size: 12px;
+}
+.rina-shell #rina-vehicle-status {
+  color: #647782; font-size: 11px; line-height: 1.6;
+}
+.rina-shell #rina-vehicle-results {
+  overflow-wrap: anywhere; max-height: 260px; overflow-y: auto;
+}
+.rina-shell #rina-historical-copilot-panel {
+  overflow-wrap: anywhere; border-radius: 12px;
+}
+.rina-shell .rina-messages {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 14px;
+  min-height: 270px;
+  height: clamp(280px, 45vh, 540px);
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 22px 28px 26px;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(234,242,245,.42), transparent 60%),
+    #fafbfa;
+  border-top: 1px solid var(--rina-line);
+  border-bottom: 1px solid var(--rina-line);
+  scroll-behavior: smooth;
+}
+.rina-workspace-page .rina-messages { height: clamp(360px, 54vh, 660px); }
+.rina-shell .rina-message {
+  display: flex; width: 100%; min-width: 0;
+}
+.rina-shell .rina-message.assistant { justify-content: flex-start; }
+.rina-shell .rina-message.user { justify-content: flex-end; }
+.rina-shell .rina-bubble {
+  max-width: min(84%, 710px);
+  padding: 15px 18px 16px;
+  border: 1px solid #e2e9eb;
+  border-radius: 18px 18px 18px 6px;
+  background: #fff;
+  color: var(--rina-ink);
+  box-shadow: 0 4px 15px rgba(20,42,53,.035);
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+  font-size: 13px;
+}
+.rina-shell .rina-bubble strong:first-child {
+  color: #356479; font-weight: 710; font-size: 11px; letter-spacing: .012em;
+}
+.rina-shell .rina-bubble p,
+.rina-shell .rina-bubble li,
+.rina-shell .rina-bubble div {
+  color: inherit;
+}
+.rina-shell .rina-bubble h3,
+.rina-shell .rina-bubble h4,
+.rina-shell .rina-bubble h5 {
+  font-size: 14px; font-weight: 710; color: #203c4b;
+}
+.rina-shell .rina-message.user .rina-bubble {
+  color: #f2f7fa; background: #26485d;
+  border-color: #26485d;
+  border-radius: 18px 18px 6px 18px;
+}
+.rina-shell .rina-message.user .rina-bubble strong:first-child { color: #c4dae4; }
+.rina-shell #rina-loading .rina-bubble {
+  border-color: #c9dfe7;
+  background: linear-gradient(110deg,#fff 20%,#f0f6f8 48%,#fff 80%);
+  background-size: 210% 100%;
+  animation: rina-review-sheen 3s ease-in-out infinite;
+}
+@keyframes rina-review-sheen { 0%,100% { background-position: 100% 0; } 50% { background-position: 0 0; } }
+
+.rina-shell #rina-jump-latest {
+  background: #fff; border: 1px solid #cddde2; color: #315d76;
+  box-shadow: 0 5px 18px rgba(15,36,50,.12);
+}
+.rina-shell .rina-input-row {
+  display: flex; align-items: end; gap: 11px;
+  padding: 18px 28px 10px; background: #fff;
+}
+.rina-shell #rina-input {
+  flex: 1 1 auto; width: auto; min-width: 0;
+  min-height: 48px; max-height: 160px; resize: vertical;
+  padding: 13px 15px; border: 1px solid #ccd9de;
+  border-radius: 14px; font-size: 14px; line-height: 1.5;
+  background: #f9fbfb; color: #192e39;
+}
+.rina-shell #rina-input::placeholder { color: #6a808d; opacity: 1; }
+.rina-shell #rina-send {
+  min-width: 90px; min-height: 48px; padding: 12px 18px;
+  border-radius: 13px;
+  background: #294f65; color: #fff; border: 1px solid #294f65;
+}
+.rina-shell #rina-send:not(:disabled):hover { background: #1a3d51; }
+.rina-shell #rina-send:disabled { background: #dce4e7; color: #657983; border-color: #dce4e7; }
+.rina-shell .rina-note {
+  padding: 0 28px 20px;
+  margin: 2px 0 0; font-size: 10.5px; line-height: 1.65; color: #667781;
+}
+.rina-shell :is(input, textarea, select, button):focus-visible {
+  outline: 2px solid #6d9fb9; outline-offset: 3px;
+}
+
+@media (max-width: 680px) {
+  .rina-workspace-intro { display: block; }
+  .rina-workspace-intro .rina-context-reassurance { display: inline-block; margin-top: 14px; }
+  .rina-shell { border-radius: 20px !important; }
+  .rina-shell .rina-header { padding: 22px 18px; gap: 13px; align-items: flex-start; }
+  .rina-shell .rina-presence { height: 50px; width: 50px; flex-basis: 50px; border-radius: 16px; }
+  .rina-shell .rina-presence-orb { width: 26px; height: 26px; }
+  .rina-shell .rina-title { font-size: 20px; }
+  .rina-shell .rina-subtitle { font-size: 11.5px; line-height: 1.6; }
+  .rina-shell #rina-authority-banner { margin: 15px 16px 2px !important; }
+  .rina-shell .rina-context-row { padding: 18px 16px 12px; }
+  .rina-shell .rina-messages { padding: 18px 14px; height: clamp(270px, 45dvh, 440px); gap: 10px; }
+  .rina-workspace-page .rina-messages { height: clamp(320px, 51dvh, 550px); }
+  .rina-shell .rina-bubble { max-width: 94%; padding: 13px 14px; border-radius: 16px 16px 16px 5px; }
+  .rina-shell .rina-message.user .rina-bubble { border-radius: 16px 16px 5px 16px; }
+  .rina-shell .rina-input-row { padding: 13px 12px 8px; gap: 8px; }
+  .rina-shell #rina-input { min-height: 46px; font-size: 16px; }
+  .rina-shell #rina-send { min-width: 66px; min-height: 46px; padding: 10px 13px; }
+  .rina-shell .rina-note { padding: 0 16px 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rina-shell .rina-presence-orb,
+  .rina-shell #rina-loading .rina-bubble { animation: none !important; }
+  .rina-shell .rina-presence-orb::after { transition: none !important; }
+  .rina-shell .rina-messages { scroll-behavior: auto; }
+}

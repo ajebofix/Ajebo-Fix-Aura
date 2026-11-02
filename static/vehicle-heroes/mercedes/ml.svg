@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 280" role="img" aria-label="Stylised ML profile illustration">
+<title>ML family-style illustration</title>
+<defs>
+  <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0" stop-color="#b5d1db"/><stop offset=".23" stop-color="#6d96a6"/><stop offset=".56" stop-color="#2e5266"/><stop offset="1" stop-color="#172c3a"/></linearGradient>
+  <linearGradient id="glass" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0" stop-color="#283f51"/><stop offset="1" stop-color="#101e2b"/></linearGradient>
+  <linearGradient id="rim" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#d8e5e8"/><stop offset="1" stop-color="#628393"/></linearGradient>
+</defs>
+<ellipse cx="317" cy="241" rx="278" ry="17" fill="#091520" opacity=".28"/>
+<path d="M43 202 Q46 183 66 180 L129 172 Q161 122 208 113 Q308 102 402 118 Q460 134 484 168 L558 177 Q588 185 596 210 L593 232 L48 232 Z" fill="url(#metal)" stroke="#c4d9e2" stroke-width="3" stroke-linejoin="round"/>
+<path d="M161 171 Q187 129 220 122 L295 121 L296 169 Z" fill="url(#glass)" stroke="#9eb9c7" stroke-width="2.5" stroke-linejoin="round"/><path d="M309 123 Q403 125 449 166 L460 169 L310 169 Z" fill="url(#glass)" stroke="#9eb9c7" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M302 173 L304 223" stroke="#bdd2da" stroke-opacity=".47" stroke-width="2.1" fill="none"/><path d="M471 170 L470 224" stroke="#bdd2da" stroke-opacity=".47" stroke-width="2.1" fill="none"/>
+<path d="M80 195 Q330 184 555 192" stroke="#d8ecf2" stroke-width="2" stroke-opacity=".34" fill="none"/>
+<path d="M64 189 L123 180" fill="none" stroke="#c4d9e2" stroke-width="2.6" stroke-opacity=".6"/><path d="M536 186 L580 199" fill="none" stroke="#c4d9e2" stroke-width="2.6" stroke-opacity=".6"/>
+<path d="M566 189 Q588 191 590 205 L568 205" fill="#e9f7f7" fill-opacity=".82"/>
+<path d="M47 197 L59 193 L59 216 L46 216" fill="#b87979" fill-opacity=".85"/>
+<g transform="translate(175 225)"><circle r="34" fill="#101c25" stroke="#718f9b" stroke-width="3"/><circle r="23" fill="url(#rim)" stroke="#b8cbd2" stroke-width="2"/><circle r="15" fill="#273b49" stroke="#e0eaec" stroke-width="2"/><circle r="5" fill="#bcd4de"/><path d="M0 -15 V-7 M15 0 H7 M0 15 V7 M-15 0 H-7" stroke="#c5dce4" stroke-width="4" stroke-linecap="round"/></g><g transform="translate(504 225)"><circle r="34" fill="#101c25" stroke="#718f9b" stroke-width="3"/><circle r="23" fill="url(#rim)" stroke="#b8cbd2" stroke-width="2"/><circle r="15" fill="#273b49" stroke="#e0eaec" stroke-width="2"/><circle r="5" fill="#bcd4de"/><path d="M0 -15 V-7 M15 0 H7 M0 15 V7 M-15 0 H-7" stroke="#c5dce4" stroke-width="4" stroke-linecap="round"/></g>
+
+</svg>

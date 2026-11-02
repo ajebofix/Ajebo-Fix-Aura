@@ -7,7 +7,13 @@ Credentials are read from Railway environment variables, never from source.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 STAGING_PROJECT_ID = "4acf602f-11e1-4da5-99e5-d0483ae56374"

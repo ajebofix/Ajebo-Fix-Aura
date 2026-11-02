@@ -89,6 +89,7 @@ def main() -> None:
         sample_vehicles = (
             ("AURASTAGE00000001", "S 450", 2021, 46000, "QA-001-LA"),
             ("AURASTAGE00000002", "GLE 450 4MATIC", 2022, 28000, "QA-002-LA"),
+            ("AURASTAGE00000003", "G 63 AMG", 2023, 15800, "QA-003-LA"),
         )
         vehicles = []
         for vin, model, year, mileage, plate in sample_vehicles:
@@ -128,7 +129,7 @@ def main() -> None:
         db.session.commit()
         print(
             "Synthetic Aura staging fixtures verified: "
-            "4 role-specific accounts, 2 fictitious vehicles; "
+            "4 role-specific accounts, 3 fictitious vehicles; "
             "no production account/data access."
         )
 

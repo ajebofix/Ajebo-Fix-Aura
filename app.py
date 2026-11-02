@@ -25,6 +25,7 @@ from security.email_verification import (
 from security.rate_limits import init_rate_limiting, register_rate_limits
 from security.session_registry import init_session_registry, session_registry_bp
 from services.feature_gateways import has_feature
+from services.vehicle_hero import resolve_vehicle_hero
 
 import security.session_events  # noqa: F401, E402
 import services.reported_concern_session_events  # noqa: F401, E402
@@ -210,7 +211,10 @@ def create_app():
         "https" if is_production else "http",
     )
 
-    app.jinja_env.globals.update(has_feature=has_feature)
+    app.jinja_env.globals.update(
+        has_feature=has_feature,
+        resolve_vehicle_hero=resolve_vehicle_hero,
+    )
 
     db.init_app(app)
     Migrate(app, db)

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 280" role="img" aria-label="Stylised AURA VEHICLE profile illustration">
+<title>AURA VEHICLE family-style illustration</title>
+<defs>
+  <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0" stop-color="#b5d1db"/><stop offset=".23" stop-color="#6d96a6"/><stop offset=".56" stop-color="#2e5266"/><stop offset="1" stop-color="#172c3a"/></linearGradient>
+  <linearGradient id="glass" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0" stop-color="#283f51"/><stop offset="1" stop-color="#101e2b"/></linearGradient>
+  <linearGradient id="rim" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#d8e5e8"/><stop offset="1" stop-color="#628393"/></linearGradient>
+</defs>
+<ellipse cx="317" cy="241" rx="278" ry="17" fill="#091520" opacity=".28"/>
+<path d="M43 207 Q44 190 65 185 L154 174 Q188 134 223 122 Q329 113 415 123 Q454 133 484 171 L557 186 Q588 195 596 211 L591 232 L48 232 Z" fill="url(#metal)" stroke="#c4d9e2" stroke-width="3" stroke-linejoin="round"/>
+<path d="M183 173 Q204 136 244 133 L316 130 L315 172 Z" fill="url(#glass)" stroke="#9eb9c7" stroke-width="2.5" stroke-linejoin="round"/><path d="M329 130 Q415 137 460 172 L329 172 Z" fill="url(#glass)" stroke="#9eb9c7" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M323 175 L326 224" stroke="#bdd2da" stroke-opacity=".47" stroke-width="2.1" fill="none"/>
+<path d="M80 195 Q330 184 555 192" stroke="#d8ecf2" stroke-width="2" stroke-opacity=".34" fill="none"/>
+
+<path d="M566 189 Q588 191 590 205 L568 205" fill="#e9f7f7" fill-opacity=".82"/>
+<path d="M47 197 L59 193 L59 216 L46 216" fill="#b87979" fill-opacity=".85"/>
+<g transform="translate(176 225)"><circle r="34" fill="#101c25" stroke="#718f9b" stroke-width="3"/><circle r="23" fill="url(#rim)" stroke="#b8cbd2" stroke-width="2"/><circle r="15" fill="#273b49" stroke="#e0eaec" stroke-width="2"/><circle r="5" fill="#bcd4de"/><path d="M0 -15 V-7 M15 0 H7 M0 15 V7 M-15 0 H-7" stroke="#c5dce4" stroke-width="4" stroke-linecap="round"/></g><g transform="translate(502 225)"><circle r="34" fill="#101c25" stroke="#718f9b" stroke-width="3"/><circle r="23" fill="url(#rim)" stroke="#b8cbd2" stroke-width="2"/><circle r="15" fill="#273b49" stroke="#e0eaec" stroke-width="2"/><circle r="5" fill="#bcd4de"/><path d="M0 -15 V-7 M15 0 H7 M0 15 V7 M-15 0 H-7" stroke="#c5dce4" stroke-width="4" stroke-linecap="round"/></g>
+
+</svg>

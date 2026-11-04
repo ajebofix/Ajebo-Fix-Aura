@@ -1299,7 +1299,14 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
             # outstanding. Displaying it must never advance the approval phase.
             reply = historical_review_preview(state)
             response_phase = (
-                "awaiting_apply_confirmation" if state.all_reviewed else "reviewing"
+                "awaiting_apply_confirmation"
+                if state.all_reviewed
+                else (
+                    "awaiting_date"
+                    if state.pending_date_candidate_id == state.next_candidate_id
+                    and state.pending_date_candidate_id is not None
+                    else "reviewing"
+                )
             )
             response_candidate_id = (
                 None if state.all_reviewed else state.next_candidate_id

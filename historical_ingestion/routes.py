@@ -131,12 +131,9 @@ def edit_historical_context(car_id: int, extraction_id: int):
                 ),
                 None,
             )
-            if candidate is None or (
-                candidate.get("reviewed_by_advisor") is True
-                and candidate.get("advisor_decision") != "already_documented"
-            ):
+            if candidate is None:
                 raise HistoricalReconciliationError(
-                    "Select an undecided candidate from the current draft."
+                    "Select a candidate from the current pending draft."
                 )
             linked_text = request.form.get("linked_evidence_id", "").strip()
             if not linked_text.isdecimal():
@@ -230,13 +227,11 @@ def edit_historical_context(car_id: int, extraction_id: int):
         db.session.rollback()
         flash(str(exc), "error")
         return redirect(url_for("admin.view_vehicle", car_id=car.id))
+    # An advisor must also be able to correct an accidentally confirmed
+    # duplicate while the historical reconciliation remains unapplied.
     candidate_links = [
         row for row in review_state.payload.get("candidates") or []
         if isinstance(row, dict)
-        and (
-            row.get("reviewed_by_advisor") is not True
-            or row.get("advisor_decision") == "already_documented"
-        )
     ]
     return render_template(
         "historical_ingestion/context_editor.html",

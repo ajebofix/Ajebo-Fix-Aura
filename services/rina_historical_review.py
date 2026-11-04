@@ -878,17 +878,37 @@ def _explicit_existing_source_link(
     *,
     message: str,
     candidate_id: str | None,
+    state: HistoricalReviewState,
 ) -> HistoricalReviewInterpretation | None:
-    """Deterministic advisor link; never treat a duplicate as work not performed."""
-    if not candidate_id:
-        return None
-    match = re.search(
-        r"\b(?:already|previously)\s+(?:documented|recorded)\b"
-        r".{0,180}?\bevidence\s*#\s*(\d+)\b",
+    """Only explicit advisor commands link historical evidence; never infer."""
+    numbered = re.fullmatch(
+        r"\s*item\s+(\d+)\s+(?:is\s+|was\s+)?"
+        r"(?:already|previously)\s+(?:documented|recorded)\s+"
+        r"in\s+evidence\s*#\s*(\d+)\s*[.!]?\s*",
         message,
-        flags=re.IGNORECASE | re.DOTALL,
+        flags=re.IGNORECASE,
     )
-    if match is None:
+    simple = re.fullmatch(
+        r"\s*(?:already|previously)\s+(?:documented|recorded)\s+"
+        r"in\s+evidence\s*#\s*(\d+)\s*[.!]?\s*",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if numbered is not None:
+        rows = [
+            row for row in state.payload.get("candidates") or []
+            if isinstance(row, dict)
+        ]
+        index = int(numbered.group(1)) - 1
+        if index < 0 or index >= len(rows):
+            return None
+        candidate_id = str(rows[index].get("candidate_id") or "")
+        linked_id = int(numbered.group(2))
+    elif simple is not None and candidate_id:
+        linked_id = int(simple.group(1))
+    else:
+        return None
+    if not candidate_id:
         return None
     return HistoricalReviewInterpretation(
         payload={
@@ -896,7 +916,7 @@ def _explicit_existing_source_link(
             "changes": [{
                 "candidate_id": candidate_id,
                 "advisor_decision": "already_documented",
-                "linked_evidence_id": int(match.group(1)),
+                "linked_evidence_id": linked_id,
                 "mark_reviewed": True,
             }],
             "additions": [],
@@ -1883,6 +1903,7 @@ def interpret_turn(
     source_link = _explicit_existing_source_link(
         message=message,
         candidate_id=current_candidate_id or state.next_candidate_id,
+        state=state,
     )
     if source_link is not None:
         return source_link

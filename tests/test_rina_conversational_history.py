@@ -2154,3 +2154,65 @@ def test_month_mentioned_as_repair_date_does_not_force_episode_switch():
         message="Please correct the October 2026 workshop history.",
         state=state,
     ) is not None
+
+
+def test_manual_advisor_editor_links_existing_evidence_without_new_repair(
+    app, client,
+):
+    from services.historical_context_editing import context_editor_snapshot
+
+    admin = _user(suffix=948, role="admin")
+    owner = _user(suffix=949)
+    car = _car(suffix=948, model="GLK 350")
+    _own(owner=owner, car=car, suffix=948)
+    _, previous = _historical_reconciliation(admin=admin, car=car)
+    evidence, _ = _standalone_document_analysis(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    staged = client.post(
+        "/chat/historical-review/from-source",
+        data={
+            "csrf_token": _csrf_token(client),
+            "car_id": car.id,
+            "evidence_id": evidence.id,
+        },
+    )
+    assert staged.status_code == 302
+    draft = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="historical_reconciliation",
+        )
+        .order_by(EvidenceExtraction.id.desc())
+        .first()
+    )
+    snapshot = context_editor_snapshot(
+        extraction_id=draft.id, actor_user_id=admin.id, car_id=car.id
+    )
+    path = f"/admin/cars/{car.id}/historical-reviews/{draft.id}/context"
+    page = client.get(path)
+    assert page.status_code == 200
+    assert b"Already documented" in page.data
+    assert b"Link earlier evidence" in page.data
+
+    response = client.post(
+        path,
+        data={
+            "csrf_token": _csrf_token(client),
+            "candidate_link_id": "D001",
+            "linked_evidence_id": str(previous.evidence_id),
+            "revision": snapshot["revision"],
+        },
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("#candidate-links")
+    reviewed = reconciliation_payload(draft, reviewed=True)
+    candidate = reviewed["candidates"][0]
+    assert candidate["advisor_decision"] == "already_documented"
+    assert candidate["linked_evidence_id"] == previous.evidence_id
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    _sign_in(client, owner)
+    assert client.get(path).status_code == 403

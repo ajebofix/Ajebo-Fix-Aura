@@ -40,7 +40,7 @@ from services.rina_source_review_bridge import (
 )
 
 
-_ALLOWED_DECISIONS = {"confirmed", "not_done", "unsure"}
+_ALLOWED_DECISIONS = {"confirmed", "not_done", "unsure", "already_documented"}
 _ALLOWED_KINDS = {"component_replacement", "service", "other_intervention"}
 _ALLOWED_CONDITIONS = {
     "new",
@@ -69,8 +69,9 @@ _REVIEW_SCHEMA: dict[str, Any] = {
                     "mark_reviewed": {"type": "boolean"},
                     "advisor_decision": {
                         "type": ["string", "null"],
-                        "enum": ["confirmed", "not_done", "unsure", None],
+                        "enum": ["confirmed", "not_done", "unsure", "already_documented", None],
                     },
+                    "linked_evidence_id": {"type": ["integer", "null"]},
                     "occurred_at": {"type": ["string", "null"]},
                     "component_condition": {
                         "type": ["string", "null"],
@@ -102,6 +103,7 @@ _REVIEW_SCHEMA: dict[str, Any] = {
                     "candidate_id",
                     "mark_reviewed",
                     "advisor_decision",
+                    "linked_evidence_id",
                     "occurred_at",
                     "component_condition",
                     "advisor_note",
@@ -220,6 +222,11 @@ Rules:
   are not advisor confirmation.
 - Use not_done only when the advisor explicitly says the work did not happen.
 - Use unsure when the advisor explicitly cannot confirm.
+- Use already_documented only when the advisor explicitly identifies a different
+  source evidence number for the same previously documented intervention. Set
+  linked_evidence_id to that number; never infer it from source text. This is
+  a cross-source reference, NOT a new confirmed repair or a claim that the
+  earlier draft has been applied to durable history.
 - Normalize an explicitly supplied date to YYYY-MM-DD when possible. Do not infer a
   date from the candidate's suggested date unless the advisor explicitly confirms
   that suggested date.
@@ -304,6 +311,7 @@ class HistoricalReviewInterpreter(HistoricalAdvisorAnalyzer):
                 "component_location": row.get("component_location"),
                 "component_condition": row.get("component_condition"),
                 "advisor_decision": row.get("advisor_decision"),
+                "linked_evidence_id": row.get("linked_evidence_id"),
                 "reviewed_by_advisor": bool(row.get("reviewed_by_advisor")),
                 "occurred_at": row.get("occurred_at"),
                 "suggested_occurred_at": row.get("suggested_occurred_at"),
@@ -866,11 +874,57 @@ def _deterministic_non_mutating_interpretation(
     return None
 
 
+def _explicit_existing_source_link(
+    *,
+    message: str,
+    candidate_id: str | None,
+) -> HistoricalReviewInterpretation | None:
+    """Deterministic advisor link; never treat a duplicate as work not performed."""
+    if not candidate_id:
+        return None
+    match = re.search(
+        r"\b(?:already|previously)\s+(?:documented|recorded)\b"
+        r".{0,180}?\bevidence\s*#\s*(\d+)\b",
+        message,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return None
+    return HistoricalReviewInterpretation(
+        payload={
+            "intent": "update",
+            "changes": [{
+                "candidate_id": candidate_id,
+                "advisor_decision": "already_documented",
+                "linked_evidence_id": int(match.group(1)),
+                "mark_reviewed": True,
+            }],
+            "additions": [],
+            "context_notes": [],
+            "episode_outcome": None,
+            "assistant_note": "",
+        },
+        provider="deterministic_source_link",
+        model="aura-history-source-link-v1",
+        provider_request_id=None,
+    )
+
+
 def _scope_guard_interpretation(
     *,
     message: str,
     state: HistoricalReviewState,
 ) -> HistoricalReviewInterpretation | None:
+    # A date appearing in a repair description is not an episode-switch request.
+    # Only explicit month-scoped navigation/correction should interrupt review.
+    month_names = "|".join(_MONTH_NUMBERS)
+    if not re.search(
+        rf"\b(?:switch to|move to|review|correct|open|start|change to)\s+"
+        rf"(?:the\s+)?(?:{month_names})\s+20\d{{2}}\b",
+        message,
+        re.IGNORECASE,
+    ):
+        return None
     target = _message_episode_month(message)
     active = _state_episode_month(state)
     if target is None or active is None or target == active:
@@ -1248,12 +1302,19 @@ def _apply_change(
 
     decision = change.get("advisor_decision")
     if decision in _ALLOWED_DECISIONS:
-        if decision == "confirmed":
+        if decision == "already_documented":
+            row["advisor_decision"] = decision
+            row["linked_evidence_id"] = change.get("linked_evidence_id")
+            row["reviewed_by_advisor"] = bool(change.get("mark_reviewed", True))
+            row.pop("advisor_pending_decision", None)
+            changed = True
+        elif decision == "confirmed":
             supplied_date = _clip(change.get("occurred_at"), 64) or _clip(
                 row.get("occurred_at"), 64
             )
             if supplied_date:
                 row["advisor_decision"] = "confirmed"
+                row.pop("linked_evidence_id", None)
                 row["occurred_at"] = supplied_date
                 row["reviewed_by_advisor"] = bool(change.get("mark_reviewed", True))
                 row.pop("advisor_pending_decision", None)
@@ -1264,6 +1325,7 @@ def _apply_change(
             changed = True
         else:
             row["advisor_decision"] = decision
+            row.pop("linked_evidence_id", None)
             row["reviewed_by_advisor"] = bool(change.get("mark_reviewed", True))
             row.pop("advisor_pending_decision", None)
             changed = True
@@ -1584,7 +1646,9 @@ def candidate_prompt(state: HistoricalReviewState, candidate_id: str | None = No
     else:
         lines.append(
             "Tell me naturally whether this was completed, did not happen, or you "
-            "cannot confirm it. You can also correct the date, part condition or wording."
+            "cannot confirm it. If the same work is in another source, say "
+            "**Already documented in Evidence #123** with its actual evidence number. "
+            "You can also correct the date, part condition or wording."
         )
     lines.append(
         "Nothing becomes durable vehicle history until I show you the final draft and "
@@ -1615,12 +1679,24 @@ def review_preview(state: HistoricalReviewState) -> str:
         if row.get("reviewed_by_advisor") is True
         and row.get("advisor_decision") == "unsure"
     ]
+    already_documented = [
+        row
+        for row in rows
+        if row.get("reviewed_by_advisor") is True
+        and row.get("advisor_decision") == "already_documented"
+    ]
+    pending = [row for row in rows if not _candidate_reviewed(row)]
 
     lines = [
-        f"### Ready for your final review — {state.episode_title}",
-        "Only the **confirmed completed** items below will be written into durable "
-        "vehicle history.",
+        f"### {'Ready for your final review' if state.all_reviewed else 'Historical draft preview (incomplete)'} — {state.episode_title}",
+        "Only the **confirmed completed** items below can become new durable "
+        "vehicle history after explicit advisor approval.",
     ]
+    if not state.all_reviewed:
+        lines.append(
+            "**Read-only preview:** outstanding decisions are shown below. "
+            "No permanent record changes have been made."
+        )
     if confirmed:
         lines.append("### Confirmed completed")
         for row in confirmed:
@@ -1652,6 +1728,20 @@ def review_preview(state: HistoricalReviewState) -> str:
         lines.append("### Still uncertain")
         lines.extend(
             f"- {row.get('title') or 'Historical intervention'}" for row in unsure
+        )
+    if already_documented:
+        lines.append("### Already documented elsewhere — no new completed repair")
+        for row in already_documented:
+            lines.append(
+                f"- {row.get('title') or 'Historical intervention'} "
+                f"— advisor-linked Evidence #{row.get('linked_evidence_id')} "
+                "(source reference only; earlier approval status unchanged)"
+            )
+    if pending:
+        lines.append("### Awaiting advisor decisions")
+        lines.extend(
+            f"- {row.get('title') or 'Historical intervention'}"
+            for row in pending
         )
 
     context_notes = [
@@ -1770,6 +1860,13 @@ def interpret_turn(
     phase: str,
     interpreter: HistoricalReviewInterpreter | None = None,
 ) -> HistoricalReviewInterpretation:
+    source_link = _explicit_existing_source_link(
+        message=message,
+        candidate_id=current_candidate_id or state.next_candidate_id,
+    )
+    if source_link is not None:
+        return source_link
+
     scope_guard = _scope_guard_interpretation(message=message, state=state)
     if scope_guard is not None:
         return scope_guard

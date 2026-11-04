@@ -52,6 +52,7 @@
         <form method="POST"
               action="{{ url_for('historical_ingestion.edit_historical_context',
                                  car_id=car.id, extraction_id=snapshot.extraction_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="candidate_link_id" value="{{ candidate.candidate_id }}">
             <input type="hidden" name="revision" value="{{ snapshot.revision }}">
             <label for="link_evidence_{{ loop.index }}">
@@ -81,6 +82,7 @@
     <form method="POST"
           action="{{ url_for('historical_ingestion.edit_historical_context',
                             car_id=car.id, extraction_id=snapshot.extraction_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="context_note_id" value="{{ item.context_note_id }}">
         <input type="hidden" name="revision" value="{{ snapshot.revision }}">
         <label for="operation_{{ loop.index }}">Action</label>

@@ -2001,3 +2001,156 @@ def test_whatsapp_ready_review_handoff_lists_only_selected_vehicle_episodes(
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+
+def test_show_draft_while_candidate_pending_is_read_only(app, client):
+    """Advisors can inspect an incomplete review without deciding or applying."""
+    admin = _user(suffix=941, role="admin")
+    owner = _user(suffix=942)
+    car = _car(suffix=941, model="GLK 350")
+    _own(owner=owner, car=car, suffix=941)
+    _, draft = _historical_reconciliation(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
+    initial = _post_json(
+        client, "/chat",
+        {"car_id": car.id, "message": "Review the previous jobs with me."},
+    )
+    assert "Item 1 of 1" in initial.json["reply"]
+
+    response = _post_json(
+        client, "/chat", {"car_id": car.id, "message": "Show me the draft"}
+    )
+    assert response.status_code == 200
+    assert "Historical draft preview (incomplete)" in response.json["reply"]
+    assert "Awaiting advisor decisions" in response.json["reply"]
+    assert "Engine oil service" in response.json["reply"]
+    assert response.json["historical_review"]["phase"] == "reviewing"
+    assert "Confirm and record" not in response.json["reply"]
+
+    stored = reconciliation_payload(draft)
+    assert stored["candidates"][0].get("reviewed_by_advisor") is not True
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+
+def test_already_documented_links_prior_source_without_duplicate_repair(app, client):
+    """An advisor may reference an earlier still-pending historical source."""
+    admin = _user(suffix=943, role="admin")
+    owner = _user(suffix=944)
+    car = _car(suffix=943, model="GLK 350")
+    _own(owner=owner, car=car, suffix=943)
+    _, previous = _historical_reconciliation(admin=admin, car=car)
+    evidence, _ = _standalone_document_analysis(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    started = client.post(
+        "/chat/historical-review/from-source",
+        data={
+            "csrf_token": _csrf_token(client),
+            "car_id": car.id,
+            "evidence_id": evidence.id,
+        },
+    )
+    assert started.status_code == 302
+
+    response = _post_json(
+        client, "/chat",
+        {
+            "car_id": car.id,
+            "message": f"Already documented in Evidence #{previous.evidence_id}.",
+        },
+    )
+    assert response.status_code == 200
+    assert "Already documented elsewhere" in response.json["reply"]
+    assert f"Evidence #{previous.evidence_id}" in response.json["reply"]
+    assert response.json["historical_review"]["phase"] == "awaiting_apply_confirmation"
+
+    current = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="historical_reconciliation",
+        )
+        .order_by(EvidenceExtraction.id.desc())
+        .first()
+    )
+    assert current is not None
+    reviewed = reconciliation_payload(current, reviewed=True)
+    candidate = reviewed["candidates"][0]
+    assert candidate["advisor_decision"] == "already_documented"
+    assert candidate["linked_evidence_id"] == previous.evidence_id
+    assert candidate["reviewed_by_advisor"] is True
+    assert not any(
+        row.get("advisor_decision") == "confirmed"
+        for row in reviewed["candidates"]
+    )
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+    finished = _post_json(
+        client, "/chat", {"car_id": car.id, "message": "Confirm and record"}
+    )
+    assert finished.status_code == 200
+    assert "no advisor-confirmed completed items" in finished.json["reply"].lower()
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+
+def test_cross_vehicle_evidence_link_rejected_before_review_save(app):
+    """An evidence ID from another vehicle can never justify a link."""
+    import pytest
+    from historical_ingestion.reconciliation import HistoricalReconciliationError
+
+    admin = _user(suffix=945, role="admin")
+    owner_a = _user(suffix=946)
+    owner_b = _user(suffix=947)
+    car_a = _car(suffix=945, model="GLK 350")
+    car_b = _car(suffix=946, model="GL 450")
+    _own(owner=owner_a, car=car_a, suffix=945)
+    _own(owner=owner_b, car=car_b, suffix=946)
+    _, foreign = _historical_reconciliation(admin=admin, car=car_b)
+    _, current = _historical_reconciliation(admin=admin, car=car_a)
+    payload = reconciliation_payload(current)
+    row = payload["candidates"][0]
+    row["advisor_decision"] = "already_documented"
+    row["linked_evidence_id"] = foreign.evidence_id
+    row["reviewed_by_advisor"] = True
+
+    with pytest.raises(
+        HistoricalReconciliationError,
+        match="Linked historical evidence must exist for the same vehicle",
+    ):
+        save_reconciliation_review(
+            extraction_id=current.id,
+            actor_user_id=admin.id,
+            reviewed_payload=payload,
+        )
+
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0
+
+
+def test_month_mentioned_as_repair_date_does_not_force_episode_switch():
+    from types import SimpleNamespace
+    from services.rina_historical_review import _scope_guard_interpretation
+
+    state = SimpleNamespace(
+        payload={"episode_date_start": "2026-11-04"},
+        episode_title="November advisor service addendum",
+    )
+    assert _scope_guard_interpretation(
+        message=(
+            "The earlier belt replacement on 22 October 2026 is already "
+            "documented in another source; keep this review open."
+        ),
+        state=state,
+    ) is None
+    assert _scope_guard_interpretation(
+        message="Please correct the October 2026 workshop history.",
+        state=state,
+    ) is not None

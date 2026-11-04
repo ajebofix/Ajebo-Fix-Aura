@@ -2216,3 +2216,102 @@ def test_manual_advisor_editor_links_existing_evidence_without_new_repair(
 
     _sign_in(client, owner)
     assert client.get(path).status_code == 403
+
+
+def test_numbered_source_link_targets_requested_candidate_not_current_one():
+    from types import SimpleNamespace
+    from services.rina_historical_review import _explicit_existing_source_link
+
+    state = SimpleNamespace(
+        payload={"candidates": [
+            {"candidate_id": "D001"},
+            {"candidate_id": "D002"},
+        ]}
+    )
+    result = _explicit_existing_source_link(
+        message="Item 1 is already documented in Evidence #375.",
+        candidate_id="D002",
+        state=state,
+    )
+    assert result.payload["changes"][0] == {
+        "candidate_id": "D001",
+        "advisor_decision": "already_documented",
+        "linked_evidence_id": 375,
+        "mark_reviewed": True,
+    }
+    assert _explicit_existing_source_link(
+        message="I do not believe Item 1 is already documented in Evidence #375.",
+        candidate_id="D002",
+        state=state,
+    ) is None
+
+
+def test_manual_link_corrects_confirmed_but_unapplied_duplicate(app, client):
+    from services.historical_context_editing import context_editor_snapshot
+    from services.rina_historical_review import update_review_from_interpretation
+
+    admin = _user(suffix=950, role="admin")
+    owner = _user(suffix=951)
+    car = _car(suffix=950, model="GLK 350")
+    _own(owner=owner, car=car, suffix=950)
+    _, previous = _historical_reconciliation(admin=admin, car=car)
+    evidence, _ = _standalone_document_analysis(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    started = client.post(
+        "/chat/historical-review/from-source",
+        data={
+            "csrf_token": _csrf_token(client),
+            "car_id": car.id,
+            "evidence_id": evidence.id,
+        },
+    )
+    assert started.status_code == 302
+    draft = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="historical_reconciliation",
+        )
+        .order_by(EvidenceExtraction.id.desc())
+        .first()
+    )
+    update_review_from_interpretation(
+        extraction_id=draft.id,
+        actor_user_id=admin.id,
+        car_id=car.id,
+        interpretation={
+            "intent": "update",
+            "changes": [{
+                "candidate_id": "D001",
+                "advisor_decision": "confirmed",
+                "mark_reviewed": True,
+                "occurred_at": "2026-06-18",
+            }],
+            "additions": [],
+            "context_notes": [],
+        },
+    )
+    db.session.commit()
+    path = f"/admin/cars/{car.id}/historical-reviews/{draft.id}/context"
+    page = client.get(path)
+    assert page.status_code == 200
+    assert b"Link earlier evidence" in page.data
+    snapshot = context_editor_snapshot(
+        extraction_id=draft.id, actor_user_id=admin.id, car_id=car.id
+    )
+    response = client.post(
+        path,
+        data={
+            "csrf_token": _csrf_token(client),
+            "candidate_link_id": "D001",
+            "linked_evidence_id": str(previous.evidence_id),
+            "revision": snapshot["revision"],
+        },
+    )
+    assert response.status_code == 302
+    reviewed = reconciliation_payload(draft, reviewed=True)
+    assert reviewed["candidates"][0]["advisor_decision"] == "already_documented"
+    assert reviewed["candidates"][0]["linked_evidence_id"] == previous.evidence_id
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation"
+    ).count() == 0

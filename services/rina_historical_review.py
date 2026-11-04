@@ -1650,6 +1650,15 @@ def candidate_prompt(state: HistoricalReviewState, candidate_id: str | None = No
             "**Already documented in Evidence #123** with its actual evidence number. "
             "You can also correct the date, part condition or wording."
         )
+    extraction = db.session.get(EvidenceExtraction, state.extraction_id)
+    if extraction is not None and extraction.evidence is not None:
+        editor_url = (
+            f"/admin/cars/{extraction.evidence.car_id}/historical-reviews/"
+            f"{state.extraction_id}/context#candidate-links"
+        )
+        lines.append(
+            f"[Link already-documented work in the advisor editor]({editor_url})"
+        )
     lines.append(
         "Nothing becomes durable vehicle history until I show you the final draft and "
         "you explicitly confirm it."
@@ -1779,6 +1788,17 @@ def review_preview(state: HistoricalReviewState) -> str:
                 "**Correct historical context #1: [replacement text]** or "
                 "**Supersede historical context #1: [reason]**. "
                 "Numbers refer to the active notes shown above."
+            )
+
+    if pending:
+        extraction = db.session.get(EvidenceExtraction, state.extraction_id)
+        if extraction is not None and extraction.evidence is not None:
+            editor_url = (
+                f"/admin/cars/{extraction.evidence.car_id}/historical-reviews/"
+                f"{state.extraction_id}/context#candidate-links"
+            )
+            lines.append(
+                f"[Link already-documented work in the advisor editor]({editor_url})"
             )
 
     if state.intake_required:

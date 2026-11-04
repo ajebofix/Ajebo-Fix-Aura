@@ -31,6 +31,45 @@
     </div>
 </section>
 
+{% if candidate_links %}
+<section class="card" id="candidate-links">
+    <h2>Already documented — link existing evidence</h2>
+    <p class="muted">
+        If a completed intervention is already described by another source for
+        this vehicle, link that source instead of recording the same repair again.
+        The earlier source may still be awaiting approval. This action is
+        advisor-only, does not claim the work was not performed, and does not
+        write a new Treatment Action.
+    </p>
+    {% for candidate in candidate_links %}
+    <div class="card" style="margin-top:12px">
+        <h3>{{ candidate.title }}</h3>
+        <p class="muted">Candidate {{ candidate.candidate_id }} ·
+            {% if candidate.advisor_decision == 'already_documented' %}
+            Already linked to Evidence #{{ candidate.linked_evidence_id }}
+            {% else %}Awaiting advisor decision{% endif %}
+        </p>
+        <form method="POST"
+              action="{{ url_for('historical_ingestion.edit_historical_context',
+                                 car_id=car.id, extraction_id=snapshot.extraction_id) }}">
+            <input type="hidden" name="candidate_link_id" value="{{ candidate.candidate_id }}">
+            <input type="hidden" name="revision" value="{{ snapshot.revision }}">
+            <label for="link_evidence_{{ loop.index }}">
+                Existing Evidence number (same vehicle)
+            </label>
+            <input id="link_evidence_{{ loop.index }}" name="linked_evidence_id"
+                   type="number" inputmode="numeric" min="1" step="1" required
+                   value="{{ candidate.linked_evidence_id or '' }}"
+                   placeholder="e.g. 375">
+            <button class="btn btn-secondary btn-block" type="submit">
+                Link earlier evidence — no new repair
+            </button>
+        </form>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
 {% for item in snapshot.notes %}
 <section class="card">
     <h3>Context note {{ item.display_number }}</h3>

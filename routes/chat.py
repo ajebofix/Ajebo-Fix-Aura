@@ -1294,10 +1294,16 @@ def _handle_historical_review_turn(*, context, message: str) -> dict[str, object
     if interpreted.get("intent") in {"show_draft", "question", "no_change"} and not (
         interpreted.get("changes") or interpreted.get("additions")
     ):
-        if state.all_reviewed:
+        if state.all_reviewed or interpreted.get("intent") == "show_draft":
+            # The preview is always read-only, including when decisions remain
+            # outstanding. Displaying it must never advance the approval phase.
             reply = historical_review_preview(state)
-            response_phase = "awaiting_apply_confirmation"
-            response_candidate_id = None
+            response_phase = (
+                "awaiting_apply_confirmation" if state.all_reviewed else "reviewing"
+            )
+            response_candidate_id = (
+                None if state.all_reviewed else state.next_candidate_id
+            )
         else:
             reply = historical_candidate_prompt(
                 state,

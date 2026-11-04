@@ -2214,6 +2214,10 @@ def test_manual_advisor_editor_links_existing_evidence_without_new_repair(
         record_origin="historical_reconciliation"
     ).count() == 0
 
+    logout = client.post(
+        "/auth/logout", data={"csrf_token": _csrf_token(client)}
+    )
+    assert logout.status_code == 302
     _sign_in(client, owner)
     assert client.get(path).status_code == 403
 

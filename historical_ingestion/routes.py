@@ -96,8 +96,86 @@ historical_ingestion_bp = Blueprint("historical_ingestion", __name__)
 @login_required
 @advisor_required
 def edit_historical_context(car_id: int, extraction_id: int):
-    """Manual counterpart to Rina's supervised draft-only context corrections."""
+    """Manual context corrections and same-vehicle duplicate source links."""
     car = Car.query.get_or_404(car_id)
+    if request.method == "POST" and request.form.get("candidate_link_id"):
+        # Separate draft-only action for genuine work recorded by another
+        # source. Never present "not performed" as a deduplication option.
+        from services.rina_historical_review import (
+            summarize_state,
+            update_review_from_interpretation,
+        )
+
+        try:
+            snapshot = context_editor_snapshot(
+                extraction_id=extraction_id,
+                car_id=car.id,
+                actor_user_id=current_user.id,
+            )
+            if request.form.get("revision") != snapshot["revision"]:
+                raise HistoricalReconciliationError(
+                    "The historical draft changed; reload before linking evidence."
+                )
+            state = summarize_state(
+                extraction_id=extraction_id,
+                car_id=car.id,
+                actor_user_id=current_user.id,
+            )
+            candidate_id = request.form["candidate_link_id"].strip()
+            candidate = next(
+                (
+                    row
+                    for row in state.payload.get("candidates") or []
+                    if isinstance(row, dict)
+                    and str(row.get("candidate_id") or "") == candidate_id
+                ),
+                None,
+            )
+            if candidate is None or (
+                candidate.get("reviewed_by_advisor") is True
+                and candidate.get("advisor_decision") != "already_documented"
+            ):
+                raise HistoricalReconciliationError(
+                    "Select an undecided candidate from the current draft."
+                )
+            linked_text = request.form.get("linked_evidence_id", "").strip()
+            if not linked_text.isdecimal():
+                raise HistoricalReconciliationError(
+                    "Enter the source's numeric Evidence ID."
+                )
+            update_review_from_interpretation(
+                extraction_id=extraction_id,
+                car_id=car.id,
+                actor_user_id=current_user.id,
+                interpretation={
+                    "intent": "update",
+                    "changes": [{
+                        "candidate_id": candidate_id,
+                        "advisor_decision": "already_documented",
+                        "mark_reviewed": True,
+                        "linked_evidence_id": int(linked_text),
+                    }],
+                    "additions": [],
+                    "context_notes": [],
+                },
+            )
+            db.session.commit()
+            flash(
+                "Linked to earlier same-vehicle evidence in the pending draft. "
+                "No new repair was recorded.",
+                "success",
+            )
+        except HistoricalReconciliationError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "historical_ingestion.edit_historical_context",
+                car_id=car.id,
+                extraction_id=extraction_id,
+            ) + "#candidate-links"
+        )
+
     if request.method == "POST":
         try:
             result = revise_context_note(
@@ -140,11 +218,32 @@ def edit_historical_context(car_id: int, extraction_id: int):
         db.session.rollback()
         flash(str(exc), "error")
         return redirect(url_for("admin.view_vehicle", car_id=car.id))
+    from services.rina_historical_review import summarize_state
+
+    try:
+        review_state = summarize_state(
+            extraction_id=extraction_id,
+            car_id=car.id,
+            actor_user_id=current_user.id,
+        )
+    except HistoricalReconciliationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("admin.view_vehicle", car_id=car.id))
+    candidate_links = [
+        row for row in review_state.payload.get("candidates") or []
+        if isinstance(row, dict)
+        and (
+            row.get("reviewed_by_advisor") is not True
+            or row.get("advisor_decision") == "already_documented"
+        )
+    ]
     return render_template(
         "historical_ingestion/context_editor.html",
         car=car,
         snapshot=snapshot,
         categories=sorted(ALLOWED_CONTEXT_CATEGORIES),
+        candidate_links=candidate_links,
     )
 
 

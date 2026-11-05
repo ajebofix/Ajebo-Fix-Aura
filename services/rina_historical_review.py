@@ -1811,7 +1811,10 @@ def review_preview(state: HistoricalReviewState) -> str:
                 "Numbers refer to the active notes shown above."
             )
 
-    if pending:
+    # The advisor may discover a duplicate after marking all items reviewed.
+    # Keep the manual evidence linker visible on the full final draft too;
+    # opening the editor never approves or applies a repair.
+    if rows:
         extraction = db.session.get(EvidenceExtraction, state.extraction_id)
         if extraction is not None and extraction.evidence is not None:
             editor_url = (

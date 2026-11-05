@@ -1667,7 +1667,8 @@ def candidate_prompt(state: HistoricalReviewState, candidate_id: str | None = No
         lines.append(
             "Tell me naturally whether this was completed, did not happen, or you "
             "cannot confirm it. If the same work is in another source, say "
-            "**Already documented in Evidence #123** with its actual evidence number. "
+            "**Already documented in Evidence #** immediately followed by the "
+            "actual number of that earlier source (not this upload's number). "
             "You can also correct the date, part condition or wording."
         )
     extraction = db.session.get(EvidenceExtraction, state.extraction_id)

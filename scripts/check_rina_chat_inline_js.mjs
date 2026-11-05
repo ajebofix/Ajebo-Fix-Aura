@@ -28,4 +28,31 @@ assert.equal(("[Correct or supersede context notes in the advisor editor]"
   + "(https://example.com/bad)").match(matcher), null);
 assert.equal(("[Correct or supersede context notes in the advisor editor]"
   + "(/admin/cars/3/historical-reviews/533/context?next=evil)").match(matcher), null);
-console.log("Rina chat inline JavaScript and editor link: PASS");
+const duplicatePatterns = source.split("\n")
+  .map((line) => line.trim())
+  .filter((line) => line.startsWith("/^")
+    && line.includes("Link already-documented work in the advisor editor"));
+assert.equal(duplicatePatterns.length, 1, "Missing duplicate evidence button matcher");
+const duplicateMatcher = runInNewContext(duplicatePatterns[0], {}, { timeout: 1000 });
+const trustedDuplicateUrl = "/admin/cars/3/historical-reviews/537/context#candidate-links";
+const trustedDuplicateLine = "[Link already-documented work in the advisor editor](" + trustedDuplicateUrl + ")";
+const duplicateMatch = trustedDuplicateLine.match(duplicateMatcher);
+assert.ok(duplicateMatch, "Trusted duplicate advisor link must match");
+assert.equal(duplicateMatch[1], trustedDuplicateUrl);
+assert.equal(duplicateMatch[2], "3");
+assert.equal(duplicateMatch[3], "537");
+for (const bad of [
+  "https://example.com/steal",
+  "/admin/cars/3/historical-reviews/537/context",
+  "/admin/cars/3/historical-reviews/537/context#candidate-links?next=evil",
+  "/admin/cars/3/historical-reviews/537/context#candidate-links/evil",
+]) {
+  assert.equal(
+    ("[Link already-documented work in the advisor editor](" + bad + ")").match(duplicateMatcher),
+    null,
+    "Reject untrusted or malformed advisor link"
+  );
+}
+assert.ok(source.includes('editorLink.textContent = "Link Already-Documented Repair"'),
+  "Advisor-link action must be a real touch-friendly button");
+console.log("Rina chat inline JavaScript and both scoped advisor links: PASS");

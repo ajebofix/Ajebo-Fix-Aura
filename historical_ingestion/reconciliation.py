@@ -60,7 +60,7 @@ _ALLOWED_EVIDENCE_STATES = {
     "completion_claim",
     "uncertain",
 }
-_ALLOWED_DECISIONS = {"confirmed", "not_done", "unsure"}
+_ALLOWED_DECISIONS = {"confirmed", "not_done", "unsure", "already_documented"}
 _ALLOWED_CONDITIONS = {
     "new",
     "preowned_tokunbo",
@@ -715,6 +715,41 @@ def save_reconciliation_review(
         condition = _clip(row.get("component_condition"), limit=40).lower()
         if condition not in _ALLOWED_CONDITIONS:
             raise HistoricalReconciliationError("Invalid component condition.")
+        if decision == "already_documented":
+            # A cross-source reference is non-writing and is only accepted for
+            # another historical review of this same vehicle. The linked source
+            # may itself still await final advisor approval.
+            linked_id = row.get("linked_evidence_id")
+            if (
+                type(linked_id) is not int
+                or linked_id <= 0
+                or linked_id == extraction.evidence_id
+            ):
+                raise HistoricalReconciliationError(
+                    "Already documented requires a different Evidence # reference."
+                )
+            linked = (
+                EvidenceExtraction.query.filter_by(
+                    evidence_id=linked_id,
+                    extraction_type="historical_reconciliation",
+                    status="completed",
+                )
+                .order_by(EvidenceExtraction.id.desc())
+                .first()
+            )
+            if (
+                linked is None
+                or linked.evidence is None
+                or linked.evidence.car_id != extraction.evidence.car_id
+                or linked.evidence.review_status == "rejected"
+            ):
+                raise HistoricalReconciliationError(
+                    "Linked historical evidence must exist for the same vehicle."
+                )
+            if row.get("reviewed_by_advisor") is not True:
+                raise HistoricalReconciliationError(
+                    "An advisor must explicitly verify the linked historical source."
+                )
         if decision == "confirmed":
             if _parse_when(row.get("occurred_at")) is None:
                 raise HistoricalReconciliationError(

@@ -108,6 +108,38 @@ def test_manual_advisor_correction_keeps_source_and_history_unchanged(app, clien
     assert "vibration was reported before" in preview
 
 
+def test_final_review_preview_retains_duplicate_evidence_link(app):
+    admin, _owner, car, extraction = _setup_notes(suffix=559)
+    payload = reconciliation_payload(extraction, reviewed=True)
+    payload["candidates"][0].update({
+        "advisor_decision": "confirmed",
+        "reviewed_by_advisor": True,
+        "occurred_at": "2026-05-18",
+    })
+    save_reconciliation_review(
+        extraction_id=extraction.id,
+        actor_user_id=admin.id,
+        reviewed_payload=payload,
+    )
+    db.session.commit()
+    state = summarize_state(
+        extraction_id=extraction.id,
+        car_id=car.id,
+        actor_user_id=admin.id,
+    )
+    assert state.all_reviewed is True
+    assert state.unreviewed_count == 0
+    preview = review_preview(state)
+    assert "Ready for your final review" in preview
+    assert (
+        f"[Link already-documented work in the advisor editor]"
+        f"(/admin/cars/{car.id}/historical-reviews/"
+        f"{extraction.id}/context#candidate-links)"
+    ) in preview
+    assert "Correct or supersede context notes in the advisor editor" in preview
+    assert TreatmentPlan.query.count() == 0
+
+
 def test_advisor_can_correct_and_supersede_conflicting_context(app):
     admin, _owner, car, extraction = _setup_notes(suffix=553)
     snapshot = context_editor_snapshot(

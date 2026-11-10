@@ -2319,3 +2319,115 @@ def test_manual_link_corrects_confirmed_but_unapplied_duplicate(app, client):
     assert TreatmentPlan.query.filter_by(
         record_origin="historical_reconciliation"
     ).count() == 0
+
+
+def test_exact_evidence_command_resumes_unbound_standalone_review(app, client):
+    """A lost chat binding must never send a source-specific draft to generic Rina."""
+    admin = _user(suffix=961, role="admin")
+    owner = _user(suffix=962)
+    car = _car(suffix=961, model="GLK 350")
+    _own(owner=owner, car=car, suffix=961)
+    evidence, _ = _standalone_document_analysis(admin=admin, car=car)
+
+    _sign_in(client, admin)
+    _post_json(client, "/chat/select-vehicle", {"car_id": car.id})
+    staged = client.post(
+        "/chat/historical-review/from-source",
+        data={
+            "csrf_token": _csrf_token(client),
+            "car_id": car.id,
+            "evidence_id": evidence.id,
+        },
+    )
+    assert staged.status_code == 302
+    prior = (
+        EvidenceExtraction.query.filter_by(
+            evidence_id=evidence.id,
+            extraction_type="historical_reconciliation",
+        ).one()
+    )
+
+    with client.session_transaction() as session:
+        for key in (
+            "rina_history_review_extraction_id",
+            "rina_history_review_candidate_id",
+            "rina_history_review_phase",
+            "rina_history_review_choices",
+        ):
+            session.pop(key, None)
+
+    response = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car.id,
+            "message": f"Open historical review for Evidence #{evidence.id}",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json["intent"] == "historical_review"
+    assert response.json["historical_review"]["extraction_id"] == prior.id
+    assert response.json["historical_review"]["phase"] == "reviewing"
+    assert f"Resumed historical review from Evidence #{evidence.id}" in response.json["reply"]
+    assert "Historical draft preview (incomplete)" in response.json["reply"]
+    assert "Collision repair draft" not in response.json["reply"]
+    assert EvidenceExtraction.query.filter_by(
+        evidence_id=evidence.id, extraction_type="historical_reconciliation",
+    ).count() == 1
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation",
+    ).count() == 0
+
+
+def test_explicit_evidence_resume_rejects_other_vehicle_source(app, client):
+    admin = _user(suffix=963, role="admin")
+    owner_a = _user(suffix=964)
+    owner_b = _user(suffix=965)
+    car_a = _car(suffix=963, model="GLK 350")
+    car_b = _car(suffix=964, model="GL 450")
+    _own(owner=owner_a, car=car_a, suffix=963)
+    _own(owner=owner_b, car=car_b, suffix=964)
+    source_b, _ = _standalone_document_analysis(admin=admin, car=car_b)
+
+    _sign_in(client, admin)
+    _post_json(client, "/chat/select-vehicle", {"car_id": car_a.id})
+    rejected = _post_json(
+        client,
+        "/chat",
+        {
+            "car_id": car_a.id,
+            "message": f"Show historical draft for Evidence #{source_b.id}",
+        },
+    )
+    assert rejected.status_code == 400
+    assert rejected.json["intent"] == "historical_review"
+    assert rejected.json["state"] == "abstained"
+    assert "not available for this vehicle" in rejected.json["reply"]
+    assert EvidenceExtraction.query.filter_by(
+        evidence_id=source_b.id, extraction_type="historical_reconciliation",
+    ).count() == 0
+    assert TreatmentPlan.query.filter_by(
+        record_origin="historical_reconciliation",
+    ).count() == 0
+
+
+def test_resume_evidence_command_requires_full_explicit_source_reference():
+    from routes.chat import _explicit_source_review_resume_evidence_id
+
+    assert _explicit_source_review_resume_evidence_id(
+        "Open historical review for Evidence #376"
+    ) == 376
+    assert _explicit_source_review_resume_evidence_id(
+        "Show me the historical review draft for evidence 376."
+    ) == 376
+    assert _explicit_source_review_resume_evidence_id(
+        "Resume steering review from Evidence #376"
+    ) == 376
+    for message in (
+        "Show me the draft",
+        "Show the collision plan draft",
+        "The steering evidence was 376 but don't open it.",
+        "Open historical review for Evidence #0",
+        "Open historical review for Evidence #376 and record it",
+    ):
+        assert _explicit_source_review_resume_evidence_id(message) is None

@@ -353,6 +353,21 @@ def _historical_review_start_requested(message: str) -> bool:
     )
 
 
+def _explicit_source_review_resume_evidence_id(message: str) -> int | None:
+    """Resume one advisor-scoped source, without guessing from a broad 'draft' query."""
+    text = _normalise_chat_command(message)
+    match = re.fullmatch(
+        r"(?:show(?: me)?|open|resume|continue(?: with)?)\s+"
+        r"(?:the\s+)?(?:pending\s+)?"
+        r"(?:historical|steering)\s+"
+        r"(?:review|reconciliation|draft)(?:\s+draft)?\s+"
+        r"(?:for|from|of)\s+evidence\s*#?\s*(\d{1,10})[.!]?",
+        text,
+    )
+    evidence_id = int(match.group(1)) if match else 0
+    return evidence_id if evidence_id > 0 else None
+
+
 def _explicit_historical_apply_confirmation(message: str) -> bool:
     text = _normalise_chat_command(message).strip(" .!?")
     if not text or len(text) > 120:
@@ -784,6 +799,60 @@ def _prepared_source_review_choices(*, context, evidence_id: int) -> list[dict[s
             }
         )
     return prepared[:40]
+
+
+def _resume_standalone_historical_review(
+    *, context, evidence_id: int
+) -> dict[str, object]:
+    """Rebind a saved source draft by exact Evidence ID; never write treatment history."""
+    try:
+        extraction = stage_standalone_source_review(
+            context=context,
+            evidence_id=evidence_id,
+            actor_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HistoricalReconciliationError(str(exc)) from exc
+
+    if historical_review_already_applied(extraction.id) is not None:
+        _clear_historical_review_binding()
+        return {
+            "reply": (
+                f"Evidence #{evidence_id} was already applied to historical vehicle "
+                "records. I won't create a second completed repair."
+            ),
+            "phase": None,
+            "extraction_id": extraction.id,
+            "candidate_id": None,
+            "provider_status": "not_called",
+        }
+
+    state = summarize_historical_review(
+        extraction_id=extraction.id,
+        actor_user_id=current_user.id,
+        car_id=context.car_id,
+    )
+    phase = "awaiting_apply_confirmation" if state.all_reviewed else "reviewing"
+    next_candidate_id = None if state.all_reviewed else state.next_candidate_id
+    _history_review_bind(
+        extraction_id=extraction.id,
+        candidate_id=next_candidate_id,
+        phase=phase,
+    )
+    return {
+        "reply": (
+            f"Resumed historical review from Evidence #{evidence_id}. "
+            "This is an advisor draft; nothing has been approved or applied.\n\n"
+            + historical_review_preview(state)
+        ),
+        "phase": phase,
+        "extraction_id": extraction.id,
+        "candidate_id": next_candidate_id,
+        "provider_status": "not_called",
+        "provider": None,
+        "provider_model": None,
+        "provider_request_id": None,
+    }
 
 
 def _history_review_choice_prompt(context) -> dict[str, object]:
@@ -2704,11 +2773,16 @@ def chat():
         # evidence. Do not let stale historical session state hijack the turn.
         _clear_historical_review_binding()
 
+    requested_historical_source_id = (
+        _explicit_source_review_resume_evidence_id(message)
+        if not current_plan_source_review else None
+    )
     historical_review_requested = (
         car_id is not None
         and not current_plan_source_review
         and (
-            _history_review_session_active()
+            requested_historical_source_id is not None
+            or _history_review_session_active()
             or _historical_review_start_requested(message)
         )
     )
@@ -2789,9 +2863,16 @@ def chat():
 
         history_request_id = _new_conversation_id()
         try:
-            history_result = _handle_historical_review_turn(
-                context=context,
-                message=message,
+            history_result = (
+                _resume_standalone_historical_review(
+                    context=context,
+                    evidence_id=requested_historical_source_id,
+                )
+                if requested_historical_source_id is not None
+                else _handle_historical_review_turn(
+                    context=context,
+                    message=message,
+                )
             )
             conversation_id = _bind_rina_vehicle(
                 car_id=context.car_id,

@@ -15,6 +15,7 @@ on:
       - "scripts/prince_verify_synthetic_staging.py"
       - "railway.json"
       - "migrations/versions/b71e5ca90d24_prince_pilot_isolated_workspace.py"
+      - "migrations/versions/c84e91f6b207_prince_job_entry_history.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
 
@@ -99,11 +100,16 @@ jobs:
           required = {
               "prince_tenants", "prince_memberships", "prince_customers",
               "prince_vehicles", "prince_jobs", "prince_audit_events",
+              "prince_job_entries",
           }
           assert required <= names, f"Missing Prince tables: {required - names}"
           fields = {c["name"] for c in inspector.get_columns("prince_customers")}
           assert {"phone_ciphertext","email_ciphertext","address_ciphertext"} <= fields
           assert {"phone_number", "email", "home_address"}.isdisjoint(fields)
+          entry_fields = {c["name"] for c in inspector.get_columns("prince_job_entries")}
+          assert {"tenant_id","job_id","category","body","review_state","recorded_by_user_id"} <= entry_fields
+          fk_targets = [frozenset(fk["constrained_columns"]) for fk in inspector.get_foreign_keys("prince_job_entries")]
+          assert frozenset({"job_id", "tenant_id"}) in fk_targets
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py

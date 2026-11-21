@@ -18,6 +18,7 @@ class PrinceTenant(db.Model):
     display_name = db.Column(db.String(160), nullable=False)
     active = db.Column(db.Boolean, nullable=False, default=False)
     intake_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    approved_privacy_notice_version = db.Column(db.String(48))
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 

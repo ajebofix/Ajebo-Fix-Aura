@@ -10,7 +10,9 @@ from sqlalchemy import inspect
 
 from app import create_app
 from extensions import db
-from partnerships.prince_models import PrinceCustomer, PrinceJob, PrinceMembership, PrinceTenant
+from partnerships.prince_models import (
+    PrinceCustomer, PrinceJob, PrinceMembership, PrinceTenant,
+)
 from scripts.prince_seed_synthetic_staging import ensure_safe_scope
 
 BASE = "https://prince-staging.test"
@@ -22,7 +24,8 @@ def verify():
     with app.app_context():
         tables = set(inspect(db.engine).get_table_names())
         assert {"prince_tenants", "prince_memberships", "prince_customers",
-                "prince_vehicles", "prince_jobs", "prince_audit_events"} <= tables
+                "prince_vehicles", "prince_jobs", "prince_audit_events",
+                "prince_job_entries"} <= tables
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         assert tenant.active and tenant.intake_enabled
         assert tenant.approved_privacy_notice_version == "synthetic-staging-v1"
@@ -59,6 +62,14 @@ def verify():
     assert len(jobs_a.json["jobs"]) == 1
     assert jobs_a.json["jobs"][0]["full_name"] == "Demo Owner Alpha"
     assert "phone_number" not in jobs_a.json["jobs"][0]
+    history_a = op_a.get(
+        f"/pilot/workshops/prince/jobs/{jobs_a.json['jobs'][0]['job_id']}/entries",
+        base_url=BASE,
+    )
+    assert history_a.status_code == 200
+    assert all(x["review_state"] == "unverified"
+               for x in history_a.json["entries"])
+    assert not any("phone_ciphertext" in x for x in history_a.json["entries"])
     assert op_a.get("/cars", base_url=BASE).status_code == 404
     page_a = op_a.get("/pilot/workshops/prince/operator", base_url=BASE)
     assert page_a.status_code == 200
@@ -72,6 +83,7 @@ def verify():
     assert jobs_b.json["jobs"][0]["full_name"] == "Demo Owner Beta"
     job_a = jobs_a.json["jobs"][0]["job_id"]
     assert op_b.get(f"/pilot/workshops/prince/jobs/{job_a}", base_url=BASE).status_code == 404
+    assert op_b.get(f"/pilot/workshops/prince/jobs/{job_a}/entries", base_url=BASE).status_code == 404
 
     principal = login("principal", "PRINCE_DEMO_PRINCIPAL_PASSWORD")
     jobs_all = principal.get("/pilot/workshops/prince/jobs", base_url=BASE)
@@ -79,7 +91,7 @@ def verify():
     assert len(jobs_all.json["jobs"]) == 2
     assert principal.get("/admin", base_url=BASE).status_code == 404
     assert principal.get("/dashboard", base_url=BASE).status_code == 404
-    print("Prince staged HTTP smoke passed: synthetic roles, tenant, redaction and legacy-route denial.")
+    print("Prince staged HTTP smoke passed: roles, tenant, redaction, append-only history and legacy-route denial.")
 
 
 if __name__ == "__main__":

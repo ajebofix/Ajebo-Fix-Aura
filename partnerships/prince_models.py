@@ -81,6 +81,7 @@ class PrinceVehicle(db.Model):
 class PrinceJob(db.Model):
     __tablename__ = "prince_jobs"
     __table_args__ = (
+        db.UniqueConstraint("id", "tenant_id", name="uq_prince_job_id_tenant"),
         db.ForeignKeyConstraint(
             ["customer_id", "tenant_id"],
             ["prince_customers.id", "prince_customers.tenant_id"],
@@ -107,6 +108,40 @@ class PrinceJob(db.Model):
     status = db.Column(db.String(24), nullable=False, default="draft")
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PrinceJobEntry(db.Model):
+    """Append-only, source-labelled workshop statement; never proof of repair."""
+    __tablename__ = "prince_job_entries"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_entry_job_tenant", ondelete="RESTRICT",
+        ),
+        db.CheckConstraint(
+            "category IN ('customer_complaint', 'technician_observation', "
+            "'diagnostic_finding', 'temporary_intervention', 'reported_work', "
+            "'outstanding_concern', 'next_action')",
+            name="ck_prince_entry_category",
+        ),
+        db.CheckConstraint(
+            "review_state = 'unverified'",
+            name="ck_prince_entry_review_state",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey(
+        "prince_tenants.id", ondelete="RESTRICT"
+    ), nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    category = db.Column(db.String(36), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    review_state = db.Column(db.String(16), nullable=False, default="unverified")
+    recorded_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    recorded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class PrinceAudit(db.Model):

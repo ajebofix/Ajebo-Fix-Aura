@@ -108,7 +108,18 @@
           <li class="job-card">
             <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
             <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
-            {% if job.reported_concern %}<p class="job-concern">{{ job.reported_concern }}</p>{% endif %}
+            <form class="job-update-form"
+                  data-update-url="{{ url_for('prince_pilot.update_reported_concern', slug=slug, job_id=job.job_id) }}"
+                  method="post" autocomplete="off">
+              <label for="job-concern-{{ job.job_id }}">Reported concern <small>Not a confirmed diagnosis</small></label>
+              <textarea id="job-concern-{{ job.job_id }}" name="reported_concern"
+                        rows="2" maxlength="1200" required
+                        placeholder="No private contact details">{{ job.reported_concern or "" }}</textarea>
+              <div class="job-update-actions">
+                <button type="submit">Save concern update</button>
+                <span class="job-update-message" role="status" aria-live="polite"></span>
+              </div>
+            </form>
             <div class="job-footer"><span>{{ job.job_status | replace("_", " ") | title }}</span><span>Vehicle #{{ job.vehicle_id }}</span></div>
           </li>
           {% endfor %}

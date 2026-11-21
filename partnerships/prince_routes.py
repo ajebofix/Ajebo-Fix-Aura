@@ -151,6 +151,19 @@ def intake(slug):
                              not 1886 <= year <= 2100):
         abort(400)
 
+    # Dedicated staging portal is a synthetic-only training surface. This
+    # server-side denylist/allowlist avoids collecting real customer contacts
+    # through accidental mobile intake, even when the form is modified.
+    if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        if not full_name.lower().startswith(("demo ", "synthetic ")):
+            abort(400)
+        if phone not in (None, "DEMO CONTACT ONLY"):
+            abort(400)
+        if email not in (None, "demo@example.invalid"):
+            abort(400)
+        if address not in (None, "DEMO ADDRESS ONLY"):
+            abort(400)
+
     # Encrypt *before* writing. No logging of request bodies or contact fields.
     try:
         encrypted_phone = encrypt_profile_value(phone)

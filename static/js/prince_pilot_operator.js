@@ -64,39 +64,71 @@
 })();
 
 
-/* Only assigned-job reported concerns can be edited; never accept contact fields. */
+/* Append-only, category-specific workshop notes. Never include private contacts. */
 (() => {
   "use strict";
   const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
-  for (const form of document.querySelectorAll(".job-update-form")) {
+  for (const form of document.querySelectorAll(".job-entry-form")) {
     let saving = false;
+    const feedback = form.querySelector(".job-entry-message");
+    const button = form.querySelector('button[type="submit"]');
+    const history = form.closest(".workshop-record")?.querySelector(".job-history-list");
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (saving || !form.reportValidity()) return;
-      const feedback = form.querySelector(".job-update-message");
-      const button = form.querySelector('button[type="submit"]');
-      const concern = form.querySelector('textarea[name="reported_concern"]')?.value.trim();
-      if (!csrf || !form.dataset.updateUrl || !concern) {
-        feedback.textContent = "The secure update is unavailable.";
+      const category = String(form.querySelector('select[name="category"]')?.value || "");
+      const body = String(form.querySelector('textarea[name="body"]')?.value || "").trim();
+      if (!csrf || !form.dataset.entryUrl || !category || !body || !history) {
+        feedback.textContent = "The secure history form is unavailable.";
         return;
       }
-      // No customer contact details are present in this request body or URL.
       saving = true;
       button.disabled = true;
-      feedback.textContent = "Saving…";
+      feedback.textContent = "Recording…";
       try {
-        const response = await fetch(form.dataset.updateUrl, {
-          method: "PATCH",
+        const response = await fetch(form.dataset.entryUrl, {
+          method: "POST",
           credentials: "same-origin",
           cache: "no-store",
           redirect: "error",
           headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
-          body: JSON.stringify({reported_concern: concern}),
+          body: JSON.stringify({category, body}),
         });
-        if (!response.ok) throw new Error("update-failed");
-        feedback.textContent = "Saved as a reported concern; not confirmed work.";
+        if (!response.ok) {
+          feedback.textContent = response.status === 400
+            ? "Check the category, avoid personal contacts and use Demo: in staging."
+            : "Could not record this note. No work has been verified.";
+          return;
+        }
+        const payload = await response.json();
+        const saved = payload.entry;
+        if (!saved || !saved.id || !saved.category_label) throw new Error("Invalid response");
+        // Construct elements with textContent, never HTML from user-entered notes.
+        const item = document.createElement("li");
+        item.className = "record-entry";
+        const head = document.createElement("div");
+        head.className = "record-entry-header";
+        const label = document.createElement("strong");
+        label.textContent = saved.category_label;
+        const status = document.createElement("span");
+        status.className = "entry-state";
+        status.textContent = saved.review_state || "Unverified";
+        head.append(label, status);
+        const paragraph = document.createElement("p");
+        paragraph.textContent = saved.body;
+        const date = document.createElement("time");
+        date.dateTime = saved.recorded_at;
+        date.textContent = saved.recorded_at;
+        item.append(head, paragraph, date);
+        history.querySelector(".job-history-empty")?.remove();
+        history.append(item);
+        form.reset();
+        feedback.textContent = "Added to history as unverified. Earlier notes were preserved.";
       } catch {
-        feedback.textContent = "Could not save. Avoid adding customer contact details to job notes.";
+        // A network interruption can happen after a successful commit.
+        // Avoid automatic resubmission (which could create a duplicate).
+        feedback.textContent = "Could not confirm save. Refresh the history before retrying.";
       } finally {
         saving = false;
         button.disabled = false;

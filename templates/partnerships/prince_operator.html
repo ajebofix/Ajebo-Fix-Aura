@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="robots" content="noindex,nofollow">
+  <title>{{ workshop_name }} · Private Pilot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}">
+  <script defer src="{{ url_for('static', filename='js/prince_pilot_operator.js') }}"></script>
+</head>
+<body>
+  <main class="pilot-shell" id="main">
+    <header class="pilot-header">
+      <div class="brand-mark" aria-hidden="true">+</div>
+      <div class="brand-copy">
+        <div class="eyebrow">AURA WORKSHOP PILOT</div>
+        <h1>{{ workshop_name }}</h1>
+        <p>Restricted operator workspace</p>
+      </div>
+    </header>
+
+    <section class="intro">
+      <div class="overline">PRIVATE WORKSPACE</div>
+      <h2>Today at the workshop</h2>
+      <p>Register approved pilot customers, then continue with your assigned vehicle jobs.</p>
+      <div class="security-note">Customer contact information is hidden after registration. This screen shows only permitted job details.</div>
+    </section>
+
+    <nav class="jump-links" aria-label="Workspace sections">
+      <a href="#new-customer">New customer</a>
+      <a href="#assigned-jobs">Assigned jobs <span>{{ jobs | length }}</span></a>
+    </nav>
+
+    <section class="panel" id="new-customer" aria-labelledby="intake-heading">
+      <div class="section-top">
+        <div>
+          <div class="overline">01 / INTAKE</div>
+          <h2 id="intake-heading">Register a customer</h2>
+        </div>
+        <span class="pill">{{ "Enabled for pilot" if can_intake else "Not available" }}</span>
+      </div>
+      {% if not can_intake %}
+        <p class="muted">Customer intake is locked until the workshop principal approves the pilot privacy notice and intake is enabled.</p>
+      {% else %}
+        <p class="muted">Use the customer's real details only with documented authorization. Information is encrypted when submitted.</p>
+        <form id="prince-intake-form" action="{{ url_for('prince_pilot.intake', slug=slug) }}" method="post" data-intake-url="{{ url_for('prince_pilot.intake', slug=slug) }}" autocomplete="off">
+          <input type="hidden" name="privacy_notice_version" value="{{ privacy_notice_version }}">
+          <div class="field">
+            <label for="full-name">Customer full name <em>Required</em></label>
+            <input id="full-name" type="text" name="full_name" maxlength="120" required autocomplete="off" placeholder="Customer's full name">
+          </div>
+          <div class="field-grid">
+            <div class="field private-field">
+              <label for="phone">Phone number <span>Private</span></label>
+              <input id="phone" type="tel" name="phone_number" maxlength="30" inputmode="tel" autocomplete="off" placeholder="Optional">
+            </div>
+            <div class="field private-field">
+              <label for="email">Email <span>Private</span></label>
+              <input id="email" type="email" name="email" maxlength="200" autocomplete="off" placeholder="Optional">
+            </div>
+          </div>
+          <hr>
+          <h3>Vehicle and current concern</h3>
+          <div class="field-grid">
+            <div class="field">
+              <label for="brand">Make</label>
+              <input id="brand" name="vehicle_brand" maxlength="100" autocomplete="off" placeholder="e.g. Mercedes-Benz">
+            </div>
+            <div class="field">
+              <label for="model">Model</label>
+              <input id="model" name="vehicle_model" maxlength="100" autocomplete="off" placeholder="e.g. S-Class W221">
+            </div>
+          </div>
+          <div class="field">
+            <label for="year">Year <span>Optional, if verified</span></label>
+            <input id="year" name="vehicle_year" type="number" min="1886" max="2100" placeholder="Unknown is okay">
+          </div>
+          <div class="field">
+            <label for="concern">Customer-reported concern <span>Not a diagnosis</span></label>
+            <textarea id="concern" name="reported_concern" rows="3" maxlength="1200" placeholder="Describe what the customer reports. Do not enter their phone, address or other private details here."></textarea>
+          </div>
+          <label class="consent-row" for="participation">
+            <input id="participation" name="participation_confirmed" type="checkbox" required>
+            <span>I have followed the approved privacy-notice and participation-verification procedure for this customer.</span>
+          </label>
+          <div id="intake-message" class="form-message" role="status" aria-live="polite"></div>
+          <button class="primary-btn" type="submit" id="submit-intake">Save customer &amp; lock private details</button>
+          <p class="tiny">After successful save, private contact fields are cleared. Do not take screenshots of customer contact information.</p>
+        </form>
+      {% endif %}
+    </section>
+
+    <section class="panel" id="assigned-jobs" aria-labelledby="jobs-heading">
+      <div class="section-top">
+        <div>
+          <div class="overline">02 / ACTIVE RECORDS</div>
+          <h2 id="jobs-heading">Assigned vehicle jobs</h2>
+        </div>
+        <span class="pill">{{ jobs | length }} shown</span>
+      </div>
+      {% if request.args.get("saved") == "1" %}
+        <div class="success-state" role="status">Customer saved. Private contact fields are locked.</div>
+      {% endif %}
+      {% if jobs %}
+        <ul class="job-list">
+          {% for job in jobs %}
+          <li class="job-card">
+            <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
+            <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
+            {% if job.reported_concern %}<p class="job-concern">{{ job.reported_concern }}</p>{% endif %}
+            <div class="job-footer"><span>{{ job.job_status | replace("_", " ") | title }}</span><span>Vehicle #{{ job.vehicle_id }}</span></div>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-jobs">
+          <div class="empty-icon" aria-hidden="true">▤</div>
+          <strong>No assigned jobs yet</strong>
+          <p>Jobs you are permitted to work on will appear here after approved intake.</p>
+        </div>
+      {% endif %}
+    </section>
+
+    <footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer>
+  </main>
+</body>
+</html>

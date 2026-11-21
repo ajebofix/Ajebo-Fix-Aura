@@ -20,6 +20,15 @@
       </div>
     </header>
 
+    {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+    <div class="security-note" role="note" style="background:#fff3d2;color:#5c4800;border-color:#f6d36f;margin-bottom:14px">
+      <strong>STAGING TEST ONLY.</strong> Use fictional customer and vehicle information, never actual client contact details.
+      <form action="{{ url_for('prince_staging.sign_out') }}" method="post" style="margin-top:10px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" style="border:1px solid #bd9c41;background:#fff;color:#5c4800;padding:6px 12px;border-radius:8px">Sign out of demo</button>
+      </form>
+    </div>
+    {% endif %}
     <section class="intro">
       <div class="overline">PRIVATE WORKSPACE</div>
       <h2>Today at the workshop</h2>

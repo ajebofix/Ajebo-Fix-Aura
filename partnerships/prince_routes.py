@@ -6,7 +6,7 @@ not caller-supplied role, tenant IDs or assignments.
 """
 from __future__ import annotations
 
-from flask import Blueprint, abort, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from flask_login import current_user
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -244,3 +244,32 @@ def update_reported_concern(slug, job_id):
         db.session.rollback()
         return jsonify({"error": "Update could not be saved"}), 503
     return jsonify({"job_id": job.id, "updated": True})
+
+
+@prince_pilot_bp.get("/<slug>/operator")
+def operator_workspace(slug):
+    """Operator-facing, mobile-first interface. No private contacts are read."""
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.JOB_READ, actor.user_id)
+    query = (
+        db.session.query(PrinceJob, PrinceCustomer, PrinceVehicle)
+        .join(PrinceCustomer, (PrinceCustomer.id == PrinceJob.customer_id) &
+                              (PrinceCustomer.tenant_id == PrinceJob.tenant_id))
+        .join(PrinceVehicle, (PrinceVehicle.id == PrinceJob.vehicle_id) &
+                             (PrinceVehicle.tenant_id == PrinceJob.tenant_id))
+        .filter(PrinceJob.tenant_id == tenant.id)
+    )
+    if actor.role == PrinceRole.OPERATOR:
+        query = query.filter(PrinceJob.assigned_user_id == actor.user_id)
+    records = query.order_by(PrinceJob.id.desc()).limit(20).all()
+    jobs = [_job_response(job, customer, vehicle)
+            for job, customer, vehicle in records]
+    return render_template(
+        "partnerships/prince_operator.html",
+        workshop_name=tenant.display_name,
+        slug=tenant.slug,
+        jobs=jobs,
+        privacy_notice_version=tenant.approved_privacy_notice_version,
+        can_intake=bool(tenant.intake_enabled and
+                        tenant.approved_privacy_notice_version),
+    )

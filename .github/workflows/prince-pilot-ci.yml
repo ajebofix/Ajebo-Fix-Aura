@@ -104,3 +104,30 @@ jobs:
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
+
+      - name: Rehearse exact stage provisioning and private HTTP smoke on a second disposable database
+        env:
+          APP_ENV: staging
+          RAILWAY_PROJECT_ID: 3ed38d6c-6411-4890-861b-70cea583add2
+          RAILWAY_ENVIRONMENT_ID: aef601d6-38f3-4d16-99f0-aa908c87b3f2
+          PRINCE_STAGING_LOCKDOWN: "true"
+          AURA_PRINCE_PILOT_API_ENABLED: "true"
+          PRINCE_STAGING_SYNTHETIC_SEED: "true"
+          PRINCE_STAGING_GATE_TOKEN: "ci-testing-only-stage-gate-2026-000000"
+          PRINCE_DEMO_PRINCIPAL_PASSWORD: "ci-demo-principal-password-2026-do-not-use"
+          PRINCE_DEMO_OPERATOR_A_PASSWORD: "ci-demo-operator-a-password-2026-do-not-use"
+          PRINCE_DEMO_OPERATOR_B_PASSWORD: "ci-demo-operator-b-password-2026-do-not-use"
+          SQLALCHEMY_DATABASE_URI: postgresql://prince_ci:synthetic_ci_only@127.0.0.1:5432/prince_rehearsal
+        run: |
+          python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine(
+              "postgresql://prince_ci:synthetic_ci_only@127.0.0.1:5432/postgres",
+              isolation_level="AUTOCOMMIT",
+          )
+          with engine.connect() as connection:
+              connection.execute(text("CREATE DATABASE prince_rehearsal"))
+          PY
+          python -m flask db upgrade
+          python -m scripts.prince_seed_synthetic_staging
+          python -m scripts.prince_verify_synthetic_staging

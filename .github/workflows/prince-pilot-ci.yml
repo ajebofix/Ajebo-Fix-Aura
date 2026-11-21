@@ -6,6 +6,9 @@ on:
     paths:
       - "partnerships/prince_*.py"
       - "tests/test_prince_*.py"
+      - "templates/partnerships/prince_operator.html"
+      - "static/js/prince_pilot_operator.js"
+      - "static/css/prince_pilot.css"
       - "migrations/versions/b71e5ca90d24_prince_pilot_isolated_workspace.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
@@ -38,8 +41,64 @@ jobs:
       - name: Generate ephemeral encryption key
         run: python3 scripts/generate_ci_profile_encryption_key.py
       - name: Compile Prince pilot modules
-        run: python -m compileall -q partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py tests/test_prince_access_policy.py tests/test_prince_pilot_api.py
+        run: python -m compileall -q partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py
       - name: Run policy and HTTP authorization tests
         run: pytest -q --tb=short tests/test_prince_access_policy.py tests/test_prince_pilot_api.py
+      - name: Check mobile JavaScript syntax
+        run: node --check static/js/prince_pilot_operator.js
       - name: Lint Prince pilot code
         run: ruff check --output-format=concise partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py tests/test_prince_access_policy.py tests/test_prince_pilot_api.py
+
+  prince-pilot-postgres:
+    name: Prince isolated PostgreSQL migration and API rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prince_ci
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: prince_pilot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U prince_ci -d prince_pilot_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      SECRET_KEY: prince-postgres-ci-not-production
+      SQLALCHEMY_DATABASE_URI: postgresql://prince_ci:synthetic_ci_only@127.0.0.1:5432/prince_pilot_ci
+      GULF_CI_POSTGRES_URL: postgresql://prince_ci:synthetic_ci_only@127.0.0.1:5432/prince_pilot_ci
+      APP_ENV: testing
+      PROFILE_ENCRYPTION_KEY_VERSION: ci-v1
+      RATE_LIMIT_STORAGE_URI: memory://
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install requirements
+        run: python -m pip install -q --upgrade pip && pip install -q -r requirements-dev.txt
+      - name: Generate temporary encryption key
+        run: python3 scripts/generate_ci_profile_encryption_key.py
+      - name: Apply complete Alembic chain on disposable Postgres
+        run: flask db upgrade
+      - name: Assert Prince schema and confidentiality columns exist
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect
+          inspector = inspect(create_engine(os.environ["SQLALCHEMY_DATABASE_URI"]))
+          names = set(inspector.get_table_names())
+          required = {
+              "prince_tenants", "prince_memberships", "prince_customers",
+              "prince_vehicles", "prince_jobs", "prince_audit_events",
+          }
+          assert required <= names, f"Missing Prince tables: {required - names}"
+          fields = {c["name"] for c in inspector.get_columns("prince_customers")}
+          assert {"phone_ciphertext","email_ciphertext","address_ciphertext"} <= fields
+          assert {"phone_number", "email", "home_address"}.isdisjoint(fields)
+          PY
+      - name: Run Prince API and mobile authorization tests against disposable Postgres
+        run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py

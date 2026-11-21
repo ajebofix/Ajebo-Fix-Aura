@@ -213,40 +213,111 @@ def test_intake_cannot_accept_unconfirmed_participation(pilot, client):
     assert response.status_code == 400
 
 
-def test_operator_can_update_only_own_reported_concern(pilot, client):
+def test_old_concern_editor_retired_without_destroying_text(pilot, client, app):
     token = _login(client, pilot["seun_email"])
-    created = client.post(
-        f"{URL}/intake", json=_intake_payload(),
-        headers={"X-CSRF-Token": token},
-    )
-    assert created.status_code == 201
+    created = client.post(f"{URL}/intake", json=_intake_payload(),
+                          headers={"X-CSRF-Token": token})
     job_id = created.get_json()["job_id"]
-    updated = client.patch(
+    attempted = client.patch(
         f"{URL}/jobs/{job_id}/concern",
-        json={"reported_concern": "Cranks; no diagnosis confirmed"},
+        json={"reported_concern": "New text would overwrite"},
         headers={"X-CSRF-Token": token},
     )
-    assert updated.status_code == 200
-    assert updated.get_json() == {"job_id": job_id, "updated": True}
-    detail = client.get(f"{URL}/jobs/{job_id}")
-    assert detail.status_code == 200
-    assert detail.get_json()["reported_concern"] == "Cranks; no diagnosis confirmed"
+    assert attempted.status_code == 410
+    with app.app_context():
+        job = db.session.get(PrinceJob, job_id)
+        assert job.reported_concern == "Cranks, no start; fuel observation unverified"
 
 
-def test_operator_cannot_save_contact_strings_as_job_notes(pilot, client):
+def test_operator_can_add_multiple_unverified_categories_without_overwrite(pilot, client, app):
     token = _login(client, pilot["seun_email"])
-    created = client.post(
-        f"{URL}/intake", json=_intake_payload(),
-        headers={"X-CSRF-Token": token},
-    )
+    created = client.post(f"{URL}/intake", json=_intake_payload(),
+                          headers={"X-CSRF-Token": token})
     assert created.status_code == 201
     job_id = created.get_json()["job_id"]
-    response = client.patch(
-        f"{URL}/jobs/{job_id}/concern",
-        json={"reported_concern": "Please call +2348012345678"},
+    endpoint = f"{URL}/jobs/{job_id}/entries"
+    examples = [
+        ("customer_complaint", "Vehicle cranks without starting"),
+        ("temporary_intervention", "Temporary electrical workaround reportedly applied"),
+        ("diagnostic_finding", "Fuel pressure still needs testing"),
+        ("reported_work", "Technician reports preliminary inspection only"),
+        ("outstanding_concern", "Unresolved cause of no-start"),
+        ("next_action", "Check supply voltage and pressure with proper procedure"),
+    ]
+    for category, body in examples:
+        result = client.post(endpoint, json={"category": category, "body": body},
+                             headers={"X-CSRF-Token": token})
+        assert result.status_code == 201, result.get_data(as_text=True)
+        assert result.json["entry"]["review_state"] == "unverified"
+        assert result.json["entry"]["category"] == category
+        assert result.json["entry"]["body"] == body
+    listing = client.get(endpoint)
+    assert listing.status_code == 200
+    assert [(x["category"], x["body"]) for x in listing.json["entries"]] == examples
+    assert "phone_ciphertext" not in listing.get_data(as_text=True)
+    with app.app_context():
+        job = db.session.get(PrinceJob, job_id)
+        assert job.reported_concern == "Cranks, no start; fuel observation unverified"
+
+
+def test_operator_cannot_read_or_write_unassigned_or_cross_tenant_entries(pilot, client):
+    token = _login(client, pilot["seun_email"])
+    for job_id in (pilot["unassigned_id"], pilot["cross_id"]):
+        endpoint = f"{URL}/jobs/{job_id}/entries"
+        assert client.get(endpoint).status_code == 404
+        attempted = client.post(endpoint,
+                                json={"category": "technician_observation",
+                                      "body": "Demo-only observation"},
+                                headers={"X-CSRF-Token": token})
+        assert attempted.status_code == 404
+    assert client.get(f"/pilot/workshops/another-workshop/jobs/{pilot['cross_id']}/entries").status_code == 404
+
+
+def test_principal_can_append_within_tenant_and_cannot_certify_work(pilot, client, app):
+    token = _login(client, pilot["principal_email"])
+    endpoint = f"{URL}/jobs/{pilot['unassigned_id']}/entries"
+    result = client.post(endpoint,
+                         json={"category": "reported_work",
+                               "body": "Staff report repairs attempted, not yet verified"},
+                         headers={"X-CSRF-Token": token})
+    assert result.status_code == 201
+    assert result.json["entry"]["review_state"] == "unverified"
+    assert client.get(f"{URL}/jobs/{pilot['cross_id']}/entries").status_code == 404
+    assert client.post(endpoint, json={
+        "category": "reported_work", "body": "This is a test statement",
+        "review_state": "verified",
+    }, headers={"X-CSRF-Token": token}).status_code == 400
+
+
+def test_job_entries_validate_category_content_and_csrf(pilot, client):
+    token = _login(client, pilot["seun_email"])
+    created = client.post(f"{URL}/intake", json=_intake_payload(),
+                          headers={"X-CSRF-Token": token})
+    endpoint = f"{URL}/jobs/{created.json['job_id']}/entries"
+    for payload in (
+        {"category": "repair_completed", "body": "Technician completed everything"},
+        {"category": "technician_observation", "body": "Please call +2348012345678"},
+        {"category": "technician_observation", "body": "Email private@example.test"},
+        {"category": "technician_observation", "body": "No"},
+        {"category": "technician_observation", "body": "Clean observation", "secret": "leak"},
+    ):
+        assert client.post(endpoint, json=payload,
+                           headers={"X-CSRF-Token": token}).status_code == 400
+    assert client.post(endpoint, json={
+        "category": "next_action", "body": "Next inspection pending"
+    }).status_code == 400
+    assert client.get(endpoint).json["entries"] == []
+
+
+def test_operator_cannot_append_when_job_is_closed(pilot, app, client):
+    with app.app_context():
+        job = db.session.get(PrinceJob, pilot["unassigned_id"])
+        job.status = "closed"
+        db.session.commit()
+    token = _login(client, pilot["principal_email"])
+    response = client.post(
+        f"{URL}/jobs/{pilot['unassigned_id']}/entries",
+        json={"category": "next_action", "body": "Test follow-up"},
         headers={"X-CSRF-Token": token},
     )
-    assert response.status_code == 400
-    assert "2348012345678" not in client.get(
-        f"{URL}/jobs/{job_id}"
-    ).get_data(as_text=True)
+    assert response.status_code == 403

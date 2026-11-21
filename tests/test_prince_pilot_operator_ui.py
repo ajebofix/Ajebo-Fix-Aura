@@ -21,7 +21,7 @@ def test_operator_screen_requires_auth(app, client):
     assert client.get(f"{URL}/operator").status_code == 401
 
 
-def test_operator_screen_shows_only_assigned_jobs(pilot, client):
+def test_operator_screen_shows_only_assigned_jobs(pilot, client):  # noqa: F811 — pytest fixture parameter intentionally shadows imported fixture
     _login(client, pilot["seun_email"])
     response = client.get(f"{URL}/operator")
     assert response.status_code == 200
@@ -37,7 +37,7 @@ def test_operator_screen_shows_only_assigned_jobs(pilot, client):
     assert response.headers["Cache-Control"] == "no-store"
 
 
-def test_operator_screen_shows_only_allowed_customer_name_after_intake(pilot, client):
+def test_operator_screen_shows_only_allowed_customer_name_after_intake(pilot, client):  # noqa: F811 — pytest fixture parameter intentionally shadows imported fixture
     token = _login(client, pilot["seun_email"])
     response = client.post(f"{URL}/intake", json=_intake_payload(),
                            headers={"X-CSRF-Token": token})
@@ -54,14 +54,14 @@ def test_operator_screen_shows_only_allowed_customer_name_after_intake(pilot, cl
     assert "Unassigned Synthetic" not in page
 
 
-def test_workshop_principal_can_view_only_own_tenant_jobs(pilot, client):
+def test_workshop_principal_can_view_only_own_tenant_jobs(pilot, client):  # noqa: F811 — pytest fixture parameter intentionally shadows imported fixture
     _login(client, pilot["principal_email"])
     page = client.get(f"{URL}/operator").get_data(as_text=True)
     assert "Unassigned Synthetic" in page
     assert "Cross Tenant Synthetic" not in page
 
 
-def test_intake_form_locked_when_partner_notice_disabled(pilot, app, client):
+def test_intake_form_locked_when_partner_notice_disabled(pilot, app, client):  # noqa: F811 — pytest fixture parameter intentionally shadows imported fixture
     with app.app_context():
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         tenant.intake_enabled = False
@@ -72,7 +72,7 @@ def test_intake_form_locked_when_partner_notice_disabled(pilot, app, client):
     assert 'id="prince-intake-form"' not in page
 
 
-def test_operator_response_redacts_pasted_phone_and_email(pilot, app, client):
+def test_operator_response_redacts_pasted_phone_and_email(pilot, app, client):  # noqa: F811 — pytest fixture parameter intentionally shadows imported fixture
     with app.app_context():
         job = db.session.get(PrinceJob, pilot["unassigned_id"])
         job.reported_concern = (
@@ -88,7 +88,7 @@ def test_operator_response_redacts_pasted_phone_and_email(pilot, app, client):
     assert "+2348012345678" not in page
 
 
-def test_intake_rejects_contact_information_in_concern(pilot, client):
+def test_intake_rejects_contact_information_in_concern(pilot, client):  # noqa: F811 — pytest fixture parameter intentionally shadows imported fixture
     token = _login(client, pilot["seun_email"])
     payload = _intake_payload()
     payload["reported_concern"] = "Call the customer on 08012345678"

@@ -1,6 +1,6 @@
 # Prince Automobile Clinic × Aura — implementation foundation (draft)
 
-Status: **pre-integration / not deployed**. Branch: `feature/prince-pilot-foundation`.
+Status: **tenant-scoped API and schema drafted; disabled and not deployed**. Branch: `feature/prince-pilot-foundation`.
 Owner: Ajebo Fix Ltd / Aura. Partner: Prince Automobile Clinic.
 No real customer records, banking credentials, payment references or client contact details belong in this public repository.
 
@@ -19,7 +19,7 @@ No real customer records, banking credentials, payment references or client cont
 - `Car.vin` is non-null and globally unique. A Prince vehicle with unknown VIN cannot safely be inserted into that entity by fabricating a VIN.
 - Existing vehicle routes, ownership, evidence downloads, profile APIs, searches, report exports, Rina access, and administrative dashboards need tenant-by-tenant review before partner access.
 - A shared street address is not a permission boundary.
-- The new `partnerships/prince_access_policy.py` contains **pure, unconnected policy primitives only**, not production enforcement.
+- `partnerships/prince_access_policy.py` is invoked by the new, feature-gated `partnerships/prince_routes.py` endpoints. It does **not** protect legacy global Aura endpoints; no partner user should be provisioned until the whole route surface is audited.
 
 ## Security invariants and acceptance gates
 1. **Isolation:** Prince users cannot read or mutate Ajebo Fix records through ID enumeration, direct API calls, search, CSV/PDF export, download keys, Rina or admin endpoints; and vice versa.
@@ -52,3 +52,33 @@ No real customer records, banking credentials, payment references or client cont
 
 ## Pilot evaluation
 Start with three authorized cars, 1–5 weekly job volume, trained Seun as principal data operator, weekly Stephen quality review, and proprietor approval. Track time to estimate, accuracy, incomplete records, follow-up compliance and whether the W221's unresolved concern history is correctly preserved. No customer-facing Rina or automatic banking integration in initial scope.
+
+
+## Engineering update: 21 November 2026
+
+A development-only implementation is committed on the Prince feature branch:
+
+- `partnerships/prince_models.py`: separate, tenant-scoped workshop, membership, customer, vehicle, job and audit models. Unknown VIN remains SQL NULL. Encrypted contact fields reuse Aura's versioned profile encryption service.
+- `partnerships/prince_routes.py`: JSON endpoints under `/pilot/workshops/<slug>` for create-only intake, assigned job listing/detail and reported-concern update. These endpoints do not use the legacy `Car` or owner `User` as a customer record.
+- `migrations/versions/b71e5ca90d24_prince_pilot_isolated_workspace.py`: additive migration; refuses downgrade if any Prince pilot records exist.
+- `tests/test_prince_access_policy.py` and `tests/test_prince_pilot_api.py`: synthetic-data policy tests plus Flask HTTP integration checks for redaction, cross-workshop access denial, assignment scoping, intake gate and CSRF.
+- `.github/workflows/prince-pilot-ci.yml`: dedicated security test workflow.
+
+### Operating and safety gates
+
+1. `AURA_PRINCE_PILOT_API_ENABLED` is **false by default**, even if migrated tables exist. Do **not** enable in production before the full privacy/security review.
+2. No Prince tenant or staff memberships are seeded automatically. `PrinceTenant.active`, `PrinceTenant.intake_enabled` and `PrinceMembership.active` are false by default. Approved privacy notice version is required. Provisioning and training procedures remain to be built and reviewed.
+3. Operator API responses allowlist customer ID, full name and authorized job/vehicle metadata. Sensitive contact details are stored encrypted and not served through these endpoints. This is **not** a guarantee against screenshots, memorized information, or contact information inadvertently inserted into free-text job notes.
+4. No routes exist yet for bills, payment verification, receipts, customer-contact read, file uploads/downloads or direct live Aura service-history bridging. They must be designed and tested separately; do not infer their availability from the new schema.
+5. Migration must pass a fresh-PostgreSQL rehearsal and be reviewed for production compatibility before deployment. Tests in disposable SQLite exercise HTTP access, not the entire production security environment.
+6. Partner operators use existing authenticated Aura `User` accounts plus **separate** tenant memberships. A normal Aura `admin` role is not a substitute for a Prince membership.
+7. The existing Aura global endpoints still need route-by-route audit to ensure there are no indirect information exposures. No live Seun account, real client records or W221 information have been created through these changes.
+
+### API contract (prototype only)
+
+- `POST /pilot/workshops/prince/intake`: authenticated, active tenant member; approved notice and enabled intake required. Fields: full name, optional phone/email/address, optional brand/model/year/concern, approved privacy-notice version and participation-confirmed flag. JSON response returns only customer ID, full name and optional draft job ID. Backend stores contact ciphertext.
+- `GET /pilot/workshops/prince/jobs`: principal/pilot administrator sees tenant-scoped jobs; operator sees only jobs assigned to their authenticated user ID; maximum 50 records.
+- `GET /pilot/workshops/prince/jobs/<id>`: enforced tenant scope and job assignment before allowlisted response.
+- `PATCH /pilot/workshops/prince/jobs/<id>/concern`: assigned staff can update a reported concern while the job is not closed. Does not confirm diagnosis, repair completion, an estimate or payment.
+
+**Open issues before any real customer onboarding:** compliance review, real privacy notice/authorization evidence procedure, user/device provisioning, operating training, rate and payload limits, sensitive free-text minimization, full endpoint/data-layer security review, protected documents, financial approval rules, and production migration review.

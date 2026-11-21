@@ -45,8 +45,11 @@ def test_operator_screen_shows_only_allowed_customer_name_after_intake(pilot, cl
     page = client.get(f"{URL}/operator?saved=1").get_data(as_text=True)
     assert "Synthetic Owner" in page
     assert "S-Class W221" in page
-    assert "job-update-form" in page
-    assert "Save concern update" in page
+    assert "job-entry-form" in page
+    assert "Add to job history" in page
+    assert "Earlier job note" in page
+    assert "Temporary intervention / workaround" in page
+    assert "Work reportedly performed (not verified)" in page
     assert "Customer saved" in page
     assert "+2348000000000" not in page
     assert "private@example.test" not in page
@@ -108,3 +111,24 @@ def test_prince_logo_is_valid_supplied_brand_asset(client):
     image = Image.open(BytesIO(response.data))
     assert image.size == (64, 64)
     image.verify()
+
+
+def test_operator_page_shows_append_only_note_and_legacy_separately(pilot, client):
+    token = _login(client, pilot["seun_email"])
+    created = client.post(f"{URL}/intake", json=_intake_payload(),
+                          headers={"X-CSRF-Token": token})
+    assert created.status_code == 201
+    job_id = created.json["job_id"]
+    response = client.post(
+        f"{URL}/jobs/{job_id}/entries",
+        json={"category": "temporary_intervention",
+              "body": "Temporary power feed reported, no durable repair confirmed"},
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.status_code == 201
+    page = client.get(f"{URL}/operator").get_data(as_text=True)
+    assert "Temporary intervention / workaround" in page
+    assert "Temporary power feed reported, no durable repair confirmed" in page
+    assert "Earlier job note · Unclassified" in page
+    assert "Cranks, no start; fuel observation unverified" in page
+    assert "private@example.test" not in page

@@ -153,6 +153,10 @@ def create_app():
     app.config["AURA_GULF_PILOT_ENABLED"] = _environment_flag(
         "AURA_GULF_PILOT_ENABLED", default=False,
     )
+    # Separate workshop pilot; disabled unless explicitly enabled.
+    app.config["AURA_PRINCE_PILOT_API_ENABLED"] = _environment_flag(
+        "AURA_PRINCE_PILOT_API_ENABLED", default=False,
+    )
     app.config["AURA_GULF_CAMPAIGN_ACTIVE"] = _environment_flag(
         "AURA_GULF_CAMPAIGN_ACTIVE", default=False,
     )
@@ -228,6 +232,7 @@ def create_app():
     from models import User
     from profiles.models import ClientProfile, ProfileAuditEvent  # noqa: F401
     import partnerships.models  # noqa: F401 — Gulf admin-only database metadata
+    import partnerships.prince_models  # noqa: F401 — isolated Prince pilot metadata
     from historical_ingestion.models import HistoricalServiceEpisode  # noqa: F401
 
     @login_manager.user_loader
@@ -281,6 +286,7 @@ def create_app():
     from cars.routes import cars_bp
     from admin.routes import admin_bp
     from partnerships.routes import gulf_bp
+    from partnerships.prince_routes import prince_pilot_bp
     from admin.progression_routes import concern_progression_bp
     from admin.rina_operations import rina_operations_bp
     from routes.chat import chat_bp
@@ -333,6 +339,7 @@ def create_app():
 
     app.register_blueprint(admin_bp)
     app.register_blueprint(gulf_bp)
+    app.register_blueprint(prince_pilot_bp)
     app.register_blueprint(concern_progression_bp)
     app.register_blueprint(rina_operations_bp)
     app.register_blueprint(chat_bp)

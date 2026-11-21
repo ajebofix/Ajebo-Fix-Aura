@@ -89,7 +89,7 @@ def _log_in(client, role="operator-a", gate=GATE, password=USER_PASSWORD):
 
 def test_staging_gate_closed_without_correct_project(app, client, stage, monkeypatch):
     monkeypatch.setenv("RAILWAY_PROJECT_ID", "wrong-project")
-    assert client.get("/prince-demo").status_code == 404
+    assert client.get("/prince-demo").status_code == 503
     assert client.get(P + "/operator").status_code == 503
 
 

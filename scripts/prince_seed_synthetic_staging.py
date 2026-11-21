@@ -59,6 +59,13 @@ def seed():
             db.session.flush()
         elif tenant.display_name != "Prince Automobile Clinic":
             raise SystemExit("Unexpected workshop identity; refusing to overwrite.")
+        # Refuse to mix synthetic demo provisioning with actual customer rows.
+        unexpected_customer = PrinceCustomer.query.filter(
+            PrinceCustomer.tenant_id == tenant.id,
+            PrinceCustomer.full_name.notin_(("Demo Owner Alpha", "Demo Owner Beta")),
+        ).first()
+        if unexpected_customer:
+            raise SystemExit("Non-demo customer present; synthetic seeding refused.")
         tenant.active = True
         tenant.intake_enabled = True
         tenant.approved_privacy_notice_version = NOTICE
@@ -142,7 +149,8 @@ if __name__ == "__main__":
     try:
         seed()
     except Exception as exc:
-        db.session.rollback()
-        print("Prince stage provisioning failed; real customer data remains disabled.",
+        # Any active SQLAlchemy context cleans up on exit; avoid attempting
+        # rollback after its application context has already been released.
+        print("Prince stage provisioning failed; no real customer data imported.",
               file=sys.stderr)
         raise SystemExit(1) from exc

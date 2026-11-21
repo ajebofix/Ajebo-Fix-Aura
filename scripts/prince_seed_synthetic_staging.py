@@ -78,6 +78,8 @@ def seed():
                     name=full_name, email=email, phone_number=phone,
                     role="user", is_active=True, email_verified_at=datetime.utcnow(),
                 )
+                # Required non-null value before the first database flush.
+                user.set_password(os.environ[env_key])
                 db.session.add(user)
                 db.session.flush()
             elif user.phone_number != phone or user.role != "user":

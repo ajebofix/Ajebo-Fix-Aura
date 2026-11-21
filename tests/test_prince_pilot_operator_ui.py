@@ -113,7 +113,7 @@ def test_prince_logo_is_valid_supplied_brand_asset(client):
     image.verify()
 
 
-def test_operator_page_shows_append_only_note_and_legacy_separately(pilot, client):
+def test_operator_page_shows_append_only_note_and_legacy_separately(pilot, client):  # noqa: F811 — imported pytest fixture intentionally used as parameter
     token = _login(client, pilot["seun_email"])
     created = client.post(f"{URL}/intake", json=_intake_payload(),
                           headers={"X-CSRF-Token": token})

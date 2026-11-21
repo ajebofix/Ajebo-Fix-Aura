@@ -6,12 +6,12 @@ No real customer records, banking credentials, payment references or client cont
 
 ## Verified discovery
 - Prince and Ajebo Fix occupy the same physical workshop address but must remain distinct tenant/business scopes.
-- Prince works on approximately 1–5 vehicles per week, primarily Mercedes-Benz.
-- The proprietor approves estimates and verifies bank transfers from his Access Bank business account; Stephen assists with complex quotes and supervises technology.
-- Seun is the nominated operator and must be trained; he can create customer intake but must not subsequently retrieve private contact information.
-- Estimates are currently prepared manually or in WhatsApp; no regular receipt-generation procedure exists.
-- The first candidate is a Mercedes-Benz W221 currently at Prince; reported fuel-delivery/no-start history is **not a confirmed diagnosis**. A W211 is a tentative second candidate.
-- Prince registration and tax filing status need independent verification before production invoicing.
+- Workshop volume and customer mix are tracked privately rather than disclosed in this public repository.
+- The workshop principal controls financial approvals and bank verification; operators may only record unverified payment claims.
+- A designated operator must be trained and able to create customer intake without later retrieving private contact information.
+- Current estimating is manual; receipt workflow needs to be established and verified.
+- A candidate vehicle's reported symptoms must be treated as unverified observations, not a diagnosis; no live owner or vehicle identifiers are stored here.
+- Legal identity, invoice configuration and applicable tax obligations require independent verification before production invoicing.
 - Logo asset supplied separately in the conversation. It is **not** committed to GitHub on this branch.
 
 ## Existing Aura architecture risks
@@ -51,7 +51,7 @@ No real customer records, banking credentials, payment references or client cont
 - Real customer records are not added until privacy notice, authority and approvals are documented.
 
 ## Pilot evaluation
-Start with three authorized cars, 1–5 weekly job volume, trained Seun as principal data operator, weekly Stephen quality review, and proprietor approval. Track time to estimate, accuracy, incomplete records, follow-up compliance and whether the W221's unresolved concern history is correctly preserved. No customer-facing Rina or automatic banking integration in initial scope.
+Start with a small authorized vehicle cohort, a trained designated operator, periodic administrator quality review, and principal approval. Track time to estimate, accuracy, incomplete records, follow-up compliance and whether the W221's unresolved concern history is correctly preserved. No customer-facing Rina or automatic banking integration in initial scope.
 
 
 ## Engineering update: 21 November 2026
@@ -72,7 +72,7 @@ A development-only implementation is committed on the Prince feature branch:
 4. No routes exist yet for bills, payment verification, receipts, customer-contact read, file uploads/downloads or direct live Aura service-history bridging. They must be designed and tested separately; do not infer their availability from the new schema.
 5. Migration must pass a fresh-PostgreSQL rehearsal and be reviewed for production compatibility before deployment. Tests in disposable SQLite exercise HTTP access, not the entire production security environment.
 6. Partner operators use existing authenticated Aura `User` accounts plus **separate** tenant memberships. A normal Aura `admin` role is not a substitute for a Prince membership.
-7. The existing Aura global endpoints still need route-by-route audit to ensure there are no indirect information exposures. No live Seun account, real client records or W221 information have been created through these changes.
+7. The existing Aura global endpoints still need route-by-route audit to ensure there are no indirect information exposures. No live operator account, real client records or identifiable pilot vehicle information have been created through these changes.
 
 ### API contract (prototype only)
 

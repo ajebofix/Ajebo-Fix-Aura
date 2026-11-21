@@ -107,6 +107,7 @@ def register_rate_limits(app: Flask) -> None:
         "stewardship.advisor_reassign_stewardship": "10 per hour",
         "admin.decode_vehicle_vin": "20 per hour",
         "admin.add_vehicle_dtc": "30 per hour",
+        "prince_pilot.intake": "12 per hour; 30 per day",
     }
 
     for endpoint, limit_value in endpoint_limits.items():

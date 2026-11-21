@@ -19,8 +19,8 @@ from partnerships.prince_access_policy import (
     redact_operator_job,
 )
 from partnerships.prince_models import (
-    PrinceAudit, PrinceCustomer, PrinceJob, PrinceMembership, PrinceTenant,
-    PrinceVehicle,
+    PrinceAudit, PrinceCustomer, PrinceJob, PrinceJobEntry, PrinceMembership,
+    PrinceTenant, PrinceVehicle,
 )
 
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
@@ -28,6 +28,16 @@ prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/worksho
 PRIVATE_CONTACT_PATTERN = re.compile(
     r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?<!\d)(?:\+?\d[\s().-]*){10,15}(?!\d)"
 )
+
+ENTRY_CATEGORIES = {
+    "customer_complaint": "Customer complaint (reported)",
+    "technician_observation": "Technician observation",
+    "diagnostic_finding": "Diagnostic finding (pending review)",
+    "temporary_intervention": "Temporary intervention / workaround",
+    "reported_work": "Work reportedly performed (not verified)",
+    "outstanding_concern": "Outstanding concern",
+    "next_action": "Recommended next action",
+}
 
 INTAKE_FIELDS = frozenset({
     "full_name", "phone_number", "email", "home_address", "vehicle_brand",
@@ -253,27 +263,88 @@ def job_detail(slug, job_id):
     return jsonify(_job_response(job, customer, vehicle))
 
 
+def _entry_response(entry):
+    return {
+        "id": entry.id,
+        "category": entry.category,
+        "category_label": ENTRY_CATEGORIES[entry.category],
+        "body": _public_concern(entry.body),
+        "review_state": entry.review_state,
+        "recorded_at": entry.recorded_at.isoformat(timespec="seconds") + "Z",
+    }
+
+
+def _load_job_entries(tenant_id, job_ids):
+    """Never load entries outside the already-authorized job set."""
+    grouped = {job_id: [] for job_id in job_ids}
+    if not job_ids:
+        return grouped
+    records = PrinceJobEntry.query.filter(
+        PrinceJobEntry.tenant_id == tenant_id,
+        PrinceJobEntry.job_id.in_(job_ids),
+    ).order_by(PrinceJobEntry.id.asc()).all()
+    for entry in records:
+        grouped[entry.job_id].append(_entry_response(entry))
+    return grouped
+
+
 @prince_pilot_bp.patch("/<slug>/jobs/<int:job_id>/concern")
-def update_reported_concern(slug, job_id):
+def legacy_concern_update_retired(slug, job_id):
+    """Prevent ambiguous overwrites of historical concern/intervention text."""
     tenant, actor = _scope(slug)
     job, _, _ = _find_authorized_job(tenant, actor, job_id)
     _allow(actor, tenant, PrinceAction.JOB_EDIT, job.assigned_user_id)
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict) or set(data) != {"reported_concern"}:
-        abort(400)
-    concern = _text(data, "reported_concern", 1200, required=True)
-    if PRIVATE_CONTACT_PATTERN.search(concern):
-        abort(400)
+    return jsonify({
+        "error": "The old free-form field is retired. Refresh the page and "
+                 "choose a category for the new workshop entry."
+    }), 410
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/entries")
+def job_entries(slug, job_id):
+    tenant, actor = _scope(slug)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    entries = _load_job_entries(tenant.id, [job.id])[job.id]
+    return jsonify({"job_id": job.id, "entries": entries})
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/entries")
+def record_job_entry(slug, job_id):
+    tenant, actor = _scope(slug)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    _allow(actor, tenant, PrinceAction.JOB_EDIT, job.assigned_user_id)
     if job.status == "closed":
         abort(403)
-    job.reported_concern = concern
-    _audit(tenant.id, actor.user_id, "reported_concern_updated", "job", job.id)
+    if request.content_length and request.content_length > 4000:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"category", "body"}:
+        abort(400)
+    category = data.get("category")
+    if not isinstance(category, str) or category not in ENTRY_CATEGORIES:
+        abort(400)
+    body = _text(data, "body", 1600, required=True)
+    if len(body) < 5 or PRIVATE_CONTACT_PATTERN.search(body):
+        abort(400)
+    # Staging is not an authorized location for real vehicle repair history.
+    if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        if not body.lower().startswith(("demo:", "synthetic:")):
+            abort(400)
+    entry = PrinceJobEntry(
+        tenant_id=tenant.id, job_id=job.id, category=category,
+        body=body, review_state="unverified",
+        recorded_by_user_id=actor.user_id,
+    )
     try:
+        db.session.add(entry)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "job_entry_recorded", "job_entry", entry.id)
+        response = _entry_response(entry)
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        return jsonify({"error": "Update could not be saved"}), 503
-    return jsonify({"job_id": job.id, "updated": True})
+        return jsonify({"error": "Job entry could not be saved"}), 503
+    return jsonify({"job_id": job.id, "entry": response}), 201
 
 
 @prince_pilot_bp.get("/<slug>/operator")
@@ -294,11 +365,15 @@ def operator_workspace(slug):
     records = query.order_by(PrinceJob.id.desc()).limit(20).all()
     jobs = [_job_response(job, customer, vehicle)
             for job, customer, vehicle in records]
+    by_job = _load_job_entries(tenant.id, [job["job_id"] for job in jobs])
+    for job in jobs:
+        job["entries"] = by_job[job["job_id"]]
     return render_template(
         "partnerships/prince_operator.html",
         workshop_name=tenant.display_name,
         slug=tenant.slug,
         jobs=jobs,
+        entry_categories=ENTRY_CATEGORIES,
         privacy_notice_version=tenant.approved_privacy_notice_version,
         can_intake=bool(tenant.intake_enabled and
                         tenant.approved_privacy_notice_version),

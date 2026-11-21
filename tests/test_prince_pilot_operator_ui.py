@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from extensions import db
-from partnerships.prince_models import PrinceCustomer, PrinceJob, PrinceTenant
+from partnerships.prince_models import PrinceJob, PrinceTenant
 from tests.test_prince_pilot_api import _intake_payload, _login, pilot  # noqa: F401
 
 URL = "/pilot/workshops/prince"

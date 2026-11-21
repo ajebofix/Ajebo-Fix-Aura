@@ -1,6 +1,10 @@
 """Private mobile operator workspace: route and rendered-data access tests."""
 from __future__ import annotations
 
+from io import BytesIO
+
+from PIL import Image
+
 from extensions import db
 from partnerships.prince_models import PrinceJob, PrinceTenant
 from tests.test_prince_pilot_api import _intake_payload, _login, pilot  # noqa: F401
@@ -93,3 +97,12 @@ def test_intake_rejects_contact_information_in_concern(pilot, client):
     response = client.post(f"{URL}/intake", json=payload,
                            headers={"X-CSRF-Token": token})
     assert response.status_code == 400
+
+
+def test_prince_logo_is_valid_supplied_brand_asset(client):
+    response = client.get("/static/img/prince-workshop-logo-pilot.jpg")
+    assert response.status_code == 200
+    assert response.mimetype == "image/jpeg"
+    image = Image.open(BytesIO(response.data))
+    assert image.size == (96, 96)
+    image.verify()

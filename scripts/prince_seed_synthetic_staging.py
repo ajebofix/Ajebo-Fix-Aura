@@ -149,8 +149,17 @@ if __name__ == "__main__":
     try:
         seed()
     except Exception as exc:
-        # Any active SQLAlchemy context cleans up on exit; avoid attempting
-        # rollback after its application context has already been released.
-        print("Prince stage provisioning failed; no real customer data imported.",
-              file=sys.stderr)
+        # Avoid logging SQL values or passwords; only type and source position.
+        last_frame = exc.__traceback__
+        while last_frame and last_frame.tb_next:
+            last_frame = last_frame.tb_next
+        location = (
+            f"{last_frame.tb_frame.f_code.co_name}:{last_frame.tb_lineno}"
+            if last_frame else "unknown"
+        )
+        print(
+            f"Prince synthetic provisioning failed at {location} "
+            f"({type(exc).__name__}); no customer details logged.",
+            file=sys.stderr,
+        )
         raise SystemExit(1) from exc

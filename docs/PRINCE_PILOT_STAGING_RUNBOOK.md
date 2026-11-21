@@ -1,6 +1,6 @@
 # Prince Automobile Clinic × Aura — Private staging runbook
 
-**Status:** code-only pilot; not deployed; no real customer data or staff credentials provisioned.  
+**Status (21 November 2026):** isolated Railway staging infrastructure deployed; app and PostgreSQL status SUCCESS, **no public domain**, Prince API flag disabled, no real customer data or workshop staff accounts provisioned.  
 **Source branch:** `feature/prince-pilot-foundation`; **PR:** #351 (draft).
 
 ## What currently exists
@@ -22,11 +22,11 @@
 
 ## Safe private demo prerequisites
 
-- A dedicated staging service with **its own empty PostgreSQL database**, separate from all Aura live and other staging databases; restrict staging URL access with the hosting provider or proxy access controls. New paid infrastructure must be approved before creating it.
-- Branch `feature/prince-pilot-foundation` pinned to an inspected commit SHA, with no auto-deploy from `main`.
-- Production-like secure `SECRET_KEY` and `PROFILE_ENCRYPTION_KEY` in staging secrets storage, not in GitHub. No production secrets may be cloned.
-- `APP_ENV=staging`, `AURA_PRINCE_PILOT_API_ENABLED=true` only after migration, private access, membership and endpoint audit are verified. Set `AURA_PRIVATE_ACCESS_ONLY=true`.
-- Run `flask db upgrade` against the isolated staging database, then verify `prince_* ` tables exist.
+- **Provisioned:** a separate private Railway project `Prince Aura Pilot Staging` with its own PostgreSQL service and persistent data volume. Both services report successful deployment. A public staging URL has deliberately **not** been generated. This infrastructure may incur usage charges while running.
+- **Provisioned:** branch `feature/prince-pilot-foundation` pinned to audited commit `6549c9406a6b81c72e4ba6a4a386faba7eea36ec`; changes to `main` will not automatically deploy to this service.
+- **Provisioned:** independent staging `SECRET_KEY` and `PROFILE_ENCRYPTION_KEY` held in Railway variables, not in GitHub. These are not production secrets.
+- **Configured:** `APP_ENV=staging`, `AURA_PRIVATE_ACCESS_ONLY=true`, `AURA_PRINCE_PILOT_API_ENABLED=false`, and no public domain. Do not enable the pilot API until private access, membership provisioning and endpoint auditing are verified.
+- **Deployment startup succeeded** with repository `railway.json` migration/healthcheck configuration. The new PostgreSQL service needed `PGDATA=/var/lib/postgresql/data/pgdata` to avoid the volume mount root's `lost+found` directory. Independently confirm `prince_*` schema and migration state before enabling the API; deployment SUCCESS alone is not proof of every row/permission.
 - Provision a **synthetic** workshop tenant (slug `prince`), with `active=true`, `intake_enabled=true` only in the isolated test database, and an explicitly approved *synthetic-demo-only* privacy-notice version. This is NOT authorization to collect real customer information.
 - Create synthetic, individually authenticated accounts with role `user` for two operators and a principal, plus explicit tenant memberships. Never set a global administrator role to enable partner access.
 - The site must not be indexed; its mere noindex header is not access control. Require login + infrastructure-level private access protection.
@@ -52,3 +52,13 @@
 ## Pass/fail decision
 
 A green CI run validates code-level tests, not deployment safety. Require independent review, access testing, real device observation and explicit business approval before changing production. If testing fails, leave `AURA_PRINCE_PILOT_API_ENABLED` false, do not expose the site, and remediate in the feature branch.
+
+## Railway staging infrastructure checkpoint (2026-11-21)
+
+- Project: `Prince Aura Pilot Staging`, standalone `staging` environment.
+- Services: `Prince Pilot App` and `Postgres`; both reported terminal `SUCCESS` after the database mount fix.
+- PostgreSQL: dedicated 1 GB persistent volume mounted at `/var/lib/postgresql/data`, `PGDATA` points to the `pgdata` child directory. No database TCP proxy provisioned.
+- Application: source is pinned to commit `6549c9406a6b81c72e4ba6a4a386faba7eea36ec`. No Railway-generated or custom public domain. Pilot API disabled.
+- Current onboarding status: **not activated**. No genuine customers or W221 records, no staff login invitation, no approved real privacy notice.
+- Cost note: Railway resources are usage billed while running. Recheck spending and shut down staging when not actively needed.
+- Remaining launch prerequisites: provision a synthetic principal/Seun-test operator with scoped memberships, run direct API smoke tests in the isolated database, verify no legacy route access for staff, protect the eventual staging URL with a separate access layer, and ensure the safety and privacy review is complete. Do not enable the public URL or use real customer data yet.

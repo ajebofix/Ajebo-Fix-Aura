@@ -160,3 +160,29 @@ def test_staging_requires_csrf_for_signin(stage, client):
         }
     )
     assert response.status_code == 400
+
+
+def test_synthetic_staging_rejects_real_contact_entry(stage, client):
+    assert _log_in(client).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    base = {
+        "full_name": "Demo New Owner",
+        "phone_number": "DEMO CONTACT ONLY",
+        "email": "demo@example.invalid",
+        "vehicle_brand": "Mercedes-Benz",
+        "vehicle_model": "S-Class W221",
+        "privacy_notice_version": "synthetic-staging-v1",
+        "participation_confirmed": True,
+    }
+    headers = {"X-CSRF-Token": token}
+    ok = client.post(P + "/intake", json=base, headers=headers)
+    assert ok.status_code == 201
+    assert set(ok.json) == {"customer_id", "full_name", "job_id"}
+    real_name = {**base, "full_name": "Unlabeled Owner"}
+    assert client.post(P + "/intake", json=real_name, headers=headers).status_code == 400
+    real_phone = {**base, "phone_number": "+2348011111111"}
+    assert client.post(P + "/intake", json=real_phone, headers=headers).status_code == 400
+    real_email = {**base, "email": "realowner@example.com"}
+    assert client.post(P + "/intake", json=real_email, headers=headers).status_code == 400

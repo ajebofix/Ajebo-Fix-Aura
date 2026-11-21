@@ -186,3 +186,33 @@ def test_synthetic_staging_rejects_real_contact_entry(stage, client):
     assert client.post(P + "/intake", json=real_phone, headers=headers).status_code == 400
     real_email = {**base, "email": "realowner@example.com"}
     assert client.post(P + "/intake", json=real_email, headers=headers).status_code == 400
+
+
+def test_stage_entries_require_fictional_prefix_and_do_not_leak_between_roles(stage, client):
+    assert _log_in(client, role="operator-a").status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        csrf = sess["_csrf_token"]
+    endpoint = f"{P}/jobs/{stage['job_id']}/entries"
+    note = {
+        "category": "temporary_intervention",
+        "body": "Demo: simulated test jumper reportedly installed; unverified",
+    }
+    saved = client.post(endpoint, json=note,
+                        headers={"X-CSRF-Token": csrf})
+    assert saved.status_code == 201
+    assert saved.json["entry"]["review_state"] == "unverified"
+    assert client.post(endpoint, json={
+        "category": "reported_work", "body": "Actual repair history from Anambra"
+    }, headers={"X-CSRF-Token": csrf}).status_code == 400
+    assert client.post(endpoint, json={
+        "category": "reported_work",
+        "body": "Demo: call owner on +2348012345678"
+    }, headers={"X-CSRF-Token": csrf}).status_code == 400
+    assert len(client.get(endpoint).json["entries"]) == 1
+
+    assert client.post("/prince-demo/sign-out",
+                       data={"csrf_token": csrf}).status_code == 303
+    assert _log_in(client, role="operator-b").status_code == 303
+    assert client.get(endpoint).status_code == 404
+    assert "simulated test jumper" not in client.get(P + "/operator").get_data(as_text=True)

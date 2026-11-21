@@ -142,6 +142,7 @@ def test_principal_can_view_own_tenant_only(stage, client):
 
 def test_signout_revokes_staging_access(stage, client):
     assert _log_in(client).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
     with client.session_transaction() as sess:
         csrf = sess["_csrf_token"]
     response = client.post(

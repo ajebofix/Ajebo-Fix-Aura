@@ -10,7 +10,7 @@ import hmac
 import os
 
 from flask import (
-    Blueprint, abort, current_app, make_response, redirect, render_template,
+    Blueprint, abort, current_app, redirect, render_template,
     request, session, url_for,
 )
 from flask_login import current_user, login_user, logout_user

@@ -26,7 +26,7 @@ from partnerships.prince_models import (
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
 
 PRIVATE_CONTACT_PATTERN = re.compile(
-    r"[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}|(?<!\\d)(?:\\+?\\d[\\s().-]*){10,15}(?!\\d)"
+    r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?<!\d)(?:\+?\d[\s().-]*){10,15}(?!\d)"
 )
 
 INTAKE_FIELDS = frozenset({

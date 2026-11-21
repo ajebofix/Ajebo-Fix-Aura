@@ -6,6 +6,8 @@ not caller-supplied role, tenant IDs or assignments.
 """
 from __future__ import annotations
 
+import re
+
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from flask_login import current_user
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,6 +24,10 @@ from partnerships.prince_models import (
 )
 
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
+
+PRIVATE_CONTACT_PATTERN = re.compile(
+    r"[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}|(?<!\\d)(?:\\+?\\d[\\s().-]*){10,15}(?!\\d)"
+)
 
 INTAKE_FIELDS = frozenset({
     "full_name", "phone_number", "email", "home_address", "vehicle_brand",
@@ -82,6 +88,13 @@ def _text(data, field, maximum, *, required=False):
     return value or None
 
 
+def _public_concern(value):
+    # Contact strings may be accidentally pasted into workshop notes.
+    # Defensive output redaction complements intake validation; it is not
+    # an exhaustive personal-data detector, so training is still required.
+    return PRIVATE_CONTACT_PATTERN.sub("[private contact redacted]", value or "")
+
+
 def _job_response(job: PrinceJob, customer: PrinceCustomer, vehicle: PrinceVehicle):
     return redact_operator_job({
         "customer_id": customer.id,
@@ -92,7 +105,7 @@ def _job_response(job: PrinceJob, customer: PrinceCustomer, vehicle: PrinceVehic
         "model": vehicle.model,
         "year": vehicle.year,
         "job_status": job.status,
-        "reported_concern": job.reported_concern,
+        "reported_concern": _public_concern(job.reported_concern),
     })
 
 
@@ -127,6 +140,8 @@ def intake(slug):
     brand = _text(data, "vehicle_brand", 100)
     model = _text(data, "vehicle_model", 100)
     concern = _text(data, "reported_concern", 1200)
+    if concern and PRIVATE_CONTACT_PATTERN.search(concern):
+        abort(400)
     year = data.get("vehicle_year")
     if (brand is None) != (model is None):
         abort(400)
@@ -234,6 +249,8 @@ def update_reported_concern(slug, job_id):
     if not isinstance(data, dict) or set(data) != {"reported_concern"}:
         abort(400)
     concern = _text(data, "reported_concern", 1200, required=True)
+    if PRIVATE_CONTACT_PATTERN.search(concern):
+        abort(400)
     if job.status == "closed":
         abort(403)
     job.reported_concern = concern

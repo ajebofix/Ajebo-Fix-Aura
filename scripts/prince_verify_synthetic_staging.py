@@ -38,7 +38,7 @@ def verify():
         client = app.test_client()
         first = client.get("/prince-demo", base_url=BASE)
         assert first.status_code == 200
-        with client.session_transaction() as sess:
+        with client.session_transaction(base_url=BASE) as sess:
             token = sess["_csrf_token"]
         response = client.post("/prince-demo", base_url=BASE, data={
             "role": role, "portal_code": os.environ["PRINCE_STAGING_GATE_TOKEN"],

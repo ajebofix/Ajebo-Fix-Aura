@@ -104,5 +104,5 @@ def test_prince_logo_is_valid_supplied_brand_asset(client):
     assert response.status_code == 200
     assert response.mimetype == "image/jpeg"
     image = Image.open(BytesIO(response.data))
-    assert image.size == (96, 96)
+    assert image.size == (64, 64)
     image.verify()

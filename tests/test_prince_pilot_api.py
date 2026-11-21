@@ -211,3 +211,42 @@ def test_intake_cannot_accept_unconfirmed_participation(pilot, client):
     response = client.post(f"{URL}/intake", json=payload,
                            headers={"X-CSRF-Token": token})
     assert response.status_code == 400
+
+
+def test_operator_can_update_only_own_reported_concern(pilot, client):
+    token = _login(client, pilot["seun_email"])
+    created = client.post(
+        f"{URL}/intake", json=_intake_payload(),
+        headers={"X-CSRF-Token": token},
+    )
+    assert created.status_code == 201
+    job_id = created.get_json()["job_id"]
+    updated = client.patch(
+        f"{URL}/jobs/{job_id}/concern",
+        json={"reported_concern": "Cranks; no diagnosis confirmed"},
+        headers={"X-CSRF-Token": token},
+    )
+    assert updated.status_code == 200
+    assert updated.get_json() == {"job_id": job_id, "updated": True}
+    detail = client.get(f"{URL}/jobs/{job_id}")
+    assert detail.status_code == 200
+    assert detail.get_json()["reported_concern"] == "Cranks; no diagnosis confirmed"
+
+
+def test_operator_cannot_save_contact_strings_as_job_notes(pilot, client):
+    token = _login(client, pilot["seun_email"])
+    created = client.post(
+        f"{URL}/intake", json=_intake_payload(),
+        headers={"X-CSRF-Token": token},
+    )
+    assert created.status_code == 201
+    job_id = created.get_json()["job_id"]
+    response = client.patch(
+        f"{URL}/jobs/{job_id}/concern",
+        json={"reported_concern": "Please call +2348012345678"},
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.status_code == 400
+    assert "2348012345678" not in client.get(
+        f"{URL}/jobs/{job_id}"
+    ).get_data(as_text=True)

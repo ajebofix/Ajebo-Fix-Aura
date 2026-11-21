@@ -52,7 +52,7 @@
       {% if not can_intake %}
         <p class="muted">Customer intake is locked until the workshop principal approves the pilot privacy notice and intake is enabled.</p>
       {% else %}
-        <p class="muted">Use the customer's real details only with documented authorization. Information is encrypted when submitted.</p>
+        <p class="muted">{{ "Use fictional details only, including a Demo or Synthetic name. This test site must not contain genuine customer data." if config.get("PRINCE_STAGING_LOCKDOWN") else "Use actual customer details only with documented authorization. Information is encrypted when submitted." }}</p>
         <form id="prince-intake-form" action="{{ url_for('prince_pilot.intake', slug=slug) }}" method="post" data-intake-url="{{ url_for('prince_pilot.intake', slug=slug) }}" autocomplete="off">
           <input type="hidden" name="privacy_notice_version" value="{{ privacy_notice_version }}">
           <div class="field">
@@ -117,18 +117,58 @@
           <li class="job-card">
             <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
             <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
-            <form class="job-update-form"
-                  data-update-url="{{ url_for('prince_pilot.update_reported_concern', slug=slug, job_id=job.job_id) }}"
-                  method="post" autocomplete="off">
-              <label for="job-concern-{{ job.job_id }}">Reported concern <small>Not a confirmed diagnosis</small></label>
-              <textarea id="job-concern-{{ job.job_id }}" name="reported_concern"
-                        rows="2" maxlength="1200" required
-                        placeholder="No private contact details">{{ job.reported_concern or "" }}</textarea>
-              <div class="job-update-actions">
-                <button type="submit">Save concern update</button>
-                <span class="job-update-message" role="status" aria-live="polite"></span>
+            <div class="workshop-record" id="job-record-{{ job.job_id }}">
+              <div class="job-record-title">
+                <strong>Vehicle care record</strong>
+                <span class="record-status">Entries are not verified repairs</span>
               </div>
-            </form>
+              {% if job.reported_concern %}
+              <details class="legacy-note">
+                <summary>Earlier job note · Unclassified</summary>
+                <p>{{ job.reported_concern }}</p>
+                <small>This text was entered before structured records. It has not been assigned to a complaint, observation, intervention or completed repair.</small>
+              </details>
+              {% endif %}
+              <h3>Recorded history</h3>
+              <ul class="job-history-list">
+                {% for entry in job.entries %}
+                <li class="record-entry">
+                  <div class="record-entry-header">
+                    <strong>{{ entry.category_label }}</strong>
+                    <span class="entry-state">{{ entry.review_state | title }}</span>
+                  </div>
+                  <p>{{ entry.body }}</p>
+                  <time datetime="{{ entry.recorded_at }}">{{ entry.recorded_at }}</time>
+                </li>
+                {% else %}
+                <li class="job-history-empty">No classified entries yet. Earlier notes have not been converted automatically.</li>
+                {% endfor %}
+              </ul>
+              {% if job.job_status != "closed" %}
+              <form class="job-entry-form"
+                    data-entry-url="{{ url_for('prince_pilot.record_job_entry', slug=slug, job_id=job.job_id) }}"
+                    method="post" autocomplete="off">
+                <label for="entry-category-{{ job.job_id }}">What are you recording?</label>
+                <select id="entry-category-{{ job.job_id }}" name="category" required>
+                  <option value="">Choose a category</option>
+                  {% for category, label in entry_categories.items() %}
+                  <option value="{{ category }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <label for="entry-body-{{ job.job_id }}">Description · Not yet verified</label>
+                <textarea id="entry-body-{{ job.job_id }}" name="body" rows="3"
+                          maxlength="1600" minlength="5" required
+                          placeholder="{{ 'Demo: mock technician test pending' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Record what was observed, proposed or reportedly done. No private contacts.' }}"></textarea>
+                {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+                <p class="tiny">Training only: every entry must begin <strong>Demo:</strong> or <strong>Synthetic:</strong>. Do not add actual W221 repair history.</p>
+                {% endif %}
+                <div class="job-update-actions">
+                  <button type="submit">Add to job history</button>
+                  <span class="job-entry-message" role="status" aria-live="polite"></span>
+                </div>
+              </form>
+              {% endif %}
+            </div>
             <div class="job-footer"><span>{{ job.job_status | replace("_", " ") | title }}</span><span>Vehicle #{{ job.vehicle_id }}</span></div>
           </li>
           {% endfor %}

@@ -62,3 +62,45 @@
     }
   });
 })();
+
+
+/* Only assigned-job reported concerns can be edited; never accept contact fields. */
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  for (const form of document.querySelectorAll(".job-update-form")) {
+    let saving = false;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (saving || !form.reportValidity()) return;
+      const feedback = form.querySelector(".job-update-message");
+      const button = form.querySelector('button[type="submit"]');
+      const concern = form.querySelector('textarea[name="reported_concern"]')?.value.trim();
+      if (!csrf || !form.dataset.updateUrl || !concern) {
+        feedback.textContent = "The secure update is unavailable.";
+        return;
+      }
+      // No customer contact details are present in this request body or URL.
+      saving = true;
+      button.disabled = true;
+      feedback.textContent = "Saving…";
+      try {
+        const response = await fetch(form.dataset.updateUrl, {
+          method: "PATCH",
+          credentials: "same-origin",
+          cache: "no-store",
+          redirect: "error",
+          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+          body: JSON.stringify({reported_concern: concern}),
+        });
+        if (!response.ok) throw new Error("update-failed");
+        feedback.textContent = "Saved as a reported concern; not confirmed work.";
+      } catch {
+        feedback.textContent = "Could not save. Avoid adding customer contact details to job notes.";
+      } finally {
+        saving = false;
+        button.disabled = false;
+      }
+    });
+  }
+})();

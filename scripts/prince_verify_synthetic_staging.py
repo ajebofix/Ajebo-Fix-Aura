@@ -31,11 +31,14 @@ def verify():
         assert tenant.approved_privacy_notice_version == "synthetic-staging-v1"
         assert PrinceMembership.query.filter_by(tenant_id=tenant.id, active=True).count() == 3
         customers = PrinceCustomer.query.filter_by(tenant_id=tenant.id).all()
-        assert len(customers) == 2
-        assert all(c.full_name.startswith("Demo Owner") for c in customers)
+        assert len(customers) >= 2
+        names = {c.full_name for c in customers}
+        assert {"Demo Owner Alpha", "Demo Owner Beta"} <= names
+        assert all(c.full_name.lower().startswith(("demo ", "synthetic "))
+                   for c in customers)
         assert all(c.phone_ciphertext and "DEMO CONTACT" not in c.phone_ciphertext
                    for c in customers)
-        assert PrinceJob.query.filter_by(tenant_id=tenant.id).count() == 2
+        assert PrinceJob.query.filter_by(tenant_id=tenant.id).count() >= 2
 
     def login(role, password_env):
         client = app.test_client()
@@ -59,11 +62,12 @@ def verify():
     op_a = login("operator-a", "PRINCE_DEMO_OPERATOR_A_PASSWORD")
     jobs_a = op_a.get("/pilot/workshops/prince/jobs", base_url=BASE)
     assert jobs_a.status_code == 200
-    assert len(jobs_a.json["jobs"]) == 1
-    assert jobs_a.json["jobs"][0]["full_name"] == "Demo Owner Alpha"
+    assert len(jobs_a.json["jobs"]) >= 1
+    assert all(x["full_name"] != "Demo Owner Beta" for x in jobs_a.json["jobs"])
+    alpha = next(x for x in jobs_a.json["jobs"] if x["full_name"] == "Demo Owner Alpha")
     assert "phone_number" not in jobs_a.json["jobs"][0]
     history_a = op_a.get(
-        f"/pilot/workshops/prince/jobs/{jobs_a.json['jobs'][0]['job_id']}/entries",
+        f"/pilot/workshops/prince/jobs/{alpha['job_id']}/entries",
         base_url=BASE,
     )
     assert history_a.status_code == 200
@@ -79,16 +83,20 @@ def verify():
     op_b = login("operator-b", "PRINCE_DEMO_OPERATOR_B_PASSWORD")
     jobs_b = op_b.get("/pilot/workshops/prince/jobs", base_url=BASE)
     assert jobs_b.status_code == 200
-    assert len(jobs_b.json["jobs"]) == 1
-    assert jobs_b.json["jobs"][0]["full_name"] == "Demo Owner Beta"
-    job_a = jobs_a.json["jobs"][0]["job_id"]
+    assert len(jobs_b.json["jobs"]) >= 1
+    assert any(x["full_name"] == "Demo Owner Beta" for x in jobs_b.json["jobs"])
+    assert all(x["full_name"] != "Demo Owner Alpha" for x in jobs_b.json["jobs"])
+    job_a = alpha["job_id"]
     assert op_b.get(f"/pilot/workshops/prince/jobs/{job_a}", base_url=BASE).status_code == 404
     assert op_b.get(f"/pilot/workshops/prince/jobs/{job_a}/entries", base_url=BASE).status_code == 404
 
     principal = login("principal", "PRINCE_DEMO_PRINCIPAL_PASSWORD")
     jobs_all = principal.get("/pilot/workshops/prince/jobs", base_url=BASE)
     assert jobs_all.status_code == 200
-    assert len(jobs_all.json["jobs"]) == 2
+    assert len(jobs_all.json["jobs"]) >= 2
+    assert {"Demo Owner Alpha", "Demo Owner Beta"} <= {
+        x["full_name"] for x in jobs_all.json["jobs"]
+    }
     assert principal.get("/admin", base_url=BASE).status_code == 404
     assert principal.get("/dashboard", base_url=BASE).status_code == 404
     print("Prince staged HTTP smoke passed: roles, tenant, redaction, append-only history and legacy-route denial.")

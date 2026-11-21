@@ -157,9 +157,15 @@ if __name__ == "__main__":
             f"{last_frame.tb_frame.f_code.co_name}:{last_frame.tb_lineno}"
             if last_frame else "unknown"
         )
+        native_error = getattr(exc, "orig", None)
+        diagnostics = getattr(native_error, "diag", None)
+        table = getattr(diagnostics, "table_name", None) or "unknown"
+        constraint = getattr(diagnostics, "constraint_name", None) or "unknown"
+        sqlstate = getattr(native_error, "pgcode", None) or "unknown"
         print(
             f"Prince synthetic provisioning failed at {location} "
-            f"({type(exc).__name__}); no customer details logged.",
+            f"({type(exc).__name__}; table={table}; constraint={constraint}; "
+            f"sqlstate={sqlstate}); no field values logged.",
             file=sys.stderr,
         )
         raise SystemExit(1) from exc

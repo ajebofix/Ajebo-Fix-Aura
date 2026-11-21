@@ -157,6 +157,10 @@ def create_app():
     app.config["AURA_PRINCE_PILOT_API_ENABLED"] = _environment_flag(
         "AURA_PRINCE_PILOT_API_ENABLED", default=False,
     )
+    # Only for the isolated Prince demonstration. Never enabled in normal Aura.
+    app.config["PRINCE_STAGING_LOCKDOWN"] = _environment_flag(
+        "PRINCE_STAGING_LOCKDOWN", default=False,
+    )
     app.config["AURA_GULF_CAMPAIGN_ACTIVE"] = _environment_flag(
         "AURA_GULF_CAMPAIGN_ACTIVE", default=False,
     )
@@ -340,6 +344,8 @@ def create_app():
     app.register_blueprint(admin_bp)
     app.register_blueprint(gulf_bp)
     app.register_blueprint(prince_pilot_bp)
+    from partnerships.prince_staging_portal import register_prince_staging_portal
+    register_prince_staging_portal(app)
     app.register_blueprint(concern_progression_bp)
     app.register_blueprint(rina_operations_bp)
     app.register_blueprint(chat_bp)

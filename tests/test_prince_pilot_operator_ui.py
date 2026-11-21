@@ -45,6 +45,8 @@ def test_operator_screen_shows_only_allowed_customer_name_after_intake(pilot, cl
     page = client.get(f"{URL}/operator?saved=1").get_data(as_text=True)
     assert "Synthetic Owner" in page
     assert "S-Class W221" in page
+    assert "job-update-form" in page
+    assert "Save concern update" in page
     assert "Customer saved" in page
     assert "+2348000000000" not in page
     assert "private@example.test" not in page

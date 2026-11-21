@@ -59,11 +59,14 @@ def seed():
             db.session.flush()
         elif tenant.display_name != "Prince Automobile Clinic":
             raise SystemExit("Unexpected workshop identity; refusing to overwrite.")
-        # Refuse to mix synthetic demo provisioning with actual customer rows.
-        unexpected_customer = PrinceCustomer.query.filter(
-            PrinceCustomer.tenant_id == tenant.id,
-            PrinceCustomer.full_name.notin_(("Demo Owner Alpha", "Demo Owner Beta")),
-        ).first()
+        # Training may legitimately add more demo customers over time.
+        # Preserve those rows, but refuse any record that is not explicitly
+        # marked fictional and covered by the synthetic-only notice.
+        unexpected_customer = any(
+            not owner.full_name.lower().startswith(("demo ", "synthetic "))
+            or owner.privacy_notice_version != NOTICE
+            for owner in PrinceCustomer.query.filter_by(tenant_id=tenant.id)
+        )
         if unexpected_customer:
             raise SystemExit("Non-demo customer present; synthetic seeding refused.")
         tenant.active = True

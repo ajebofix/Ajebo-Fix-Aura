@@ -37,8 +37,8 @@ OPERATOR_JOB_PUBLIC_FIELDS = frozenset({
     "brand", "model", "year", "job_status", "reported_concern",
 })
 OPERATOR_INTAKE_INPUT_FIELDS = frozenset({
-    "full_name", "phone_number", "email", "home_address",
-    "vehicle_brand", "vehicle_model", "vehicle_year",
+    "full_name", "vehicle_brand", "vehicle_model", "vehicle_year",
+    "reported_concern", "privacy_notice_version", "participation_confirmed",
 })
 OPERATOR_INTAKE_RESPONSE_FIELDS = frozenset({"customer_id", "full_name", "job_id"})
 OPERATOR_ALLOWED_ACTIONS = frozenset({
@@ -75,9 +75,14 @@ def authorize(
     if actor.role == PrinceRole.PRINCIPAL:
         return True
     if actor.role == PrinceRole.PILOT_ADMIN:
-        # Bank verification still requires explicit delegation, outside this
-        # primitive; no administrative override for bank verification.
-        return action != PrinceAction.PAYMENT_VERIFY
+        # Technical administrators do not inherit workshop ownership.
+        # Customer contacts, financial approval and service attestation
+        # require a principal membership, never a global Aura admin role.
+        return action not in {
+            PrinceAction.PAYMENT_VERIFY, PrinceAction.CONTACT_READ,
+            PrinceAction.CONTACT_CORRECT, PrinceAction.SERVICE_CONFIRM,
+            PrinceAction.ESTIMATE_APPROVE, PrinceAction.DIRECTORY_EXPORT,
+        }
     if actor.role != PrinceRole.OPERATOR or action not in OPERATOR_ALLOWED_ACTIONS:
         return False
     if action == PrinceAction.INTAKE_CREATE:

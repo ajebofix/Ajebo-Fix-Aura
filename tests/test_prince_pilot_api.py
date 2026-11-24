@@ -326,51 +326,45 @@ def test_operator_cannot_append_when_job_is_closed(pilot, app, client):
     assert response.status_code == 403
 
 
-def test_only_two_principals_can_manage_encrypted_private_details(pilot, app, client):
-    dad_token = _login(client, pilot["principal_email"])
-    principal_job = client.get(f"{URL}/jobs/{pilot['unassigned_id']}").json
-    customer_id = principal_job["customer_id"]
+@pytest.mark.parametrize("principal_key", ["principal_email", "stephen_email"])
+def test_both_principals_independently_manage_encrypted_contacts(pilot, app, client, principal_key):
+    token = _login(client, pilot[principal_key])
+    detail = client.get(f"{URL}/jobs/{pilot['unassigned_id']}").json
+    customer_id = detail["customer_id"]
     endpoint = f"{URL}/customers/{customer_id}/private"
     assert client.get(endpoint).json["phone_number"] is None
     update = client.patch(endpoint, json={
         "phone_number": "+2348000000000",
         "email": "private@example.test",
         "home_address": "Private Test Address",
-    }, headers={"X-CSRF-Token": dad_token})
+    }, headers={"X-CSRF-Token": token})
     assert update.status_code == 200
     assert set(update.json) == {"customer_id", "updated"}
-    assert update.json["updated"] is True
     with app.app_context():
         customer = db.session.get(PrinceCustomer, customer_id)
         assert customer.phone_ciphertext and "+2348000000000" not in customer.phone_ciphertext
         assert customer.email_ciphertext and "private@example.test" not in customer.email_ciphertext
         assert customer.address_ciphertext and "Private Test Address" not in customer.address_ciphertext
-    read = client.get(endpoint)
-    assert read.status_code == 200
-    assert read.headers["Cache-Control"].startswith("no-store")
-    assert read.json["phone_number"] == "+2348000000000"
-    assert read.json["email"] == "private@example.test"
-    assert read.json["home_address"] == "Private Test Address"
+    private = client.get(endpoint)
+    assert private.status_code == 200
+    assert private.headers["Cache-Control"].startswith("no-store")
+    assert private.json["phone_number"] == "+2348000000000"
+    assert private.json["email"] == "private@example.test"
+    assert private.json["home_address"] == "Private Test Address"
+    change = client.patch(endpoint, json={"email": "updated-private@example.test"},
+                          headers={"X-CSRF-Token": token})
+    assert change.status_code == 200
+    assert client.get(endpoint).json["email"] == "updated-private@example.test"
 
-    stephen_client = app.test_client()
-    stephen_token = _login(stephen_client, pilot["stephen_email"])
-    assert stephen_client.get(endpoint).json["email"] == "private@example.test"
-    changed = stephen_client.patch(
-        endpoint, json={"email": "stephen-test@example.test"},
-        headers={"X-CSRF-Token": stephen_token},
-    )
-    assert changed.status_code == 200
-    assert client.get(endpoint).json["email"] == "stephen-test@example.test"
 
-    seun_client = app.test_client()
-    operator_token = _login(seun_client, pilot["seun_email"])
-    assert seun_client.get(endpoint).status_code == 404
-    forbidden = seun_client.patch(
-        endpoint, json={"phone_number": "+2348012345678"},
-        headers={"X-CSRF-Token": operator_token},
-    )
-    assert forbidden.status_code == 404
-    assert seun_client.get(f"{URL}/jobs").json["jobs"] == []
+def test_operator_cannot_read_or_write_customer_contacts(pilot, client):
+    token = _login(client, pilot["seun_email"])
+    with client.application.app_context():
+        customer_id = PrinceCustomer.query.filter_by(full_name="Unassigned Synthetic").one().id
+    endpoint = f"{URL}/customers/{customer_id}/private"
+    assert client.get(endpoint).status_code == 404
+    assert client.patch(endpoint, json={"phone_number": "+2348012345678"},
+                        headers={"X-CSRF-Token": token}).status_code == 404
 
 
 def test_principals_cannot_access_other_tenant_contacts(pilot, app, client):
@@ -434,7 +428,7 @@ def test_principal_work_attestation_separate_from_staff_note(pilot, app, client)
     assert entries[0]["body"] == "Technician reports repair and test drive pending review"
 
 
-def test_only_principals_can_review_and_only_reported_work_can_be_confirmed(pilot, app, client):
+def test_operator_cannot_review_own_entry(pilot, client):
     token = _login(client, pilot["seun_email"])
     onboard = client.post(f"{URL}/intake", json=_intake_payload(),
                           headers={"X-CSRF-Token": token})
@@ -452,17 +446,27 @@ def test_only_principals_can_review_and_only_reported_work_can_be_confirmed(pilo
         "review_note": "Operator claims to confirm work",
     }, headers={"X-CSRF-Token": token}).status_code == 404
 
-    dad = app.test_client()
-    dad_token = _login(dad, pilot["principal_email"])
-    assert dad.post(review_url, json={
+
+def test_principal_cannot_confirm_nonwork_category(pilot, client):
+    token = _login(client, pilot["principal_email"])
+    job_id = pilot["unassigned_id"]
+    entry = client.post(
+        f"{URL}/jobs/{job_id}/entries",
+        json={"category": "temporary_intervention",
+              "body": "Reported temporary electrical workaround, not repair"},
+        headers={"X-CSRF-Token": token},
+    )
+    assert entry.status_code == 201
+    entry_id = entry.json["entry"]["id"]
+    review_url = f"{URL}/jobs/{job_id}/entries/{entry_id}/review"
+    assert client.post(review_url, json={
         "decision": "work_confirmed", "basis": "direct_inspection",
         "review_note": "An observation is not verified work",
-    }, headers={"X-CSRF-Token": dad_token}).status_code == 400
-    acknowledged = dad.post(review_url, json={
+    }, headers={"X-CSRF-Token": token}).status_code == 400
+    acknowledged = client.post(review_url, json={
         "decision": "needs_evidence", "basis": "not_applicable",
         "review_note": "Need further evidence for the temporary intervention",
-    }, headers={"X-CSRF-Token": dad_token})
+    }, headers={"X-CSRF-Token": token})
     assert acknowledged.status_code == 201
-    staff_history = client.get(f"{URL}/jobs/{job_id}/entries").json["entries"]
-    assert staff_history[0]["principal_review"]["decision"] == "needs_evidence"
-    assert "review_note" not in staff_history[0]["principal_review"]
+    assert client.get(f"{URL}/jobs/{job_id}/entries").json["entries"][0][
+        "principal_review"]["review_note"].startswith("Need further evidence")

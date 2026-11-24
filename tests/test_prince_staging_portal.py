@@ -292,7 +292,6 @@ def test_stage_operator_cannot_review_reported_work(stage, client):
 
 
 def test_stage_principal_requires_fictional_review_note(stage, client, app):
-    from partnerships.prince_models import PrinceJobEntry
     with app.app_context():
         job = db.session.get(PrinceJob, stage["job_id"])
         entry = PrinceJobEntry(

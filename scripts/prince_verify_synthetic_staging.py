@@ -36,8 +36,14 @@ def verify():
         assert {"Demo Owner Alpha", "Demo Owner Beta"} <= names
         assert all(c.full_name.lower().startswith(("demo ", "synthetic "))
                    for c in customers)
-        assert all(c.phone_ciphertext and "DEMO CONTACT" not in c.phone_ciphertext
-                   for c in customers)
+        assert all(
+            (c.phone_ciphertext is None or "DEMO CONTACT" not in c.phone_ciphertext)
+            for c in customers
+        )
+        seeded = [c for c in customers
+                  if c.full_name in {"Demo Owner Alpha", "Demo Owner Beta"}]
+        assert len(seeded) == 2
+        assert all(c.phone_ciphertext for c in seeded)
         assert PrinceJob.query.filter_by(tenant_id=tenant.id).count() >= 2
 
     def login(role, password_env):

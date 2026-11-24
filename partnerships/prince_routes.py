@@ -258,7 +258,13 @@ def _review_response(review):
     }
 
 
-def _entry_response(entry):
+def _entry_response(entry, *, include_private_review_note=False):
+    review = PrinceEntryReview.query.filter_by(
+        entry_id=entry.id, tenant_id=entry.tenant_id,
+    ).first()
+    review_data = _review_response(review)
+    if review_data is not None and not include_private_review_note:
+        review_data.pop("review_note", None)
     return {
         "id": entry.id,
         "category": entry.category,
@@ -266,13 +272,11 @@ def _entry_response(entry):
         "body": _public_concern(entry.body),
         "review_state": entry.review_state,
         "recorded_at": entry.recorded_at.isoformat(timespec="seconds") + "Z",
-        "principal_review": _review_response(
-            PrinceEntryReview.query.filter_by(entry_id=entry.id, tenant_id=entry.tenant_id).first()
-        ),
+        "principal_review": review_data,
     }
 
 
-def _load_job_entries(tenant_id, job_ids):
+def _load_job_entries(tenant_id, job_ids, *, include_private_review_note=False):
     """Never load entries outside the already-authorized job set."""
     grouped = {job_id: [] for job_id in job_ids}
     if not job_ids:
@@ -282,7 +286,9 @@ def _load_job_entries(tenant_id, job_ids):
         PrinceJobEntry.job_id.in_(job_ids),
     ).order_by(PrinceJobEntry.id.asc()).all()
     for entry in records:
-        grouped[entry.job_id].append(_entry_response(entry))
+        grouped[entry.job_id].append(_entry_response(
+            entry, include_private_review_note=include_private_review_note,
+        ))
     return grouped
 
 
@@ -302,7 +308,10 @@ def legacy_concern_update_retired(slug, job_id):
 def job_entries(slug, job_id):
     tenant, actor = _scope(slug)
     job, _, _ = _find_authorized_job(tenant, actor, job_id)
-    entries = _load_job_entries(tenant.id, [job.id])[job.id]
+    entries = _load_job_entries(
+        tenant.id, [job.id],
+        include_private_review_note=(actor.role == PrinceRole.PRINCIPAL),
+    )[job.id]
     return jsonify({"job_id": job.id, "entries": entries})
 
 
@@ -363,7 +372,10 @@ def operator_workspace(slug):
     records = query.order_by(PrinceJob.id.desc()).limit(20).all()
     jobs = [_job_response(job, customer, vehicle)
             for job, customer, vehicle in records]
-    by_job = _load_job_entries(tenant.id, [job["job_id"] for job in jobs])
+    by_job = _load_job_entries(
+        tenant.id, [job["job_id"] for job in jobs],
+        include_private_review_note=(actor.role == PrinceRole.PRINCIPAL),
+    )
     for job in jobs:
         job["entries"] = by_job[job["job_id"]]
     return render_template(

@@ -34,6 +34,7 @@ def stage(app, monkeypatch):
         accounts = {}
         actors = (
             ("principal", "principal"),
+            ("stephen", "principal"),
             ("operator-a", "operator"),
             ("operator-b", "operator"),
         )
@@ -169,8 +170,6 @@ def test_synthetic_staging_rejects_real_contact_entry(stage, client):
         token = sess["_csrf_token"]
     base = {
         "full_name": "Demo New Owner",
-        "phone_number": "DEMO CONTACT ONLY",
-        "email": "demo@example.invalid",
         "vehicle_brand": "Mercedes-Benz",
         "vehicle_model": "S-Class W221",
         "privacy_notice_version": "synthetic-staging-v1",
@@ -186,6 +185,8 @@ def test_synthetic_staging_rejects_real_contact_entry(stage, client):
     assert client.post(P + "/intake", json=real_phone, headers=headers).status_code == 400
     real_email = {**base, "email": "realowner@example.com"}
     assert client.post(P + "/intake", json=real_email, headers=headers).status_code == 400
+    fake_phone = {**base, "phone_number": "DEMO CONTACT ONLY"}
+    assert client.post(P + "/intake", json=fake_phone, headers=headers).status_code == 400
 
 
 def test_stage_entries_require_fictional_prefix_and_do_not_leak_between_roles(stage, client):
@@ -216,3 +217,79 @@ def test_stage_entries_require_fictional_prefix_and_do_not_leak_between_roles(st
     assert _log_in(client, role="operator-b").status_code == 303
     assert client.get(endpoint).status_code == 404
     assert "simulated test jumper" not in client.get(P + "/operator").get_data(as_text=True)
+
+
+def test_stephen_principal_matches_dad_and_operator_has_no_private_controls(stage, app, client):
+    assert _log_in(client, role="stephen").status_code == 303
+    page = client.get(P + "/operator").get_data(as_text=True)
+    assert "Synthetic Principal Owner" in page
+    assert "Private customer details" in page
+    assert "Principal review" not in page  # Until entries are added.
+    assert "Load protected contacts" in page
+    assert 'name="phone_number"' in page
+    assert 'name="email"' in page
+    assert 'name="home_address"' in page
+
+    operator = app.test_client()
+    assert _log_in(operator, role="operator-a").status_code == 303
+    rendered = operator.get(P + "/operator").get_data(as_text=True)
+    assert "Load protected contacts" not in rendered
+    assert 'name="phone_number"' not in rendered
+    assert 'name="email"' not in rendered
+    assert 'name="home_address"' not in rendered
+
+
+def test_staging_principals_only_can_edit_fictional_private_contact(stage, app, client):
+    assert _log_in(client, role="stephen").status_code == 303
+    job = client.get(P + f"/jobs/{stage['job_id']}").json
+    endpoint = P + f"/customers/{job['customer_id']}/private"
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    edited = client.patch(endpoint, json={
+        "phone_number": "DEMO CONTACT ONLY",
+        "email": "demo@example.invalid",
+        "home_address": "DEMO ADDRESS ONLY",
+    }, headers={"X-CSRF-Token": token})
+    assert edited.status_code == 200
+    assert client.get(endpoint).json["home_address"] == "DEMO ADDRESS ONLY"
+    assert client.patch(endpoint, json={"phone_number": "+2348012345678"},
+                        headers={"X-CSRF-Token": token}).status_code == 400
+
+    dad = app.test_client()
+    assert _log_in(dad, role="principal").status_code == 303
+    assert dad.get(endpoint).json["email"] == "demo@example.invalid"
+    operator = app.test_client()
+    assert _log_in(operator, role="operator-a").status_code == 303
+    assert operator.get(endpoint).status_code == 404
+
+
+def test_staging_requires_fictional_review_notes(stage, app, client):
+    assert _log_in(client, role="operator-a").status_code == 303
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    entry = client.post(
+        P + f"/jobs/{stage['job_id']}/entries",
+        json={"category": "reported_work",
+              "body": "Demo: technician reports a simulated repair"},
+        headers={"X-CSRF-Token": token},
+    )
+    assert entry.status_code == 201
+    review_url = P + f"/jobs/{stage['job_id']}/entries/{entry.json['entry']['id']}/review"
+    assert client.post(review_url, json={
+        "decision": "work_confirmed", "basis": "direct_inspection",
+        "review_note": "Demo: I saw the work",
+    }, headers={"X-CSRF-Token": token}).status_code == 404
+    dad = app.test_client()
+    assert _log_in(dad, role="principal").status_code == 303
+    with dad.session_transaction() as sess:
+        dad_token = sess["_csrf_token"]
+    assert dad.post(review_url, json={
+        "decision": "work_confirmed", "basis": "direct_inspection",
+        "review_note": "Actual inspection of real vehicle",
+    }, headers={"X-CSRF-Token": dad_token}).status_code == 400
+    approved = dad.post(review_url, json={
+        "decision": "work_confirmed", "basis": "direct_inspection",
+        "review_note": "Demo: simulated inspection confirmed work only for the demo",
+    }, headers={"X-CSRF-Token": dad_token})
+    assert approved.status_code == 201
+    assert approved.json["principal_review"]["decision"] == "work_confirmed"

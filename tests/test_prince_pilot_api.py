@@ -201,6 +201,17 @@ def test_intake_blocks_unapproved_fields_and_unapproved_notices(pilot, app, clie
     assert r.status_code == 403
 
 
+def test_revoked_operator_membership_denies_immediately(pilot, app, client):
+    _login(client, pilot["seun_email"])
+    assert client.get(f"{URL}/jobs").status_code == 200
+    with app.app_context():
+        actor = User.query.filter_by(email=pilot["seun_email"]).one()
+        membership = PrinceMembership.query.filter_by(user_id=actor.id).one()
+        membership.active = False
+        db.session.commit()
+    assert client.get(f"{URL}/jobs").status_code == 404
+
+
 def test_intake_requires_csrf(pilot, client):
     _login(client, pilot["seun_email"])
     response = client.post(f"{URL}/intake", json=_intake_payload())

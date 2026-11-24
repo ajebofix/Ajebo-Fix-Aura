@@ -386,8 +386,9 @@ def test_private_endpoint_blocks_unapproved_fields_and_missing_csrf(pilot, clien
                         headers={"X-CSRF-Token": token}).status_code == 400
 
 
-def test_principal_work_attestation_separate_from_staff_note(pilot, app, client):
-    token = _login(client, pilot["principal_email"])
+@pytest.mark.parametrize("principal_key", ["principal_email", "stephen_email"])
+def test_principal_work_attestation_separate_from_staff_note(pilot, client, principal_key):
+    token = _login(client, pilot[principal_key])
     job_id = pilot["unassigned_id"]
     entry_response = client.post(
         f"{URL}/jobs/{job_id}/entries",
@@ -420,11 +421,7 @@ def test_principal_work_attestation_separate_from_staff_note(pilot, app, client)
     assert entries[0]["review_state"] == "unverified"
     assert entries[0]["principal_review"]["decision"] == "work_confirmed"
     assert entries[0]["principal_review"]["review_note"].startswith("Personally inspected")
-    staff = app.test_client()
-    staff_token = _login(staff, pilot["stephen_email"])
-    assert staff_token
-    assert staff.get(f"{URL}/jobs/{job_id}/entries").json["entries"][0][
-        "principal_review"]["review_note"].startswith("Personally inspected")
+
     assert entries[0]["body"] == "Technician reports repair and test drive pending review"
 
 

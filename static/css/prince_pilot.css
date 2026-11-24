@@ -30,3 +30,20 @@
 .job-entry-form textarea{resize:vertical;line-height:1.5}
 .job-entry-form select:focus-visible,.job-entry-form textarea:focus-visible{outline:2px solid #176bba}
 @media(min-width:650px){.job-record-title{flex-direction:row;align-items:center;justify-content:space-between}}
+
+/* Principal-only private contact controls and attestation */
+.principal-private-panel{border:1px solid #bdd8ca;border-radius:12px;background:#f2faf5;padding:13px;margin:13px 0 18px}
+.principal-private-panel summary{font-size:12px;font-weight:800;color:#226447;cursor:pointer}
+.principal-contact-form{margin-top:10px}
+.private-contact-fields{margin-top:12px}
+.private-contact-fields[hidden]{display:none}
+.private-contact-fields label,.principal-review-form label{display:block;color:#28495b;font-weight:700;font-size:12px;margin:10px 0 5px}
+.private-contact-fields input,.private-contact-fields textarea,.principal-review-form select,.principal-review-form textarea{display:block;width:100%;padding:10px;border:1px solid #c3d5df;border-radius:9px;font:inherit;font-size:13px;color:#223c4f;margin-top:5px;background:#fff}
+.principal-contact-form button,.principal-review-form button{font-size:12px;font-weight:700;padding:10px 13px;border:1px solid #a9c6b6;border-radius:9px;color:#174f37;background:#fff;margin:9px 8px 0 0;cursor:pointer}
+.principal-contact-form button:disabled,.principal-review-form button:disabled{opacity:.6}
+.private-contact-message,.principal-review-message{display:block;font-size:11px;color:#42695c;margin-top:10px}
+.principal-review-form{margin-top:13px;padding:13px;border-radius:11px;background:#eef4f8;border:1px solid #cfdee7}
+.review-form-heading{font-size:12px;color:#264d64}
+.principal-review-result{background:#e6f4ec;color:#214f3c;border:1px solid #b7dbc8;border-radius:10px;padding:11px;margin-top:13px;font-size:12px}
+.principal-review-result p{font-size:12px;margin:5px 0}
+.principal-review-result small{font-size:10px}

@@ -22,11 +22,13 @@ from security.rate_limits import limiter
 prince_staging_bp = Blueprint("prince_staging", __name__, url_prefix="/prince-demo")
 DEMO_EMAILS = {
     "principal": "prince-demo-principal@example.invalid",
+    "stephen": "prince-demo-stephen@example.invalid",
     "operator-a": "prince-demo-operator-a@example.invalid",
     "operator-b": "prince-demo-operator-b@example.invalid",
 }
 DEMO_ROLE = {
     "principal": "principal",
+    "stephen": "principal",
     "operator-a": "operator",
     "operator-b": "operator",
 }

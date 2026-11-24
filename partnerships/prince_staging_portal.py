@@ -58,10 +58,12 @@ def _valid_member(user, actor_key: str | None = None) -> bool:
         return False
     if user.role != "user":
         return False
-    tenant = PrinceTenant.query.filter_by(slug="prince", active=True).first()
+    tenant = PrinceTenant.query.populate_existing().filter_by(
+        slug="prince", active=True,
+    ).first()
     if tenant is None:
         return False
-    member = PrinceMembership.query.filter_by(
+    member = PrinceMembership.query.populate_existing().filter_by(
         tenant_id=tenant.id, user_id=user.id,
         role=DEMO_ROLE[actor_key], active=True,
     ).first()

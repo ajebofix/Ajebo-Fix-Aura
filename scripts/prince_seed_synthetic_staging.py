@@ -24,6 +24,8 @@ NOTICE = "synthetic-staging-v1"
 PERSONAS = (
     ("principal", "Demo Workshop Principal", "prince-demo-principal@example.invalid",
      "demo-prince-pr", "principal", "PRINCE_DEMO_PRINCIPAL_PASSWORD"),
+    ("stephen", "Demo Stephen Principal", "prince-demo-stephen@example.invalid",
+     "demo-prince-st", "principal", "PRINCE_DEMO_STEPHEN_PASSWORD"),
     ("operator-a", "Demo Operator A", "prince-demo-operator-a@example.invalid",
      "demo-prince-oa", "operator", "PRINCE_DEMO_OPERATOR_A_PASSWORD"),
     ("operator-b", "Demo Operator B", "prince-demo-operator-b@example.invalid",
@@ -147,7 +149,7 @@ def seed():
                 target_id=job.id
             ))
         db.session.commit()
-        print("Prince synthetic stage seeded: 3 demo staff memberships, 2 fictional jobs. No real clients.")
+        print("Prince synthetic stage seeded: 4 demo staff memberships, 2 fictional jobs. No real clients.")
 
 
 if __name__ == "__main__":

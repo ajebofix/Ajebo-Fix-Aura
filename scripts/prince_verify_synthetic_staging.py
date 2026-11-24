@@ -29,7 +29,7 @@ def verify():
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         assert tenant.active and tenant.intake_enabled
         assert tenant.approved_privacy_notice_version == "synthetic-staging-v1"
-        assert PrinceMembership.query.filter_by(tenant_id=tenant.id, active=True).count() == 3
+        assert PrinceMembership.query.filter_by(tenant_id=tenant.id, active=True).count() == 4
         customers = PrinceCustomer.query.filter_by(tenant_id=tenant.id).all()
         assert len(customers) >= 2
         names = {c.full_name for c in customers}
@@ -99,6 +99,13 @@ def verify():
     }
     assert principal.get("/admin", base_url=BASE).status_code == 404
     assert principal.get("/dashboard", base_url=BASE).status_code == 404
+    stephen = login("stephen", "PRINCE_DEMO_STEPHEN_PASSWORD")
+    stephen_jobs = stephen.get("/pilot/workshops/prince/jobs", base_url=BASE)
+    assert stephen_jobs.status_code == 200
+    assert {x["job_id"] for x in stephen_jobs.json["jobs"]} == {
+        x["job_id"] for x in jobs_all.json["jobs"]
+    }
+    assert stephen.get("/admin", base_url=BASE).status_code == 404
     print("Prince staged HTTP smoke passed: roles, tenant, redaction, append-only history and legacy-route denial.")
 
 

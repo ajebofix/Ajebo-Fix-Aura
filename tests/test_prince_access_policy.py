@@ -50,9 +50,22 @@ class PrinceAccessPolicyTests(unittest.TestCase):
                          {"customer_id": 5, "full_name": "Test Customer"})
 
     def test_intake_rejects_unapproved_fields(self):
-        self.assertTrue(validate_operator_intake_keys({"full_name": "Test Customer", "phone_number": "000"}))
+        self.assertTrue(validate_operator_intake_keys({"full_name": "Test Customer", "vehicle_brand": "Mercedes-Benz"}))
+        self.assertFalse(validate_operator_intake_keys({"full_name": "Test Customer", "phone_number": "000"}))
+        self.assertFalse(validate_operator_intake_keys({"full_name": "Test Customer", "email": "x@example.com"}))
+        self.assertFalse(validate_operator_intake_keys({"full_name": "Test Customer", "home_address": "Private"}))
         self.assertFalse(validate_operator_intake_keys({"full_name": "Test Customer", "bank_pin": "1234"}))
         self.assertFalse(validate_operator_intake_keys({"phone_number": "000"}))
+
+    def test_only_principals_can_access_private_contacts_and_confirm_service(self):
+        dad = PrinceActor(user_id=1, tenant_id="prince", role=PrinceRole.PRINCIPAL)
+        stephen = PrinceActor(user_id=2, tenant_id="prince", role=PrinceRole.PRINCIPAL)
+        admin = PrinceActor(user_id=3, tenant_id="prince", role=PrinceRole.PILOT_ADMIN)
+        for action in (PrinceAction.CONTACT_READ, PrinceAction.CONTACT_CORRECT,
+                       PrinceAction.SERVICE_CONFIRM):
+            self.assertTrue(authorize(dad, tenant_id="prince", action=action))
+            self.assertTrue(authorize(stephen, tenant_id="prince", action=action))
+            self.assertFalse(authorize(admin, tenant_id="prince", action=action))
 
     def test_admin_cannot_verify_payments_by_default(self):
         admin = PrinceActor(user_id=1, tenant_id="prince", role=PrinceRole.PILOT_ADMIN)

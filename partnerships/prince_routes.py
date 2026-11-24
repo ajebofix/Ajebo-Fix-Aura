@@ -428,7 +428,7 @@ def principal_update_customer_private(slug, customer_id):
     data = request.get_json(silent=True)
     permitted = {"phone_number": 30, "email": 200, "home_address": 400}
     if (not isinstance(data, dict) or not data
-            or not set(data) <= permitted):
+            or not set(data) <= set(permitted)):
         abort(400)
     values = {}
     for key in data:

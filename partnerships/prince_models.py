@@ -114,6 +114,7 @@ class PrinceJobEntry(db.Model):
     """Append-only, source-labelled workshop statement; never proof of repair."""
     __tablename__ = "prince_job_entries"
     __table_args__ = (
+        db.UniqueConstraint("id", "tenant_id", name="uq_prince_entry_id_tenant"),
         db.ForeignKeyConstraint(
             ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
             name="fk_prince_entry_job_tenant", ondelete="RESTRICT",
@@ -142,6 +143,45 @@ class PrinceJobEntry(db.Model):
         nullable=False,
     )
     recorded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PrinceEntryReview(db.Model):
+    """Append-only principal attestation about an existing workshop entry."""
+    __tablename__ = "prince_entry_reviews"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_review_job_tenant", ondelete="RESTRICT",
+        ),
+        db.ForeignKeyConstraint(
+            ["entry_id", "tenant_id"],
+            ["prince_job_entries.id", "prince_job_entries.tenant_id"],
+            name="fk_prince_review_entry_tenant", ondelete="RESTRICT",
+        ),
+        db.CheckConstraint(
+            "decision IN ('acknowledged', 'needs_evidence', 'work_confirmed', 'not_confirmed')",
+            name="ck_prince_review_decision",
+        ),
+        db.CheckConstraint(
+            "basis IN ('direct_inspection', 'documented_evidence', 'technician_demonstration', 'not_applicable')",
+            name="ck_prince_review_basis",
+        ),
+        db.UniqueConstraint("entry_id", name="uq_prince_single_entry_review"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey(
+        "prince_tenants.id", ondelete="RESTRICT"
+    ), nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False)
+    entry_id = db.Column(db.Integer, nullable=False, index=True)
+    decision = db.Column(db.String(24), nullable=False)
+    basis = db.Column(db.String(36), nullable=False)
+    review_note = db.Column(db.Text, nullable=False)
+    reviewed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    reviewed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class PrinceAudit(db.Model):

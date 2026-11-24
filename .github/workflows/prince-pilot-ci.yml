@@ -16,6 +16,7 @@ on:
       - "railway.json"
       - "migrations/versions/b71e5ca90d24_prince_pilot_isolated_workspace.py"
       - "migrations/versions/c84e91f6b207_prince_job_entry_history.py"
+      - "migrations/versions/d390ab6f021c_prince_principal_entry_review.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
 
@@ -100,7 +101,7 @@ jobs:
           required = {
               "prince_tenants", "prince_memberships", "prince_customers",
               "prince_vehicles", "prince_jobs", "prince_audit_events",
-              "prince_job_entries",
+              "prince_job_entries", "prince_entry_reviews",
           }
           assert required <= names, f"Missing Prince tables: {required - names}"
           fields = {c["name"] for c in inspector.get_columns("prince_customers")}
@@ -110,6 +111,12 @@ jobs:
           assert {"tenant_id","job_id","category","body","review_state","recorded_by_user_id"} <= entry_fields
           fk_targets = [frozenset(fk["constrained_columns"]) for fk in inspector.get_foreign_keys("prince_job_entries")]
           assert frozenset({"job_id", "tenant_id"}) in fk_targets
+          review_fields = {c["name"] for c in inspector.get_columns("prince_entry_reviews")}
+          assert {"tenant_id", "job_id", "entry_id", "decision", "basis", "review_note",
+                  "reviewed_by_user_id"} <= review_fields
+          review_fks = [frozenset(fk["constrained_columns"])
+                        for fk in inspector.get_foreign_keys("prince_entry_reviews")]
+          assert frozenset({"entry_id", "tenant_id"}) in review_fks
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
@@ -124,6 +131,7 @@ jobs:
           PRINCE_STAGING_SYNTHETIC_SEED: "true"
           PRINCE_STAGING_GATE_TOKEN: "ci-testing-only-stage-gate-2026-000000"
           PRINCE_DEMO_PRINCIPAL_PASSWORD: "ci-demo-principal-password-2026-do-not-use"
+          PRINCE_DEMO_STEPHEN_PASSWORD: "ci-demo-stephen-password-2026-do-not-use"
           PRINCE_DEMO_OPERATOR_A_PASSWORD: "ci-demo-operator-a-password-2026-do-not-use"
           PRINCE_DEMO_OPERATOR_B_PASSWORD: "ci-demo-operator-b-password-2026-do-not-use"
           SQLALCHEMY_DATABASE_URI: postgresql://prince_ci:synthetic_ci_only@127.0.0.1:5432/prince_rehearsal

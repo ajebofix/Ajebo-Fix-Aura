@@ -34,6 +34,7 @@ def pilot(app):
     with app.app_context():
         seun = _make_user("Synthetic Operator", "1")
         principal = _make_user("Synthetic Principal", "2")
+        stephen = _make_user("Synthetic Co Principal", "5")
         other = _make_user("Synthetic Other Operator", "3")
         stranger = _make_user("Synthetic Stranger", "4")
         prince = PrinceTenant(
@@ -51,6 +52,7 @@ def pilot(app):
         db.session.add_all([
             PrinceMembership(tenant_id=prince.id, user_id=seun.id, role="operator", active=True),
             PrinceMembership(tenant_id=prince.id, user_id=principal.id, role="principal", active=True),
+            PrinceMembership(tenant_id=prince.id, user_id=stephen.id, role="principal", active=True),
             PrinceMembership(tenant_id=prince.id, user_id=other.id, role="operator", active=True),
             PrinceMembership(tenant_id=other_tenant.id, user_id=stranger.id, role="operator", active=True),
         ])
@@ -91,6 +93,7 @@ def pilot(app):
         return {
             "seun_email": seun.email,
             "principal_email": principal.email,
+            "stephen_email": stephen.email,
             "unassigned_id": own_job.id,
             "cross_id": cross_job.id,
         }
@@ -112,9 +115,6 @@ def _login(client, email):
 def _intake_payload():
     return {
         "full_name": "Synthetic Owner",
-        "phone_number": "+2348000000000",
-        "email": "private@example.test",
-        "home_address": "Private Test Address",
         "vehicle_brand": "Mercedes-Benz",
         "vehicle_model": "S-Class W221",
         "reported_concern": "Cranks, no start; fuel observation unverified",
@@ -132,27 +132,25 @@ def test_unauthenticated_access_denied_when_flag_enabled(app, client):
     assert client.get(f"{URL}/jobs").status_code == 401
 
 
-def test_operator_intake_redaction_and_encryption(pilot, app, client):
+def test_operator_intake_stores_no_private_contacts(pilot, app, client):
     token = _login(client, pilot["seun_email"])
-    r = client.post(f"{URL}/intake", json=_intake_payload(),
-                    headers={"X-CSRF-Token": token})
-    assert r.status_code == 201
-    response = r.get_json()
-    assert set(response) == {"customer_id", "full_name", "job_id"}
-    assert not PRIVATE.intersection(response)
-    assert "private@example.test" not in r.get_data(as_text=True)
+    response = client.post(f"{URL}/intake", json=_intake_payload(),
+                           headers={"X-CSRF-Token": token})
+    assert response.status_code == 201
+    result = response.json
+    assert set(result) == {"customer_id", "full_name", "job_id"}
+    assert not PRIVATE.intersection(result)
     with app.app_context():
-        customer = db.session.get(PrinceCustomer, response["customer_id"])
-        assert customer.phone_ciphertext and "+2348000000000" not in customer.phone_ciphertext
-        assert customer.email_ciphertext and "private@example.test" not in customer.email_ciphertext
-        assert customer.address_ciphertext and "Private Test Address" not in customer.address_ciphertext
+        customer = db.session.get(PrinceCustomer, result["customer_id"])
+        assert customer.phone_ciphertext is None
+        assert customer.email_ciphertext is None
+        assert customer.address_ciphertext is None
         vehicle = PrinceVehicle.query.filter_by(customer_id=customer.id).one()
         assert vehicle.vin is None
-    detail = client.get(f"{URL}/jobs/{response['job_id']}")
+    detail = client.get(f"{URL}/jobs/{result['job_id']}")
     assert detail.status_code == 200
-    assert detail.get_json()["full_name"] == "Synthetic Owner"
-    assert "phone_number" not in detail.get_json()
-    assert "private@example.test" not in detail.get_data(as_text=True)
+    assert detail.json["full_name"] == "Synthetic Owner"
+    assert "phone_number" not in detail.json
 
 
 def test_seun_sees_only_assigned_jobs_and_cannot_cross_tenant(pilot, client):
@@ -182,6 +180,11 @@ def test_principal_can_view_within_tenant_but_not_cross_tenant(pilot, client):
 def test_intake_blocks_unapproved_fields_and_unapproved_notices(pilot, app, client):
     token = _login(client, pilot["seun_email"])
     payload = _intake_payload()
+    for prohibited in ("phone_number", "email", "home_address"):
+        payload[prohibited] = "Private information"
+        assert client.post(f"{URL}/intake", json=payload,
+                           headers={"X-CSRF-Token": token}).status_code == 400
+        del payload[prohibited]
     payload["bank_pin"] = "DO-NOT-SAVE"
     r = client.post(f"{URL}/intake", json=payload, headers={"X-CSRF-Token": token})
     assert r.status_code == 400

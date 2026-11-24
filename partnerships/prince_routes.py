@@ -57,10 +57,10 @@ def pilot_access_gate():
 
 
 def _scope(slug: str):
-    tenant = PrinceTenant.query.filter_by(slug=slug, active=True).first()
+    tenant = PrinceTenant.query.populate_existing().filter_by(slug=slug, active=True).first()
     if tenant is None:
         abort(404)
-    member = PrinceMembership.query.filter_by(
+    member = PrinceMembership.query.populate_existing().filter_by(
         tenant_id=tenant.id, user_id=current_user.id, active=True
     ).first()
     if member is None:

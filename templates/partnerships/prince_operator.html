@@ -32,8 +32,8 @@
     <section class="intro">
       <div class="overline">PRIVATE WORKSPACE</div>
       <h2>Today at the workshop</h2>
-      <p>Register approved pilot customers, then continue with your assigned vehicle jobs.</p>
-      <div class="security-note">Customer contact information is hidden after registration. This screen shows only permitted job details.</div>
+      <p>Register the customer name and vehicle, then continue with your assigned vehicle jobs.</p>
+      <div class="security-note">Operators cannot enter, view or edit customer contact information. Two independently signed-in principals can manage protected contact details.</div>
     </section>
 
     <nav class="jump-links" aria-label="Workspace sections">
@@ -59,16 +59,7 @@
             <label for="full-name">Customer full name <em>Required</em></label>
             <input id="full-name" type="text" name="full_name" maxlength="120" required autocomplete="off" placeholder="Customer's full name">
           </div>
-          <div class="field-grid">
-            <div class="field private-field">
-              <label for="phone">Phone number <span>Private</span></label>
-              <input id="phone" type="tel" name="phone_number" maxlength="30" inputmode="tel" autocomplete="off" placeholder="Optional">
-            </div>
-            <div class="field private-field">
-              <label for="email">Email <span>Private</span></label>
-              <input id="email" type="email" name="email" maxlength="200" autocomplete="off" placeholder="Optional">
-            </div>
-          </div>
+          <p class="muted">Register only a name and the vehicle/job details. Private contact information is managed separately by the two workshop principals.</p>
           <hr>
           <h3>Vehicle and current concern</h3>
           <div class="field-grid">
@@ -95,7 +86,7 @@
           </label>
           <div id="intake-message" class="form-message" role="status" aria-live="polite"></div>
           <button class="primary-btn" type="submit" id="submit-intake">Save customer &amp; lock private details</button>
-          <p class="tiny">After successful save, private contact fields are cleared. Do not take screenshots of customer contact information.</p>
+          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. Only principals can maintain private contact details.</p>
         </form>
       {% endif %}
     </section>
@@ -117,6 +108,29 @@
           <li class="job-card">
             <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
             <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
+            {% if can_manage_private %}
+            <details class="principal-private-panel">
+              <summary>Private customer details · Principals only</summary>
+              <p class="tiny">Visible only after you explicitly unlock this customer record. No customer phone or address is rendered on initial page load.</p>
+              <form class="principal-contact-form"
+                    data-private-url="{{ url_for('prince_pilot.principal_private_customer', slug=slug, customer_id=job.customer_id) }}"
+                    data-update-url="{{ url_for('prince_pilot.principal_update_customer_private', slug=slug, customer_id=job.customer_id) }}"
+                    autocomplete="off">
+                <button type="button" class="load-private-btn">Load protected contacts</button>
+                <div class="private-contact-fields" hidden>
+                  <label>Phone number<input name="phone_number" type="text" maxlength="30" autocomplete="off" placeholder="Not provided"></label>
+                  <label>Email address<input name="email" type="email" maxlength="200" autocomplete="off" placeholder="Not provided"></label>
+                  <label>Home address<textarea name="home_address" rows="2" maxlength="400" autocomplete="off" placeholder="Not provided"></textarea></label>
+                  {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+                    <p class="tiny">Training only: phone = DEMO CONTACT ONLY; email = demo@example.invalid; address = DEMO ADDRESS ONLY.</p>
+                  {% endif %}
+                  <button type="submit" class="save-private-btn">Save private details</button>
+                  <button type="button" class="hide-private-btn">Lock contacts</button>
+                </div>
+                <span class="private-contact-message" role="status" aria-live="polite"></span>
+              </form>
+            </details>
+            {% endif %}
             <div class="workshop-record" id="job-record-{{ job.job_id }}">
               <div class="job-record-title">
                 <strong>Vehicle care record</strong>
@@ -132,13 +146,53 @@
               <h3>Recorded history</h3>
               <ul class="job-history-list">
                 {% for entry in job.entries %}
-                <li class="record-entry">
+                <li class="record-entry" data-entry-id="{{ entry.id }}">
                   <div class="record-entry-header">
                     <strong>{{ entry.category_label }}</strong>
                     <span class="entry-state">{{ entry.review_state | title }}</span>
                   </div>
                   <p>{{ entry.body }}</p>
                   <time datetime="{{ entry.recorded_at }}">{{ entry.recorded_at }}</time>
+                  {% if entry.principal_review %}
+                    <div class="principal-review-result">
+                      Principal decision: <strong>{{ entry.principal_review.decision | replace("_", " ") | title }}</strong>
+                      <p>{{ entry.principal_review.review_note }}</p>
+                      <small>Basis: {{ entry.principal_review.basis | replace("_", " ") | title }}</small>
+                    </div>
+                  {% elif can_review and job.job_status != "closed" %}
+                    <form class="principal-review-form"
+                          data-review-url="{{ url_for('prince_pilot.principal_review_entry', slug=slug, job_id=job.job_id, entry_id=entry.id) }}"
+                          autocomplete="off">
+                      <strong class="review-form-heading">Principal review · Dad or Stephen</strong>
+                      <label>Decision
+                        <select name="decision" required>
+                          <option value="">Choose review decision</option>
+                          <option value="acknowledged">Acknowledged (not work confirmation)</option>
+                          <option value="needs_evidence">Needs further evidence</option>
+                          <option value="not_confirmed">Not confirmed</option>
+                          {% if entry.category == "reported_work" %}
+                          <option value="work_confirmed">Attest work performed</option>
+                          {% endif %}
+                        </select>
+                      </label>
+                      <label>Evidence basis
+                        <select name="basis" required>
+                          <option value="not_applicable">Not applicable (no work confirmation)</option>
+                          {% if entry.category == "reported_work" %}
+                          <option value="direct_inspection">Direct inspection</option>
+                          <option value="documented_evidence">Documented evidence</option>
+                          <option value="technician_demonstration">Technician demonstration</option>
+                          {% endif %}
+                        </select>
+                      </label>
+                      <label>Review reason / evidence reference
+                        <textarea name="review_note" rows="2" maxlength="1200" minlength="15" required
+                          placeholder="{{ 'Demo: I reviewed the fictional workshop statement.' if config.get('PRINCE_STAGING_LOCKDOWN') else 'State the specific basis; no private contact details.' }}"></textarea>
+                      </label>
+                      <button type="submit">Record principal decision</button>
+                      <span class="principal-review-message" role="status" aria-live="polite"></span>
+                    </form>
+                  {% endif %}
                 </li>
                 {% else %}
                 <li class="job-history-empty">No classified entries yet. Earlier notes have not been converted automatically.</li>

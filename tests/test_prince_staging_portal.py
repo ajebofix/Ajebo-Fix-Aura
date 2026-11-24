@@ -6,7 +6,7 @@ import pytest
 from extensions import db
 from models import User
 from partnerships.prince_models import (
-    PrinceCustomer, PrinceJob, PrinceMembership, PrinceTenant, PrinceVehicle
+    PrinceCustomer, PrinceJob, PrinceJobEntry, PrinceMembership, PrinceTenant, PrinceVehicle
 )
 
 P = "/pilot/workshops/prince"
@@ -219,28 +219,30 @@ def test_stage_entries_require_fictional_prefix_and_do_not_leak_between_roles(st
     assert "simulated test jumper" not in client.get(P + "/operator").get_data(as_text=True)
 
 
-def test_stephen_principal_matches_dad_and_operator_has_no_private_controls(stage, app, client):
+def test_stephen_principal_page_has_private_controls(stage, client):
     assert _log_in(client, role="stephen").status_code == 303
     page = client.get(P + "/operator").get_data(as_text=True)
     assert "Synthetic Principal Owner" in page
     assert "Private customer details" in page
-    assert "Principal review" not in page  # Until entries are added.
     assert "Load protected contacts" in page
     assert 'name="phone_number"' in page
     assert 'name="email"' in page
     assert 'name="home_address"' in page
 
-    operator = app.test_client()
-    assert _log_in(operator, role="operator-a").status_code == 303
-    rendered = operator.get(P + "/operator").get_data(as_text=True)
-    assert "Load protected contacts" not in rendered
-    assert 'name="phone_number"' not in rendered
-    assert 'name="email"' not in rendered
-    assert 'name="home_address"' not in rendered
+
+def test_operator_page_has_no_private_contact_controls(stage, client):
+    assert _log_in(client, role="operator-a").status_code == 303
+    page = client.get(P + "/operator").get_data(as_text=True)
+    assert "Load protected contacts" not in page
+    assert 'name="phone_number"' not in page
+    assert 'name="email"' not in page
+    assert 'name="home_address"' not in page
 
 
-def test_staging_principals_only_can_edit_fictional_private_contact(stage, app, client):
-    assert _log_in(client, role="stephen").status_code == 303
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_each_staging_principal_can_edit_fictional_private_contact(stage, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
     job = client.get(P + f"/jobs/{stage['job_id']}").json
     endpoint = P + f"/customers/{job['customer_id']}/private"
     with client.session_transaction() as sess:
@@ -255,16 +257,24 @@ def test_staging_principals_only_can_edit_fictional_private_contact(stage, app, 
     assert client.patch(endpoint, json={"phone_number": "+2348012345678"},
                         headers={"X-CSRF-Token": token}).status_code == 400
 
-    dad = app.test_client()
-    assert _log_in(dad, role="principal").status_code == 303
-    assert dad.get(endpoint).json["email"] == "demo@example.invalid"
-    operator = app.test_client()
-    assert _log_in(operator, role="operator-a").status_code == 303
-    assert operator.get(endpoint).status_code == 404
 
-
-def test_staging_requires_fictional_review_notes(stage, app, client):
+def test_operator_staging_private_api_access_is_denied(stage, client):
     assert _log_in(client, role="operator-a").status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    from partnerships.prince_models import PrinceJob
+    with client.application.app_context():
+        customer_id = db.session.get(PrinceJob, stage["job_id"]).customer_id
+    endpoint = P + f"/customers/{customer_id}/private"
+    assert client.get(endpoint).status_code == 404
+    assert client.patch(endpoint, json={"email": "demo@example.invalid"},
+                        headers={"X-CSRF-Token": token}).status_code == 404
+
+
+def test_stage_operator_cannot_review_reported_work(stage, client):
+    assert _log_in(client, role="operator-a").status_code == 303
+    assert client.get(P + "/operator").status_code == 200
     with client.session_transaction() as sess:
         token = sess["_csrf_token"]
     entry = client.post(
@@ -277,19 +287,36 @@ def test_staging_requires_fictional_review_notes(stage, app, client):
     review_url = P + f"/jobs/{stage['job_id']}/entries/{entry.json['entry']['id']}/review"
     assert client.post(review_url, json={
         "decision": "work_confirmed", "basis": "direct_inspection",
-        "review_note": "Demo: I saw the work",
+        "review_note": "Demo: I saw the work in this fictional example",
     }, headers={"X-CSRF-Token": token}).status_code == 404
-    dad = app.test_client()
-    assert _log_in(dad, role="principal").status_code == 303
-    with dad.session_transaction() as sess:
-        dad_token = sess["_csrf_token"]
-    assert dad.post(review_url, json={
+
+
+def test_stage_principal_requires_fictional_review_note(stage, client, app):
+    from partnerships.prince_models import PrinceJobEntry
+    with app.app_context():
+        job = db.session.get(PrinceJob, stage["job_id"])
+        entry = PrinceJobEntry(
+            tenant_id=job.tenant_id, job_id=job.id,
+            category="reported_work",
+            body="Demo: simulated service record",
+            review_state="unverified",
+            recorded_by_user_id=job.assigned_user_id,
+        )
+        db.session.add(entry)
+        db.session.commit()
+        entry_id = entry.id
+    assert _log_in(client, role="principal").status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    review_url = P + f"/jobs/{stage['job_id']}/entries/{entry_id}/review"
+    assert client.post(review_url, json={
         "decision": "work_confirmed", "basis": "direct_inspection",
         "review_note": "Actual inspection of real vehicle",
-    }, headers={"X-CSRF-Token": dad_token}).status_code == 400
-    approved = dad.post(review_url, json={
+    }, headers={"X-CSRF-Token": token}).status_code == 400
+    approved = client.post(review_url, json={
         "decision": "work_confirmed", "basis": "direct_inspection",
-        "review_note": "Demo: simulated inspection confirmed work only for the demo",
-    }, headers={"X-CSRF-Token": dad_token})
+        "review_note": "Demo: simulated inspection confirmed work for training only",
+    }, headers={"X-CSRF-Token": token})
     assert approved.status_code == 201
     assert approved.json["principal_review"]["decision"] == "work_confirmed"

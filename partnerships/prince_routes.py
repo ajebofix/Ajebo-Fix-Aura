@@ -13,14 +13,16 @@ from flask_login import current_user
 from sqlalchemy.exc import SQLAlchemyError
 
 from extensions import db
-from security.field_encryption import ProfileEncryptionError, encrypt_profile_value
+from security.field_encryption import (
+    ProfileEncryptionError, decrypt_profile_value, encrypt_profile_value,
+)
 from partnerships.prince_access_policy import (
     PrinceAction, PrinceActor, PrinceRole, authorize, operator_intake_response,
     redact_operator_job,
 )
 from partnerships.prince_models import (
-    PrinceAudit, PrinceCustomer, PrinceJob, PrinceJobEntry, PrinceMembership,
-    PrinceTenant, PrinceVehicle,
+    PrinceAudit, PrinceCustomer, PrinceEntryReview, PrinceJob, PrinceJobEntry,
+    PrinceMembership, PrinceTenant, PrinceVehicle,
 )
 
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
@@ -40,8 +42,8 @@ ENTRY_CATEGORIES = {
 }
 
 INTAKE_FIELDS = frozenset({
-    "full_name", "phone_number", "email", "home_address", "vehicle_brand",
-    "vehicle_model", "vehicle_year", "reported_concern",
+    "full_name", "vehicle_brand", "vehicle_model", "vehicle_year",
+    "reported_concern",
     "privacy_notice_version", "participation_confirmed",
 })
 
@@ -144,9 +146,6 @@ def intake(slug):
     if data.get("participation_confirmed") is not True:
         abort(400)
 
-    phone = _text(data, "phone_number", 30)
-    email = _text(data, "email", 200)
-    address = _text(data, "home_address", 400)
     brand = _text(data, "vehicle_brand", 100)
     model = _text(data, "vehicle_model", 100)
     concern = _text(data, "reported_concern", 1200)
@@ -167,25 +166,10 @@ def intake(slug):
     if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
         if not full_name.lower().startswith(("demo ", "synthetic ")):
             abort(400)
-        if phone not in (None, "DEMO CONTACT ONLY"):
-            abort(400)
-        if email not in (None, "demo@example.invalid"):
-            abort(400)
-        if address not in (None, "DEMO ADDRESS ONLY"):
-            abort(400)
-
-    # Encrypt *before* writing. No logging of request bodies or contact fields.
-    try:
-        encrypted_phone = encrypt_profile_value(phone)
-        encrypted_email = encrypt_profile_value(email)
-        encrypted_address = encrypt_profile_value(address)
-    except ProfileEncryptionError:
-        return jsonify({"error": "Secure intake unavailable"}), 503
 
     customer = PrinceCustomer(
         tenant_id=tenant.id, full_name=full_name,
-        phone_ciphertext=encrypted_phone, email_ciphertext=encrypted_email,
-        address_ciphertext=encrypted_address,
+
         intake_by_user_id=actor.user_id,
         privacy_notice_version=version, participation_confirmed=True,
     )
@@ -263,6 +247,17 @@ def job_detail(slug, job_id):
     return jsonify(_job_response(job, customer, vehicle))
 
 
+def _review_response(review):
+    if review is None:
+        return None
+    return {
+        "decision": review.decision,
+        "basis": review.basis,
+        "review_note": _public_concern(review.review_note),
+        "reviewed_at": review.reviewed_at.isoformat(timespec="seconds") + "Z",
+    }
+
+
 def _entry_response(entry):
     return {
         "id": entry.id,
@@ -271,6 +266,9 @@ def _entry_response(entry):
         "body": _public_concern(entry.body),
         "review_state": entry.review_state,
         "recorded_at": entry.recorded_at.isoformat(timespec="seconds") + "Z",
+        "principal_review": _review_response(
+            PrinceEntryReview.query.filter_by(entry_id=entry.id, tenant_id=entry.tenant_id).first()
+        ),
     }
 
 
@@ -377,4 +375,126 @@ def operator_workspace(slug):
         privacy_notice_version=tenant.approved_privacy_notice_version,
         can_intake=bool(tenant.intake_enabled and
                         tenant.approved_privacy_notice_version),
+        can_manage_private=actor.role == PrinceRole.PRINCIPAL,
+        can_review=actor.role == PrinceRole.PRINCIPAL,
     )
+
+
+@prince_pilot_bp.get("/<slug>/customers/<int:customer_id>/private")
+def principal_private_customer(slug, customer_id):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.CONTACT_READ)
+    customer = PrinceCustomer.query.filter_by(id=customer_id, tenant_id=tenant.id).first()
+    if customer is None:
+        abort(404)
+    try:
+        result = {
+            "customer_id": customer.id,
+            "full_name": customer.full_name,
+            "phone_number": decrypt_profile_value(customer.phone_ciphertext),
+            "email": decrypt_profile_value(customer.email_ciphertext),
+            "home_address": decrypt_profile_value(customer.address_ciphertext),
+        }
+    except ProfileEncryptionError:
+        return jsonify({"error": "Private details unavailable"}), 503
+    _audit(tenant.id, actor.user_id, "private_contact_accessed", "customer", customer.id)
+    db.session.commit()
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
+
+
+@prince_pilot_bp.patch("/<slug>/customers/<int:customer_id>/private")
+def principal_update_customer_private(slug, customer_id):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.CONTACT_CORRECT)
+    customer = PrinceCustomer.query.filter_by(id=customer_id, tenant_id=tenant.id).first()
+    if customer is None:
+        abort(404)
+    if request.content_length and request.content_length > 2400:
+        abort(413)
+    data = request.get_json(silent=True)
+    permitted = {"phone_number": 30, "email": 200, "home_address": 400}
+    if (not isinstance(data, dict) or not data
+            or not set(data) <= permitted):
+        abort(400)
+    values = {}
+    for key in data:
+        if data[key] is not None and not isinstance(data[key], str):
+            abort(400)
+        values[key] = _text(data, key, permitted[key])
+    if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        staging_values = {
+            "phone_number": "DEMO CONTACT ONLY",
+            "email": "demo@example.invalid",
+            "home_address": "DEMO ADDRESS ONLY",
+        }
+        if any(value is not None and value != staging_values[key]
+               for key, value in values.items()):
+            abort(400)
+    try:
+        for key, value in values.items():
+            setattr(customer, {
+                "phone_number": "phone_ciphertext",
+                "email": "email_ciphertext",
+                "home_address": "address_ciphertext",
+            }[key], encrypt_profile_value(value))
+        _audit(tenant.id, actor.user_id, "private_contact_updated", "customer", customer.id)
+        db.session.commit()
+    except (ProfileEncryptionError, SQLAlchemyError):
+        db.session.rollback()
+        return jsonify({"error": "Secure private update unavailable"}), 503
+    return jsonify({"customer_id": customer.id, "updated": True})
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/entries/<int:entry_id>/review")
+def principal_review_entry(slug, job_id, entry_id):
+    tenant, actor = _scope(slug)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    _allow(actor, tenant, PrinceAction.SERVICE_CONFIRM)
+    if job.status == "closed":
+        abort(403)
+    entry = PrinceJobEntry.query.filter_by(
+        id=entry_id, job_id=job.id, tenant_id=tenant.id,
+    ).first()
+    if entry is None:
+        abort(404)
+    data = request.get_json(silent=True)
+    if (not isinstance(data, dict)
+            or set(data) != {"decision", "basis", "review_note"}):
+        abort(400)
+    decision = data.get("decision")
+    basis = data.get("basis")
+    if decision not in {"acknowledged", "needs_evidence", "work_confirmed", "not_confirmed"}:
+        abort(400)
+    if basis not in {"direct_inspection", "documented_evidence",
+                     "technician_demonstration", "not_applicable"}:
+        abort(400)
+    if (decision == "work_confirmed"
+            and (entry.category != "reported_work" or basis == "not_applicable")):
+        abort(400)
+    if decision != "work_confirmed" and basis != "not_applicable":
+        abort(400)
+    note = _text(data, "review_note", 1200, required=True)
+    if len(note) < 15 or PRIVATE_CONTACT_PATTERN.search(note):
+        abort(400)
+    if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        if not note.lower().startswith(("demo:", "synthetic:")):
+            abort(400)
+    if PrinceEntryReview.query.filter_by(entry_id=entry.id).first():
+        return jsonify({"error": "Already reviewed; a correction requires a new process"}), 409
+    record = PrinceEntryReview(
+        tenant_id=tenant.id, job_id=job.id, entry_id=entry.id,
+        decision=decision, basis=basis, review_note=note,
+        reviewed_by_user_id=actor.user_id,
+    )
+    try:
+        db.session.add(record)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "principal_entry_reviewed", "job_entry", entry.id)
+        payload = _review_response(record)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Review could not be saved"}), 503
+    return jsonify({"entry_id": entry.id, "principal_review": payload}), 201

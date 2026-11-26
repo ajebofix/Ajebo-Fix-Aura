@@ -24,28 +24,39 @@ def verify():
     app = create_app()
     with app.app_context():
         tables = set(inspect(db.engine).get_table_names())
-        assert {"prince_tenants", "prince_memberships", "prince_customers",
+        if not ({"prince_tenants", "prince_memberships", "prince_customers",
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
-                "prince_job_entries", "prince_job_assignments", "prince_job_transitions"} <= tables
+                "prince_job_entries", "prince_job_assignments", "prince_job_transitions"} <= tables):
+            raise RuntimeError("Prince staging verification failed at check 1 (source 27).")
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
-        assert tenant.active and tenant.intake_enabled
-        assert tenant.approved_privacy_notice_version == "synthetic-staging-v1"
-        assert PrinceMembership.query.filter_by(tenant_id=tenant.id, active=True).count() == 4
+        if not (tenant.active and tenant.intake_enabled):
+            raise RuntimeError("Prince staging verification failed at check 2 (source 31).")
+        if not (tenant.approved_privacy_notice_version == "synthetic-staging-v1"):
+            raise RuntimeError("Prince staging verification failed at check 3 (source 32).")
+        if not (PrinceMembership.query.filter_by(tenant_id=tenant.id, active=True).count() == 4):
+            raise RuntimeError("Prince staging verification failed at check 4 (source 33).")
         customers = PrinceCustomer.query.filter_by(tenant_id=tenant.id).all()
-        assert len(customers) >= 2
+        if not (len(customers) >= 2):
+            raise RuntimeError("Prince staging verification failed at check 5 (source 35).")
         names = {c.full_name for c in customers}
-        assert {"Demo Owner Alpha", "Demo Owner Beta"} <= names
-        assert all(c.full_name.lower().startswith(("demo ", "synthetic "))
-                   for c in customers)
-        assert all(
+        if not ({"Demo Owner Alpha", "Demo Owner Beta"} <= names):
+            raise RuntimeError("Prince staging verification failed at check 6 (source 37).")
+        if not (all(c.full_name.lower().startswith(("demo ", "synthetic "))
+                   for c in customers)):
+            raise RuntimeError("Prince staging verification failed at check 7 (source 38).")
+        if not (all(
             (c.phone_ciphertext is None or "DEMO CONTACT" not in c.phone_ciphertext)
             for c in customers
-        )
+        )):
+            raise RuntimeError("Prince staging verification failed at check 8 (source 40).")
         seeded = [c for c in customers
                   if c.full_name in {"Demo Owner Alpha", "Demo Owner Beta"}]
-        assert len(seeded) == 2
-        assert all(c.phone_ciphertext for c in seeded)
-        assert PrinceJob.query.filter_by(tenant_id=tenant.id).count() >= 2
+        if not (len(seeded) == 2):
+            raise RuntimeError("Prince staging verification failed at check 9 (source 46).")
+        if not (all(c.phone_ciphertext for c in seeded)):
+            raise RuntimeError("Prince staging verification failed at check 10 (source 47).")
+        if not (PrinceJob.query.filter_by(tenant_id=tenant.id).count() >= 2):
+            raise RuntimeError("Prince staging verification failed at check 11 (source 48).")
         # Rehearsals must not overwrite genuine trainee actions. Reassigning
         # fictional jobs is permitted and can change operator job counts.
         operator_ids = {
@@ -81,87 +92,122 @@ def verify():
     def login(role, password_env):
         client = app.test_client()
         first = client.get("/prince-demo", base_url=BASE)
-        assert first.status_code == 200
+        if not (first.status_code == 200):
+            raise RuntimeError("Prince staging verification failed at check 12 (source 84).")
         with client.session_transaction(base_url=BASE) as sess:
             token = sess["_csrf_token"]
         response = client.post("/prince-demo", base_url=BASE, data={
             "role": role, "portal_code": os.environ["PRINCE_STAGING_GATE_TOKEN"],
             "password": os.environ[password_env], "csrf_token": token,
         })
-        assert response.status_code == 303, f"{role} login HTTP {response.status_code}"
+        if not (response.status_code == 303):
+            raise RuntimeError("Prince staging verification failed at check 13 (source 91).")
         return client
 
     public = app.test_client()
-    assert public.get("/prince-demo", base_url=BASE).status_code == 200
-    assert public.get("/cars", base_url=BASE).status_code == 404
-    assert public.get("/pilot/workshops/prince/jobs", base_url=BASE).status_code == 404
-    assert public.get("/auth/login", base_url=BASE).status_code == 404
+    if not (public.get("/prince-demo", base_url=BASE).status_code == 200):
+        raise RuntimeError("Prince staging verification failed at check 14 (source 95).")
+    if not (public.get("/cars", base_url=BASE).status_code == 404):
+        raise RuntimeError("Prince staging verification failed at check 15 (source 96).")
+    if not (public.get("/pilot/workshops/prince/jobs", base_url=BASE).status_code == 404):
+        raise RuntimeError("Prince staging verification failed at check 16 (source 97).")
+    if not (public.get("/auth/login", base_url=BASE).status_code == 404):
+        raise RuntimeError("Prince staging verification failed at check 17 (source 98).")
 
     op_a = login("operator-a", "PRINCE_DEMO_OPERATOR_A_PASSWORD")
     op_b = login("operator-b", "PRINCE_DEMO_OPERATOR_B_PASSWORD")
     for role, client in (("operator-a", op_a), ("operator-b", op_b)):
         listing = client.get("/pilot/workshops/prince/jobs", base_url=BASE)
-        assert listing.status_code == 200
+        if not (listing.status_code == 200):
+            raise RuntimeError("Prince staging verification failed at check 18 (source 104).")
         received = {job["job_id"] for job in listing.json["jobs"]}
-        assert received == expected_jobs[role], f"{role} assignment mismatch"
-        assert "phone_ciphertext" not in str(listing.json)
-        assert "phone_number" not in str(listing.json)
-        assert client.get("/cars", base_url=BASE).status_code == 404
-        assert client.get("/pilot/workshops/prince/manage",
-                          base_url=BASE).status_code == 404
+        if not (received == expected_jobs[role]):
+            raise RuntimeError("Prince staging verification failed at check 19 (source 106).")
+        if not ("phone_ciphertext" not in str(listing.json)):
+            raise RuntimeError("Prince staging verification failed at check 20 (source 107).")
+        if not ("phone_number" not in str(listing.json)):
+            raise RuntimeError("Prince staging verification failed at check 21 (source 108).")
+        if not (client.get("/cars", base_url=BASE).status_code == 404):
+            raise RuntimeError("Prince staging verification failed at check 22 (source 109).")
+        if not (client.get("/pilot/workshops/prince/manage",
+                          base_url=BASE).status_code == 404):
+            raise RuntimeError("Prince staging verification failed at check 23 (source 110).")
         page = client.get("/pilot/workshops/prince/operator", base_url=BASE)
-        assert page.status_code == 200
-        assert "Load protected contacts" not in page.get_data(as_text=True)
+        if not (page.status_code == 200):
+            raise RuntimeError("Prince staging verification failed at check 24 (source 113).")
+        if not ("Load protected contacts" not in page.get_data(as_text=True)):
+            raise RuntimeError("Prince staging verification failed at check 25 (source 114).")
         for job in listing.json["jobs"]:
             history = client.get(
                 f"/pilot/workshops/prince/jobs/{job['job_id']}/entries",
                 base_url=BASE,
             )
-            assert history.status_code == 200
-            assert client.get(
+            if not (history.status_code == 200):
+                raise RuntimeError("Prince staging verification failed at check 26 (source 120).")
+            if not (client.get(
                 f"/pilot/workshops/prince/jobs/{job['job_id']}/lifecycle", base_url=BASE,
-            ).status_code == 404
-            assert all(x["review_state"] == "unverified"
-                       for x in history.json["entries"])
+            ).status_code == 404):
+                raise RuntimeError("Prince staging verification failed at check 27 (source 121).")
+            if not (all(x["review_state"] == "unverified"
+                       for x in history.json["entries"])):
+                raise RuntimeError("Prince staging verification failed at check 28 (source 124).")
         if alpha_assignee != operator_ids[role]:
-            assert client.get(
+            if not (client.get(
                 f"/pilot/workshops/prince/jobs/{alpha_job_id}", base_url=BASE,
-            ).status_code == 404
+            ).status_code == 404):
+                raise RuntimeError("Prince staging verification failed at check 29 (source 127).")
 
     principal = login("principal", "PRINCE_DEMO_PRINCIPAL_PASSWORD")
     jobs_all = principal.get("/pilot/workshops/prince/jobs", base_url=BASE)
-    assert jobs_all.status_code == 200
-    assert len(jobs_all.json["jobs"]) >= 2
-    assert {"Demo Owner Alpha", "Demo Owner Beta"} <= {
+    if not (jobs_all.status_code == 200):
+        raise RuntimeError("Prince staging verification failed at check 30 (source 133).")
+    if not (len(jobs_all.json["jobs"]) >= 2):
+        raise RuntimeError("Prince staging verification failed at check 31 (source 134).")
+    if not ({"Demo Owner Alpha", "Demo Owner Beta"} <= {
         x["full_name"] for x in jobs_all.json["jobs"]
-    }
-    assert principal.get("/admin", base_url=BASE).status_code == 404
-    assert principal.get("/dashboard", base_url=BASE).status_code == 404
+    }):
+        raise RuntimeError("Prince staging verification failed at check 32 (source 135).")
+    if not (principal.get("/admin", base_url=BASE).status_code == 404):
+        raise RuntimeError("Prince staging verification failed at check 33 (source 138).")
+    if not (principal.get("/dashboard", base_url=BASE).status_code == 404):
+        raise RuntimeError("Prince staging verification failed at check 34 (source 139).")
     management = principal.get("/pilot/workshops/prince/manage", base_url=BASE)
-    assert management.status_code == 200
-    assert "Principal management console" in management.get_data(as_text=True)
-    assert "Demo Owner Alpha" in management.get_data(as_text=True)
-    assert "phone_ciphertext" not in management.get_data(as_text=True)
-    assert "Job progression" in management.get_data(as_text=True)
+    if not (management.status_code == 200):
+        raise RuntimeError("Prince staging verification failed at check 35 (source 141).")
+    if not ("Principal management console" in management.get_data(as_text=True)):
+        raise RuntimeError("Prince staging verification failed at check 36 (source 142).")
+    if not ("Demo Owner Alpha" in management.get_data(as_text=True)):
+        raise RuntimeError("Prince staging verification failed at check 37 (source 143).")
+    if not ("phone_ciphertext" not in management.get_data(as_text=True)):
+        raise RuntimeError("Prince staging verification failed at check 38 (source 144).")
+    if not ("Job progression" in management.get_data(as_text=True)):
+        raise RuntimeError("Prince staging verification failed at check 39 (source 145).")
     for job in jobs_all.json["jobs"]:
         state = principal.get(
             f"/pilot/workshops/prince/jobs/{job['job_id']}/lifecycle", base_url=BASE,
         )
-        assert state.status_code == 200
-        assert state.json["job_status"] == job["job_status"]
+        if not (state.status_code == 200):
+            raise RuntimeError("Prince staging verification failed at check 40 (source 150).")
+        if not (state.json["job_status"] == job["job_status"]):
+            raise RuntimeError("Prince staging verification failed at check 41 (source 151).")
         if state.json["history"]:
-            assert state.json["history"][-1]["new_status"] == job["job_status"]
+            if not (state.json["history"][-1]["new_status"] == job["job_status"]):
+                raise RuntimeError("Prince staging verification failed at check 42 (source 153).")
     stephen = login("stephen", "PRINCE_DEMO_STEPHEN_PASSWORD")
     stephen_jobs = stephen.get("/pilot/workshops/prince/jobs", base_url=BASE)
-    assert stephen_jobs.status_code == 200
-    assert {x["job_id"] for x in stephen_jobs.json["jobs"]} == {
+    if not (stephen_jobs.status_code == 200):
+        raise RuntimeError("Prince staging verification failed at check 43 (source 156).")
+    if not ({x["job_id"] for x in stephen_jobs.json["jobs"]} == {
         x["job_id"] for x in jobs_all.json["jobs"]
-    }
-    assert stephen.get("/admin", base_url=BASE).status_code == 404
-    assert stephen.get(
+    }):
+        raise RuntimeError("Prince staging verification failed at check 44 (source 157).")
+    if not (stephen.get("/admin", base_url=BASE).status_code == 404):
+        raise RuntimeError("Prince staging verification failed at check 45 (source 160).")
+    if not (stephen.get(
         "/pilot/workshops/prince/manage", base_url=BASE,
-    ).status_code == 200
-    print("Prince staged HTTP smoke passed: dynamic operator assignments, principal management, tenant privacy and legacy route denial.")
+    ).status_code == 200):
+        raise RuntimeError("Prince staging verification failed at check 46 (source 161).")
+    print("Prince staged HTTP smoke passed: all four roles, lifecycle access, assignments, tenant privacy and legacy route denial.")
 
 
 if __name__ == "__main__":

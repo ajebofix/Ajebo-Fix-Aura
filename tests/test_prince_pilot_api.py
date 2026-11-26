@@ -794,3 +794,36 @@ def test_lifecycle_requires_active_operator_before_start(pilot, app, client):
         member.active = False
         db.session.commit()
     assert _advance(client, token, job_id, "approved", "in_progress").status_code == 409
+
+
+def test_lifecycle_no_follow_up_requires_confirmed_work(pilot, client):
+    token = _login(client, pilot["principal_email"])
+    job_id = pilot["unassigned_id"]
+    headers = {"X-CSRF-Token": token}
+    for old, new in [
+        ("draft", "awaiting_approval"), ("awaiting_approval", "approved"),
+        ("approved", "in_progress"),
+    ]:
+        assert _advance(client, token, job_id, old, new).status_code == 200
+    entry = client.post(f"{URL}/jobs/{job_id}/entries", json={
+        "category": "reported_work", "body": "Routine service reportedly performed.",
+    }, headers=headers)
+    assert entry.status_code == 201
+    entry_id = entry.json["entry"]["id"]
+    assert _advance(client, token, job_id, "in_progress", "closed",
+                    "no_follow_up_identified").status_code == 409
+    assert client.post(f"{URL}/jobs/{job_id}/entries/{entry_id}/review", json={
+        "decision": "work_confirmed", "basis": "direct_inspection",
+        "review_note": "Personally inspected the reported routine service.",
+    }, headers=headers).status_code == 201
+    assert client.post(f"{URL}/jobs/{job_id}/lifecycle", json={
+        "expected_status": "in_progress", "new_status": "closed",
+        "reason": "Administrative closure after review of the workshop record.",
+        "closure_disposition": "follow_up_required", "follow_up_plan": None,
+    }, headers=headers).status_code == 400
+    result = _advance(client, token, job_id, "in_progress", "closed",
+                      "no_follow_up_identified")
+    assert result.status_code == 200
+    assert result.json["event"]["follow_up_plan"] is None
+    assert client.get(f"{URL}/jobs/{job_id}/entries").json["entries"][0][
+        "review_state"] == "unverified"

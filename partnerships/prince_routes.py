@@ -25,7 +25,7 @@ from partnerships.prince_access_policy import (
 )
 from partnerships.prince_models import (
     PrinceAudit, PrinceCustomer, PrinceCustomerAuthorization, PrinceEntryReview,
-    PrinceEstimate, PrinceJob, PrinceJobAssignment,
+    PrinceEstimate, PrinceInvoice, PrinceJob, PrinceJobAssignment,
     PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrinceTenant, PrinceVehicle,
 )
 
@@ -1242,3 +1242,123 @@ def _work_authorization(job):
     if event.total_kobo != estimate.total_kobo:
         return "not_recorded"
     return event.decision
+
+
+def _invoice_for_job(job):
+    return PrinceInvoice.query.populate_existing().filter_by(
+        tenant_id=job.tenant_id, job_id=job.id,
+    ).first()
+
+
+def _invoice_response(record, job):
+    estimate = _estimate_latest(job.tenant_id, job.id)
+    events = _customer_authorization_events(job.tenant_id, job.id, record.estimate_version)
+    current = events[0] if events else None
+    authorization_current = bool(
+        estimate and estimate.version == record.estimate_version
+        and estimate.approved_at is not None and estimate.total_kobo == record.total_kobo
+        and current and current.decision == "accepted"
+        and current.sequence == record.authorization_sequence
+        and current.total_kobo == record.total_kobo
+    )
+    return {
+        "reference": f"DEMO-INV-PAC-{record.job_id:06d}",
+        "estimate_version": record.estimate_version,
+        "authorization_sequence": record.authorization_sequence,
+        "authorization_current": authorization_current,
+        "items": [
+            {"category": item["category"], "description": _public_concern(item["description"]),
+             "quantity": item["quantity"], "unit_kobo": item["unit_kobo"],
+             "line_kobo": item["line_kobo"]}
+            for item in record.items
+        ],
+        "subtotal_kobo": record.subtotal_kobo, "discount_kobo": record.discount_kobo,
+        "total_kobo": record.total_kobo, "issued_by_user_id": record.issued_by_user_id,
+        "issue_reason": _public_concern(record.issue_reason),
+        "issued_at": record.issued_at.isoformat(timespec="seconds") + "Z",
+    }
+
+
+def _invoice_scope(slug, job_id, *, lock=False):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.INVOICE_ISSUE)
+    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        abort(404)
+    job, customer, vehicle = _find_authorized_job(tenant, actor, job_id, lock=lock)
+    return tenant, actor, job, customer, vehicle
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/invoice")
+def invoice_workspace(slug, job_id):
+    tenant, _, job, customer, vehicle = _invoice_scope(slug, job_id)
+    record = _invoice_for_job(job)
+    estimate = _estimate_latest(tenant.id, job.id)
+    events = _customer_authorization_events(tenant.id, job.id, estimate.version) if estimate else []
+    current = events[0] if events else None
+    can_issue = bool(
+        record is None and job.status in {"approved", "in_progress", "closed"}
+        and _work_authorization(job) == "accepted"
+    )
+    return render_template(
+        "partnerships/prince_invoice.html", slug=slug,
+        workshop_name=tenant.display_name, job=_job_response(job, customer, vehicle),
+        invoice=_invoice_response(record, job) if record else None,
+        estimate=_estimate_response(estimate) if estimate else None,
+        authorization_sequence=current.sequence if current else 0,
+        can_issue=can_issue, categories=ESTIMATE_CATEGORIES,
+    )
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/invoice/data")
+def invoice_detail(slug, job_id):
+    _, _, job, _, _ = _invoice_scope(slug, job_id)
+    record = _invoice_for_job(job)
+    return jsonify({"invoice": _invoice_response(record, job) if record else None})
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/invoice")
+def issue_invoice(slug, job_id):
+    tenant, actor, job, _, _ = _invoice_scope(slug, job_id, lock=True)
+    if request.content_length and request.content_length > 2400:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {
+        "expected_version", "expected_authorization_sequence", "issue_reason", "issue_attested"
+    }:
+        abort(400)
+    if data["issue_attested"] is not True:
+        abort(400)
+    expected_version = _estimate_amount(data["expected_version"], maximum=1_000_000)
+    expected_sequence = _estimate_amount(data["expected_authorization_sequence"], maximum=1_000_000)
+    reason = _text(data, "issue_reason", 900, required=True)
+    if (len(reason) < 20 or PRIVATE_CONTACT_PATTERN.search(reason)
+            or not reason.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    if _invoice_for_job(job) is not None:
+        return jsonify({"error": "A training invoice already exists for this job."}), 409
+    if job.status not in {"approved", "in_progress", "closed"}:
+        return jsonify({"error": "Internal job approval is required before invoicing."}), 409
+    estimate = _estimate_latest(tenant.id, job.id)
+    if (estimate is None or estimate.approved_at is None or estimate.version != expected_version):
+        abort(409)
+    events = _customer_authorization_events(tenant.id, job.id, estimate.version)
+    current = events[0] if events else None
+    if (current is None or current.decision != "accepted"
+            or current.sequence != expected_sequence or current.total_kobo != estimate.total_kobo):
+        return jsonify({"error": "Current customer acceptance is required for this exact estimate."}), 409
+    try:
+        record = PrinceInvoice(
+            tenant_id=tenant.id, job_id=job.id, estimate_version=estimate.version,
+            authorization_sequence=current.sequence, items=[dict(item) for item in estimate.items],
+            subtotal_kobo=estimate.subtotal_kobo, discount_kobo=estimate.discount_kobo,
+            total_kobo=estimate.total_kobo, issued_by_user_id=actor.user_id, issue_reason=reason,
+        )
+        db.session.add(record)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "training_invoice_created", "invoice", record.id)
+        result = _invoice_response(record, job)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Training invoice could not be created."}), 503
+    return jsonify({"invoice": result}), 201

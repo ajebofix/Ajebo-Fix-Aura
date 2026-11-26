@@ -29,6 +29,11 @@
       </form>
     </div>
     {% endif %}
+    {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
+    <div class="security-note"><strong>Restricted workshop pilot.</strong> Intake, notes and estimate preparation only. Private contact fields, customer authorization, finance and clinical transfer are unavailable.
+      <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form>
+    </div>
+    {% endif %}
     {% if can_manage_private %}
     <nav class="principal-back-nav">
       <a href="{{ url_for('prince_pilot.principal_management', slug=slug) }}">← Principal Management Console</a>
@@ -38,7 +43,7 @@
       <div class="overline">PRIVATE WORKSPACE</div>
       <h2>Today at the workshop</h2>
       <p>Register the customer name and vehicle, then continue with your assigned vehicle jobs.</p>
-      <div class="security-note">Operators cannot enter, view or edit customer contact information. Two independently signed-in principals can manage protected contact details.</div>
+      <div class="security-note">Operators cannot enter, view or edit customer contact information. {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Private contacts are disabled in this release.{% else %}Two independently signed-in principals can manage protected contact details.{% endif %}</div>
     </section>
 
     <nav class="jump-links" aria-label="Workspace sections">
@@ -57,14 +62,14 @@
       {% if not can_intake %}
         <p class="muted">Customer intake is locked until the workshop principal approves the pilot privacy notice and intake is enabled.</p>
       {% else %}
-        <p class="muted">{{ "Use fictional details only, including a Demo or Synthetic name. This test site must not contain genuine customer data." if config.get("PRINCE_STAGING_LOCKDOWN") else "Use actual customer details only with documented authorization. Information is encrypted when submitted." }}</p>
+        <p class="muted">{{ "Use fictional details only, including a Demo or Synthetic name. This test site must not contain genuine customer data." if config.get("PRINCE_STAGING_LOCKDOWN") else "Use actual customer details only with documented authorization. Enter only the minimum approved information." }}</p>
         <form id="prince-intake-form" action="{{ url_for('prince_pilot.intake', slug=slug) }}" method="post" data-intake-url="{{ url_for('prince_pilot.intake', slug=slug) }}" autocomplete="off">
           <input type="hidden" name="privacy_notice_version" value="{{ privacy_notice_version }}">
           <div class="field">
             <label for="full-name">Customer full name <em>Required</em></label>
             <input id="full-name" type="text" name="full_name" maxlength="120" required autocomplete="off" placeholder="Customer's full name">
           </div>
-          <p class="muted">Register only a name and the vehicle/job details. Private contact information is managed separately by the two workshop principals.</p>
+          <p class="muted">Register only a name and the vehicle/job details. {% if not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Private contact information is managed separately by the two workshop principals.{% endif %}</p>
           <hr>
           <h3>Vehicle and current concern</h3>
           <div class="field-grid">
@@ -91,7 +96,7 @@
           </label>
           <div id="intake-message" class="form-message" role="status" aria-live="polite"></div>
           <button class="primary-btn" type="submit" id="submit-intake">Register customer &amp; vehicle</button>
-          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. Only principals can maintain private contact details.</p>
+          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. {% if not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Only principals can maintain private contact details.{% endif %}</p>
         </form>
       {% endif %}
     </section>
@@ -118,7 +123,7 @@
             {% if job.work_authorization != "accepted" %}<p class="tiny"><strong>Do not start or continue chargeable work.</strong> Ask a principal for authorization. Continue recording actual observations and work history.</p>{% endif %}
             {% endif %}
             <p class="tiny"><a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">View or draft estimate</a></p>
-            {% if can_manage_private %}
+            {% if can_manage_private and not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
             <details class="principal-private-panel">
               <summary>Private customer details · Principals only</summary>
               <p class="tiny">Visible only after you explicitly unlock this customer record. No customer phone or address is rendered on initial page load.</p>

@@ -1,7 +1,7 @@
 """Closed-by-default staff authentication foundation for the live Prince pilot.
 
-No customer, workshop, financial or global Aura data endpoints are exposed.
-The release remains blocked until a separately reviewed workflow is available.
+Only an explicitly approved, minimal workshop surface is available.
+Finance, private contacts, clinical and unrelated Aura routes remain closed.
 """
 import os
 from uuid import UUID
@@ -15,6 +15,7 @@ from sqlalchemy import func
 from models import User
 from partnerships.prince_models import PrinceMembership, PrinceTenant
 from security.rate_limits import limiter
+from partnerships.prince_staging_portal import ALLOWED_STATIC
 
 
 live_bp = Blueprint("prince_live", __name__, url_prefix="/prince-staff")
@@ -72,12 +73,46 @@ def _authorized_staff():
     return _staff_member(user) is not None
 
 
+# Explicit route names rather than a blueprint wildcard.
+WORKSHOP_ENDPOINTS = frozenset({
+    "prince_pilot.operator_workspace", "prince_pilot.principal_management",
+    "prince_pilot.intake", "prince_pilot.assigned_jobs", "prince_pilot.job_detail",
+    "prince_pilot.job_entries", "prince_pilot.record_job_entry",
+    "prince_pilot.principal_review_entry", "prince_pilot.principal_assign_job",
+    "prince_pilot.estimate_workspace", "prince_pilot.estimate_history",
+    "prince_pilot.create_estimate_version", "prince_pilot.approve_estimate",
+})
+
+
+def workshop_release_ready():
+    """A deployment flag alone never authorizes customer intake."""
+    if (not current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+            or not current_app.config.get("PRINCE_LIVE_WORKSHOP_APPROVED", False)
+            or not _dedicated_environment()):
+        return False
+    approved = os.getenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "").strip()
+    if not approved or len(approved) > 48 or approved.startswith(("demo", "synthetic")):
+        return False
+    tenant = PrinceTenant.query.populate_existing().filter_by(slug="prince", active=True).one_or_none()
+    return bool(tenant and tenant.approved_privacy_notice_version == approved)
+
+
+def live_workshop_request_allowed():
+    return bool(
+        request.endpoint in WORKSHOP_ENDPOINTS
+        and request.view_args and request.view_args.get("slug") == "prince"
+        and _authorized_staff() and workshop_release_ready()
+    )
+
+
 def register_prince_live_portal(app):
     app.register_blueprint(live_bp)
 
     @app.before_request
     def live_lockdown():
         if not app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False):
+            if app.config.get("APP_ENV") == "prince-live-pilot":
+                abort(503)
             return None
         if not _dedicated_environment():
             abort(503)
@@ -88,6 +123,11 @@ def register_prince_live_portal(app):
         if request.endpoint in {"prince_live.landing", "prince_live.sign_out"}:
             if _authorized_staff():
                 return None
+        if live_workshop_request_allowed():
+            return None
+        if (request.endpoint == "static" and request.path in ALLOWED_STATIC
+                and _authorized_staff() and workshop_release_ready()):
+            return None
         abort(404)
 
     @app.after_request
@@ -135,6 +175,11 @@ def landing():
         abort(404)
     if not _dedicated_environment() or not _authorized_staff():
         abort(404)
+    member = _staff_member(current_user)
+    if workshop_release_ready() and member is not None:
+        endpoint = ("prince_pilot.principal_management" if member.role == "principal"
+                    else "prince_pilot.operator_workspace")
+        return redirect(url_for(endpoint, slug="prince"), code=303)
     return render_template("partnerships/prince_live_login.html", ready=True)
 
 

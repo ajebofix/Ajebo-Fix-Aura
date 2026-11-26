@@ -95,3 +95,41 @@ def test_api_cannot_be_enabled_in_staff_rehearsal(live, app, client):
 def test_demo_seed_cannot_be_enabled(live, client, monkeypatch):
     monkeypatch.setenv("PRINCE_STAGING_SYNTHETIC_SEED", "true")
     assert client.get("/prince-staff").status_code == 503
+
+
+def test_live_environment_without_lockdown_denied(live, app, client):
+    app.config["PRINCE_LIVE_PILOT_LOCKDOWN"] = False
+    assert client.get("/dashboard").status_code == 503
+
+
+def test_workshop_requires_approved_notice_and_staff(live, app, client, monkeypatch):
+    app.config["PRINCE_LIVE_WORKSHOP_APPROVED"] = True
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "different-version"
+    tenant.intake_enabled = True
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    assert client.get("/pilot/workshops/prince/operator").status_code == 404
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "prince-notice-v1"
+    db.session.commit()
+    assert client.get("/prince-staff/ready").status_code == 303
+    assert client.get("/pilot/workshops/prince/operator").status_code == 200
+    with client.session_transaction() as sess:
+        csrf = sess["_csrf_token"]
+    payload = {"full_name": "Synthetic consenting customer", "vehicle_brand": "Toyota",
+               "vehicle_model": "Camry", "privacy_notice_version": "prince-notice-v1",
+               "participation_confirmed": True}
+    response = client.post("/pilot/workshops/prince/intake", json=payload,
+                           headers={"X-CSRF-Token": csrf})
+    assert response.status_code == 201
+    job_id = response.json["job_id"]
+    customer_id = response.json["customer_id"]
+    root = "/pilot/workshops/prince"
+    for path in (f"/jobs/{job_id}/invoice", f"/jobs/{job_id}/clinical",
+                 f"/customers/{customer_id}/private", "/finance"):
+        assert client.get(root + path).status_code == 404
+    assert client.get("/cars").status_code == 404
+    app.config["PRINCE_LIVE_WORKSHOP_APPROVED"] = False
+    assert client.get(root + "/jobs").status_code == 404

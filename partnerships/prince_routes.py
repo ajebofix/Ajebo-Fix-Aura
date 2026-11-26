@@ -63,7 +63,11 @@ INTAKE_FIELDS = frozenset({
 
 @prince_pilot_bp.before_request
 def pilot_access_gate():
-    if not current_app.config.get("AURA_PRINCE_PILOT_API_ENABLED", False):
+    if current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False):
+        from partnerships.prince_live_portal import live_workshop_request_allowed
+        if not live_workshop_request_allowed():
+            abort(404)
+    elif not current_app.config.get("AURA_PRINCE_PILOT_API_ENABLED", False):
         abort(404)
     if not current_user.is_authenticated or not current_user.is_active:
         abort(401)
@@ -165,6 +169,9 @@ def intake(slug):
         abort(400)
     full_name = _text(data, "full_name", 120, required=True)
     if len(full_name) < 2:
+        abort(400)
+    if (current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+            and PRIVATE_CONTACT_PATTERN.search(full_name)):
         abort(400)
     version = _text(data, "privacy_notice_version", 48, required=True)
     if version != tenant.approved_privacy_notice_version:
@@ -564,6 +571,9 @@ def _eligible_operators(tenant_id):
         }
         rows = [(member, user) for member, user in rows
                 if (user.email or "").lower() in allowed]
+    if current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False):
+        from partnerships.prince_live_portal import _staff_member
+        rows = [(member, user) for member, user in rows if _staff_member(user) is not None]
     return [{"id": user.id, "name": user.name} for _, user in rows]
 
 

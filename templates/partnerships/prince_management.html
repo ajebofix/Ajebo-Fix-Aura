@@ -44,6 +44,11 @@
   </div>
   {% endif %}
 
+  {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
+  <div class="management-test-banner"><strong>Restricted workshop pilot</strong> · Intake, job notes, assignments and estimates only. No financial issuance or Aura transfer.
+    <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form>
+  </div>
+  {% endif %}
   <section class="management-kpis" aria-label="Workshop statistics">
     <div class="kpi"><span>Active jobs</span><strong>{{ stats.active_jobs }}</strong><small>Open, any status</small></div>
     <div class="kpi"><span>Awaiting review</span><strong>{{ stats.pending_reviews }}</strong><small>Statements without a principal decision</small></div>
@@ -101,7 +106,7 @@
             <span {% if stage == job.job_status %}class="current-stage" aria-current="step"{% endif %}>{{ stage | replace("_", " ") | title }}</span>
           {% endfor %}
           </div>
-          {% if job.next_status %}
+          {% if job.next_status and not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
           <form class="lifecycle-form" data-lifecycle-url="{{ url_for('prince_pilot.principal_transition_job', slug=slug, job_id=job.job_id) }}" autocomplete="off">
             <input type="hidden" name="expected_status" value="{{ job.job_status }}">
             <input type="hidden" name="new_status" value="{{ job.next_status }}">

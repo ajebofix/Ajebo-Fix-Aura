@@ -164,6 +164,9 @@ def create_app():
     app.config["PRINCE_LIVE_PILOT_LOCKDOWN"] = _environment_flag(
         "PRINCE_LIVE_PILOT_LOCKDOWN", default=False,
     )
+    app.config["PRINCE_LIVE_WORKSHOP_APPROVED"] = _environment_flag(
+        "PRINCE_LIVE_WORKSHOP_APPROVED", default=False,
+    )
     app.config["AURA_GULF_CAMPAIGN_ACTIVE"] = _environment_flag(
         "AURA_GULF_CAMPAIGN_ACTIVE", default=False,
     )

@@ -110,6 +110,42 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrinceCustomerAuthorization(db.Model):
+    """Principal-recorded customer decision, distinct from internal approval."""
+    __tablename__ = "prince_customer_authorizations"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_authorization_job_tenant", ondelete="RESTRICT",
+        ),
+        db.ForeignKeyConstraint(
+            ["job_id", "estimate_version"], ["prince_estimates.job_id", "prince_estimates.version"],
+            name="fk_prince_authorization_estimate_version", ondelete="RESTRICT",
+        ),
+        db.UniqueConstraint("job_id", "estimate_version", "sequence",
+                            name="uq_prince_authorization_sequence"),
+        db.CheckConstraint("sequence > 0 AND total_kobo >= 0",
+                           name="ck_prince_authorization_amount_sequence"),
+        db.CheckConstraint("decision IN ('accepted', 'declined', 'withdrawn')",
+                           name="ck_prince_authorization_decision"),
+        db.CheckConstraint("channel IN ('written_message', 'signed_document', 'phone', 'in_person')",
+                           name="ck_prince_authorization_channel"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("prince_tenants.id", ondelete="RESTRICT"),
+                          nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    estimate_version = db.Column(db.Integer, nullable=False)
+    sequence = db.Column(db.Integer, nullable=False)
+    decision = db.Column(db.String(16), nullable=False)
+    channel = db.Column(db.String(24), nullable=False)
+    evidence_reference = db.Column(db.Text, nullable=False)
+    total_kobo = db.Column(db.BigInteger, nullable=False)
+    recorded_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                    nullable=False)
+    recorded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class PrinceEstimate(db.Model):
     """Versioned NGN quotation, not an invoice or proof of authorization."""
     __tablename__ = "prince_estimates"

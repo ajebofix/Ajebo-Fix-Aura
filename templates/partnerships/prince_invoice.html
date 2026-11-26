@@ -24,7 +24,43 @@
     </tbody></table></div>
     <div class="estimate-totals"><p>Subtotal <strong>{{ money(invoice.subtotal_kobo) }}</strong></p><p>Discount <strong>{{ money(invoice.discount_kobo) }}</strong></p><p>Recorded invoice total <strong>{{ money(invoice.total_kobo) }}</strong></p></div>
     <p>Principal account #{{ invoice.issued_by_user_id }} · {{ invoice.issue_reason }}</p>
-    <p class="tiny">Payment verification is not implemented. This is not a receipt, confirmed balance, tax invoice or evidence of completed repairs. Corrections and voiding require a future audited workflow.</p>
+    <p class="tiny">Payment records are fictional. This is not a receipt, tax invoice or evidence of completed repairs. Corrections and voiding require a future audited workflow.</p>
+  </section>
+  <section class="panel management-panel">
+    <h2>Payment records and balance</h2>
+    <p class="muted">Fictional ledger only. A reported transfer or cash payment does not reduce the balance until a principal records a verification decision. No live bank connection.</p>
+    <div class="estimate-totals">
+      <p>Invoice total <strong>{{ money(payments.invoice_total_kobo) }}</strong></p>
+      <p>Verified allocations <strong>{{ money(payments.verified_kobo) }}</strong></p>
+      <p>Pending reports (not deducted) <strong>{{ money(payments.pending_kobo) }}</strong></p>
+      <p>Unallocated invoice balance <strong>{{ money(payments.outstanding_kobo) }}</strong></p>
+      <p>Status <strong>{{ payments.status | replace("_", " ") | title }}</strong></p>
+    </div>
+    {% if not invoice.authorization_current %}<p class="limit-note">Authorization changed. Record factual payment reports only; do not request additional payment on the basis of this training invoice.</p>{% endif %}
+    {% if payments.invoice_total_kobo > 0 %}
+    <form class="assignment-form payment-report-form" data-url="{{ url_for('prince_pilot.report_payment', slug=slug, job_id=job.job_id) }}">
+      <h3>Report fictional payment</h3>
+      <label>Training reference<input name="reference" maxlength="53" required placeholder="DEMO-TRANSFER-A"></label>
+      <label>Method<select name="method" required><option value="transfer">Transfer</option><option value="cash">Cash</option></select></label>
+      <label>Amount (₦)<input name="amount" inputmode="decimal" required placeholder="0.00"></label>
+      <p class="tiny">Use unique invented DEMO- references only. Deposits and installments are supported after an invoice exists.</p>
+      <div class="assign-controls"><button type="submit">Record pending payment</button><span class="payment-feedback" role="status"></span></div>
+    </form>
+    {% endif %}
+    <h3>Payment history</h3>
+    {% for p in payments.records %}
+    <div class="lifecycle-event"><strong>{{ p.reference }} · {{ money(p.amount_kobo) }} · {{ p.decision | title }}</strong><p>{{ p.method | title }} · Reported {{ p.reported_at }} · Principal #{{ p.reported_by_user_id }}</p>
+      {% if p.decision == "pending" %}
+      <form class="assignment-form payment-review-form" data-url="{{ url_for('prince_pilot.review_payment', slug=slug, job_id=job.job_id, payment_id=p.id) }}">
+        <label>Review decision<select name="decision" required><option value="">Select decision</option><option value="verified">Verified (training)</option><option value="rejected">Rejected</option></select></label>
+        <label>Evidence reference / reason<textarea name="review_note" minlength="20" maxlength="900" rows="3" required placeholder="Demo: fictional reconciliation evidence."></textarea></label>
+        <label><input type="checkbox" name="review_attested" required> I confirm this review reflects fictional payment evidence.</label>
+        <div class="assign-controls"><button type="submit">Record review</button><span class="payment-feedback" role="status"></span></div>
+      </form>
+      {% else %}<p>{{ p.review_note }}</p><small>Reviewed by principal #{{ p.reviewed_by_user_id }} · {{ p.reviewed_at }}</small>{% endif %}
+    </div>
+    {% else %}<p class="tiny">No payment reports.</p>{% endfor %}
+    <p class="tiny">A verification is a principal's recorded declaration, not independent confirmation from a bank. Reversals, refunds, overpayments, and pre-invoice deposits require separate reconciliation; receipts are not yet issued.</p>
   </section>
   {% elif can_issue %}
   <section class="panel management-panel"><h2>Create training invoice</h2><p>Approved estimate version {{ estimate.version }} · recorded customer acceptance event {{ authorization_sequence }}</p>

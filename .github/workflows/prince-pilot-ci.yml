@@ -9,6 +9,9 @@ on:
       - "templates/partnerships/prince_operator.html"
       - "static/js/prince_pilot_operator.js"
       - "static/css/prince_pilot.css"
+      - "static/css/prince_management.css"
+      - "static/js/prince_management.js"
+      - "templates/partnerships/prince_management.html"
       - "templates/partnerships/prince_staging_login.html"
       - "scripts/prince_seed_synthetic_staging.py"
       - "scripts/prince_optional_staging_rehearsal.py"
@@ -17,6 +20,7 @@ on:
       - "migrations/versions/b71e5ca90d24_prince_pilot_isolated_workspace.py"
       - "migrations/versions/c84e91f6b207_prince_job_entry_history.py"
       - "migrations/versions/d390ab6f021c_prince_principal_entry_review.py"
+      - "migrations/versions/e7b204ac9d31_prince_job_assignment_ledger.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
 
@@ -52,7 +56,7 @@ jobs:
       - name: Run policy and HTTP authorization tests
         run: pytest -q --tb=short tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
       - name: Check mobile JavaScript syntax
-        run: node --check static/js/prince_pilot_operator.js
+        run: node --check static/js/prince_pilot_operator.js && node --check static/js/prince_management.js
       - name: Lint Prince pilot code
         run: ruff check --output-format=concise partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py partnerships/prince_staging_portal.py scripts/prince_seed_synthetic_staging.py scripts/prince_optional_staging_rehearsal.py scripts/prince_verify_synthetic_staging.py tests/test_prince_staging_portal.py tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py
 
@@ -101,7 +105,7 @@ jobs:
           required = {
               "prince_tenants", "prince_memberships", "prince_customers",
               "prince_vehicles", "prince_jobs", "prince_audit_events",
-              "prince_job_entries", "prince_entry_reviews",
+              "prince_job_entries", "prince_entry_reviews", "prince_job_assignments",
           }
           assert required <= names, f"Missing Prince tables: {required - names}"
           fields = {c["name"] for c in inspector.get_columns("prince_customers")}
@@ -117,6 +121,13 @@ jobs:
           review_fks = [frozenset(fk["constrained_columns"])
                         for fk in inspector.get_foreign_keys("prince_entry_reviews")]
           assert frozenset({"entry_id", "tenant_id"}) in review_fks
+          assign_cols = {col["name"] for col in inspector.get_columns("prince_job_assignments")}
+          assert {"tenant_id", "job_id", "previous_user_id", "new_user_id",
+                  "changed_by_user_id", "reason"} <= assign_cols
+          assign_fks = [frozenset(fk["constrained_columns"])
+                        for fk in inspector.get_foreign_keys("prince_job_assignments")]
+          assert frozenset({"job_id", "tenant_id"}) in assign_fks
+          assert frozenset({"tenant_id", "new_user_id"}) in assign_fks
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py

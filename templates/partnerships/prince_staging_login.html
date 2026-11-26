@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Prince Workshop · Private Demonstration</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,sans-serif;color:#1c3040;background:#edf2f5}
+    *{box-sizing:border-box}body{margin:0;display:grid;min-height:100vh;place-items:center;padding:18px}
+    .card{background:white;border-radius:18px;border:1px solid #d2dee5;box-shadow:0 12px 44px #20374915;max-width:410px;width:100%;padding:28px}
+    .brand{display:flex;align-items:center;gap:12px}.brand img{width:55px;height:55px;object-fit:contain}
+    h1{font-size:22px;margin:18px 0 4px}p{font-size:13px;color:#627586;line-height:1.5}
+    label{display:block;font-weight:650;font-size:13px;margin:18px 0 7px}
+    input,select,button{font:inherit;width:100%;min-height:46px;border:1px solid #c7d6df;border-radius:10px;padding:10px;background:white}
+    button{border:0;color:white;background:#183c53;font-weight:700;margin-top:20px;cursor:pointer}
+    .error{padding:10px 12px;border-radius:8px;background:#fff1f0;color:#882f2f;font-size:13px}
+    .notice{background:#f0f6f9;padding:10px 12px;border-radius:10px;font-size:12px}
+    small{color:#667987;font-size:11px;display:block;margin-top:15px}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince Automobile Clinic logo" width="55" height="55">
+      <div><strong>Prince Automobile Clinic</strong><p style="margin:2px 0">Powered by Aura · Staging</p></div>
+    </div>
+    <h1>Private workshop demonstration</h1>
+    <p class="notice">Synthetic customers and test accounts only. Do not enter actual customer details here.</p>
+    {% if error %}<p role="alert" class="error">{{ error }}</p>{% endif %}
+    <form action="{{ url_for('prince_staging.sign_in') }}" method="post" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="role">Demo account</label>
+      <select id="role" name="role" required>
+        <option value="operator-a">Demo Operator A (Seun role)</option>
+        <option value="stephen">Demo Stephen (equal principal)</option>
+        <option value="operator-b">Demo Operator B</option>
+        <option value="principal">Demo Workshop Principal</option>
+      </select>
+      <label for="portal_code">Private staging access code</label>
+      <input id="portal_code" name="portal_code" type="password" required minlength="32" autocomplete="off">
+      <label for="password">Individual demo password</label>
+      <input id="password" name="password" type="password" required autocomplete="off">
+      <button type="submit">Enter workshop demo</button>
+    </form>
+    <small>Access requires a staging code and a separate account password. All other Aura areas are restricted.</small>
+  </main>
+</body>
+</html>

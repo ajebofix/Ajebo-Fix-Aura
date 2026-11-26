@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Prince Management · Aura Pilot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_management.css') }}">
+  <script defer src="{{ url_for('static', filename='js/prince_management.js') }}"></script>
+</head>
+<body>
+<main class="pilot-shell management-shell">
+  <header class="pilot-header">
+    <img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}"
+         alt="Prince Automobile Clinic logo" width="52" height="52">
+    <div class="brand-copy">
+      <div class="eyebrow">AURA · WORKSHOP OPERATIONS</div>
+      <h1>{{ workshop_name }}</h1>
+      <p>Principal management console</p>
+    </div>
+  </header>
+  <section class="management-hero">
+    <div>
+      <div class="overline">PRINCIPAL ACCESS · PRIVATE</div>
+      <h2>Workshop overview</h2>
+      <p>Follow job assignments, outstanding statements and the workshop queue.
+         These records do not confirm repairs, payments or customer approvals.</p>
+    </div>
+    <div class="hero-actions">
+      <a class="hero-link" href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#assigned-jobs">Review vehicle records</a>
+      <a class="hero-link secondary" href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#new-customer">New customer</a>
+    </div>
+  </section>
+
+  {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+  <div class="management-test-banner">
+    <strong>TEST DATA ONLY</strong> · Use Demo / Synthetic records. Do not enter actual customer or vehicle information.
+    <form method="post" action="{{ url_for('prince_staging.sign_out') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Sign out</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <section class="management-kpis" aria-label="Workshop statistics">
+    <div class="kpi"><span>Active jobs</span><strong>{{ stats.active_jobs }}</strong><small>Open, any status</small></div>
+    <div class="kpi"><span>Awaiting review</span><strong>{{ stats.pending_reviews }}</strong><small>Statements without a principal decision</small></div>
+    <div class="kpi"><span>Customers</span><strong>{{ stats.customers }}</strong><small>Prince tenant only</small></div>
+    <div class="kpi"><span>Closed jobs</span><strong>{{ stats.closed_jobs }}</strong><small>{{ stats.follow_up_count }} require follow-up</small></div>
+  </section>
+
+  <nav class="management-tabs" aria-label="Management sections">
+    <a href="#job-queue">Job queue</a>
+    <a href="#review-queue">Pending reviews</a>
+    <a href="#staff-roster">Available operators</a>
+    <a href="#follow-up-queue">Follow-up required ({{ stats.follow_up_count }})</a>
+  </nav>
+
+  <section class="panel management-panel" id="job-queue">
+    <div class="section-top">
+      <div><div class="overline">01 / OPERATIONS</div><h2>Job assignments</h2></div>
+      <span class="pill">{{ jobs|length }} of {{ stats.total_jobs }} jobs</span>
+    </div>
+    <p class="muted">Only you and the other workshop principal may reassign jobs. Operators can open only the vehicles currently assigned to them. Closed jobs cannot be reassigned.</p>
+    {% if stats.total_jobs > jobs|length %}
+      <p class="limit-note">Showing the 40 newest jobs. Older records are not included in this preview.</p>
+    {% endif %}
+    {% if not operators %}
+      <p class="limit-note">No active operators are currently eligible for assignments.</p>
+    {% endif %}
+    <div class="management-job-list">
+    {% for job in jobs %}
+      <article class="management-job" id="management-job-{{ job.job_id }}">
+        <div class="management-job-heading">
+          <div><strong>{{ job.full_name }}</strong><div class="vehicle-label">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div></div>
+          <span class="job-status">{{ job.job_status | replace("_", " ") | title }}</span>
+        </div>
+        <div class="management-job-details">
+          <span>Job #{{ job.job_id }}</span>
+          <span>Assigned to <strong class="assignee-label">{{ job.assignee_name }}</strong></span>
+        </div>
+        <div class="management-job-footer">
+          <a href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#job-record-{{ job.job_id }}">
+            Open workshop record
+          </a>
+        </div>
+        <details class="lifecycle-panel">
+          <summary>Job progression · {{ job.job_status | replace("_", " ") | title }}</summary>
+          <p class="tiny">Workshop status only. Not customer authorization, repair verification, roadworthiness or payment confirmation.</p>
+          <div class="lifecycle-steps" aria-label="Job lifecycle">
+          {% for stage in ["draft", "awaiting_approval", "approved", "in_progress", "closed"] %}
+            <span {% if stage == job.job_status %}class="current-stage" aria-current="step"{% endif %}>{{ stage | replace("_", " ") | title }}</span>
+          {% endfor %}
+          </div>
+          {% if job.next_status %}
+          <form class="lifecycle-form" data-lifecycle-url="{{ url_for('prince_pilot.principal_transition_job', slug=slug, job_id=job.job_id) }}" autocomplete="off">
+            <input type="hidden" name="expected_status" value="{{ job.job_status }}">
+            <input type="hidden" name="new_status" value="{{ job.next_status }}">
+            {% if job.next_status == "closed" %}
+            <label for="closure-{{ job.job_id }}">Closure disposition</label>
+            <select id="closure-{{ job.job_id }}" name="closure_disposition" required>
+              <option value="">Select disposition</option>
+              <option value="follow_up_required">Follow-up required · concerns remain</option>
+              <option value="no_follow_up_identified">No follow-up identified · reviewed work only</option>
+            </select>
+            <p class="tiny">Review all recorded statements first. Explain remaining concerns and any unclassified intake notes. Closing does not certify the vehicle safe.</p>
+            <div class="follow-up-fields" hidden>
+              <label for="followup-{{ job.job_id }}">Follow-up plan · required</label>
+              <textarea id="followup-{{ job.job_id }}" name="follow_up_plan" rows="3" minlength="20" maxlength="1000" placeholder="{{ 'Demo: describe the fictional next inspection and responsible person' if config.get('PRINCE_STAGING_LOCKDOWN') else 'State the next action and responsible person; no private contact details' }}"></textarea>
+            </div>
+            {% elif job.next_status == "approved" %}
+            <p class="tiny">Record the internally approved work scope. This does not record customer consent to work or charges.</p>
+            {% elif job.next_status == "in_progress" %}
+            <p class="tiny">Confirm an active operator is assigned and the approved scope has been communicated.</p>
+            {% endif %}
+            <label for="stage-reason-{{ job.job_id }}">{{ "Closure summary and follow-up plan" if job.next_status == "closed" else "Decision reason / internal work scope" }}</label>
+            <textarea id="stage-reason-{{ job.job_id }}" name="reason" rows="3" minlength="20" maxlength="1000" required placeholder="{{ 'Demo: describe the fictional decision and its basis' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Record the decision and its basis without private customer details' }}"></textarea>
+            {% if config.get("PRINCE_STAGING_LOCKDOWN") %}<p class="tiny">Begin with Demo: or Synthetic:.</p>{% endif %}
+            <div class="assign-controls"><button type="submit">Move to {{ job.next_status | replace("_", " ") | title }}</button><span class="lifecycle-feedback" role="status" aria-live="polite"></span></div>
+          </form>
+          {% else %}
+          <p class="tiny">Closed administratively. The recorded history remains available; reopening is not supported in this pilot.</p>
+          {% endif %}
+          <h3>Principal decision history</h3>
+          {% for event in job.transitions %}
+          <div class="lifecycle-event">
+            <strong>{{ event.previous_status | replace("_", " ") | title }} → {{ event.new_status | replace("_", " ") | title }}</strong>
+            {% if event.closure_disposition %}<p>{{ event.closure_disposition | replace("_", " ") | title }}</p>{% endif %}
+            <p>{{ event.reason }}</p>{% if event.follow_up_plan %}<p><strong>Follow-up:</strong> {{ event.follow_up_plan }}</p>{% endif %}<small>Principal account #{{ event.changed_by_user_id }} · {{ event.created_at }}</small>
+          </div>
+          {% else %}
+          <p class="tiny">No recorded progression decisions yet.</p>
+          {% endfor %}
+        </details>
+        {% if job.job_status != "closed" %}
+        <form class="assignment-form"
+              data-assignment-url="{{ url_for('prince_pilot.principal_assign_job', slug=slug, job_id=job.job_id) }}"
+              autocomplete="off">
+          <input type="hidden" name="expected_assignee_user_id" value="{{ job.assignee_user_id }}">
+          <label for="assign-{{ job.job_id }}">Assign to operator</label>
+          <select name="assignee_user_id" id="assign-{{ job.job_id }}" required {% if not operators %}disabled{% endif %}>
+            <option value="">Select an active operator</option>
+            {% for operator in operators %}
+            <option value="{{ operator.id }}" {% if operator.id == job.assignee_user_id %}disabled{% endif %}>
+              {{ operator.name }}
+            </option>
+            {% endfor %}
+          </select>
+          <label for="assign-reason-{{ job.job_id }}">Why is the job being reassigned?</label>
+          <textarea name="reason" id="assign-reason-{{ job.job_id }}" rows="2" maxlength="260" minlength="12" required
+                    placeholder="{{ 'Demo: allocate this vehicle to the next fictional operator' if config.get('PRINCE_STAGING_LOCKDOWN') else 'State the operational reason (no private contact details)' }}"></textarea>
+          {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+          <small>Training only: start the reason with <strong>Demo:</strong> or <strong>Synthetic:</strong>.</small>
+          {% endif %}
+          <div class="assign-controls">
+            <button type="submit" {% if not operators %}disabled{% endif %}>Confirm reassignment</button>
+            <span class="assignment-feedback" role="status" aria-live="polite"></span>
+          </div>
+        </form>
+        {% else %}
+        <p class="tiny">This job is closed; assignment changes are locked.</p>
+        {% endif %}
+      </article>
+    {% else %}
+      <div class="empty-jobs"><strong>No workshop jobs yet</strong><p>Register a fictional customer and vehicle to begin.</p></div>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel management-panel" id="review-queue">
+    <div class="section-top">
+      <div><div class="overline">02 / REVIEW CENTRE</div><h2>Statements awaiting review</h2></div>
+      <span class="pill">{{ stats.pending_reviews }} total</span>
+    </div>
+    <p class="muted">An unreviewed statement is not proof of completed work. Review and attest from the vehicle's full record; no decision is made automatically.</p>
+    <ul class="pending-list">
+    {% for item in pending %}
+      <li>
+        <div><strong>{{ item.category }}</strong>
+          <span>{{ item.customer }} · {{ item.vehicle }} · Job #{{ item.job_id }}</span>
+        </div>
+        <a href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#job-record-{{ item.job_id }}">Review</a>
+      </li>
+    {% else %}
+      <li class="all-clear">No pending principal decisions in the current queue.</li>
+    {% endfor %}
+    </ul>
+    {% if stats.pending_reviews > pending|length %}
+    <p class="tiny">Showing the 12 newest outstanding statements.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel management-panel" id="follow-up-queue">
+    <div class="section-top"><div><div class="overline">03 / CONTINUITY</div><h2>Closed jobs requiring follow-up</h2></div><span class="pill">{{ stats.follow_up_count }} recorded</span></div>
+    <p class="muted">Administrative closure does not resolve vehicle concerns. These recorded plans remain visible until a separate follow-up workflow is implemented.</p>
+    {% for item in follow_ups %}
+      <article class="management-job"><strong>{{ item.customer }} · {{ item.vehicle }}</strong><p>{{ item.plan }}</p>
+      <a href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#job-record-{{ item.job_id }}">Open workshop record</a></article>
+    {% else %}<p class="tiny">No recorded follow-up closures.</p>{% endfor %}
+    {% if stats.follow_up_count > follow_ups|length %}<p class="tiny">Showing the 20 newest recorded follow-up plans.</p>{% endif %}
+  </section>
+
+  <section class="panel management-panel" id="staff-roster">
+    <div class="section-top">
+      <div><div class="overline">03 / STAFF</div><h2>Eligible operators</h2></div>
+      <span class="pill">{{ stats.operators }} active</span>
+    </div>
+    <p class="muted">Only active operator memberships can be selected for an assignment. Personnel provisioning, revocation and customer contact access remain separately controlled.</p>
+    <ul class="staff-list">
+    {% for operator in operators %}
+      <li><span class="staff-dot" aria-hidden="true"></span><strong>{{ operator.name }}</strong><span>Operator</span></li>
+    {% else %}
+      <li>No eligible operators</li>
+    {% endfor %}
+    </ul>
+  </section>
+  <footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer>
+</main>
+</body>
+</html>

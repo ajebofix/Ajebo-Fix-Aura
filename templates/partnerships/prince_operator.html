@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="robots" content="noindex,nofollow">
+  <title>{{ workshop_name }} · Private Pilot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}">
+  <script defer src="{{ url_for('static', filename='js/prince_pilot_operator.js') }}"></script>
+</head>
+<body>
+  <main class="pilot-shell" id="main">
+    <header class="pilot-header">
+      <img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince Automobile Clinic logo" width="52" height="52">
+      <div class="brand-copy">
+        <div class="eyebrow">AURA WORKSHOP PILOT</div>
+        <h1>{{ workshop_name }}</h1>
+        <p>{{ "Vehicle records · Principal view" if can_manage_private else "Restricted operator workspace" }}</p>
+      </div>
+    </header>
+
+    {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+    <div class="security-note" role="note" style="background:#fff3d2;color:#5c4800;border-color:#f6d36f;margin-bottom:14px">
+      <strong>STAGING TEST ONLY.</strong> Use names beginning <strong>Demo</strong> or <strong>Synthetic</strong>. For phone and email, use only <strong>DEMO CONTACT ONLY</strong> and <strong>demo@example.invalid</strong> (or leave blank). Never enter actual client details.
+      <form action="{{ url_for('prince_staging.sign_out') }}" method="post" style="margin-top:10px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" style="border:1px solid #bd9c41;background:#fff;color:#5c4800;padding:6px 12px;border-radius:8px">Sign out of demo</button>
+      </form>
+    </div>
+    {% endif %}
+    {% if can_manage_private %}
+    <nav class="principal-back-nav">
+      <a href="{{ url_for('prince_pilot.principal_management', slug=slug) }}">← Principal Management Console</a>
+    </nav>
+    {% endif %}
+    <section class="intro">
+      <div class="overline">PRIVATE WORKSPACE</div>
+      <h2>Today at the workshop</h2>
+      <p>Register the customer name and vehicle, then continue with your assigned vehicle jobs.</p>
+      <div class="security-note">Operators cannot enter, view or edit customer contact information. Two independently signed-in principals can manage protected contact details.</div>
+    </section>
+
+    <nav class="jump-links" aria-label="Workspace sections">
+      <a href="#new-customer">New customer</a>
+      <a href="#assigned-jobs">Assigned jobs <span>{{ jobs | length }}</span></a>
+    </nav>
+
+    <section class="panel" id="new-customer" aria-labelledby="intake-heading">
+      <div class="section-top">
+        <div>
+          <div class="overline">01 / INTAKE</div>
+          <h2 id="intake-heading">Register a customer</h2>
+        </div>
+        <span class="pill">{{ "Enabled for pilot" if can_intake else "Not available" }}</span>
+      </div>
+      {% if not can_intake %}
+        <p class="muted">Customer intake is locked until the workshop principal approves the pilot privacy notice and intake is enabled.</p>
+      {% else %}
+        <p class="muted">{{ "Use fictional details only, including a Demo or Synthetic name. This test site must not contain genuine customer data." if config.get("PRINCE_STAGING_LOCKDOWN") else "Use actual customer details only with documented authorization. Information is encrypted when submitted." }}</p>
+        <form id="prince-intake-form" action="{{ url_for('prince_pilot.intake', slug=slug) }}" method="post" data-intake-url="{{ url_for('prince_pilot.intake', slug=slug) }}" autocomplete="off">
+          <input type="hidden" name="privacy_notice_version" value="{{ privacy_notice_version }}">
+          <div class="field">
+            <label for="full-name">Customer full name <em>Required</em></label>
+            <input id="full-name" type="text" name="full_name" maxlength="120" required autocomplete="off" placeholder="Customer's full name">
+          </div>
+          <p class="muted">Register only a name and the vehicle/job details. Private contact information is managed separately by the two workshop principals.</p>
+          <hr>
+          <h3>Vehicle and current concern</h3>
+          <div class="field-grid">
+            <div class="field">
+              <label for="brand">Make</label>
+              <input id="brand" name="vehicle_brand" maxlength="100" autocomplete="off" placeholder="e.g. Mercedes-Benz">
+            </div>
+            <div class="field">
+              <label for="model">Model</label>
+              <input id="model" name="vehicle_model" maxlength="100" autocomplete="off" placeholder="e.g. S-Class W221">
+            </div>
+          </div>
+          <div class="field">
+            <label for="year">Year <span>Optional, if verified</span></label>
+            <input id="year" name="vehicle_year" type="number" min="1886" max="2100" placeholder="Unknown is okay">
+          </div>
+          <div class="field">
+            <label for="concern">Customer-reported concern <span>Not a diagnosis</span></label>
+            <textarea id="concern" name="reported_concern" rows="3" maxlength="1200" placeholder="Describe what the customer reports. Do not enter their phone, address or other private details here."></textarea>
+          </div>
+          <label class="consent-row" for="participation">
+            <input id="participation" name="participation_confirmed" type="checkbox" required>
+            <span>I have followed the approved privacy-notice and participation-verification procedure for this customer.</span>
+          </label>
+          <div id="intake-message" class="form-message" role="status" aria-live="polite"></div>
+          <button class="primary-btn" type="submit" id="submit-intake">Register customer &amp; vehicle</button>
+          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. Only principals can maintain private contact details.</p>
+        </form>
+      {% endif %}
+    </section>
+
+    <section class="panel" id="assigned-jobs" aria-labelledby="jobs-heading">
+      <div class="section-top">
+        <div>
+          <div class="overline">02 / ACTIVE RECORDS</div>
+          <h2 id="jobs-heading">Assigned vehicle jobs</h2>
+        </div>
+        <span class="pill">{{ jobs | length }} shown</span>
+      </div>
+      {% if request.args.get("saved") == "1" %}
+        <div class="success-state" role="status">Customer saved. Private contact fields are locked.</div>
+      {% endif %}
+      {% if jobs %}
+        <ul class="job-list">
+          {% for job in jobs %}
+          <li class="job-card">
+            <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
+            <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
+            {% if can_manage_private %}
+            <details class="principal-private-panel">
+              <summary>Private customer details · Principals only</summary>
+              <p class="tiny">Visible only after you explicitly unlock this customer record. No customer phone or address is rendered on initial page load.</p>
+              <form class="principal-contact-form"
+                    data-private-url="{{ url_for('prince_pilot.principal_private_customer', slug=slug, customer_id=job.customer_id) }}"
+                    data-update-url="{{ url_for('prince_pilot.principal_update_customer_private', slug=slug, customer_id=job.customer_id) }}"
+                    autocomplete="off">
+                <button type="button" class="load-private-btn">Load protected contacts</button>
+                <div class="private-contact-fields" hidden>
+                  <label>Phone number<input name="phone_number" type="text" maxlength="30" autocomplete="off" placeholder="Not provided"></label>
+                  <label>Email address<input name="email" type="email" maxlength="200" autocomplete="off" placeholder="Not provided"></label>
+                  <label>Home address<textarea name="home_address" rows="2" maxlength="400" autocomplete="off" placeholder="Not provided"></textarea></label>
+                  {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+                    <p class="tiny">Training only: phone = DEMO CONTACT ONLY; email = demo@example.invalid; address = DEMO ADDRESS ONLY.</p>
+                  {% endif %}
+                  <button type="submit" class="save-private-btn">Save private details</button>
+                  <button type="button" class="hide-private-btn">Lock contacts</button>
+                </div>
+                <span class="private-contact-message" role="status" aria-live="polite"></span>
+              </form>
+            </details>
+            {% endif %}
+            <div class="workshop-record" id="job-record-{{ job.job_id }}">
+              <div class="job-record-title">
+                <strong>Vehicle care record</strong>
+                <span class="record-status">Entries are not verified repairs</span>
+              </div>
+              {% if job.reported_concern %}
+              <details class="legacy-note">
+                <summary>Earlier job note · Unclassified</summary>
+                <p>{{ job.reported_concern }}</p>
+                <small>This text was entered before structured records. It has not been assigned to a complaint, observation, intervention or completed repair.</small>
+              </details>
+              {% endif %}
+              <h3>Recorded history</h3>
+              <ul class="job-history-list">
+                {% for entry in job.entries %}
+                <li class="record-entry" data-entry-id="{{ entry.id }}">
+                  <div class="record-entry-header">
+                    <strong>{{ entry.category_label }}</strong>
+                    <span class="entry-state">{{ entry.review_state | title }}</span>
+                  </div>
+                  <p>{{ entry.body }}</p>
+                  <time datetime="{{ entry.recorded_at }}">{{ entry.recorded_at }}</time>
+                  {% if entry.principal_review %}
+                    <div class="principal-review-result">
+                      Principal decision: <strong>{{ entry.principal_review.decision | replace("_", " ") | title }}</strong>
+                      <p>{{ entry.principal_review.review_note }}</p>
+                      <small>Basis: {{ entry.principal_review.basis | replace("_", " ") | title }}</small>
+                    </div>
+                  {% elif can_review and job.job_status != "closed" %}
+                    <form class="principal-review-form"
+                          data-review-url="{{ url_for('prince_pilot.principal_review_entry', slug=slug, job_id=job.job_id, entry_id=entry.id) }}"
+                          autocomplete="off">
+                      <strong class="review-form-heading">Principal review · Dad or Stephen</strong>
+                      <label>Decision
+                        <select name="decision" required>
+                          <option value="">Choose review decision</option>
+                          <option value="acknowledged">Acknowledged (not work confirmation)</option>
+                          <option value="needs_evidence">Needs further evidence</option>
+                          <option value="not_confirmed">Not confirmed</option>
+                          {% if entry.category == "reported_work" %}
+                          <option value="work_confirmed">Attest work performed</option>
+                          {% endif %}
+                        </select>
+                      </label>
+                      <label>Evidence basis
+                        <select name="basis" required>
+                          <option value="not_applicable">Not applicable (no work confirmation)</option>
+                          {% if entry.category == "reported_work" %}
+                          <option value="direct_inspection">Direct inspection</option>
+                          <option value="documented_evidence">Documented evidence</option>
+                          <option value="technician_demonstration">Technician demonstration</option>
+                          {% endif %}
+                        </select>
+                      </label>
+                      <label>Review reason / evidence reference
+                        <textarea name="review_note" rows="2" maxlength="1200" minlength="15" required
+                          placeholder="{{ 'Demo: I reviewed the fictional workshop statement.' if config.get('PRINCE_STAGING_LOCKDOWN') else 'State the specific basis; no private contact details.' }}"></textarea>
+                      </label>
+                      <button type="submit">Record principal decision</button>
+                      <span class="principal-review-message" role="status" aria-live="polite"></span>
+                    </form>
+                  {% endif %}
+                </li>
+                {% else %}
+                <li class="job-history-empty">No classified entries yet. Earlier notes have not been converted automatically.</li>
+                {% endfor %}
+              </ul>
+              {% if job.job_status != "closed" %}
+              <form class="job-entry-form"
+                    data-entry-url="{{ url_for('prince_pilot.record_job_entry', slug=slug, job_id=job.job_id) }}"
+                    method="post" autocomplete="off">
+                <label for="entry-category-{{ job.job_id }}">What are you recording?</label>
+                <select id="entry-category-{{ job.job_id }}" name="category" required>
+                  <option value="">Choose a category</option>
+                  {% for category, label in entry_categories.items() %}
+                  <option value="{{ category }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <label for="entry-body-{{ job.job_id }}">Description · Not yet verified</label>
+                <textarea id="entry-body-{{ job.job_id }}" name="body" rows="3"
+                          maxlength="1600" minlength="5" required
+                          placeholder="{{ 'Demo: mock technician test pending' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Record what was observed, proposed or reportedly done. No private contacts.' }}"></textarea>
+                {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+                <p class="tiny">Training only: every entry must begin <strong>Demo:</strong> or <strong>Synthetic:</strong>. Do not add actual W221 repair history.</p>
+                {% endif %}
+                <div class="job-update-actions">
+                  <button type="submit">Add to job history</button>
+                  <span class="job-entry-message" role="status" aria-live="polite"></span>
+                </div>
+              </form>
+              {% endif %}
+            </div>
+            <div class="job-footer"><span>{{ job.job_status | replace("_", " ") | title }}</span><span>Vehicle #{{ job.vehicle_id }}</span></div>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-jobs">
+          <div class="empty-icon" aria-hidden="true">▤</div>
+          <strong>No assigned jobs yet</strong>
+          <p>Jobs you are permitted to work on will appear here after approved intake.</p>
+        </div>
+      {% endif %}
+    </section>
+
+    <footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer>
+  </main>
+</body>
+</html>

@@ -1127,13 +1127,36 @@ def approve_estimate(slug, job_id, version):
     return jsonify({"job_id": job.id, "estimate": response})
 
 
+def _finance_available():
+    from partnerships.prince_live_portal import live_finance_ready
+    return bool(current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+                or live_finance_ready())
+
+
+def _finance_training():
+    return current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+
+
+def _finance_ref(value):
+    return f"DEMO-{value}" if _finance_training() else value
+
+
+def _finance_note_valid(value):
+    training_note = value.lower().startswith(("demo:", "synthetic:"))
+    return training_note if _finance_training() else not training_note
+
+
+def _finance_audit(action):
+    return ("training_" if _finance_training() else "live_") + action
+
+
 @prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/estimates/<int:version>/print")
 def print_estimate(slug, job_id, version):
     """Principal-only, approved-version quotation preview for synthetic training."""
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.ESTIMATE_APPROVE)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
-        abort(404)  # Real customer document issuance requires separate approval.
+    if not _finance_available():
+        abort(404)
     job, customer, vehicle = _find_authorized_job(tenant, actor, job_id)
     record = _estimate_latest(tenant.id, job.id)
     if record is None or record.version != version or record.approved_at is None:
@@ -1148,7 +1171,7 @@ def print_estimate(slug, job_id, version):
              "brand": _public_concern(vehicle.brand),
              "model": _public_concern(vehicle.model), "year": vehicle.year},
         quotation=quotation,
-        quotation_ref=f"DEMO-PAC-{job.id:06d}-V{record.version:02d}",
+        quotation_ref=_finance_ref(f"PAC-{job.id:06d}-V{record.version:02d}"),
         approved_date=record.approved_at.strftime("%d %B %Y"),
         categories=ESTIMATE_CATEGORIES,
     ))
@@ -1291,7 +1314,7 @@ def _invoice_response(record, job):
         and current.total_kobo == record.total_kobo
     )
     return {
-        "reference": f"DEMO-INV-PAC-{record.job_id:06d}",
+        "reference": _finance_ref(f"INV-PAC-{record.job_id:06d}"),
         "estimate_version": record.estimate_version,
         "authorization_sequence": record.authorization_sequence,
         "authorization_current": authorization_current,
@@ -1311,7 +1334,7 @@ def _invoice_response(record, job):
 def _invoice_scope(slug, job_id, *, lock=False):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.INVOICE_ISSUE)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    if not _finance_available():
         abort(404)
     job, customer, vehicle = _find_authorized_job(tenant, actor, job_id, lock=lock)
     return tenant, actor, job, customer, vehicle
@@ -1362,10 +1385,10 @@ def issue_invoice(slug, job_id):
     expected_sequence = _estimate_amount(data["expected_authorization_sequence"], maximum=1_000_000)
     reason = _text(data, "issue_reason", 900, required=True)
     if (len(reason) < 20 or PRIVATE_CONTACT_PATTERN.search(reason)
-            or not reason.lower().startswith(("demo:", "synthetic:"))):
+            or not _finance_note_valid(reason)):
         abort(400)
     if _invoice_for_job(job) is not None:
-        return jsonify({"error": "A training invoice already exists for this job."}), 409
+        return jsonify({"error": "An invoice already exists for this job."}), 409
     if job.status not in {"approved", "in_progress", "closed"}:
         return jsonify({"error": "Internal job approval is required before invoicing."}), 409
     estimate = _estimate_latest(tenant.id, job.id)
@@ -1385,12 +1408,12 @@ def issue_invoice(slug, job_id):
         )
         db.session.add(record)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_invoice_created", "invoice", record.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("invoice_created"), "invoice", record.id)
         result = _invoice_response(record, job)
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        return jsonify({"error": "Training invoice could not be created."}), 503
+        return jsonify({"error": "Invoice could not be created."}), 503
     return jsonify({"invoice": result}), 201
 
 
@@ -1420,7 +1443,7 @@ def _payment_summary(job, invoice):
             "reversal_reason": _public_concern(reversals[p.id].reason) if p.id in reversals else None,
             "reversed_at": reversals[p.id].reversed_at.isoformat(timespec="seconds") + "Z" if p.id in reversals else None,
             "reversed_by_user_id": reversals[p.id].reversed_by_user_id if p.id in reversals else None,
-            "receipt_reference": f"DEMO-RCT-PAC-{receipts[p.id].id:06d}" if p.id in receipts else None,
+            "receipt_reference": _finance_ref(f"RCT-PAC-{receipts[p.id].id:06d}") if p.id in receipts else None,
             "reported_by_user_id": p.reported_by_user_id,
             "reported_at": p.reported_at.isoformat(timespec="seconds") + "Z",
             "reviewed_by_user_id": p.reviewed_by_user_id,
@@ -1454,7 +1477,9 @@ def report_payment(slug, job_id):
     if not isinstance(data, dict) or set(data) != {"reference", "method", "amount_kobo"}:
         abort(400)
     reference = _text(data, "reference", 64, required=True).upper()
-    if not re.fullmatch(r"DEMO-[A-Z][A-Z0-9-]{2,47}", reference):
+    pattern = (r"DEMO-[A-Z][A-Z0-9-]{2,47}" if _finance_training()
+               else r"PAC-PAY-[A-Z][A-Z0-9-]{2,39}")
+    if not re.fullmatch(pattern, reference):
         abort(400)
     method = _text(data, "method", 12, required=True)
     amount = _estimate_amount(data["amount_kobo"])
@@ -1463,7 +1488,7 @@ def report_payment(slug, job_id):
     if amount > invoice.total_kobo:
         return jsonify({"error": "Overpayments require a separate reconciliation workflow."}), 409
     if PrincePayment.query.filter_by(tenant_id=tenant.id, reference=reference).first():
-        return jsonify({"error": "This fictional payment reference has already been recorded."}), 409
+        return jsonify({"error": "This payment reference has already been recorded."}), 409
     try:
         payment = PrincePayment(
             tenant_id=tenant.id, job_id=job.id, reference=reference,
@@ -1471,7 +1496,7 @@ def report_payment(slug, job_id):
         )
         db.session.add(payment)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_payment_reported", "payment", payment.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("payment_reported"), "payment", payment.id)
         result = _payment_summary(job, invoice)
         db.session.commit()
     except SQLAlchemyError:
@@ -1492,7 +1517,7 @@ def review_payment(slug, job_id, payment_id):
     note = _text(data, "review_note", 900, required=True)
     if (decision not in {"verified", "rejected"} or data["review_attested"] is not True
             or len(note) < 20 or PRIVATE_CONTACT_PATTERN.search(note)
-            or not note.lower().startswith(("demo:", "synthetic:"))):
+            or not _finance_note_valid(note)):
         abort(400)
     payment = PrincePayment.query.populate_existing().filter_by(
         id=payment_id, tenant_id=tenant.id, job_id=job.id,
@@ -1510,7 +1535,7 @@ def review_payment(slug, job_id, payment_id):
         payment.reviewed_by_user_id = actor.user_id
         payment.reviewed_at = datetime.utcnow()
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_payment_" + decision, "payment", payment.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("payment_" + decision), "payment", payment.id)
         result = _payment_summary(job, invoice)
         db.session.commit()
     except SQLAlchemyError:
@@ -1543,8 +1568,8 @@ def issue_receipt(slug, job_id, payment_id):
         receipt = PrinceReceipt(payment_id=payment.id, issued_by_user_id=actor.user_id)
         db.session.add(receipt)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_receipt_issued", "receipt", receipt.id)
-        result = {"reference": f"DEMO-RCT-PAC-{receipt.id:06d}", "payment_id": payment.id}
+        _audit(tenant.id, actor.user_id, _finance_audit("receipt_issued"), "receipt", receipt.id)
+        result = {"reference": _finance_ref(f"RCT-PAC-{receipt.id:06d}"), "payment_id": payment.id}
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
@@ -1563,7 +1588,7 @@ def reverse_payment_allocation(slug, job_id, payment_id):
     reason = _text(data, "reason", 900, required=True)
     if (data["reversal_attested"] is not True or len(reason) < 20
             or PRIVATE_CONTACT_PATTERN.search(reason)
-            or not reason.lower().startswith(("demo:", "synthetic:"))):
+            or not _finance_note_valid(reason)):
         abort(400)
     if payment.decision != "verified" or PrincePaymentReversal.query.filter_by(payment_id=payment.id).first():
         abort(409)
@@ -1573,7 +1598,7 @@ def reverse_payment_allocation(slug, job_id, payment_id):
         )
         db.session.add(reversal)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_payment_allocation_reversed", "payment", payment.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("payment_allocation_reversed"), "payment", payment.id)
         result = _payment_summary(job, invoice)
         db.session.commit()
     except SQLAlchemyError:
@@ -1595,8 +1620,8 @@ def print_receipt(slug, job_id, payment_id):
         "partnerships/prince_receipt_print.html", slug=slug, workshop_name=tenant.display_name,
         job_id=job.id, customer=_public_concern(customer.full_name),
         vehicle=f"{_public_concern(vehicle.brand)} {_public_concern(vehicle.model)}",
-        reference=f"DEMO-RCT-PAC-{receipt.id:06d}",
-        invoice_reference=f"DEMO-INV-PAC-{invoice.job_id:06d}",
+        reference=_finance_ref(f"RCT-PAC-{receipt.id:06d}"),
+        invoice_reference=_finance_ref(f"INV-PAC-{invoice.job_id:06d}"),
         amount_kobo=payment.amount_kobo, method=payment.method,
         issued_date=receipt.issued_at.strftime("%d %B %Y"), reversed=bool(reversal),
     ))
@@ -1680,7 +1705,7 @@ def _financial_overview(tenant_id):
             totals["hold_count"] += 1
             totals["hold_outstanding"] += outstanding
         details.append({
-            "job_id": row.job_id, "reference": f"DEMO-INV-PAC-{row.job_id:06d}",
+            "job_id": row.job_id, "reference": _finance_ref(f"INV-PAC-{row.job_id:06d}"),
             "customer": _public_concern(row.full_name),
             "vehicle": f"{_public_concern(row.brand)} {_public_concern(row.model)}",
             "job_status": row.status, "invoiced": int(row.total_kobo),
@@ -1694,7 +1719,7 @@ def _financial_overview(tenant_id):
 def principal_finance(slug):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.PAYMENT_VERIFY)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    if not _finance_available():
         abort(404)
     response = current_app.make_response(render_template(
         "partnerships/prince_finance.html", slug=slug, workshop_name=tenant.display_name,
@@ -1708,7 +1733,7 @@ def principal_finance(slug):
 def principal_finance_data(slug):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.PAYMENT_VERIFY)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    if not _finance_available():
         abort(404)
     response = jsonify(_financial_overview(tenant.id))
     response.headers["Cache-Control"] = "no-store, private"

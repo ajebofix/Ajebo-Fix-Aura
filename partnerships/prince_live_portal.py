@@ -1,7 +1,7 @@
 """Closed-by-default staff authentication foundation for the live Prince pilot.
 
 Only an explicitly approved, minimal workshop surface is available.
-Finance, private contacts, clinical and unrelated Aura routes remain closed.
+Finance requires separate release approval. Private contacts, clinical and unrelated Aura routes remain closed.
 """
 import os
 from uuid import UUID
@@ -92,6 +92,16 @@ AUTHORIZATION_ENDPOINTS = frozenset({
 })
 
 
+FINANCE_ENDPOINTS = frozenset({
+    "prince_pilot.print_estimate", "prince_pilot.invoice_workspace",
+    "prince_pilot.invoice_detail", "prince_pilot.issue_invoice",
+    "prince_pilot.payment_history", "prince_pilot.report_payment",
+    "prince_pilot.review_payment", "prince_pilot.issue_receipt",
+    "prince_pilot.reverse_payment_allocation", "prince_pilot.print_receipt",
+    "prince_pilot.principal_finance", "prince_pilot.principal_finance_data",
+})
+
+
 def workshop_release_ready():
     """A deployment flag alone never authorizes customer intake."""
     if (not current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
@@ -110,10 +120,16 @@ def live_authorization_ready():
                 and current_app.config.get("PRINCE_LIVE_AUTHORIZATION_APPROVED", False))
 
 
+def live_finance_ready():
+    return bool(live_authorization_ready()
+                and current_app.config.get("PRINCE_LIVE_FINANCE_APPROVED", False))
+
+
 def live_workshop_request_allowed():
     return bool(
         (request.endpoint in WORKSHOP_ENDPOINTS
-         or (request.endpoint in AUTHORIZATION_ENDPOINTS and live_authorization_ready()))
+         or (request.endpoint in AUTHORIZATION_ENDPOINTS and live_authorization_ready())
+         or (request.endpoint in FINANCE_ENDPOINTS and live_finance_ready()))
         and request.view_args and request.view_args.get("slug") == "prince"
         and _authorized_staff() and workshop_release_ready()
     )

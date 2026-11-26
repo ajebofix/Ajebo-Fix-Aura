@@ -183,3 +183,83 @@ def test_written_customer_authorization_release(live, app, client, monkeypatch):
     assert client.get(path).json["state"] == "withdrawn"
     assert client.get(job + "/invoice").status_code == 404
     assert client.get(job + "/clinical").status_code == 404
+
+
+def test_live_finance_requires_release_and_verified_allocation(live, app, client, monkeypatch):
+    app.config.update(PRINCE_LIVE_WORKSHOP_APPROVED=True,
+                      PRINCE_LIVE_AUTHORIZATION_APPROVED=True)
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "prince-notice-v1"
+    tenant.intake_enabled = True
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    client.get("/pilot/workshops/prince/operator")
+    with client.session_transaction() as sess:
+        headers = {"X-CSRF-Token": sess["_csrf_token"]}
+    root = "/pilot/workshops/prince"
+    def post(path, payload):
+        return client.post(path, json=payload, headers=headers)
+    created = post(root + "/intake", {
+        "full_name": "Synthetic finance customer", "vehicle_brand": "Toyota",
+        "vehicle_model": "Camry", "privacy_notice_version": "prince-notice-v1",
+        "participation_confirmed": True,
+    })
+    assert created.status_code == 201
+    job = root + "/jobs/" + str(created.json["job_id"])
+    assert post(job + "/estimates", {
+        "expected_version": 0, "discount_kobo": 0, "items": [{
+            "category": "labour", "description": "Inspection service",
+            "quantity": 1, "unit_kobo": 100000,
+        }],
+    }).status_code == 201
+    assert post(job + "/estimates/1/approve", {
+        "approval_note": "Reviewed the exact inspection scope and amount.",
+    }).status_code == 200
+    assert post(job + "/estimates/1/authorization", {
+        "expected_sequence": 0, "decision": "accepted", "channel": "written_message",
+        "evidence_reference": "Test reference ABC records approval of exact estimate.",
+        "customer_decision_attested": True,
+    }).status_code == 201
+    for old, new in (("draft", "awaiting_approval"), ("awaiting_approval", "approved")):
+        assert post(job + "/lifecycle", {
+            "expected_status": old, "new_status": new,
+            "reason": "Reviewed the workshop records for progression.",
+            "closure_disposition": None, "follow_up_plan": None,
+        }).status_code == 200
+    assert client.get(job + "/invoice").status_code == 404
+    app.config["PRINCE_LIVE_FINANCE_APPROVED"] = True
+    assert client.get(job + "/estimates/1/print").status_code == 200
+    payload = {"expected_version": 1, "expected_authorization_sequence": 1,
+               "issue_reason": "Recorded exact accepted inspection scope and amount.",
+               "issue_attested": True}
+    issued = post(job + "/invoice", payload)
+    assert issued.status_code == 201
+    assert issued.json["invoice"]["reference"].startswith("INV-PAC-")
+    assert post(job + "/invoice", payload).status_code == 409
+    path = job + "/invoice/payments"
+    pay = {"reference": "PAC-PAY-TEST-A", "method": "cash", "amount_kobo": 40000}
+    assert post(path, {**pay, "reference": "DEMO-TEST-A"}).status_code == 400
+    reported = post(path, pay)
+    assert reported.status_code == 201
+    assert reported.json["outstanding_kobo"] == 100000
+    assert post(path, pay).status_code == 409
+    item = path + "/" + str(reported.json["records"][0]["id"])
+    assert post(item + "/receipt", {"receipt_attested": True}).status_code == 409
+    reviewed = post(item + "/review", {"decision": "verified",
+        "review_note": "Checked the separately retained cash record for this allocation.",
+        "review_attested": True})
+    assert reviewed.status_code == 200
+    assert reviewed.json["outstanding_kobo"] == 60000
+    assert post(item + "/receipt", {"receipt_attested": True}).status_code == 201
+    assert client.get(item + "/receipt/print").status_code == 200
+    assert client.get(job + "/invoice").status_code == 200
+    assert client.get(root + "/finance").status_code == 200
+    reversed_payment = post(item + "/reverse", {
+        "reason": "Recorded a test correction to the original allocation.",
+        "reversal_attested": True})
+    assert reversed_payment.status_code == 200
+    assert reversed_payment.json["outstanding_kobo"] == 100000
+    assert client.get(job + "/clinical").status_code == 404
+    app.config["PRINCE_LIVE_FINANCE_APPROVED"] = False
+    assert client.get(root + "/finance").status_code == 404

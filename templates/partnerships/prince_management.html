@@ -45,7 +45,7 @@
   {% endif %}
 
   {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
-  <div class="management-test-banner"><strong>Restricted workshop pilot</strong> · Intake, job notes, assignments and estimates. Written customer authorization and job progression require separate approval. No financial issuance or Aura transfer.
+  <div class="management-test-banner"><strong>Restricted workshop pilot</strong> · Intake, job notes, assignments and estimates. Written customer authorization and job progression require separate approval. Financial ledger requires separate approval. No Aura transfer.
     <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form>
   </div>
   {% endif %}
@@ -57,7 +57,7 @@
   </section>
 
   <nav class="management-tabs" aria-label="Management sections">
-    {% if config.get("PRINCE_STAGING_LOCKDOWN") %}<a href="{{ url_for('prince_pilot.principal_finance', slug=slug) }}">Financial console</a>{% endif %}
+    {% if config.get("PRINCE_STAGING_LOCKDOWN") or (config.get("PRINCE_LIVE_PILOT_LOCKDOWN") and config.get("PRINCE_LIVE_AUTHORIZATION_APPROVED") and config.get("PRINCE_LIVE_FINANCE_APPROVED")) %}<a href="{{ url_for('prince_pilot.principal_finance', slug=slug) }}">Financial console</a>{% endif %}
     <a href="#job-queue">Job queue</a>
     <a href="#review-queue">Pending reviews</a>
     <a href="#staff-roster">Available operators</a>
@@ -176,7 +176,7 @@
         {% endif %}
       </article>
     {% else %}
-      <div class="empty-jobs"><strong>No workshop jobs yet</strong><p>Register a fictional customer and vehicle to begin.</p></div>
+      <div class="empty-jobs"><strong>No workshop jobs yet</strong><p>Register a customer and vehicle to begin.</p></div>
     {% endfor %}
     </div>
   </section>

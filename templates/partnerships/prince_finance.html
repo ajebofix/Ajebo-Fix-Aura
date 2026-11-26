@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
 <title>Prince · Financial overview</title><link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/prince_management.css') }}"></head>
-<body><main class="pilot-shell management-shell">
+<body>{% set training = config.get("PRINCE_STAGING_LOCKDOWN") %}<main class="pilot-shell management-shell">
 <header class="pilot-header"><img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince logo" width="52" height="52"><div class="brand-copy"><div class="eyebrow">AURA · PRIVATE FINANCIAL OPERATIONS</div><h1>{{ workshop_name }}</h1><p>Principal financial console</p></div></header>
 <nav class="principal-back-nav"><a href="{{ url_for('prince_pilot.principal_management', slug=slug) }}">Back to management</a></nav>
-<section class="management-hero"><div><div class="overline">ALL-TIME · NGN · TRAINING ONLY</div><h2>Financial overview</h2><p>Reconciled from fictional invoice, payment, receipt and reversal records. Not a bank balance, cash-flow statement or profit report.</p></div></section>
-<div class="management-test-banner"><strong>TRAINING DATA ONLY</strong> · No real banking information. Verification is a principal declaration, not bank confirmation.</div>
+<section class="management-hero"><div><div class="overline">{% if training %}ALL-TIME · NGN · TRAINING ONLY{% else %}ALL-TIME · NGN · RESTRICTED LIVE PILOT{% endif %}</div><h2>Financial overview</h2><p>{% if training %}Reconciled from fictional invoice{% else %}Reconciled from recorded invoice{% endif %}, payment, receipt and reversal records. Not a bank balance, cash-flow statement or profit report.</p></div></section>
+<div class="management-test-banner">{% if training %}<strong>TRAINING DATA ONLY</strong>{% else %}<strong>INTERNAL WORKSHOP LEDGER</strong>{% endif %} · No real banking information. Verification is a principal declaration, not bank confirmation.</div>
 {% macro money(kobo) %}₦{{ "{:,}".format(kobo // 100) }}.{{ "%02d"|format(kobo % 100) }}{% endmacro %}
 {% set t = overview.totals %}
 <section class="management-kpis" aria-label="Financial totals">
-<div class="kpi"><span>Total invoiced</span><strong>{{ money(t.invoiced) }}</strong><small>{{ t.invoice_count }} training invoices</small></div>
+<div class="kpi"><span>Total invoiced</span><strong>{{ money(t.invoiced) }}</strong><small>{{ t.invoice_count }} {% if training %}training invoices{% else %}recorded invoices{% endif %}</small></div>
 <div class="kpi"><span>Net verified allocations</span><strong>{{ money(t.verified) }}</strong><small>Excludes reversed allocations</small></div>
 <div class="kpi"><span>Outstanding invoice balance</span><strong>{{ money(t.outstanding) }}</strong><small>Unallocated amount, not confirmed collectible debt</small></div>
 <div class="kpi"><span>Pending payment reports</span><strong>{{ money(t.pending) }}</strong><small>{{ t.pending_count }} reports · not deducted</small></div>
@@ -24,5 +24,5 @@
 {% if not row.authorization_current %}<p class="limit-note">Authorization changed · principal review required.</p>{% endif %}
 <p class="tiny">{{ row.receipts }} receipts · {{ row.historical_receipts }} historical · {{ row.receipt_pending }} awaiting issuance</p>
 <a class="hero-link" href="{{ url_for('prince_pilot.invoice_workspace', slug=slug, job_id=row.job_id) }}">Open invoice and payment ledger</a></article>
-{% else %}<p>No invoices recorded. Create an approved fictional invoice to begin.</p>{% endfor %}</section>
+{% else %}<p>No invoices recorded. {% if training %}Create an approved fictional invoice to begin.{% else %}Record an approved workshop invoice to begin.{% endif %}</p>{% endfor %}</section>
 <footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer></main></body></html>

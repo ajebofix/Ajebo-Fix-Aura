@@ -67,13 +67,13 @@ jobs:
       - name: Generate ephemeral encryption key
         run: python3 scripts/generate_ci_profile_encryption_key.py
       - name: Compile Prince pilot modules
-        run: python -m compileall -q partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py partnerships/prince_staging_portal.py scripts/prince_seed_synthetic_staging.py scripts/prince_optional_staging_rehearsal.py scripts/prince_verify_synthetic_staging.py tests/test_prince_staging_portal.py tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py
+        run: python -m compileall -q partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py partnerships/prince_identity_policy.py partnerships/prince_staging_portal.py scripts/prince_seed_synthetic_staging.py scripts/prince_optional_staging_rehearsal.py scripts/prince_verify_synthetic_staging.py tests/test_prince_staging_portal.py tests/test_prince_access_policy.py tests/test_prince_identity_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py
       - name: Run policy and HTTP authorization tests
-        run: pytest -q --tb=short tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
+        run: pytest -q --tb=short tests/test_prince_access_policy.py tests/test_prince_identity_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
       - name: Check mobile JavaScript syntax
         run: node --check static/js/prince_pilot_operator.js && node --check static/js/prince_management.js && node --check static/js/prince_quotation_print.js
       - name: Lint Prince pilot code
-        run: ruff check --output-format=concise partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py partnerships/prince_staging_portal.py scripts/prince_seed_synthetic_staging.py scripts/prince_optional_staging_rehearsal.py scripts/prince_verify_synthetic_staging.py tests/test_prince_staging_portal.py tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py
+        run: ruff check --output-format=concise partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py partnerships/prince_identity_policy.py partnerships/prince_staging_portal.py scripts/prince_seed_synthetic_staging.py scripts/prince_optional_staging_rehearsal.py scripts/prince_verify_synthetic_staging.py tests/test_prince_staging_portal.py tests/test_prince_access_policy.py tests/test_prince_identity_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py
 
   prince-pilot-postgres:
     name: Prince isolated PostgreSQL migration and API rehearsal

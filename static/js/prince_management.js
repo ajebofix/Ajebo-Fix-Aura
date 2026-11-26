@@ -366,3 +366,37 @@
     });
   }
 })();
+
+
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  for (const form of document.querySelectorAll(".receipt-action-form")) {
+    const button = form.querySelector('button[type="submit"]');
+    const feedback = form.querySelector(".receipt-feedback");
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!csrf || button.disabled || !form.reportValidity()) return;
+      const payload = form.dataset.action === "receipt"
+        ? {receipt_attested: form.elements.attested.checked}
+        : {reason: form.elements.reason.value.trim(), reversal_attested: form.elements.attested.checked};
+      button.disabled = true;
+      feedback.textContent = "Recording decision…";
+      try {
+        const response = await fetch(form.dataset.url, {
+          method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !(result.reference || Array.isArray(result.records))) {
+          feedback.textContent = result.error || "Not recorded. Reload and review the ledger.";
+          return;
+        }
+        window.location.reload();
+      } catch {
+        feedback.textContent = "Could not confirm save. Reload before retrying.";
+      } finally { button.disabled = false; }
+    });
+  }
+})();

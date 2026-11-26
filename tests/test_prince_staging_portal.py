@@ -797,3 +797,86 @@ def test_operator_cannot_access_payment_ledger(approved_quotation, client, role)
     assert client.post(endpoint + "/1/review", json={"decision": "verified",
                        "review_note": "Demo: fictional unauthorized review attempt.",
                        "review_attested": True}, headers={"X-CSRF-Token": token}).status_code == 404
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_receipt_and_full_reversal_preserve_history(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    root = approved_quotation.rsplit("/", 1)[0]
+    assert client.post(approved_quotation + "/2/authorization",
+                       json=_customer_decision(), headers=headers).status_code == 201
+    for old, new in [("draft", "awaiting_approval"), ("awaiting_approval", "approved")]:
+        assert client.post(root + "/lifecycle", json={
+            "expected_status": old, "new_status": new,
+            "reason": "Demo: fictional approval of workshop scope.",
+            "closure_disposition": None, "follow_up_plan": None,
+        }, headers=headers).status_code == 200
+    assert client.post(root + "/invoice", json=_invoice_payload(),
+                       headers=headers).status_code == 201
+    endpoint = root + "/invoice/payments"
+    pending = client.post(endpoint, json={"reference": "DEMO-RECEIPT-A",
+                          "method": "transfer", "amount_kobo": 1000050}, headers=headers)
+    assert pending.status_code == 201
+    payment_id = pending.json["records"][0]["id"]
+    payment_url = endpoint + f"/{payment_id}"
+    receipt_url = payment_url + "/receipt"
+    reversal_url = payment_url + "/reverse"
+    receipt_payload = {"receipt_attested": True}
+    reversal_payload = {"reason": "Demo: fictional correction of an allocation error.",
+                        "reversal_attested": True}
+    assert client.post(receipt_url, json=receipt_payload, headers=headers).status_code == 409
+    assert client.post(reversal_url, json=reversal_payload, headers=headers).status_code == 409
+    assert client.get(receipt_url + "/print").status_code == 404
+    review = {"decision": "verified", "review_note": "Demo: fictional payment evidence reviewed.",
+              "review_attested": True}
+    assert client.post(payment_url + "/review", json=review, headers=headers).status_code == 200
+    assert client.post(receipt_url, json={"receipt_attested": False},
+                       headers=headers).status_code == 400
+    issued = client.post(receipt_url, json=receipt_payload, headers=headers)
+    assert issued.status_code == 201
+    reference = issued.json["reference"]
+    assert client.post(receipt_url, json=receipt_payload, headers=headers).status_code == 409
+    printed = client.get(receipt_url + "/print")
+    assert printed.status_code == 200
+    assert "10,000.50" in printed.get_data(as_text=True)
+    assert "NOT FOR CUSTOMER ISSUE" in printed.get_data(as_text=True)
+    assert "fictional payment evidence reviewed" not in printed.get_data(as_text=True)
+    assert "no-store" in printed.headers["Cache-Control"]
+    assert client.post(reversal_url, json=reversal_payload).status_code == 400
+    reversed_result = client.post(reversal_url, json=reversal_payload, headers=headers)
+    assert reversed_result.status_code == 200
+    data = reversed_result.json
+    assert data["verified_kobo"] == 0
+    assert data["reversed_kobo"] == 1000050
+    assert data["outstanding_kobo"] == 2400100
+    assert data["records"][0]["decision"] == "verified"
+    assert data["records"][0]["reversed"] is True
+    assert data["records"][0]["receipt_reference"] == reference
+    assert client.post(reversal_url, json=reversal_payload, headers=headers).status_code == 409
+    assert client.post(receipt_url, json=receipt_payload, headers=headers).status_code == 409
+    historical = client.get(receipt_url + "/print").get_data(as_text=True)
+    assert "REVERSED" in historical
+    assert reference in historical
+    replacement = client.post(endpoint, json={"reference": "DEMO-RECEIPT-B",
+                              "method": "cash", "amount_kobo": 2400100}, headers=headers)
+    replacement_id = replacement.json["records"][-1]["id"]
+    assert client.post(endpoint + f"/{replacement_id}/review", json=review,
+                       headers=headers).json["outstanding_kobo"] == 0
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_operator_cannot_access_receipt_or_reverse_payment(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    root = approved_quotation.rsplit("/", 1)[0] + "/invoice/payments/1"
+    assert client.get(root + "/receipt/print").status_code == 404
+    assert client.post(root + "/receipt", json={"receipt_attested": True},
+                       headers={"X-CSRF-Token": token}).status_code == 404
+    assert client.post(root + "/reverse", json={"reason": "Demo: unauthorized fictional reversal.",
+                       "reversal_attested": True}, headers={"X-CSRF-Token": token}).status_code == 404

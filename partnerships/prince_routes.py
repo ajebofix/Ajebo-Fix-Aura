@@ -23,6 +23,7 @@ from partnerships.prince_access_policy import (
     PrinceAction, PrinceActor, PrinceRole, authorize, operator_intake_response,
     redact_operator_job,
 )
+from partnerships.prince_identity_policy import normalize_vin
 from partnerships.prince_models import (
     PrinceAudit, PrinceClinicalHandoff, PrinceClinicalWithdrawal, PrinceCustomer,
     PrinceCustomerAuthorization, PrinceEntryReview,
@@ -1793,13 +1794,27 @@ def _clinical_response(record):
     }
 
 
+def _clinical_identity_readiness(vehicle, handoff):
+    """No global lookup or VIN disclosure; staged identity linking is disabled."""
+    return {
+        "state": "blocked",
+        "clinical_candidate_active": handoff["state"] == "candidate",
+        "workshop_vin_format_present": normalize_vin(vehicle.vin) is not None,
+        "workshop_vin_verified": False,
+        "owner_confirmation_available": False,
+        "destination_link_enabled": False,
+    }
+
+
 @prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/clinical")
 def clinical_workspace(slug, job_id):
     tenant, _, job, customer, vehicle = _clinical_scope(slug, job_id)
     record = _clinical_record(job)
+    handoff = _clinical_response(record)
     response = current_app.make_response(render_template(
         "partnerships/prince_clinical.html", slug=slug, workshop_name=tenant.display_name,
-        job=_job_response(job, customer, vehicle), handoff=_clinical_response(record),
+        job=_job_response(job, customer, vehicle), handoff=handoff,
+        identity=_clinical_identity_readiness(vehicle, handoff),
         candidate=_clinical_candidate(job) if record is None else None,
         notice=CLINICAL_HANDOFF_NOTICE,
     ))
@@ -1809,10 +1824,12 @@ def clinical_workspace(slug, job_id):
 
 @prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/clinical/data")
 def clinical_detail(slug, job_id):
-    _, _, job, _, _ = _clinical_scope(slug, job_id)
+    _, _, job, _, vehicle = _clinical_scope(slug, job_id)
     record = _clinical_record(job)
-    response = jsonify({"handoff": _clinical_response(record),
-                        "candidate": _clinical_candidate(job) if record is None else None})
+    handoff = _clinical_response(record)
+    response = jsonify({"handoff": handoff,
+                        "candidate": _clinical_candidate(job) if record is None else None,
+                        "identity_readiness": _clinical_identity_readiness(vehicle, handoff)})
     response.headers["Cache-Control"] = "no-store, private"
     return response
 

@@ -10,9 +10,11 @@ import re
 
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from flask_login import current_user
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
 from extensions import db
+from models import User
 from security.field_encryption import (
     ProfileEncryptionError, decrypt_profile_value, encrypt_profile_value,
 )
@@ -21,8 +23,8 @@ from partnerships.prince_access_policy import (
     redact_operator_job,
 )
 from partnerships.prince_models import (
-    PrinceAudit, PrinceCustomer, PrinceEntryReview, PrinceJob, PrinceJobEntry,
-    PrinceMembership, PrinceTenant, PrinceVehicle,
+    PrinceAudit, PrinceCustomer, PrinceEntryReview, PrinceJob, PrinceJobAssignment,
+    PrinceJobEntry, PrinceMembership, PrinceTenant, PrinceVehicle,
 )
 
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
@@ -510,3 +512,222 @@ def principal_review_entry(slug, job_id, entry_id):
         db.session.rollback()
         return jsonify({"error": "Review could not be saved"}), 503
     return jsonify({"entry_id": entry.id, "principal_review": payload}), 201
+
+
+def _eligible_operators(tenant_id):
+    """Only active operator memberships, never owner/admin or global Aura users."""
+    query = (
+        db.session.query(PrinceMembership, User)
+        .join(User, User.id == PrinceMembership.user_id)
+        .filter(
+            PrinceMembership.tenant_id == tenant_id,
+            PrinceMembership.role == "operator",
+            PrinceMembership.active.is_(True),
+            User.is_active.is_(True),
+        )
+        .order_by(User.name.asc(), User.id.asc())
+    )
+    rows = query.all()
+    if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        # Never permit a genuine account on a demo job, even if an operator
+        # membership was accidentally provisioned in the staging database.
+        allowed = {
+            "prince-demo-operator-a@example.invalid",
+            "prince-demo-operator-b@example.invalid",
+        }
+        rows = [(member, user) for member, user in rows
+                if (user.email or "").lower() in allowed]
+    return [{"id": user.id, "name": user.name} for _, user in rows]
+
+
+@prince_pilot_bp.get("/<slug>/manage")
+def principal_management(slug):
+    """Tenant-scoped, principal-only operational summary (no private contacts)."""
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.MANAGEMENT_VIEW)
+
+    total_jobs = db.session.query(func.count(PrinceJob.id)).filter_by(
+        tenant_id=tenant.id,
+    ).scalar() or 0
+    closed_jobs = db.session.query(func.count(PrinceJob.id)).filter_by(
+        tenant_id=tenant.id, status="closed",
+    ).scalar() or 0
+    customers = db.session.query(func.count(PrinceCustomer.id)).filter_by(
+        tenant_id=tenant.id,
+    ).scalar() or 0
+    pending_reviews = (
+        db.session.query(func.count(PrinceJobEntry.id))
+        .outerjoin(
+            PrinceEntryReview,
+            (PrinceEntryReview.entry_id == PrinceJobEntry.id)
+            & (PrinceEntryReview.tenant_id == PrinceJobEntry.tenant_id),
+        )
+        .filter(
+            PrinceJobEntry.tenant_id == tenant.id,
+            PrinceEntryReview.id.is_(None),
+        )
+        .scalar() or 0
+    )
+    operators = _eligible_operators(tenant.id)
+
+    # One tenant-bound join chain; no cross-company or contact columns.
+    records = (
+        db.session.query(PrinceJob, PrinceCustomer, PrinceVehicle, User.name)
+        .join(
+            PrinceCustomer,
+            (PrinceCustomer.id == PrinceJob.customer_id)
+            & (PrinceCustomer.tenant_id == PrinceJob.tenant_id),
+        )
+        .join(
+            PrinceVehicle,
+            (PrinceVehicle.id == PrinceJob.vehicle_id)
+            & (PrinceVehicle.tenant_id == PrinceJob.tenant_id),
+        )
+        .join(User, User.id == PrinceJob.assigned_user_id)
+        .filter(PrinceJob.tenant_id == tenant.id)
+        .order_by(PrinceJob.id.desc()).limit(40).all()
+    )
+    jobs = []
+    for job, customer, vehicle, assignee_name in records:
+        # Use the same safe job fields already exposed to operators.
+        row = _job_response(job, customer, vehicle)
+        row["assignee_user_id"] = job.assigned_user_id
+        row["assignee_name"] = assignee_name
+        jobs.append(row)
+
+    review_queue = (
+        db.session.query(
+            PrinceJobEntry.id,
+            PrinceJobEntry.category,
+            PrinceJobEntry.job_id,
+            PrinceCustomer.full_name,
+            PrinceVehicle.brand,
+            PrinceVehicle.model,
+        )
+        .join(
+            PrinceJob,
+            (PrinceJob.id == PrinceJobEntry.job_id)
+            & (PrinceJob.tenant_id == PrinceJobEntry.tenant_id),
+        )
+        .join(
+            PrinceCustomer,
+            (PrinceCustomer.id == PrinceJob.customer_id)
+            & (PrinceCustomer.tenant_id == PrinceJob.tenant_id),
+        )
+        .join(
+            PrinceVehicle,
+            (PrinceVehicle.id == PrinceJob.vehicle_id)
+            & (PrinceVehicle.tenant_id == PrinceJob.tenant_id),
+        )
+        .outerjoin(
+            PrinceEntryReview,
+            (PrinceEntryReview.entry_id == PrinceJobEntry.id)
+            & (PrinceEntryReview.tenant_id == PrinceJobEntry.tenant_id),
+        )
+        .filter(
+            PrinceJobEntry.tenant_id == tenant.id,
+            PrinceEntryReview.id.is_(None),
+        )
+        .order_by(PrinceJobEntry.id.desc()).limit(12).all()
+    )
+    pending = [
+        {
+            "job_id": job_id,
+            "entry_id": entry_id,
+            "category": ENTRY_CATEGORIES.get(category, "Workshop entry"),
+            "customer": full_name,
+            "vehicle": f"{brand} {model}",
+        }
+        for entry_id, category, job_id, full_name, brand, model in review_queue
+    ]
+    return render_template(
+        "partnerships/prince_management.html",
+        workshop_name=tenant.display_name,
+        slug=tenant.slug,
+        stats={
+            "total_jobs": total_jobs,
+            "active_jobs": total_jobs - closed_jobs,
+            "closed_jobs": closed_jobs,
+            "customers": customers,
+            "pending_reviews": pending_reviews,
+            "operators": len(operators),
+        },
+        jobs=jobs,
+        operators=operators,
+        pending=pending,
+        active_principal_id=actor.user_id,
+    )
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/assignment")
+def principal_assign_job(slug, job_id):
+    """Fail closed on stale assignment; one audit event per actual change."""
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.JOB_ASSIGN)
+    if request.content_length and request.content_length > 1400:
+        abort(413)
+    data = request.get_json(silent=True)
+    if (not isinstance(data, dict)
+            or set(data) != {
+                "assignee_user_id", "expected_assignee_user_id", "reason"
+            }):
+        abort(400)
+    new_id = data["assignee_user_id"]
+    expected_id = data["expected_assignee_user_id"]
+    if (isinstance(new_id, bool) or not isinstance(new_id, int)
+            or isinstance(expected_id, bool) or not isinstance(expected_id, int)
+            or new_id <= 0 or expected_id <= 0):
+        abort(400)
+    reason = _text(data, "reason", 260, required=True)
+    if len(reason) < 12 or PRIVATE_CONTACT_PATTERN.search(reason):
+        abort(400)
+    if (current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+            and not reason.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+
+    # Reject forged target IDs, disabled users and outside-tenant members.
+    eligible = {person["id"]: person for person in _eligible_operators(tenant.id)}
+    if new_id not in eligible:
+        abort(404)
+
+    try:
+        # PostgreSQL row lock and expected value prevent losing a principal's
+        # concurrent assignment; SQLite tests also exercise compare-and-swap.
+        job = (
+            db.session.query(PrinceJob).filter_by(
+                id=job_id, tenant_id=tenant.id,
+            ).with_for_update().first()
+        )
+        if job is None:
+            abort(404)
+        if job.status == "closed":
+            abort(409)
+        if job.assigned_user_id != expected_id:
+            abort(409)
+        if new_id == expected_id:
+            abort(409)
+        before_id = job.assigned_user_id
+        job.assigned_user_id = new_id
+        event = PrinceJobAssignment(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            previous_user_id=before_id,
+            new_user_id=new_id,
+            changed_by_user_id=actor.user_id,
+            reason=reason,
+        )
+        db.session.add(event)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "job_assignment_changed", "job", job.id)
+        response = {
+            "job_id": job.id,
+            "previous_assignee_user_id": before_id,
+            "assigned_user_id": new_id,
+            "assigned_operator_name": eligible[new_id]["name"],
+            "assignment_id": event.id,
+        }
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Job assignment could not be saved"}), 503
+    return jsonify(response), 200

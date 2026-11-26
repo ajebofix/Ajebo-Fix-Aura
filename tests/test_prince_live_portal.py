@@ -456,3 +456,20 @@ def test_staff_ux_defaults_to_operator_and_shows_role_context(live, app, client)
     assert b'name="role" value="operator" checked' in page.data
     assert b"Recommended for staff" in page.data
     assert b'id="my-account"' in page.data
+
+
+def test_workshop_ux_keeps_release_locks_visible(live, app, client, monkeypatch):
+    app.config.update(PRINCE_LIVE_WORKSHOP_APPROVED=True,
+                      PRINCE_LIVE_STAFF_ADMIN_APPROVED=True)
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "prince-notice-v1"
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    operator = client.get("/pilot/workshops/prince/operator")
+    assert operator.status_code == 200
+    assert b"live-release-note" in operator.data
+    assert b"My account" in operator.data
+    assert b"Customer intake is locked" in operator.data
+    assert b'id="prince-intake-form"' not in operator.data
+    assert client.get("/pilot/workshops/prince/finance").status_code == 404

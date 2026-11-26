@@ -11,7 +11,8 @@
   <script defer src="{{ url_for('static', filename='js/prince_management.js') }}"></script>
 </head>
 <body>
-<main class="pilot-shell management-shell">
+<a class="pilot-skip" href="#main">Skip to content</a>
+<main class="pilot-shell management-shell" id="main">
   <header class="pilot-header">
     <img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}"
          alt="Prince Automobile Clinic logo" width="52" height="52">
@@ -59,6 +60,7 @@
 
   <nav class="management-tabs" aria-label="Management sections">
     {% if config.get("PRINCE_STAGING_LOCKDOWN") or (config.get("PRINCE_LIVE_PILOT_LOCKDOWN") and config.get("PRINCE_LIVE_AUTHORIZATION_APPROVED") and config.get("PRINCE_LIVE_FINANCE_APPROVED")) %}<a href="{{ url_for('prince_pilot.principal_finance', slug=slug) }}">Financial console</a>{% endif %}
+    {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") and config.get("PRINCE_LIVE_STAFF_ADMIN_APPROVED") %}<a href="{{ url_for('prince_live.staff_accounts') }}">Staff accounts</a>{% endif %}
     <a href="#job-queue">Job queue</a>
     <a href="#review-queue">Pending reviews</a>
     <a href="#staff-roster">Available operators</a>
@@ -70,7 +72,7 @@
       <div><div class="overline">01 / OPERATIONS</div><h2>Job assignments</h2></div>
       <span class="pill">{{ jobs|length }} of {{ stats.total_jobs }} jobs</span>
     </div>
-    <p class="muted">Only you and the other workshop principal may reassign jobs. Operators can open only the vehicles currently assigned to them. Closed jobs cannot be reassigned.</p>
+    <p class="muted">Only authorized workshop principals may reassign jobs. Operators can open only the vehicles currently assigned to them. Closed jobs cannot be reassigned.</p>
     {% if stats.total_jobs > jobs|length %}
       <p class="limit-note">Showing the 40 newest jobs. Older records are not included in this preview.</p>
     {% endif %}
@@ -133,8 +135,10 @@
             {% if config.get("PRINCE_STAGING_LOCKDOWN") %}<p class="tiny">Begin with Demo: or Synthetic:.</p>{% endif %}
             <div class="assign-controls"><button type="submit">Move to {{ job.next_status | replace("_", " ") | title }}</button><span class="lifecycle-feedback" role="status" aria-live="polite"></span></div>
           </form>
-          {% else %}
+          {% elif job.job_status == "closed" %}
           <p class="tiny">Closed administratively. The recorded history remains available; reopening is not supported in this pilot.</p>
+          {% else %}
+          <p class="limit-note">Job progression is currently locked pending release approval.</p>
           {% endif %}
           <h3>Principal decision history</h3>
           {% for event in job.transitions %}
@@ -217,10 +221,10 @@
 
   <section class="panel management-panel" id="staff-roster">
     <div class="section-top">
-      <div><div class="overline">03 / STAFF</div><h2>Eligible operators</h2></div>
+      <div><div class="overline">04 / STAFF</div><h2>Eligible operators</h2></div>
       <span class="pill">{{ stats.operators }} active</span>
     </div>
-    <p class="muted">Only active operator memberships can be selected for an assignment. Personnel provisioning, revocation and customer contact access remain separately controlled.</p>
+    <p class="muted">Only active operator memberships can be selected for an assignment. Use Staff management to review account roles and access when available. Customer contact access remains separately controlled.</p>
     <ul class="staff-list">
     {% for operator in operators %}
       <li><span class="staff-dot" aria-hidden="true"></span><strong>{{ operator.name }}</strong><span>Operator</span></li>

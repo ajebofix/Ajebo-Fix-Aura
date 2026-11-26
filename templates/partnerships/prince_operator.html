@@ -10,6 +10,7 @@
   <script defer src="{{ url_for('static', filename='js/prince_pilot_operator.js') }}"></script>
 </head>
 <body>
+  <a class="pilot-skip" href="#main">Skip to content</a>
   <main class="pilot-shell" id="main">
     <header class="pilot-header">
       <img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince Automobile Clinic logo" width="52" height="52">
@@ -30,7 +31,8 @@
     </div>
     {% endif %}
     {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
-    <div class="security-note"><strong>Restricted workshop pilot.</strong> Intake, notes and estimate preparation only. Private contact fields and clinical transfer are unavailable. Finance requires separate approval. Customer authorization and job progression require separate approval.
+    <div class="security-note live-release-note" role="note"><strong>Restricted workshop pilot.</strong> Intake, notes and estimate preparation only. Private contact fields and clinical transfer are unavailable. Finance requires separate approval. Customer authorization and job progression require separate approval.
+      {% if config.get("PRINCE_LIVE_STAFF_ADMIN_APPROVED") %}<a class="release-account-link" href="{{ url_for('prince_live.staff_accounts') }}">My account{% if can_manage_private %} / Staff management{% endif %}</a>{% endif %}
       <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form>
     </div>
     {% endif %}
@@ -43,7 +45,7 @@
       <div class="overline">PRIVATE WORKSPACE</div>
       <h2>Today at the workshop</h2>
       <p>Register the customer name and vehicle, then continue with your assigned vehicle jobs.</p>
-      <div class="security-note">Operators cannot enter, view or edit customer contact information. {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Private contacts are disabled in this release.{% else %}Two independently signed-in principals can manage protected contact details.{% endif %}</div>
+      <div class="security-note">Operators cannot enter, view or edit customer contact information. {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Private contacts are disabled in this release.{% else %}Authorized principals can manage protected contact details.{% endif %}</div>
     </section>
 
     <nav class="jump-links" aria-label="Workspace sections">
@@ -96,7 +98,7 @@
           </label>
           <div id="intake-message" class="form-message" role="status" aria-live="polite"></div>
           <button class="primary-btn" type="submit" id="submit-intake">Register customer &amp; vehicle</button>
-          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. {% if not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Only principals can maintain private contact details.{% endif %}</p>
+          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. {% if not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Only authorized principals can maintain private contact details.{% endif %}</p>
         </form>
       {% endif %}
     </section>
@@ -178,7 +180,7 @@
                     <form class="principal-review-form"
                           data-review-url="{{ url_for('prince_pilot.principal_review_entry', slug=slug, job_id=job.job_id, entry_id=entry.id) }}"
                           autocomplete="off">
-                      <strong class="review-form-heading">Principal review · Dad or Stephen</strong>
+                      <strong class="review-form-heading">Principal review</strong>
                       <label>Decision
                         <select name="decision" required>
                           <option value="">Choose review decision</option>

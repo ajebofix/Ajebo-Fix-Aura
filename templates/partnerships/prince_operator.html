@@ -30,7 +30,7 @@
     </div>
     {% endif %}
     {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
-    <div class="security-note"><strong>Restricted workshop pilot.</strong> Intake, notes and estimate preparation only. Private contact fields, customer authorization, finance and clinical transfer are unavailable.
+    <div class="security-note"><strong>Restricted workshop pilot.</strong> Intake, notes and estimate preparation only. Private contact fields, finance and clinical transfer are unavailable. Customer authorization and job progression require separate approval.
       <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form>
     </div>
     {% endif %}

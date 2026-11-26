@@ -57,15 +57,15 @@
     <h2>Customer authorization</h2>
     <p class="muted">Separate from workshop approval. Principal-recorded declaration only; Aura has not independently authenticated the customer or evidence. Recorded acceptance is required before a job can move to In progress. A withdrawal places further chargeable work on hold.</p>
     <p><strong>{{ authorization[0].decision | replace("_", " ") | title if authorization else "Not recorded" }}</strong> · Version {{ latest.version }} · {{ money(latest.total_kobo) }}</p>
-    {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+    {% if config.get("PRINCE_STAGING_LOCKDOWN") or (config.get("PRINCE_LIVE_PILOT_LOCKDOWN") and config.get("PRINCE_LIVE_AUTHORIZATION_APPROVED")) %}
     <form class="assignment-form authorization-form" data-url="{{ url_for('prince_pilot.record_customer_authorization', slug=slug, job_id=job.job_id, version=latest.version) }}" data-sequence="{{ authorization[0].sequence if authorization else 0 }}">
       <label>Customer decision<select name="decision" required><option value="">Select decision</option>
         {% for option in authorization_options %}{% if job.job_status != "closed" or option == "withdrawn" %}<option value="{{ option }}">{{ option | title }}</option>{% endif %}{% endfor %}
       </select></label>
-      <label>Evidence channel<select name="channel" required><option value="">Select channel</option>{% for key, label in authorization_channels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
-      <label>Evidence reference and decision context<textarea name="evidence_reference" minlength="20" maxlength="900" rows="3" required placeholder="Demo: fictional written message confirms the exact scope and amount."></textarea></label>
+      <label>Evidence channel<select name="channel" required><option value="">Select channel</option>{% for key, label in authorization_channels.items() %}{% if config.get("PRINCE_STAGING_LOCKDOWN") or key in ["written_message", "signed_document"] %}<option value="{{ key }}">{{ label }}</option>{% endif %}{% endfor %}</select></label>
+      <label>Evidence reference and decision context<textarea name="evidence_reference" minlength="20" maxlength="900" rows="3" required placeholder="{{ 'Demo: fictional written message confirms the exact scope and amount.' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Reference the separately retained written approval and exact scope/amount; do not paste personal details.' }}"></textarea></label>
       <p class="tiny">Do not paste private contact details or real messages. Partial or conditional acceptance is not supported; do not record it as accepted.</p>
-      <label><input type="checkbox" name="customer_decision_attested" required> I attest that the fictional customer explicitly communicated this decision for this exact estimate version and amount.</label>
+      <label><input type="checkbox" name="customer_decision_attested" required> I attest that the {{ "fictional " if config.get("PRINCE_STAGING_LOCKDOWN") else "" }}customer explicitly communicated this decision for this exact estimate version and amount.</label>
       <div class="assign-controls"><button type="submit">Record customer decision</button><span class="authorization-feedback" role="status" aria-live="polite"></span></div>
     </form>
     {% endif %}

@@ -1204,7 +1204,9 @@ def record_customer_authorization(slug, job_id, version):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.CUSTOMER_AUTHORIZATION)
     job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    from partnerships.prince_live_portal import live_authorization_ready
+    training = current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+    if not training and not live_authorization_ready():
         abort(404)
     estimate = _estimate_latest(tenant.id, job.id)
     if estimate is None or estimate.version != version or estimate.approved_at is None:
@@ -1225,7 +1227,10 @@ def record_customer_authorization(slug, job_id, version):
     if (decision not in {"accepted", "declined", "withdrawn"}
             or channel not in AUTHORIZATION_CHANNELS or len(evidence) < 20
             or PRIVATE_CONTACT_PATTERN.search(evidence)
-            or not evidence.lower().startswith(("demo:", "synthetic:"))):
+            or (training and not evidence.lower().startswith(("demo:", "synthetic:")))):
+        abort(400)
+    if not training and (channel not in {"written_message", "signed_document"}
+                         or evidence.lower().startswith(("demo:", "synthetic:"))):
         abort(400)
     events = _customer_authorization_events(tenant.id, job.id, version)
     previous = events[0] if events else None

@@ -133,3 +133,53 @@ def test_workshop_requires_approved_notice_and_staff(live, app, client, monkeypa
     assert client.get("/cars").status_code == 404
     app.config["PRINCE_LIVE_WORKSHOP_APPROVED"] = False
     assert client.get(root + "/jobs").status_code == 404
+
+
+def test_written_customer_authorization_release(live, app, client, monkeypatch):
+    app.config["PRINCE_LIVE_WORKSHOP_APPROVED"] = True
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "prince-notice-v1"
+    tenant.intake_enabled = True
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    client.get("/pilot/workshops/prince/operator")
+    with client.session_transaction() as sess:
+        headers = {"X-CSRF-Token": sess["_csrf_token"]}
+    root = "/pilot/workshops/prince"
+    intake = client.post(root + "/intake", json={
+        "full_name": "Synthetic consenting customer", "vehicle_brand": "Toyota",
+        "vehicle_model": "Camry", "privacy_notice_version": "prince-notice-v1",
+        "participation_confirmed": True,
+    }, headers=headers)
+    assert intake.status_code == 201
+    job = root + "/jobs/" + str(intake.json["job_id"])
+    draft = client.post(job + "/estimates", json={
+        "expected_version": 0, "discount_kobo": 0, "items": [{
+            "category": "labour", "description": "Inspect suspension",
+            "quantity": 1, "unit_kobo": 100000,
+        }],
+    }, headers=headers)
+    assert draft.status_code == 201
+    assert client.post(job + "/estimates/1/approve", json={
+        "approval_note": "Reviewed exact proposed inspection scope and charge.",
+    }, headers=headers).status_code == 200
+    path = job + "/estimates/1/authorization"
+    payload = {"expected_sequence": 0, "decision": "accepted", "channel": "written_message",
+               "evidence_reference": "Test record ABC confirms exact estimate version and amount.",
+               "customer_decision_attested": True}
+    assert client.post(path, json=payload, headers=headers).status_code == 404
+    app.config["PRINCE_LIVE_AUTHORIZATION_APPROVED"] = True
+    assert client.post(path, json={**payload, "channel": "phone"}, headers=headers).status_code == 400
+    assert client.post(path, json={**payload, "customer_decision_attested": False},
+                       headers=headers).status_code == 400
+    assert client.post(path, json={**payload, "evidence_reference": "Demo: sample authorization reference"},
+                       headers=headers).status_code == 400
+    assert client.post(path, json=payload, headers=headers).status_code == 201
+    assert client.get(path).json["state"] == "accepted"
+    assert client.post(path, json=payload, headers=headers).status_code == 409
+    assert client.post(path, json={**payload, "expected_sequence": 1, "decision": "withdrawn"},
+                       headers=headers).status_code == 201
+    assert client.get(path).json["state"] == "withdrawn"
+    assert client.get(job + "/invoice").status_code == 404
+    assert client.get(job + "/clinical").status_code == 404

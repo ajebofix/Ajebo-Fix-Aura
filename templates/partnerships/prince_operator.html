@@ -16,7 +16,7 @@
       <div class="brand-copy">
         <div class="eyebrow">AURA WORKSHOP PILOT</div>
         <h1>{{ workshop_name }}</h1>
-        <p>Restricted operator workspace</p>
+        <p>{{ "Vehicle records · Principal view" if can_manage_private else "Restricted operator workspace" }}</p>
       </div>
     </header>
 
@@ -28,6 +28,11 @@
         <button type="submit" style="border:1px solid #bd9c41;background:#fff;color:#5c4800;padding:6px 12px;border-radius:8px">Sign out of demo</button>
       </form>
     </div>
+    {% endif %}
+    {% if can_manage_private %}
+    <nav class="principal-back-nav">
+      <a href="{{ url_for('prince_pilot.principal_management', slug=slug) }}">← Principal Management Console</a>
+    </nav>
     {% endif %}
     <section class="intro">
       <div class="overline">PRIVATE WORKSPACE</div>
@@ -85,7 +90,7 @@
             <span>I have followed the approved privacy-notice and participation-verification procedure for this customer.</span>
           </label>
           <div id="intake-message" class="form-message" role="status" aria-live="polite"></div>
-          <button class="primary-btn" type="submit" id="submit-intake">Save customer &amp; lock private details</button>
+          <button class="primary-btn" type="submit" id="submit-intake">Register customer &amp; vehicle</button>
           <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. Only principals can maintain private contact details.</p>
         </form>
       {% endif %}

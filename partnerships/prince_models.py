@@ -110,6 +110,29 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrinceReceipt(db.Model):
+    """One training receipt per verified payment. Reversal never deletes it."""
+    __tablename__ = "prince_receipts"
+    id = db.Column(db.Integer, primary_key=True)
+    payment_id = db.Column(db.Integer, db.ForeignKey("prince_payments.id", ondelete="RESTRICT"),
+                           nullable=False, unique=True)
+    issued_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                   nullable=False)
+    issued_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PrincePaymentReversal(db.Model):
+    """Full allocation reversal, not a refund or money transfer."""
+    __tablename__ = "prince_payment_reversals"
+    id = db.Column(db.Integer, primary_key=True)
+    payment_id = db.Column(db.Integer, db.ForeignKey("prince_payments.id", ondelete="RESTRICT"),
+                           nullable=False, unique=True)
+    reversed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                    nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    reversed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class PrincePayment(db.Model):
     """Synthetic payment report with a one-time principal review; not a bank feed."""
     __tablename__ = "prince_payments"

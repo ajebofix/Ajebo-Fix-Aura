@@ -84,7 +84,7 @@
         <div class="management-job-footer">
           <a href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#job-record-{{ job.job_id }}">
             Open workshop record
-          </a>
+          </a> · <a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">Estimate</a>
         </div>
         <details class="lifecycle-panel">
           <summary>Job progression · {{ job.job_status | replace("_", " ") | title }}</summary>

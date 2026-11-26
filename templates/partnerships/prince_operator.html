@@ -113,6 +113,7 @@
           <li class="job-card">
             <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
             <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
+            <p class="tiny"><a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">View or draft estimate</a></p>
             {% if can_manage_private %}
             <details class="principal-private-panel">
               <summary>Private customer details · Principals only</summary>

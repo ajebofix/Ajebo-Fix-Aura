@@ -93,6 +93,7 @@ def pilot(app):
         db.session.commit()
         return {
             "seun_email": seun.email,
+            "other_email": other.email,
             "principal_email": principal.email,
             "stephen_email": stephen.email,
             "unassigned_id": own_job.id,
@@ -533,14 +534,27 @@ def test_principal_reassignment_revokes_old_operator_and_grants_new(pilot, app, 
             action="job_assignment_changed", target_id=job_id,
         ).count() == 1
     assert client.get(f"{URL}/jobs/{job_id}").status_code == 200
-    # Login separately after the principal test so session/cookie state is clean.
-    seun_client = app.test_client()
-    _login(seun_client, pilot["seun_email"])
-    assert seun_client.get(f"{URL}/jobs/{job_id}").status_code == 200
-    other_client = app.test_client()
-    _login(other_client, "pilot-3@example.test")
-    assert other_client.get(f"{URL}/jobs/{job_id}").status_code == 404
 
+    # Operator visibility is exercised in a separate, clean login fixture.
+
+
+
+@pytest.mark.parametrize(
+    ("operator_key", "expected_code"),
+    [("seun_email", 200), ("other_email", 404)],
+)
+def test_operator_visibility_immediately_reflects_current_assignment(
+    pilot, app, client, operator_key, expected_code,
+):
+    with app.app_context():
+        seun_id = User.query.filter_by(email=pilot["seun_email"]).one().id
+        job = db.session.get(PrinceJob, pilot["unassigned_id"])
+        job.assigned_user_id = seun_id
+        db.session.commit()
+    _login(client, pilot[operator_key])
+    assert client.get(
+        f"{URL}/jobs/{pilot['unassigned_id']}"
+    ).status_code == expected_code
 
 def test_principal_assignment_rejects_stale_or_duplicate_request(pilot, app, client):
     token = _login(client, pilot["stephen_email"])

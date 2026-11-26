@@ -52,7 +52,7 @@
   {% if principal and latest and latest.internally_approved %}
   <section class="panel management-panel">
     <h2>Customer authorization</h2>
-    <p class="muted">Separate from workshop approval. Principal-recorded declaration only; Aura has not independently authenticated the customer or evidence.</p>
+    <p class="muted">Separate from workshop approval. Principal-recorded declaration only; Aura has not independently authenticated the customer or evidence. Recorded acceptance is required before a job can move to In progress. A withdrawal places further chargeable work on hold.</p>
     <p><strong>{{ authorization[0].decision | replace("_", " ") | title if authorization else "Not recorded" }}</strong> · Version {{ latest.version }} · {{ money(latest.total_kobo) }}</p>
     {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
     <form class="assignment-form authorization-form" data-url="{{ url_for('prince_pilot.record_customer_authorization', slug=slug, job_id=job.job_id, version=latest.version) }}" data-sequence="{{ authorization[0].sequence if authorization else 0 }}">

@@ -466,7 +466,7 @@ def test_approved_print_quotation_principal_only_and_safe(approved_quotation, cl
     page = response.get_data(as_text=True)
     for required in ("TRAINING SAMPLE", "NOT FOR CUSTOMER ISSUE", "Synthetic Principal Owner",
                      "24,001.00", "25,001.00", "1,000.00", "Prince Automobile Clinic",
-                     "Customer authorization has not been recorded"):
+                     "This document does not establish customer authorization"):
         assert required in page
     for forbidden in ("internal review note not for quotation", "obsolete draft",
                       "phone_ciphertext", "home_address", "approved_by_user_id"):
@@ -500,3 +500,77 @@ def test_print_requires_approved_estimate(stage, client):
     ]}
     assert client.post(endpoint, json=payload, headers={"X-CSRF-Token": token}).status_code == 201
     assert client.get(endpoint + "/1/print").status_code == 404
+
+
+def _customer_decision(sequence=0, decision="accepted"):
+    return {
+        "expected_sequence": sequence, "decision": decision,
+        "channel": "written_message",
+        "evidence_reference": "Demo: fictional customer decision for the exact estimate.",
+        "customer_decision_attested": True,
+    }
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_principals_record_customer_decision_and_withdrawal(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    endpoint = approved_quotation + "/2/authorization"
+    assert client.get(endpoint).json == {"state": "not_recorded", "events": []}
+    payload = _customer_decision()
+    assert client.post(endpoint, json={**payload, "customer_decision_attested": False},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json={**payload, "evidence_reference": "Real customer approval"},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json=payload).status_code == 400
+    result = client.post(endpoint, json=payload, headers=headers)
+    assert result.status_code == 201
+    assert result.json["event"]["total_kobo"] == 2400100
+    assert result.json["event"]["estimate_version"] == 2
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 409
+    assert client.post(endpoint, json=_customer_decision(1, "accepted"),
+                       headers=headers).status_code == 409
+    assert client.post(endpoint, json=_customer_decision(1, "withdrawn"),
+                       headers=headers).status_code == 201
+    history = client.get(endpoint).json
+    assert history["state"] == "withdrawn"
+    assert [event["decision"] for event in history["events"]] == ["withdrawn", "accepted"]
+    job_path = approved_quotation.rsplit("/", 1)[0]
+    assert client.get(job_path).json["job_status"] == "draft"
+    assert "Customer authorization" in client.get(job_path + "/estimate").get_data(as_text=True)
+    assert "fictional customer decision" not in client.get(
+        approved_quotation + "/2/print").get_data(as_text=True)
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_operator_cannot_record_or_read_customer_authorization(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    endpoint = approved_quotation + "/2/authorization"
+    assert client.get(endpoint).status_code == 404
+    assert client.post(endpoint, json=_customer_decision(),
+                       headers={"X-CSRF-Token": token}).status_code == 404
+
+
+def test_authorization_denies_old_version_and_forced_amount(approved_quotation, client):
+    assert _log_in(client, role="principal").status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    assert client.post(approved_quotation + "/1/authorization", json=_customer_decision(),
+                       headers=headers).status_code == 404
+    endpoint = approved_quotation + "/2/authorization"
+    assert client.post(endpoint, json={**_customer_decision(), "total_kobo": 1},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json=_customer_decision(0, "withdrawn"),
+                       headers=headers).status_code == 409
+    assert client.post(endpoint, json=_customer_decision(0, "declined"),
+                       headers=headers).status_code == 201
+    assert client.post(endpoint, json=_customer_decision(1, "accepted"),
+                       headers=headers).status_code == 201

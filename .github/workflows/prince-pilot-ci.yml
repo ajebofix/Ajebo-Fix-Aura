@@ -21,6 +21,7 @@ on:
       - "migrations/versions/c84e91f6b207_prince_job_entry_history.py"
       - "migrations/versions/d390ab6f021c_prince_principal_entry_review.py"
       - "migrations/versions/e7b204ac9d31_prince_job_assignment_ledger.py"
+      - "migrations/versions/f12c9e48a620_prince_job_lifecycle.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
 
@@ -106,6 +107,7 @@ jobs:
               "prince_tenants", "prince_memberships", "prince_customers",
               "prince_vehicles", "prince_jobs", "prince_audit_events",
               "prince_job_entries", "prince_entry_reviews", "prince_job_assignments",
+              "prince_job_transitions",
           }
           assert required <= names, f"Missing Prince tables: {required - names}"
           fields = {c["name"] for c in inspector.get_columns("prince_customers")}
@@ -128,6 +130,12 @@ jobs:
                         for fk in inspector.get_foreign_keys("prince_job_assignments")]
           assert frozenset({"job_id", "tenant_id"}) in assign_fks
           assert frozenset({"tenant_id", "new_user_id"}) in assign_fks
+          lifecycle_cols = {col["name"] for col in inspector.get_columns("prince_job_transitions")}
+          assert {"tenant_id", "job_id", "previous_status", "new_status", "reason",
+                  "changed_by_user_id", "closure_disposition", "follow_up_plan"} <= lifecycle_cols
+          lifecycle_fks = [frozenset(fk["constrained_columns"])
+                           for fk in inspector.get_foreign_keys("prince_job_transitions")]
+          assert frozenset({"job_id", "tenant_id"}) in lifecycle_fks
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py

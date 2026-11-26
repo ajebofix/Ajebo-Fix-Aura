@@ -374,3 +374,38 @@ def test_staging_principal_assignment_requires_demo_reason(stage, client, app):
     assert client.post(endpoint, json=payload,
                        headers={"X-CSRF-Token": csrf}).status_code == 409
     assert client.get(P + "/manage").status_code == 200
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_staging_lifecycle_accepts_only_synthetic_decision(stage, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    endpoint = P + f"/jobs/{stage['job_id']}/lifecycle"
+    payload = {
+        "expected_status": "draft", "new_status": "awaiting_approval",
+        "reason": "Actual workshop decision without synthetic marker",
+        "closure_disposition": None, "follow_up_plan": None,
+    }
+    headers = {"X-CSRF-Token": token}
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 400
+    payload["reason"] = "Demo: request a principal review of fictional job scope."
+    result = client.post(endpoint, json=payload, headers=headers)
+    assert result.status_code == 200
+    assert result.json["job_status"] == "awaiting_approval"
+    assert client.get(endpoint).json["history"][0]["new_status"] == "awaiting_approval"
+
+
+def test_staging_operator_cannot_progress_assigned_job(stage, client):
+    assert _log_in(client, role="operator-a").status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    endpoint = P + f"/jobs/{stage['job_id']}/lifecycle"
+    assert client.get(endpoint).status_code == 404
+    assert client.post(endpoint, json={
+        "expected_status": "draft", "new_status": "awaiting_approval",
+        "reason": "Demo: operator attempts unauthorized status change.",
+        "closure_disposition": None, "follow_up_plan": None,
+    }, headers={"X-CSRF-Token": token}).status_code == 404

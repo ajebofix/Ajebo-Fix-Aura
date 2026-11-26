@@ -83,6 +83,18 @@
   for (const form of document.querySelectorAll(".lifecycle-form")) {
     const button = form.querySelector('button[type="submit"]');
     const feedback = form.querySelector(".lifecycle-feedback");
+    const disposition = form.elements.closure_disposition;
+    const plan = form.elements.follow_up_plan;
+    if (disposition && plan) {
+      const updatePlan = () => {
+        const needed = disposition.value === "follow_up_required";
+        plan.closest(".follow-up-fields").hidden = !needed;
+        plan.required = needed;
+        if (!needed) plan.value = "";
+      };
+      disposition.addEventListener("change", updatePlan);
+      updatePlan();
+    }
     let saving = false;
     form.addEventListener("submit", async event => {
       event.preventDefault();
@@ -92,6 +104,7 @@
         new_status: form.elements.new_status.value,
         reason: form.elements.reason.value.trim(),
         closure_disposition: form.elements.closure_disposition?.value || null,
+        follow_up_plan: plan?.value.trim() || null,
       };
       saving = true;
       button.disabled = true;

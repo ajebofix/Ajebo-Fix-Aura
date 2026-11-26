@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       SECRET_KEY: ci-secret-key-not-for-production
-      SQLALCHEMY_DATABASE_URI: sqlite:///:memory:
+      SQLALCHEMY_DATABASE_URI: "sqlite:///:memory:"
       APP_ENV: testing
       RATE_LIMIT_STORAGE_URI: memory://
       PROFILE_ENCRYPTION_KEY_VERSION: ci-v1

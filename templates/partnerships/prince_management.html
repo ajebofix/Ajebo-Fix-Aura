@@ -85,6 +85,50 @@
             Open workshop record
           </a>
         </div>
+        <details class="lifecycle-panel">
+          <summary>Job progression · {{ job.job_status | replace("_", " ") | title }}</summary>
+          <p class="tiny">Workshop status only. Not customer authorization, repair verification, roadworthiness or payment confirmation.</p>
+          <div class="lifecycle-steps" aria-label="Job lifecycle">
+          {% for stage in ["draft", "awaiting_approval", "approved", "in_progress", "closed"] %}
+            <span {% if stage == job.job_status %}class="current-stage" aria-current="step"{% endif %}>{{ stage | replace("_", " ") | title }}</span>
+          {% endfor %}
+          </div>
+          {% if job.next_status %}
+          <form class="lifecycle-form" data-lifecycle-url="{{ url_for('prince_pilot.principal_transition_job', slug=slug, job_id=job.job_id) }}" autocomplete="off">
+            <input type="hidden" name="expected_status" value="{{ job.job_status }}">
+            <input type="hidden" name="new_status" value="{{ job.next_status }}">
+            {% if job.next_status == "closed" %}
+            <label for="closure-{{ job.job_id }}">Closure disposition</label>
+            <select id="closure-{{ job.job_id }}" name="closure_disposition" required>
+              <option value="">Select disposition</option>
+              <option value="follow_up_required">Follow-up required · concerns remain</option>
+              <option value="no_follow_up_identified">No follow-up identified · reviewed work only</option>
+            </select>
+            <p class="tiny">Review all recorded statements first. Explain remaining concerns, next actions and any unclassified intake notes. Closing does not certify the vehicle safe.</p>
+            {% elif job.next_status == "approved" %}
+            <p class="tiny">Record the internally approved work scope. This does not record customer consent to work or charges.</p>
+            {% elif job.next_status == "in_progress" %}
+            <p class="tiny">Confirm an active operator is assigned and the approved scope has been communicated.</p>
+            {% endif %}
+            <label for="stage-reason-{{ job.job_id }}">{{ "Closure summary and follow-up plan" if job.next_status == "closed" else "Decision reason / internal work scope" }}</label>
+            <textarea id="stage-reason-{{ job.job_id }}" name="reason" rows="3" minlength="20" maxlength="1000" required placeholder="{{ 'Demo: describe the fictional decision and its basis' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Record the decision and its basis without private customer details' }}"></textarea>
+            {% if config.get("PRINCE_STAGING_LOCKDOWN") %}<p class="tiny">Begin with Demo: or Synthetic:.</p>{% endif %}
+            <div class="assign-controls"><button type="submit">Move to {{ job.next_status | replace("_", " ") | title }}</button><span class="lifecycle-feedback" role="status" aria-live="polite"></span></div>
+          </form>
+          {% else %}
+          <p class="tiny">Closed administratively. The recorded history remains available; reopening is not supported in this pilot.</p>
+          {% endif %}
+          <h3>Principal decision history</h3>
+          {% for event in job.transitions %}
+          <div class="lifecycle-event">
+            <strong>{{ event.previous_status | replace("_", " ") | title }} → {{ event.new_status | replace("_", " ") | title }}</strong>
+            {% if event.closure_disposition %}<p>{{ event.closure_disposition | replace("_", " ") | title }}</p>{% endif %}
+            <p>{{ event.reason }}</p><small>Principal account #{{ event.changed_by_user_id }} · {{ event.created_at }}</small>
+          </div>
+          {% else %}
+          <p class="tiny">No recorded progression decisions yet.</p>
+          {% endfor %}
+        </details>
         {% if job.job_status != "closed" %}
         <form class="assignment-form"
               data-assignment-url="{{ url_for('prince_pilot.principal_assign_job', slug=slug, job_id=job.job_id) }}"

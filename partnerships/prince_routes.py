@@ -24,7 +24,7 @@ from partnerships.prince_access_policy import (
 )
 from partnerships.prince_models import (
     PrinceAudit, PrinceCustomer, PrinceEntryReview, PrinceJob, PrinceJobAssignment,
-    PrinceJobEntry, PrinceMembership, PrinceTenant, PrinceVehicle,
+    PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrinceTenant, PrinceVehicle,
 )
 
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
@@ -41,6 +41,13 @@ ENTRY_CATEGORIES = {
     "reported_work": "Work reportedly performed (not verified)",
     "outstanding_concern": "Outstanding concern",
     "next_action": "Recommended next action",
+}
+
+JOB_NEXT_STATUS = {
+    "draft": "awaiting_approval",
+    "awaiting_approval": "approved",
+    "approved": "in_progress",
+    "in_progress": "closed",
 }
 
 INTAKE_FIELDS = frozenset({
@@ -207,16 +214,19 @@ def intake(slug):
     return jsonify(response), 201
 
 
-def _find_authorized_job(tenant, actor, job_id):
-    record = (
+def _find_authorized_job(tenant, actor, job_id, *, lock=False):
+    query = (
         db.session.query(PrinceJob, PrinceCustomer, PrinceVehicle)
         .join(PrinceCustomer, (PrinceCustomer.id == PrinceJob.customer_id) &
                               (PrinceCustomer.tenant_id == PrinceJob.tenant_id))
         .join(PrinceVehicle, (PrinceVehicle.id == PrinceJob.vehicle_id) &
                              (PrinceVehicle.tenant_id == PrinceJob.tenant_id))
         .filter(PrinceJob.id == job_id, PrinceJob.tenant_id == tenant.id)
-        .first()
+        .populate_existing()
     )
+    if lock:
+        query = query.with_for_update(of=PrinceJob)
+    record = query.first()
     if record is None:
         abort(404)
     job, customer, vehicle = record
@@ -320,7 +330,7 @@ def job_entries(slug, job_id):
 @prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/entries")
 def record_job_entry(slug, job_id):
     tenant, actor = _scope(slug)
-    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
     _allow(actor, tenant, PrinceAction.JOB_EDIT, job.assigned_user_id)
     if job.status == "closed":
         abort(403)
@@ -464,7 +474,7 @@ def principal_update_customer_private(slug, customer_id):
 @prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/entries/<int:entry_id>/review")
 def principal_review_entry(slug, job_id, entry_id):
     tenant, actor = _scope(slug)
-    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
     _allow(actor, tenant, PrinceAction.SERVICE_CONFIRM)
     if job.status == "closed":
         abort(403)
@@ -599,6 +609,13 @@ def principal_management(slug):
         row = _job_response(job, customer, vehicle)
         row["assignee_user_id"] = job.assigned_user_id
         row["assignee_name"] = assignee_name
+        row["next_status"] = JOB_NEXT_STATUS.get(job.status)
+        row["transitions"] = [
+            _transition_response(event)
+            for event in PrinceJobTransition.query.filter_by(
+                tenant_id=tenant.id, job_id=job.id,
+            ).order_by(PrinceJobTransition.id.asc()).all()
+        ]
         jobs.append(row)
 
     review_queue = (
@@ -703,7 +720,7 @@ def principal_assign_job(slug, job_id):
         job = (
             db.session.query(PrinceJob).filter_by(
                 id=job_id, tenant_id=tenant.id,
-            ).with_for_update().first()
+            ).populate_existing().with_for_update().first()
         )
         if job is None:
             abort(404)
@@ -737,4 +754,127 @@ def principal_assign_job(slug, job_id):
     except SQLAlchemyError:
         db.session.rollback()
         return jsonify({"error": "Job assignment could not be saved"}), 503
+    return jsonify(response), 200
+
+
+def _transition_response(event):
+    return {
+        "previous_status": event.previous_status,
+        "new_status": event.new_status,
+        "reason": _public_concern(event.reason),
+        "closure_disposition": event.closure_disposition,
+        "changed_by_user_id": event.changed_by_user_id,
+        "created_at": event.created_at.isoformat(timespec="seconds") + "Z",
+    }
+
+
+def _closure_blockers(tenant_id, job_id):
+    """Conservative administrative closure guard; not a diagnostic assessment."""
+    records = (
+        db.session.query(PrinceJobEntry, PrinceEntryReview)
+        .outerjoin(
+            PrinceEntryReview,
+            (PrinceEntryReview.entry_id == PrinceJobEntry.id)
+            & (PrinceEntryReview.tenant_id == PrinceJobEntry.tenant_id)
+            & (PrinceEntryReview.job_id == PrinceJobEntry.job_id),
+        )
+        .filter(PrinceJobEntry.tenant_id == tenant_id, PrinceJobEntry.job_id == job_id)
+        .all()
+    )
+    pending = sum(review is None for _, review in records)
+    unresolved = any(
+        entry.category in {"outstanding_concern", "temporary_intervention"}
+        or (review is not None and review.decision in {"needs_evidence", "not_confirmed"})
+        or (entry.category == "reported_work" and
+            (review is None or review.decision != "work_confirmed"))
+        for entry, review in records
+    )
+    work_confirmed = any(
+        entry.category == "reported_work"
+        and review is not None and review.decision == "work_confirmed"
+        for entry, review in records
+    )
+    return len(records), pending, unresolved, work_confirmed
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/lifecycle")
+def principal_job_lifecycle(slug, job_id):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.JOB_TRANSITION)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    events = PrinceJobTransition.query.filter_by(
+        tenant_id=tenant.id, job_id=job.id,
+    ).order_by(PrinceJobTransition.id.asc()).all()
+    return jsonify({
+        "job_id": job.id, "job_status": job.status,
+        "next_status": JOB_NEXT_STATUS.get(job.status),
+        "history": [_transition_response(event) for event in events],
+    })
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/lifecycle")
+def principal_transition_job(slug, job_id):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.JOB_TRANSITION)
+    if request.content_length and request.content_length > 2500:
+        abort(413)
+    data = request.get_json(silent=True)
+    if (not isinstance(data, dict) or set(data) != {
+            "expected_status", "new_status", "reason", "closure_disposition"}):
+        abort(400)
+    old, target = data["expected_status"], data["new_status"]
+    disposition = data["closure_disposition"]
+    if not isinstance(old, str) or not isinstance(target, str):
+        abort(400)
+    if JOB_NEXT_STATUS.get(old) != target:
+        abort(409)
+    reason = _text(data, "reason", 1000, required=True)
+    if len(reason) < 20 or PRIVATE_CONTACT_PATTERN.search(reason):
+        abort(400)
+    if (current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+            and not reason.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    if target == "closed":
+        if not isinstance(disposition, str) or disposition not in {
+                "follow_up_required", "no_follow_up_identified"}:
+            abort(400)
+    elif disposition is not None:
+        abort(400)
+
+    try:
+        job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
+        if job.status != old:
+            abort(409)
+        if target == "in_progress" and job.assigned_user_id not in {
+                person["id"] for person in _eligible_operators(tenant.id)}:
+            return jsonify({"error": "Assign an active operator before starting work."}), 409
+        if target == "closed":
+            count, pending, unresolved, work_confirmed = _closure_blockers(tenant.id, job.id)
+            if not count or pending:
+                return jsonify({
+                    "error": "Record and review workshop statements before closing.",
+                }), 409
+            if (disposition == "no_follow_up_identified"
+                    and (unresolved or not work_confirmed)):
+                return jsonify({
+                    "error": "Recorded concerns or unconfirmed work require a documented follow-up.",
+                }), 409
+        event = PrinceJobTransition(
+            tenant_id=tenant.id, job_id=job.id,
+            previous_status=old, new_status=target, reason=reason,
+            closure_disposition=disposition, changed_by_user_id=actor.user_id,
+        )
+        job.status = target
+        db.session.add(event)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "job_status_changed", "job", job.id)
+        response = {
+            "job_id": job.id, "job_status": target,
+            "next_status": JOB_NEXT_STATUS.get(target),
+            "event": _transition_response(event),
+        }
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Job status could not be saved"}), 503
     return jsonify(response), 200

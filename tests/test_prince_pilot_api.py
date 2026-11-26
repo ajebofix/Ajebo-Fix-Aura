@@ -8,7 +8,8 @@ import pytest
 from extensions import db
 from models import User
 from partnerships.prince_models import (
-    PrinceCustomer, PrinceJob, PrinceMembership, PrinceTenant, PrinceVehicle,
+    PrinceAudit, PrinceCustomer, PrinceJob, PrinceJobAssignment, PrinceMembership,
+    PrinceTenant, PrinceVehicle,
 )
 
 URL = "/pilot/workshops/prince"
@@ -478,3 +479,187 @@ def test_principal_cannot_confirm_nonwork_category(pilot, client):
     assert acknowledged.status_code == 201
     assert client.get(f"{URL}/jobs/{job_id}/entries").json["entries"][0][
         "principal_review"]["review_note"].startswith("Need further evidence")
+
+
+@pytest.mark.parametrize("principal_key", ["principal_email", "stephen_email"])
+def test_principal_management_console_is_tenant_scoped(pilot, client, principal_key):
+    _login(client, pilot[principal_key])
+    response = client.get(f"{URL}/manage")
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
+    assert "Principal management console" in page
+    assert "Unassigned Synthetic" in page
+    assert "Cross Tenant Synthetic" not in page
+    assert "Job assignments" in page
+    assert "Statements awaiting review" in page
+    assert "Synthetic Operator" in page
+    assert "Synthetic Other Operator" in page
+    assert "phone_ciphertext" not in page
+    assert "home_address" not in page
+
+
+def test_operator_cannot_open_management_console(pilot, client):
+    _login(client, pilot["seun_email"])
+    assert client.get(f"{URL}/manage").status_code == 404
+
+
+def test_principal_reassignment_revokes_old_operator_and_grants_new(pilot, app, client):
+    token = _login(client, pilot["principal_email"])
+    with app.app_context():
+        seun = User.query.filter_by(email=pilot["seun_email"]).one()
+        other = User.query.filter_by(name="Synthetic Other Operator").one()
+        seun_id, other_id = seun.id, other.id
+    job_id = pilot["unassigned_id"]
+    endpoint = f"{URL}/jobs/{job_id}/assignment"
+    response = client.post(endpoint, json={
+        "assignee_user_id": seun_id,
+        "expected_assignee_user_id": other_id,
+        "reason": "Operator available to continue inspection",
+    }, headers={"X-CSRF-Token": token})
+    assert response.status_code == 200
+    assert response.json["previous_assignee_user_id"] == other_id
+    assert response.json["assigned_user_id"] == seun_id
+    assert response.json["assigned_operator_name"] == "Synthetic Operator"
+    assert "phone_number" not in str(response.json)
+    with app.app_context():
+        record = db.session.get(PrinceJob, job_id)
+        assert record.assigned_user_id == seun_id
+        events = PrinceJobAssignment.query.filter_by(job_id=job_id).all()
+        assert len(events) == 1
+        assert events[0].previous_user_id == other_id
+        assert events[0].new_user_id == seun_id
+        assert events[0].reason == "Operator available to continue inspection"
+        assert PrinceAudit.query.filter_by(
+            action="job_assignment_changed", target_id=job_id,
+        ).count() == 1
+    assert client.get(f"{URL}/jobs/{job_id}").status_code == 200
+    # Login separately after the principal test so session/cookie state is clean.
+    seun_client = app.test_client()
+    _login(seun_client, pilot["seun_email"])
+    assert seun_client.get(f"{URL}/jobs/{job_id}").status_code == 200
+    other_client = app.test_client()
+    _login(other_client, "pilot-3@example.test")
+    assert other_client.get(f"{URL}/jobs/{job_id}").status_code == 404
+
+
+def test_principal_assignment_rejects_stale_or_duplicate_request(pilot, app, client):
+    token = _login(client, pilot["stephen_email"])
+    with app.app_context():
+        seun_id = User.query.filter_by(email=pilot["seun_email"]).one().id
+        other_id = User.query.filter_by(name="Synthetic Other Operator").one().id
+    endpoint = f"{URL}/jobs/{pilot['unassigned_id']}/assignment"
+    payload = {
+        "assignee_user_id": seun_id,
+        "expected_assignee_user_id": other_id,
+        "reason": "Reallocate due to available specialist capacity",
+    }
+    assert client.post(endpoint, json=payload,
+                       headers={"X-CSRF-Token": token}).status_code == 200
+    assert client.post(endpoint, json=payload,
+                       headers={"X-CSRF-Token": token}).status_code == 409
+    with app.app_context():
+        assert PrinceJobAssignment.query.filter_by(
+            job_id=pilot["unassigned_id"]
+        ).count() == 1
+
+
+def test_principal_assignment_rejects_outside_tenant_and_inactive_operator(pilot, app, client):
+    token = _login(client, pilot["principal_email"])
+    with app.app_context():
+        other = User.query.filter_by(name="Synthetic Other Operator").one()
+        stranger = User.query.filter_by(name="Synthetic Stranger").one()
+        seun = User.query.filter_by(email=pilot["seun_email"]).one()
+        other_id, stranger_id, seun_id = other.id, stranger.id, seun.id
+    endpoint = f"{URL}/jobs/{pilot['unassigned_id']}/assignment"
+    payload = {
+        "assignee_user_id": stranger_id,
+        "expected_assignee_user_id": other_id,
+        "reason": "Assign outside workshop for testing",
+    }
+    assert client.post(endpoint, json=payload,
+                       headers={"X-CSRF-Token": token}).status_code == 404
+    with app.app_context():
+        actor = User.query.filter_by(email=pilot["seun_email"]).one()
+        member = PrinceMembership.query.filter_by(user_id=actor.id).one()
+        member.active = False
+        db.session.commit()
+    payload["assignee_user_id"] = seun_id
+    assert client.post(endpoint, json=payload,
+                       headers={"X-CSRF-Token": token}).status_code == 404
+    with app.app_context():
+        assert PrinceJobAssignment.query.filter_by(
+            job_id=pilot["unassigned_id"]
+        ).count() == 0
+
+
+def test_assignment_denies_closed_job_and_unapproved_inputs(pilot, app, client):
+    token = _login(client, pilot["principal_email"])
+    with app.app_context():
+        other_id = User.query.filter_by(name="Synthetic Other Operator").one().id
+        seun_id = User.query.filter_by(email=pilot["seun_email"]).one().id
+    endpoint = f"{URL}/jobs/{pilot['unassigned_id']}/assignment"
+    payload = {
+        "assignee_user_id": seun_id,
+        "expected_assignee_user_id": other_id,
+        "reason": "Reassign job to available technician",
+    }
+    for invalid in [
+        {**payload, "reason": "short"},
+        {**payload, "reason": "Call +2348012345678 to discuss"},
+        {**payload, "assignee_user_id": True},
+        {**payload, "assignee_user_id": str(seun_id)},
+        {**payload, "extra": "malicious"},
+    ]:
+        assert client.post(endpoint, json=invalid,
+                           headers={"X-CSRF-Token": token}).status_code == 400
+    assert client.post(endpoint, json=payload).status_code == 400
+    with app.app_context():
+        job = db.session.get(PrinceJob, pilot["unassigned_id"])
+        job.status = "closed"
+        db.session.commit()
+    assert client.post(endpoint, json=payload,
+                       headers={"X-CSRF-Token": token}).status_code == 409
+    with app.app_context():
+        assert PrinceJobAssignment.query.filter_by(
+            job_id=pilot["unassigned_id"]
+        ).count() == 0
+
+
+def test_operator_cannot_reassign_even_own_job(pilot, app, client):
+    token = _login(client, pilot["seun_email"])
+    with app.app_context():
+        other_id = User.query.filter_by(name="Synthetic Other Operator").one().id
+        seun_id = User.query.filter_by(email=pilot["seun_email"]).one().id
+    result = client.post(f"{URL}/jobs/{pilot['unassigned_id']}/assignment",
+                         json={
+                             "assignee_user_id": seun_id,
+                             "expected_assignee_user_id": other_id,
+                             "reason": "Reassign due to testing restriction",
+                         }, headers={"X-CSRF-Token": token})
+    assert result.status_code == 404
+
+
+def test_principal_management_review_queue_excludes_attested_entry(pilot, app, client):
+    token = _login(client, pilot["stephen_email"])
+    job_id = pilot["unassigned_id"]
+    created = client.post(f"{URL}/jobs/{job_id}/entries", json={
+        "category": "reported_work",
+        "body": "Reported repair is pending principal inspection",
+    }, headers={"X-CSRF-Token": token})
+    assert created.status_code == 201
+    before = client.get(f"{URL}/manage").get_data(as_text=True)
+    assert "Statements awaiting review" in before
+    assert "Work reportedly performed (not verified)" in before
+    entry_id = created.json["entry"]["id"]
+    reviewed = client.post(
+        f"{URL}/jobs/{job_id}/entries/{entry_id}/review",
+        json={
+            "decision": "needs_evidence",
+            "basis": "not_applicable",
+            "review_note": "Please provide additional workshop evidence before approval",
+        },
+        headers={"X-CSRF-Token": token},
+    )
+    assert reviewed.status_code == 201
+    after = client.get(f"{URL}/manage").get_data(as_text=True)
+    assert "No pending principal decisions" in after

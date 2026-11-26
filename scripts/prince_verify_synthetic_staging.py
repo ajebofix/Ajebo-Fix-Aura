@@ -337,6 +337,10 @@ def verify():
         steph = stephen.get(root + "/data", base_url=BASE)
         if dad.status_code != 200 or steph.status_code != 200 or dad.json != steph.json:
             raise RuntimeError("Prince clinical candidate principal parity failed.")
+        readiness = dad.json["identity_readiness"]
+        if (readiness["state"] != "blocked" or readiness["destination_link_enabled"]
+                or readiness["workshop_vin_verified"] or readiness["owner_confirmation_available"]):
+            raise RuntimeError("Prince identity linking must remain disabled in training.")
         for client in (principal, stephen):
             if client.get(root, base_url=BASE).status_code != 200:
                 raise RuntimeError("Prince clinical workspace unavailable.")

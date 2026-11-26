@@ -315,7 +315,21 @@ def verify():
             for client in (op_a, op_b):
                 if client.get(path, base_url=BASE).status_code != 404:
                     raise RuntimeError("Prince operator received confidential receipt.")
-    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, invoices, payments, receipts, reversals and privacy.")
+    dad = principal.get("/pilot/workshops/prince/finance/data", base_url=BASE)
+    steph = stephen.get("/pilot/workshops/prince/finance/data", base_url=BASE)
+    if dad.status_code != 200 or steph.status_code != 200 or dad.json != steph.json:
+        raise RuntimeError("Prince financial dashboard principal parity failed.")
+    totals = dad.json["totals"]
+    if totals["invoiced"] - totals["verified"] != totals["outstanding"]:
+        raise RuntimeError("Prince financial dashboard reconciliation failed.")
+    for client in (principal, stephen):
+        if client.get("/pilot/workshops/prince/finance", base_url=BASE).status_code != 200:
+            raise RuntimeError("Prince principal finance page unavailable.")
+    for client in (op_a, op_b):
+        for path in ("/pilot/workshops/prince/finance", "/pilot/workshops/prince/finance/data"):
+            if client.get(path, base_url=BASE).status_code != 404:
+                raise RuntimeError("Prince operator received financial dashboard access.")
+    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, invoices, payments, receipts, reversals, finance and privacy.")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,8 @@ from partnerships.prince_access_policy import (
 from partnerships.prince_models import (
     PrinceAudit, PrinceCustomer, PrinceCustomerAuthorization, PrinceEntryReview,
     PrinceEstimate, PrinceInvoice, PrinceJob, PrinceJobAssignment,
-    PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrincePayment, PrinceTenant, PrinceVehicle,
+    PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrincePayment,
+    PrincePaymentReversal, PrinceReceipt, PrinceTenant, PrinceVehicle,
 )
 
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
@@ -1369,17 +1370,29 @@ def _payment_summary(job, invoice):
     records = PrincePayment.query.populate_existing().filter_by(
         tenant_id=job.tenant_id, job_id=job.id,
     ).order_by(PrincePayment.id.asc()).all()
-    verified = sum(p.amount_kobo for p in records if p.decision == "verified")
+    ids = [p.id for p in records]
+    reversals = {r.payment_id: r for r in PrincePaymentReversal.query.filter(
+        PrincePaymentReversal.payment_id.in_(ids)).all()} if ids else {}
+    receipts = {r.payment_id: r for r in PrinceReceipt.query.filter(
+        PrinceReceipt.payment_id.in_(ids)).all()} if ids else {}
+    verified = sum(p.amount_kobo for p in records if p.decision == "verified" and p.id not in reversals)
+    reversed_kobo = sum(p.amount_kobo for p in records if p.id in reversals)
     pending = sum(p.amount_kobo for p in records if p.decision is None)
     return {
         "invoice_total_kobo": invoice.total_kobo, "verified_kobo": verified,
         "pending_kobo": pending, "outstanding_kobo": invoice.total_kobo - verified,
+        "reversed_kobo": reversed_kobo,
         "status": "settled" if verified == invoice.total_kobo else (
             "part_paid" if verified else "unpaid"
         ),
         "records": [{
             "id": p.id, "reference": p.reference, "method": p.method,
             "amount_kobo": p.amount_kobo, "decision": p.decision or "pending",
+            "reversed": p.id in reversals,
+            "reversal_reason": _public_concern(reversals[p.id].reason) if p.id in reversals else None,
+            "reversed_at": reversals[p.id].reversed_at.isoformat(timespec="seconds") + "Z" if p.id in reversals else None,
+            "reversed_by_user_id": reversals[p.id].reversed_by_user_id if p.id in reversals else None,
+            "receipt_reference": f"DEMO-RCT-PAC-{receipts[p.id].id:06d}" if p.id in receipts else None,
             "reported_by_user_id": p.reported_by_user_id,
             "reported_at": p.reported_at.isoformat(timespec="seconds") + "Z",
             "reviewed_by_user_id": p.reviewed_by_user_id,
@@ -1476,3 +1489,90 @@ def review_payment(slug, job_id, payment_id):
         db.session.rollback()
         return jsonify({"error": "Payment review could not be saved."}), 503
     return jsonify(result)
+
+
+def _receipt_payment(slug, job_id, payment_id, *, lock=False):
+    tenant, actor, job, invoice = _payment_scope(slug, job_id, lock=lock)
+    payment = PrincePayment.query.populate_existing().filter_by(
+        id=payment_id, tenant_id=tenant.id, job_id=job.id,
+    ).first()
+    if payment is None:
+        abort(404)
+    return tenant, actor, job, invoice, payment
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/invoice/payments/<int:payment_id>/receipt")
+def issue_receipt(slug, job_id, payment_id):
+    tenant, actor, job, _, payment = _receipt_payment(slug, job_id, payment_id, lock=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"receipt_attested"} or data["receipt_attested"] is not True:
+        abort(400)
+    if (payment.decision != "verified"
+            or PrincePaymentReversal.query.filter_by(payment_id=payment.id).first()
+            or PrinceReceipt.query.filter_by(payment_id=payment.id).first()):
+        abort(409)
+    try:
+        receipt = PrinceReceipt(payment_id=payment.id, issued_by_user_id=actor.user_id)
+        db.session.add(receipt)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "training_receipt_issued", "receipt", receipt.id)
+        result = {"reference": f"DEMO-RCT-PAC-{receipt.id:06d}", "payment_id": payment.id}
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Receipt could not be issued."}), 503
+    return jsonify(result), 201
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/invoice/payments/<int:payment_id>/reverse")
+def reverse_payment_allocation(slug, job_id, payment_id):
+    tenant, actor, job, invoice, payment = _receipt_payment(slug, job_id, payment_id, lock=True)
+    if request.content_length and request.content_length > 2400:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"reason", "reversal_attested"}:
+        abort(400)
+    reason = _text(data, "reason", 900, required=True)
+    if (data["reversal_attested"] is not True or len(reason) < 20
+            or PRIVATE_CONTACT_PATTERN.search(reason)
+            or not reason.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    if payment.decision != "verified" or PrincePaymentReversal.query.filter_by(payment_id=payment.id).first():
+        abort(409)
+    try:
+        reversal = PrincePaymentReversal(
+            payment_id=payment.id, reversed_by_user_id=actor.user_id, reason=reason,
+        )
+        db.session.add(reversal)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "training_payment_allocation_reversed", "payment", payment.id)
+        result = _payment_summary(job, invoice)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Reversal could not be recorded."}), 503
+    return jsonify(result)
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/invoice/payments/<int:payment_id>/receipt/print")
+def print_receipt(slug, job_id, payment_id):
+    tenant, actor, job, invoice, payment = _receipt_payment(slug, job_id, payment_id)
+    receipt = PrinceReceipt.query.filter_by(payment_id=payment.id).first()
+    if receipt is None or payment.decision != "verified":
+        abort(404)
+    reversal = PrincePaymentReversal.query.filter_by(payment_id=payment.id).first()
+    # Never include account identities, bank references, contact data or private review notes.
+    _, customer, vehicle = _find_authorized_job(tenant, actor, job.id)
+    response = current_app.make_response(render_template(
+        "partnerships/prince_receipt_print.html", slug=slug, workshop_name=tenant.display_name,
+        job_id=job.id, customer=_public_concern(customer.full_name),
+        vehicle=f"{_public_concern(vehicle.brand)} {_public_concern(vehicle.model)}",
+        reference=f"DEMO-RCT-PAC-{receipt.id:06d}",
+        invoice_reference=f"DEMO-INV-PAC-{invoice.job_id:06d}",
+        amount_kobo=payment.amount_kobo, method=payment.method,
+        issued_date=receipt.issued_at.strftime("%d %B %Y"), reversed=bool(reversal),
+    ))
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response

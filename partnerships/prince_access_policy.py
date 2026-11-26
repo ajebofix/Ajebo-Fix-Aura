@@ -38,7 +38,7 @@ class PrinceAction(str, Enum):
 # Deliberately minimal: a full name is still personal data.
 OPERATOR_JOB_PUBLIC_FIELDS = frozenset({
     "customer_id", "full_name", "job_id", "vehicle_id",
-    "brand", "model", "year", "job_status", "reported_concern",
+    "brand", "model", "year", "job_status", "reported_concern", "work_authorization",
 })
 OPERATOR_INTAKE_INPUT_FIELDS = frozenset({
     "full_name", "vehicle_brand", "vehicle_model", "vehicle_year",

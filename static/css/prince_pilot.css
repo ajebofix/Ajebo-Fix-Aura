@@ -47,3 +47,5 @@
 .principal-review-result{background:#e6f4ec;color:#214f3c;border:1px solid #b7dbc8;border-radius:10px;padding:11px;margin-top:13px;font-size:12px}
 .principal-review-result p{font-size:12px;margin:5px 0}
 .principal-review-result small{font-size:10px}
+
+.principal-back-nav{margin:0 0 12px}.principal-back-nav a{display:inline-flex;text-decoration:none;color:#21536e;background:#fff;border:1px solid #dce6ed;border-radius:10px;font-size:12px;font-weight:750;padding:10px 13px}

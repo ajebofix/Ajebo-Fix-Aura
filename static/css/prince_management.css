@@ -1,0 +1,56 @@
+/* Prince principal console: mobile-first, no external assets or trackers. */
+.management-shell{max-width:980px}
+.management-hero{display:flex;flex-direction:column;gap:18px;background:#102f44;border-radius:21px;padding:25px 22px;color:#fff}
+.management-hero .overline{color:#86bfd2}
+.management-hero h2{font-size:28px;line-height:1.16;margin:8px 0;letter-spacing:-.03em}
+.management-hero p{color:#c5d9e4;font-size:13px;margin:0;max-width:650px;line-height:1.65}
+.hero-actions{display:flex;flex-wrap:wrap;gap:9px}
+.hero-link{display:inline-flex;justify-content:center;align-items:center;text-decoration:none;border-radius:11px;background:#e5f4f7;color:#184455;padding:11px 14px;font-size:12px;font-weight:750}
+.hero-link.secondary{border:1px solid #89a8b9;background:transparent;color:#f8fcff}
+.management-test-banner{background:#fff7e7;color:#6f551d;border:1px solid #e8d3a3;border-radius:12px;margin:15px 0;padding:14px;font-size:12px}
+.management-test-banner form{display:inline}
+.management-test-banner button{background:transparent;border:0;text-decoration:underline;color:#604614;font:inherit;font-weight:750;cursor:pointer;padding:5px 8px}
+.management-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:15px 0}
+.kpi{background:#fff;border:1px solid #dce7ed;border-radius:15px;padding:17px;display:flex;flex-direction:column;min-height:115px}
+.kpi span{font-size:11px;color:#597184;font-weight:700}
+.kpi strong{font-size:29px;letter-spacing:-.05em;margin:4px 0;color:#143349}
+.kpi small{font-size:10px;color:#8192a0;line-height:1.4}
+.management-tabs{display:flex;gap:10px;margin:14px 0;overflow-x:auto;scrollbar-width:none}
+.management-tabs a{background:#fff;border:1px solid #d8e5eb;border-radius:999px;padding:9px 12px;white-space:nowrap;font-size:12px;text-decoration:none;font-weight:650;color:#3f6275}
+.management-panel{scroll-margin-top:20px}
+.management-panel .section-top h2{margin-bottom:5px}
+.management-panel .muted{margin:6px 0 18px}
+.management-job-list{display:grid;gap:13px}
+.management-job{border:1px solid #dce7ec;background:#fbfdfe;border-radius:14px;padding:15px}
+.management-job-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.management-job-heading strong{font-size:14px;color:#23394c}
+.vehicle-label{font-size:12px;color:#617a8b;margin:5px 0 0}
+.job-status{font-size:10px;white-space:nowrap;border-radius:999px;background:#e8f0f5;color:#476675;padding:5px 9px;font-weight:700}
+.management-job-details{display:flex;gap:8px 18px;flex-wrap:wrap;font-size:11px;color:#637c8d;margin-top:14px}
+.management-job-details strong{color:#274859}
+.management-job-footer{padding:12px 0;margin-top:12px;border-top:1px solid #e2ebf0}
+.management-job-footer a{font-size:12px;font-weight:750;color:#125a80;text-underline-offset:3px}
+.assignment-form{background:#f1f7fa;border:1px solid #d6e7ee;padding:13px;border-radius:11px}
+.assignment-form label{display:block;font-size:12px;font-weight:700;color:#315365;margin:9px 0 5px}
+.assignment-form select,.assignment-form textarea{display:block;width:100%;border:1px solid #bcd1dd;background:#fff;color:#183e53;border-radius:9px;font:inherit;font-size:13px;padding:12px;resize:vertical}
+.assignment-form select:focus-visible,.assignment-form textarea:focus-visible{outline:2px solid #257b9c;outline-offset:1px}
+.assignment-form small{font-size:10px;display:block;color:#657f8d;margin:9px 0}
+.assign-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px}
+.assign-controls button{border:0;border-radius:9px;background:#184c65;color:#fff;font-size:12px;font-weight:750;padding:12px 14px;cursor:pointer}
+.assign-controls button:disabled{opacity:.55;cursor:wait}
+.assignment-feedback{font-size:11px;color:#396b75;flex:1;min-width:130px}
+.pending-list,.staff-list{list-style:none;padding:0;margin:0}
+.pending-list li{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid #e5ecef}
+.pending-list li:last-child{border-bottom:0}
+.pending-list li div{min-width:0;display:flex;flex-direction:column;gap:4px}
+.pending-list li strong{font-size:12px;color:#1a3b4e}
+.pending-list li span{font-size:11px;color:#668094}
+.pending-list li a{font-size:11px;font-weight:750;color:#176385;white-space:nowrap}
+.pending-list li.all-clear{color:#748794;font-size:12px}
+.staff-list li{display:flex;align-items:center;gap:10px;font-size:12px;padding:12px 0;border-bottom:1px solid #e7eef1}
+.staff-list li:last-child{border-bottom:0}
+.staff-list li strong{flex:1}
+.staff-list li>span:last-child{color:#6a8796;font-size:11px}
+.staff-dot{width:9px;height:9px;border-radius:50%;background:#2b9c64}
+.limit-note{font-size:12px;color:#845b14;background:#fff5df;border-radius:10px;padding:10px}
+@media(min-width:700px){.management-hero{flex-direction:row;align-items:center;justify-content:space-between;padding:28px}.management-hero h2{font-size:34px}.hero-actions{justify-content:flex-end;flex-shrink:0;max-width:250px}.management-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.management-job-list{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.management-panel{padding:26px}}

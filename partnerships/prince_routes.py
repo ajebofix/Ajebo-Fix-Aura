@@ -26,7 +26,7 @@ from partnerships.prince_access_policy import (
 from partnerships.prince_models import (
     PrinceAudit, PrinceCustomer, PrinceCustomerAuthorization, PrinceEntryReview,
     PrinceEstimate, PrinceInvoice, PrinceJob, PrinceJobAssignment,
-    PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrinceTenant, PrinceVehicle,
+    PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrincePayment, PrinceTenant, PrinceVehicle,
 )
 
 prince_pilot_bp = Blueprint("prince_pilot", __name__, url_prefix="/pilot/workshops")
@@ -1306,6 +1306,7 @@ def invoice_workspace(slug, job_id):
         estimate=_estimate_response(estimate) if estimate else None,
         authorization_sequence=current.sequence if current else 0,
         can_issue=can_issue, categories=ESTIMATE_CATEGORIES,
+        payments=_payment_summary(job, record) if record else None,
     )
 
 
@@ -1362,3 +1363,116 @@ def issue_invoice(slug, job_id):
         db.session.rollback()
         return jsonify({"error": "Training invoice could not be created."}), 503
     return jsonify({"invoice": result}), 201
+
+
+def _payment_summary(job, invoice):
+    records = PrincePayment.query.populate_existing().filter_by(
+        tenant_id=job.tenant_id, job_id=job.id,
+    ).order_by(PrincePayment.id.asc()).all()
+    verified = sum(p.amount_kobo for p in records if p.decision == "verified")
+    pending = sum(p.amount_kobo for p in records if p.decision is None)
+    return {
+        "invoice_total_kobo": invoice.total_kobo, "verified_kobo": verified,
+        "pending_kobo": pending, "outstanding_kobo": invoice.total_kobo - verified,
+        "status": "settled" if verified == invoice.total_kobo else (
+            "part_paid" if verified else "unpaid"
+        ),
+        "records": [{
+            "id": p.id, "reference": p.reference, "method": p.method,
+            "amount_kobo": p.amount_kobo, "decision": p.decision or "pending",
+            "reported_by_user_id": p.reported_by_user_id,
+            "reported_at": p.reported_at.isoformat(timespec="seconds") + "Z",
+            "reviewed_by_user_id": p.reviewed_by_user_id,
+            "reviewed_at": p.reviewed_at.isoformat(timespec="seconds") + "Z" if p.reviewed_at else None,
+            "review_note": _public_concern(p.review_note) if p.review_note else None,
+        } for p in records],
+    }
+
+
+def _payment_scope(slug, job_id, *, lock=False):
+    tenant, actor, job, _, _ = _invoice_scope(slug, job_id, lock=lock)
+    _allow(actor, tenant, PrinceAction.PAYMENT_VERIFY)
+    invoice = _invoice_for_job(job)
+    if invoice is None:
+        abort(404)
+    return tenant, actor, job, invoice
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/invoice/payments")
+def payment_history(slug, job_id):
+    _, _, job, invoice = _payment_scope(slug, job_id)
+    return jsonify(_payment_summary(job, invoice))
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/invoice/payments")
+def report_payment(slug, job_id):
+    tenant, actor, job, invoice = _payment_scope(slug, job_id, lock=True)
+    if request.content_length and request.content_length > 1500:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"reference", "method", "amount_kobo"}:
+        abort(400)
+    reference = _text(data, "reference", 64, required=True).upper()
+    if not re.fullmatch(r"DEMO-[A-Z][A-Z0-9-]{2,47}", reference):
+        abort(400)
+    method = _text(data, "method", 12, required=True)
+    amount = _estimate_amount(data["amount_kobo"])
+    if method not in {"cash", "transfer"} or amount <= 0:
+        abort(400)
+    if amount > invoice.total_kobo:
+        return jsonify({"error": "Overpayments require a separate reconciliation workflow."}), 409
+    if PrincePayment.query.filter_by(tenant_id=tenant.id, reference=reference).first():
+        return jsonify({"error": "This fictional payment reference has already been recorded."}), 409
+    try:
+        payment = PrincePayment(
+            tenant_id=tenant.id, job_id=job.id, reference=reference,
+            method=method, amount_kobo=amount, reported_by_user_id=actor.user_id,
+        )
+        db.session.add(payment)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "training_payment_reported", "payment", payment.id)
+        result = _payment_summary(job, invoice)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Payment report not recorded; reload to check its reference."}), 409
+    return jsonify(result), 201
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/invoice/payments/<int:payment_id>/review")
+def review_payment(slug, job_id, payment_id):
+    tenant, actor, job, invoice = _payment_scope(slug, job_id, lock=True)
+    if request.content_length and request.content_length > 2400:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"decision", "review_note", "review_attested"}:
+        abort(400)
+    decision = _text(data, "decision", 12, required=True)
+    note = _text(data, "review_note", 900, required=True)
+    if (decision not in {"verified", "rejected"} or data["review_attested"] is not True
+            or len(note) < 20 or PRIVATE_CONTACT_PATTERN.search(note)
+            or not note.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    payment = PrincePayment.query.populate_existing().filter_by(
+        id=payment_id, tenant_id=tenant.id, job_id=job.id,
+    ).first()
+    if payment is None:
+        abort(404)
+    if payment.decision is not None:
+        abort(409)
+    summary = _payment_summary(job, invoice)
+    if decision == "verified" and payment.amount_kobo > summary["outstanding_kobo"]:
+        return jsonify({"error": "Payment exceeds the unallocated invoice balance; reconcile separately."}), 409
+    try:
+        payment.decision = decision
+        payment.review_note = note
+        payment.reviewed_by_user_id = actor.user_id
+        payment.reviewed_at = datetime.utcnow()
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "training_payment_" + decision, "payment", payment.id)
+        result = _payment_summary(job, invoice)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Payment review could not be saved."}), 503
+    return jsonify(result)

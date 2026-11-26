@@ -239,3 +239,42 @@
     });
   }
 })();
+
+
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  for (const form of document.querySelectorAll(".authorization-form")) {
+    const button = form.querySelector('button[type="submit"]');
+    const feedback = form.querySelector(".authorization-feedback");
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!csrf || button.disabled || !form.reportValidity()) return;
+      button.disabled = true;
+      feedback.textContent = "Recording customer decision…";
+      try {
+        const response = await fetch(form.dataset.url, {
+          method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+          body: JSON.stringify({
+            expected_sequence: Number(form.dataset.sequence),
+            decision: form.elements.decision.value,
+            channel: form.elements.channel.value,
+            evidence_reference: form.elements.evidence_reference.value.trim(),
+            customer_decision_attested: form.elements.customer_decision_attested.checked,
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.event) {
+          feedback.textContent = result.error || "Decision not saved. Reload and review the current record.";
+          return;
+        }
+        window.location.reload();
+      } catch {
+        feedback.textContent = "Could not confirm the save. Reload before retrying.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+})();

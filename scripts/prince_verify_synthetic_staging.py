@@ -27,7 +27,7 @@ def verify():
         if not ({"prince_tenants", "prince_memberships", "prince_customers",
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
                 "prince_job_entries", "prince_job_assignments", "prince_job_transitions",
-                "prince_estimates"} <= tables):
+                "prince_estimates", "prince_customer_authorizations"} <= tables):
             raise RuntimeError("Prince staging verification failed at check 1 (source 27).")
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         if not (tenant.active and tenant.intake_enabled):
@@ -236,7 +236,38 @@ def verify():
         for client in (principal, stephen):
             if client.get(root + "/estimate", base_url=BASE).status_code != 200:
                 raise RuntimeError("Prince principal estimate page unavailable.")
-    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, assignments and privacy.")
+    # Verify the current work authorization gate and private decision endpoints
+    # without creating a customer decision or changing any existing demo job.
+    for job in jobs_all.json["jobs"]:
+        root = f"/pilot/workshops/prince/jobs/{job['job_id']}"
+        state = job["work_authorization"]
+        if state not in {"estimate_required", "not_recorded", "accepted", "declined", "withdrawn"}:
+            raise RuntimeError("Prince job authorization state is invalid.")
+        versions = principal.get(root + "/estimates", base_url=BASE).json["versions"]
+        latest = versions[0] if versions else None
+        if not latest or not latest["internally_approved"]:
+            if state != "estimate_required":
+                raise RuntimeError("Prince job has authorization without approved estimate.")
+            for client in (principal, stephen):
+                if client.get(root + "/estimates/1/print", base_url=BASE).status_code != 404:
+                    raise RuntimeError("Prince draft estimate print unexpectedly accessible.")
+            continue
+        auth_url = root + f"/estimates/{latest['version']}/authorization"
+        dad_response = principal.get(auth_url, base_url=BASE)
+        stephen_response = stephen.get(auth_url, base_url=BASE)
+        if dad_response.status_code != 200 or stephen_response.status_code != 200:
+            raise RuntimeError("Prince principal authorization history unavailable.")
+        if dad_response.json != stephen_response.json or dad_response.json["state"] != state:
+            raise RuntimeError("Prince authorization state or principal parity mismatch.")
+        for client in (op_a, op_b):
+            if client.get(auth_url, base_url=BASE).status_code != 404:
+                raise RuntimeError("Prince operator received confidential decision history.")
+            if client.get(root + f"/estimates/{latest['version']}/print", base_url=BASE).status_code != 404:
+                raise RuntimeError("Prince operator received printable quotation.")
+        for client in (principal, stephen):
+            if client.get(root + f"/estimates/{latest['version']}/print", base_url=BASE).status_code != 200:
+                raise RuntimeError("Prince principal print preview unavailable.")
+    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, print access, assignments and privacy.")
 
 
 if __name__ == "__main__":

@@ -24,7 +24,8 @@ from partnerships.prince_access_policy import (
     redact_operator_job,
 )
 from partnerships.prince_models import (
-    PrinceAudit, PrinceCustomer, PrinceEntryReview, PrinceEstimate, PrinceJob, PrinceJobAssignment,
+    PrinceAudit, PrinceCustomer, PrinceCustomerAuthorization, PrinceEntryReview,
+    PrinceEstimate, PrinceJob, PrinceJobAssignment,
     PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrinceTenant, PrinceVehicle,
 )
 
@@ -127,6 +128,7 @@ def _job_response(job: PrinceJob, customer: PrinceCustomer, vehicle: PrinceVehic
         "model": vehicle.model,
         "year": vehicle.year,
         "job_status": job.status,
+        "work_authorization": _work_authorization(job),
         "reported_concern": _public_concern(job.reported_concern),
     })
 
@@ -882,7 +884,12 @@ def principal_transition_job(slug, job_id):
         if target == "in_progress" and job.assigned_user_id not in {
                 person["id"] for person in _eligible_operators(tenant.id)}:
             return jsonify({"error": "Assign an active operator before starting work."}), 409
+        if target == "in_progress" and _work_authorization(job) != "accepted":
+            return jsonify({"error": "Record customer acceptance of the current approved estimate before starting work."}), 409
         if target == "closed":
+            if (disposition == "no_follow_up_identified"
+                    and _work_authorization(job) != "accepted"):
+                return jsonify({"error": "Missing or withdrawn authorization requires documented follow-up."}), 409
             count, pending, unresolved, work_confirmed = _closure_blockers(tenant.id, job.id)
             if not count or pending:
                 return jsonify({
@@ -968,6 +975,12 @@ def estimate_workspace(slug, job_id):
     job, customer, vehicle = _find_authorized_job(tenant, actor, job_id)
     _allow(actor, tenant, PrinceAction.ESTIMATE_DRAFT, job.assigned_user_id)
     versions = _estimate_history(tenant, actor, job)
+    authorization = []
+    if actor.role == PrinceRole.PRINCIPAL and versions and versions[0]["internally_approved"]:
+        authorization = [
+            _customer_authorization_response(event) for event in
+            _customer_authorization_events(tenant.id, job.id, versions[0]["version"])
+        ]
     return render_template(
         "partnerships/prince_estimate.html", slug=slug,
         workshop_name=tenant.display_name,
@@ -975,6 +988,9 @@ def estimate_workspace(slug, job_id):
         latest=versions[0] if versions else None,
         principal=actor.role == PrinceRole.PRINCIPAL,
         categories=ESTIMATE_CATEGORIES,
+        authorization=authorization,
+        authorization_options=CUSTOMER_DECISIONS[authorization[0]["decision"] if authorization else "not_recorded"],
+        authorization_channels=AUTHORIZATION_CHANNELS,
     )
 
 
@@ -1116,3 +1132,113 @@ def print_estimate(slug, job_id, version):
     response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+
+CUSTOMER_DECISIONS = {
+    "not_recorded": ("accepted", "declined"),
+    "accepted": ("withdrawn",),
+    "declined": ("accepted",),
+    "withdrawn": ("accepted",),
+}
+AUTHORIZATION_CHANNELS = {
+    "written_message": "Written message", "signed_document": "Signed document",
+    "phone": "Phone conversation", "in_person": "In person",
+}
+
+
+def _customer_authorization_events(tenant_id, job_id, version):
+    return PrinceCustomerAuthorization.query.populate_existing().filter_by(
+        tenant_id=tenant_id, job_id=job_id, estimate_version=version,
+    ).order_by(PrinceCustomerAuthorization.sequence.desc()).all()
+
+
+def _customer_authorization_response(event):
+    return {
+        "sequence": event.sequence, "decision": event.decision,
+        "channel": event.channel, "evidence_reference": _public_concern(event.evidence_reference),
+        "total_kobo": event.total_kobo, "estimate_version": event.estimate_version,
+        "recorded_by_user_id": event.recorded_by_user_id,
+        "recorded_at": event.recorded_at.isoformat(timespec="seconds") + "Z",
+    }
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/estimates/<int:version>/authorization")
+def customer_authorization_history(slug, job_id, version):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.CUSTOMER_AUTHORIZATION)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    estimate = _estimate_latest(tenant.id, job.id)
+    if estimate is None or estimate.version != version or estimate.approved_at is None:
+        abort(404)
+    events = _customer_authorization_events(tenant.id, job.id, version)
+    return jsonify({"state": events[0].decision if events else "not_recorded",
+                    "events": [_customer_authorization_response(event) for event in events]})
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/estimates/<int:version>/authorization")
+def record_customer_authorization(slug, job_id, version):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.CUSTOMER_AUTHORIZATION)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
+    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        abort(404)
+    estimate = _estimate_latest(tenant.id, job.id)
+    if estimate is None or estimate.version != version or estimate.approved_at is None:
+        abort(404)
+    if request.content_length and request.content_length > 2400:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {
+        "expected_sequence", "decision", "channel", "evidence_reference", "customer_decision_attested"
+    }:
+        abort(400)
+    if data["customer_decision_attested"] is not True:
+        abort(400)
+    expected = _estimate_amount(data["expected_sequence"], maximum=1_000_000)
+    decision = _text(data, "decision", 16, required=True)
+    channel = _text(data, "channel", 24, required=True)
+    evidence = _text(data, "evidence_reference", 900, required=True)
+    if (decision not in {"accepted", "declined", "withdrawn"}
+            or channel not in AUTHORIZATION_CHANNELS or len(evidence) < 20
+            or PRIVATE_CONTACT_PATTERN.search(evidence)
+            or not evidence.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    events = _customer_authorization_events(tenant.id, job.id, version)
+    previous = events[0] if events else None
+    if expected != (previous.sequence if previous else 0):
+        abort(409)
+    if decision not in CUSTOMER_DECISIONS[previous.decision if previous else "not_recorded"]:
+        abort(409)
+    if job.status == "closed" and decision != "withdrawn":
+        abort(409)
+    try:
+        event = PrinceCustomerAuthorization(
+            tenant_id=tenant.id, job_id=job.id, estimate_version=version,
+            sequence=expected + 1, decision=decision, channel=channel,
+            evidence_reference=evidence, total_kobo=estimate.total_kobo,
+            recorded_by_user_id=actor.user_id,
+        )
+        db.session.add(event)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "customer_authorization_recorded", "customer_authorization", event.id)
+        result = _customer_authorization_response(event)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Authorization record could not be saved."}), 503
+    return jsonify({"state": decision, "event": result}), 201
+
+
+def _work_authorization(job):
+    """Minimal operational state; never expose the private evidence or actor."""
+    estimate = _estimate_latest(job.tenant_id, job.id)
+    if estimate is None or estimate.approved_at is None:
+        return "estimate_required"
+    event = PrinceCustomerAuthorization.query.populate_existing().filter_by(
+        tenant_id=job.tenant_id, job_id=job.id, estimate_version=estimate.version,
+    ).order_by(PrinceCustomerAuthorization.sequence.desc()).first()
+    if event is None:
+        return "not_recorded"
+    if event.total_kobo != estimate.total_kobo:
+        return "not_recorded"
+    return event.decision

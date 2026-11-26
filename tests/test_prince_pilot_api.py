@@ -686,6 +686,10 @@ def _advance(client, token, job_id, old, new, disposition=None):
             "expected_status": old, "new_status": new,
             "reason": "Record the workshop decision and next appropriate action.",
             "closure_disposition": disposition,
+            "follow_up_plan": (
+                "Schedule further inspection and assign a responsible technician."
+                if disposition == "follow_up_required" else None
+            ),
         },
         headers={"X-CSRF-Token": token},
     )
@@ -731,7 +735,7 @@ def test_lifecycle_cross_tenant_and_csrf_denied(pilot, client):
     assert client.post(f"{URL}/jobs/{pilot['unassigned_id']}/lifecycle", json={
         "expected_status": "draft", "new_status": "awaiting_approval",
         "reason": "A principal should review the proposed scope.",
-        "closure_disposition": None,
+        "closure_disposition": None, "follow_up_plan": None,
     }).status_code == 400
 
 
@@ -767,6 +771,10 @@ def test_lifecycle_closure_preserves_unresolved_concern(pilot, client):
     assert state["job_status"] == "closed"
     assert state["next_status"] is None
     assert state["history"][-1]["closure_disposition"] == "follow_up_required"
+    assert state["history"][-1]["follow_up_plan"].startswith("Schedule further inspection")
+    page = client.get(f"{URL}/manage").get_data(as_text=True)
+    assert "Closed jobs requiring follow-up" in page
+    assert "Schedule further inspection" in page
     record = client.get(f"{URL}/jobs/{job_id}/entries").json["entries"][0]
     assert record["body"] == "Inspection remains necessary."
     assert record["review_state"] == "unverified"

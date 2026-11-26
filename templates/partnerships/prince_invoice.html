@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Prince · Training invoice</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_management.css') }}">
+  <script defer src="{{ url_for('static', filename='js/prince_management.js') }}"></script>
+</head>
+<body><main class="pilot-shell management-shell">
+  <header class="pilot-header"><img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince logo" width="52" height="52">
+    <div class="brand-copy"><div class="eyebrow">AURA · WORKSHOP BILLING</div><h1>{{ workshop_name }}</h1><p>Invoice workspace</p></div></header>
+  <nav class="principal-back-nav"><a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">Back to estimate</a></nav>
+  <div class="management-test-banner"><strong>TRAINING ONLY</strong> · Not a payable invoice. Do not send to customers or use real banking information.</div>
+  <section class="management-hero"><div><div class="overline">JOB #{{ job.job_id }}</div><h2>{{ job.brand }} {{ job.model }}</h2><p>{{ job.full_name }} · {{ job.job_status | replace("_", " ") | title }}</p><p>Current authorization: {{ job.work_authorization | replace("_", " ") | title }}</p></div></section>
+  {% macro money(kobo) %}₦{{ "{:,}".format(kobo // 100) }}.{{ "%02d"|format(kobo % 100) }}{% endmacro %}
+  {% if invoice %}
+  <section class="panel management-panel"><h2>Recorded training invoice</h2><p><strong>{{ invoice.reference }}</strong> · {{ invoice.issued_at }}</p>
+    {% if not invoice.authorization_current %}<p class="limit-note">Authorization has changed since issuance. Principal review is required; this invoice does not represent a currently authorized payment request.</p>{% endif %}
+    <p>Source estimate version {{ invoice.estimate_version }} · Authorization event {{ invoice.authorization_sequence }}</p>
+    <div class="estimate-table-wrap"><table class="estimate-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>
+    {% for item in invoice['items'] %}<tr><td>{{ categories[item.category] }} · {{ item.description }}</td><td>{{ item.quantity }}</td><td>{{ money(item.unit_kobo) }}</td><td>{{ money(item.line_kobo) }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="estimate-totals"><p>Subtotal <strong>{{ money(invoice.subtotal_kobo) }}</strong></p><p>Discount <strong>{{ money(invoice.discount_kobo) }}</strong></p><p>Recorded invoice total <strong>{{ money(invoice.total_kobo) }}</strong></p></div>
+    <p>Principal account #{{ invoice.issued_by_user_id }} · {{ invoice.issue_reason }}</p>
+    <p class="tiny">Payment verification is not implemented. This is not a receipt, confirmed balance, tax invoice or evidence of completed repairs. Corrections and voiding require a future audited workflow.</p>
+  </section>
+  {% elif can_issue %}
+  <section class="panel management-panel"><h2>Create training invoice</h2><p>Approved estimate version {{ estimate.version }} · recorded customer acceptance event {{ authorization_sequence }}</p>
+    <div class="estimate-totals"><p>Quoted total <strong>{{ money(estimate.total_kobo) }}</strong></p></div>
+    <p class="muted">Only create the invoice if the full accepted amount is appropriate to bill. Partial charges, changed scope, taxes and corrections are not supported yet.</p>
+    <form class="assignment-form invoice-form" data-url="{{ url_for('prince_pilot.issue_invoice', slug=slug, job_id=job.job_id) }}" data-version="{{ estimate.version }}" data-sequence="{{ authorization_sequence }}">
+      <label>Reason for creating the invoice<textarea name="issue_reason" minlength="20" maxlength="900" rows="3" required placeholder="Demo: fictional decision to invoice the exact authorized scope."></textarea></label>
+      <label><input type="checkbox" name="issue_attested" required> I confirm this is a fictional invoice for the full accepted amount.</label>
+      <div class="assign-controls"><button type="submit">Create training invoice</button><span class="invoice-feedback" role="status" aria-live="polite"></span></div>
+    </form>
+  </section>
+  {% else %}
+  <section class="panel management-panel"><h2>Invoice not available</h2><p>An internally approved job and current customer acceptance of the exact approved quotation are required before creating a training invoice.</p></section>
+  {% endif %}
+  <footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer>
+</main></body></html>

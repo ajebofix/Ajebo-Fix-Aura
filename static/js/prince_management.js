@@ -74,3 +74,48 @@
     });
   }
 })();
+
+
+/* Principal progression; refresh authoritative status after confirmation. */
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  for (const form of document.querySelectorAll(".lifecycle-form")) {
+    const button = form.querySelector('button[type="submit"]');
+    const feedback = form.querySelector(".lifecycle-feedback");
+    let saving = false;
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (saving || !csrf || !form.reportValidity()) return;
+      const data = {
+        expected_status: form.elements.expected_status.value,
+        new_status: form.elements.new_status.value,
+        reason: form.elements.reason.value.trim(),
+        closure_disposition: form.elements.closure_disposition?.value || null,
+      };
+      saving = true;
+      button.disabled = true;
+      feedback.textContent = "Recording decision…";
+      try {
+        const response = await fetch(form.dataset.lifecycleUrl, {
+          method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+          body: JSON.stringify(data),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          feedback.textContent = result.error || "Decision not recorded. Check the required fields or reload the page.";
+          return;
+        }
+        if (result.job_status !== data.new_status || !result.event) throw Error("unconfirmed");
+        feedback.textContent = "Decision recorded. Reloading current workshop status.";
+        window.location.reload();
+      } catch {
+        feedback.textContent = "Could not confirm the decision. Reload before trying again.";
+      } finally {
+        saving = false;
+        button.disabled = false;
+      }
+    });
+  }
+})();

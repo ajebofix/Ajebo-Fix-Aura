@@ -49,6 +49,29 @@
       <div class="assign-controls"><button type="submit">Save new draft version</button><span class="estimate-feedback" role="status"></span></div>
     </form>
   </section>{% else %}<p class="management-test-banner">This estimate workspace is locked for changes.</p>{% endif %}
+  {% if principal and latest and latest.internally_approved %}
+  <section class="panel management-panel">
+    <h2>Customer authorization</h2>
+    <p class="muted">Separate from workshop approval. Principal-recorded declaration only; Aura has not independently authenticated the customer or evidence.</p>
+    <p><strong>{{ authorization[0].decision | replace("_", " ") | title if authorization else "Not recorded" }}</strong> · Version {{ latest.version }} · {{ money(latest.total_kobo) }}</p>
+    {% if config.get("PRINCE_STAGING_LOCKDOWN") %}
+    <form class="assignment-form authorization-form" data-url="{{ url_for('prince_pilot.record_customer_authorization', slug=slug, job_id=job.job_id, version=latest.version) }}" data-sequence="{{ authorization[0].sequence if authorization else 0 }}">
+      <label>Customer decision<select name="decision" required><option value="">Select decision</option>
+        {% for option in authorization_options %}{% if job.job_status != "closed" or option == "withdrawn" %}<option value="{{ option }}">{{ option | title }}</option>{% endif %}{% endfor %}
+      </select></label>
+      <label>Evidence channel<select name="channel" required><option value="">Select channel</option>{% for key, label in authorization_channels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+      <label>Evidence reference and decision context<textarea name="evidence_reference" minlength="20" maxlength="900" rows="3" required placeholder="Demo: fictional written message confirms the exact scope and amount."></textarea></label>
+      <p class="tiny">Do not paste private contact details or real messages. Partial or conditional acceptance is not supported; do not record it as accepted.</p>
+      <label><input type="checkbox" name="customer_decision_attested" required> I attest that the fictional customer explicitly communicated this decision for this exact estimate version and amount.</label>
+      <div class="assign-controls"><button type="submit">Record customer decision</button><span class="authorization-feedback" role="status" aria-live="polite"></span></div>
+    </form>
+    {% endif %}
+    <h3>Decision history</h3>
+    {% for event in authorization %}
+    <div class="lifecycle-event"><strong>{{ event.decision | title }} · {{ authorization_channels[event.channel] }}</strong><p>{{ event.evidence_reference }}</p><small>Version {{ event.estimate_version }} · {{ money(event.total_kobo) }} · Principal account #{{ event.recorded_by_user_id }} · Recorded {{ event.recorded_at }}</small></div>
+    {% else %}<p class="tiny">No customer decision recorded. Internal approval alone is not customer acceptance.</p>{% endfor %}
+  </section>
+  {% endif %}
   <section class="panel management-panel"><h2>Version history</h2>
   {% for version in versions %}<details class="lifecycle-panel"><summary>Version {{ version.version }} · {{ money(version.total_kobo) }} · {{ "Approved" if version.internally_approved else "Draft" }}</summary><p class="tiny">{{ version.created_at }}</p>
   {% for item in version['items'] %}<p>{{ item.description }} · {{ item.quantity }} × {{ money(item.unit_kobo) }}</p>{% endfor %}<p>Discount: {{ money(version.discount_kobo) }}</p>{% if principal and version.approval_note %}<p>{{ version.approval_note }}</p>{% endif %}</details>{% else %}<p>No saved estimates.</p>{% endfor %}

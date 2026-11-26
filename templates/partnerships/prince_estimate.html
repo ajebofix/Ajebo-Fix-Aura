@@ -18,7 +18,7 @@
   {% if latest %}
   <section class="panel management-panel"><h2>Current estimate · Version {{ latest.version }}</h2><p class="muted">{{ "Internally approved · locked" if latest.internally_approved else "Draft · not approved" }}</p>
     <div class="estimate-table-wrap"><table class="estimate-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>
-    {% for item in latest.items %}<tr><td>{{ categories[item.category] }} · {{ item.description }}</td><td>{{ item.quantity }}</td><td>{{ money(item.unit_kobo) }}</td><td>{{ money(item.line_kobo) }}</td></tr>{% endfor %}
+    {% for item in latest['items'] %}<tr><td>{{ categories[item.category] }} · {{ item.description }}</td><td>{{ item.quantity }}</td><td>{{ money(item.unit_kobo) }}</td><td>{{ money(item.line_kobo) }}</td></tr>{% endfor %}
     </tbody></table></div>
     <div class="estimate-totals"><p>Subtotal <strong>{{ money(latest.subtotal_kobo) }}</strong></p><p>Discount <strong>{{ money(latest.discount_kobo) }}</strong></p><p>Total <strong>{{ money(latest.total_kobo) }}</strong></p></div>
     {% if principal and latest.internally_approved %}<p>Approved by principal account #{{ latest.approved_by_user_id }} · {{ latest.approved_at }}</p><p>{{ latest.approval_note }}</p>{% endif %}
@@ -33,7 +33,7 @@
   <section class="panel management-panel"><h2>{{ "Revise draft" if latest else "Create estimate" }}</h2><p class="muted">Amounts are in naira. Each save creates a new version. Taxes are not calculated in this pilot.</p>
     <form class="estimate-draft-form assignment-form" data-url="{{ url_for('prince_pilot.create_estimate_version', slug=slug, job_id=job.job_id) }}" data-version="{{ latest.version if latest else 0 }}">
       <div class="estimate-lines">
-      {% for item in (latest.items if latest else [none]) %}
+      {% for item in (latest['items'] if latest else [none]) %}
       <div class="estimate-line">
         <label>Category<select name="category" required>{% for key, label in categories.items() %}<option value="{{ key }}" {% if item and item.category == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
         <label>Description<input name="description" required maxlength="180" value="{{ item.description if item else '' }}" placeholder="{{ 'Demo: fictional part or labour' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Part or labour' }}"></label>
@@ -50,6 +50,6 @@
   </section>{% else %}<p class="management-test-banner">This estimate workspace is locked for changes.</p>{% endif %}
   <section class="panel management-panel"><h2>Version history</h2>
   {% for version in versions %}<details class="lifecycle-panel"><summary>Version {{ version.version }} · {{ money(version.total_kobo) }} · {{ "Approved" if version.internally_approved else "Draft" }}</summary><p class="tiny">{{ version.created_at }}</p>
-  {% for item in version.items %}<p>{{ item.description }} · {{ item.quantity }} × {{ money(item.unit_kobo) }}</p>{% endfor %}<p>Discount: {{ money(version.discount_kobo) }}</p>{% if principal and version.approval_note %}<p>{{ version.approval_note }}</p>{% endif %}</details>{% else %}<p>No saved estimates.</p>{% endfor %}
+  {% for item in version['items'] %}<p>{{ item.description }} · {{ item.quantity }} × {{ money(item.unit_kobo) }}</p>{% endfor %}<p>Discount: {{ money(version.discount_kobo) }}</p>{% if principal and version.approval_note %}<p>{{ version.approval_note }}</p>{% endif %}</details>{% else %}<p>No saved estimates.</p>{% endfor %}
   </section><footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer>
 </main></body></html>

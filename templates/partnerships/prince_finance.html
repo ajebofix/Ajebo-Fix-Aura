@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Prince · Financial overview</title><link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/prince_management.css') }}"></head>
+<body><main class="pilot-shell management-shell">
+<header class="pilot-header"><img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince logo" width="52" height="52"><div class="brand-copy"><div class="eyebrow">AURA · PRIVATE FINANCIAL OPERATIONS</div><h1>{{ workshop_name }}</h1><p>Principal financial console</p></div></header>
+<nav class="principal-back-nav"><a href="{{ url_for('prince_pilot.principal_management', slug=slug) }}">Back to management</a></nav>
+<section class="management-hero"><div><div class="overline">ALL-TIME · NGN · TRAINING ONLY</div><h2>Financial overview</h2><p>Reconciled from fictional invoice, payment, receipt and reversal records. Not a bank balance, cash-flow statement or profit report.</p></div></section>
+<div class="management-test-banner"><strong>TRAINING DATA ONLY</strong> · No real banking information. Verification is a principal declaration, not bank confirmation.</div>
+{% macro money(kobo) %}₦{{ "{:,}".format(kobo // 100) }}.{{ "%02d"|format(kobo % 100) }}{% endmacro %}
+{% set t = overview.totals %}
+<section class="management-kpis" aria-label="Financial totals">
+<div class="kpi"><span>Total invoiced</span><strong>{{ money(t.invoiced) }}</strong><small>{{ t.invoice_count }} training invoices</small></div>
+<div class="kpi"><span>Net verified allocations</span><strong>{{ money(t.verified) }}</strong><small>Excludes reversed allocations</small></div>
+<div class="kpi"><span>Outstanding invoice balance</span><strong>{{ money(t.outstanding) }}</strong><small>Unallocated amount, not confirmed collectible debt</small></div>
+<div class="kpi"><span>Pending payment reports</span><strong>{{ money(t.pending) }}</strong><small>{{ t.pending_count }} reports · not deducted</small></div>
+</section>
+<section class="panel management-panel"><h2>Reconciliation and exceptions</h2>
+<div class="estimate-totals"><p>Reversed allocations <strong>{{ money(t.reversed) }}</strong></p><p>Rejected reports <strong>{{ money(t.rejected) }}</strong></p><p>Settled invoices <strong>{{ t.settled_count }} / {{ t.invoice_count }}</strong></p><p>Receipts issued <strong>{{ t.receipts }}</strong></p><p>Historical reversed receipts <strong>{{ t.historical_receipts }}</strong></p><p>Verified allocations without receipt <strong>{{ t.receipt_pending }}</strong></p></div>
+{% if t.hold_count %}<p class="limit-note"><strong>Authorization review required:</strong> {{ t.hold_count }} invoices · {{ money(t.hold_outstanding) }} unallocated. Included in the total outstanding above; not an authorized collection request.</p>{% endif %}
+<p class="tiny">Outstanding = recorded invoice total minus net verified allocations. Pending and rejected reports do not reduce it. Receipts are evidence records, not additional revenue.</p></section>
+<section class="panel management-panel"><h2>Invoice ledger</h2><p class="muted">Newest {{ overview.shown }} of {{ t.invoice_count }} invoices. Totals include all invoices, including closed jobs.</p>
+{% for row in overview.rows %}<article class="management-job"><div class="management-job-heading"><div><strong>{{ row.customer }}</strong><div class="vehicle-label">{{ row.vehicle }}</div></div><span>{{ row.reference }}</span></div>
+<div class="estimate-totals"><p>Invoice <strong>{{ money(row.invoiced) }}</strong></p><p>Verified <strong>{{ money(row.verified) }}</strong></p><p>Pending <strong>{{ money(row.pending) }}</strong></p><p>Outstanding <strong>{{ money(row.outstanding) }}</strong></p></div>
+{% if not row.authorization_current %}<p class="limit-note">Authorization changed · principal review required.</p>{% endif %}
+<p class="tiny">{{ row.receipts }} receipts · {{ row.historical_receipts }} historical · {{ row.receipt_pending }} awaiting issuance</p>
+<a class="hero-link" href="{{ url_for('prince_pilot.invoice_workspace', slug=slug, job_id=row.job_id) }}">Open invoice and payment ledger</a></article>
+{% else %}<p>No invoices recorded. Create an approved fictional invoice to begin.</p>{% endfor %}</section>
+<footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer></main></body></html>

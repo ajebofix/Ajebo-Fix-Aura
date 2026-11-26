@@ -110,6 +110,44 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrinceEstimate(db.Model):
+    """Versioned NGN quotation, not an invoice or proof of authorization."""
+    __tablename__ = "prince_estimates"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_estimate_job_tenant", ondelete="RESTRICT",
+        ),
+        db.UniqueConstraint("job_id", "version", name="uq_prince_estimate_job_version"),
+        db.CheckConstraint("version > 0", name="ck_prince_estimate_version"),
+        db.CheckConstraint(
+            "subtotal_kobo >= 0 AND discount_kobo >= 0 AND "
+            "discount_kobo <= subtotal_kobo AND total_kobo = subtotal_kobo - discount_kobo",
+            name="ck_prince_estimate_amounts",
+        ),
+        db.CheckConstraint(
+            "(approved_by_user_id IS NULL AND approved_at IS NULL AND approval_note IS NULL) OR "
+            "(approved_by_user_id IS NOT NULL AND approved_at IS NOT NULL AND approval_note IS NOT NULL)",
+            name="ck_prince_estimate_approval",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("prince_tenants.id", ondelete="RESTRICT"),
+                          nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    version = db.Column(db.Integer, nullable=False)
+    items = db.Column(db.JSON, nullable=False)
+    subtotal_kobo = db.Column(db.BigInteger, nullable=False)
+    discount_kobo = db.Column(db.BigInteger, nullable=False)
+    total_kobo = db.Column(db.BigInteger, nullable=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                   nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    approved_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"))
+    approved_at = db.Column(db.DateTime)
+    approval_note = db.Column(db.Text)
+
+
 class PrinceJobTransition(db.Model):
     """Append-only principal decision; status is not repair or payment proof."""
     __tablename__ = "prince_job_transitions"

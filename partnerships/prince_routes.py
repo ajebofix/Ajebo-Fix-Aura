@@ -1085,3 +1085,34 @@ def approve_estimate(slug, job_id, version):
         db.session.rollback()
         return jsonify({"error": "Estimate approval could not be saved."}), 503
     return jsonify({"job_id": job.id, "estimate": response})
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/estimates/<int:version>/print")
+def print_estimate(slug, job_id, version):
+    """Principal-only, approved-version quotation preview for synthetic training."""
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.ESTIMATE_APPROVE)
+    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        abort(404)  # Real customer document issuance requires separate approval.
+    job, customer, vehicle = _find_authorized_job(tenant, actor, job_id)
+    record = _estimate_latest(tenant.id, job.id)
+    if record is None or record.version != version or record.approved_at is None:
+        abort(404)
+    # Explicit projection: never include contact details, review notes,
+    # account identifiers, banking credentials, tax IDs or technician notes.
+    quotation = _estimate_response(record)
+    response = current_app.make_response(render_template(
+        "partnerships/prince_quotation_print.html",
+        slug=slug, workshop_name=tenant.display_name,
+        job={"job_id": job.id, "customer": _public_concern(customer.full_name),
+             "brand": _public_concern(vehicle.brand),
+             "model": _public_concern(vehicle.model), "year": vehicle.year},
+        quotation=quotation,
+        quotation_ref=f"DEMO-PAC-{job.id:06d}-V{record.version:02d}",
+        approved_date=record.approved_at.strftime("%d %B %Y"),
+        categories=ESTIMATE_CATEGORIES,
+    ))
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response

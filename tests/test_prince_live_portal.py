@@ -430,3 +430,29 @@ def test_operator_cannot_promote_staff(live, app, client):
         "expected_role": "operator", "role": "principal",
         "role_confirmed": "yes", "current_password": PASSWORD}).status_code == 404
     assert db.session.get(PrinceMembership, live).role == "operator"
+
+
+def test_live_staff_ux_assets_are_narrowly_public(live, client):
+    page = client.get("/prince-staff")
+    assert page.status_code == 200
+    assert b"Welcome back" in page.data
+    assert b"prince_live_staff.css" in page.data
+    assert client.get("/static/css/prince_live_staff.css").status_code == 200
+    assert client.get("/static/img/prince-workshop-logo-pilot.jpg").status_code == 200
+    assert client.get("/static/js/prince_management.js").status_code == 404
+    assert client.get("/static/css/prince_management.css").status_code == 404
+    assert client.get("/prince-staff/accounts").status_code == 404
+
+
+def test_staff_ux_defaults_to_operator_and_shows_role_context(live, app, client):
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    assert _sign_in(client).status_code == 303
+    landing = client.get("/prince-staff/ready")
+    assert b"Customer intake is not open" in landing.data
+    assert b"Manage staff and account details" in landing.data
+    page = client.get("/prince-staff/accounts")
+    assert page.status_code == 200
+    assert b'id="roster"' in page.data
+    assert b'name="role" value="operator" checked' in page.data
+    assert b"Recommended for staff" in page.data
+    assert b'id="my-account"' in page.data

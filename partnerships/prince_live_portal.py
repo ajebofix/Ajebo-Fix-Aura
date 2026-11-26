@@ -10,7 +10,7 @@ import secrets
 from uuid import UUID
 
 from flask import (
-    Blueprint, abort, current_app, redirect, render_template, request, session, url_for,
+    Blueprint, abort, current_app, flash, redirect, render_template, request, session, url_for,
 )
 from flask_login import current_user, login_fresh, login_user, logout_user
 from sqlalchemy import func
@@ -228,6 +228,10 @@ def register_prince_live_portal(app):
             abort(503)
         if request.path == "/healthz" and request.method in {"GET", "HEAD"}:
             return None
+        if (request.endpoint == "static" and request.method in {"GET", "HEAD"}
+                and request.path in {"/static/css/prince_live_staff.css",
+                                     "/static/img/prince-workshop-logo-pilot.jpg"}):
+            return None
         if request.endpoint == "prince_live.sign_in":
             return None
         if request.endpoint in {"prince_live.landing", "prince_live.sign_out"}:
@@ -292,7 +296,8 @@ def landing():
         endpoint = ("prince_pilot.principal_management" if member.role == "principal"
                     else "prince_pilot.operator_workspace")
         return redirect(url_for(endpoint, slug="prince"), code=303)
-    return render_template("partnerships/prince_live_login.html", ready=True)
+    return render_template("partnerships/prince_live_login.html", ready=True,
+                           staff_name=current_user.name, staff_role=member.role)
 
 
 @live_bp.post("/sign-out")
@@ -354,6 +359,7 @@ def create_staff():
     except IntegrityError:
         db.session.rollback()
         abort(409, description="Account details conflict with an existing record.")
+    flash("Staff account created successfully.", "success")
     return redirect(url_for("prince_live.staff_accounts"), code=303)
 
 
@@ -375,6 +381,7 @@ def change_own_email():
     _commit_staff_change()
     logout_user()
     session.clear()
+    flash("Email updated. Sign in with your corrected email address.", "success")
     return redirect(url_for("prince_live.sign_in"), code=303)
 
 
@@ -393,6 +400,7 @@ def suspend_operator(member_id):
     _revoke_staff_sessions(user.id, "prince_staff_suspended")
     _staff_audit(actor, member, user, "live_staff_suspended")
     _commit_staff_change()
+    flash("Operator access suspended. Existing records are preserved.", "success")
     return redirect(url_for("prince_live.staff_accounts"), code=303)
 
 
@@ -431,4 +439,5 @@ def change_staff_role(member_id):
               else "live_staff_promoted_to_principal")
     _staff_audit(actor, member, user, action)
     _commit_staff_change()
+    flash("Staff role updated. The staff member must sign in again.", "success")
     return redirect(url_for("prince_live.staff_accounts"), code=303)

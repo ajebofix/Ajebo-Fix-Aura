@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>{% block title %}Prince | Staff portal{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_live_staff.css') }}">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="masthead"><div class="masthead-inner">
+  <a class="brand" href="{{ url_for('prince_live.sign_in') }}">
+    <img src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" width="48" height="48" alt="">
+    <span><strong>Prince Automobile Clinic</strong><small>Workshop operations</small></span>
+  </a>
+  {% block navigation %}<span class="private-tag"><span class="status-dot"></span>Private access</span>{% endblock %}
+</div></header>
+<main id="main" class="{% block main_class %}shell{% endblock %}">
+  {% for category, message in get_flashed_messages(with_categories=true) %}
+  <p class="notice {{ 'notice-success' if category == 'success' else '' }}" role="status">{{ message }}</p>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="footer"><span>Prince Automobile Clinic</span><span>Powered by Aura · Ajebo Fix</span></footer>
+</body></html>

@@ -557,6 +557,11 @@ def principal_management(slug):
     ).scalar() or 0
     pending_reviews = (
         db.session.query(func.count(PrinceJobEntry.id))
+        .join(
+            PrinceJob,
+            (PrinceJob.id == PrinceJobEntry.job_id)
+            & (PrinceJob.tenant_id == PrinceJobEntry.tenant_id),
+        )
         .outerjoin(
             PrinceEntryReview,
             (PrinceEntryReview.entry_id == PrinceJobEntry.id)
@@ -564,6 +569,7 @@ def principal_management(slug):
         )
         .filter(
             PrinceJobEntry.tenant_id == tenant.id,
+            PrinceJob.status != "closed",
             PrinceEntryReview.id.is_(None),
         )
         .scalar() or 0
@@ -626,6 +632,7 @@ def principal_management(slug):
         )
         .filter(
             PrinceJobEntry.tenant_id == tenant.id,
+            PrinceJob.status != "closed",
             PrinceEntryReview.id.is_(None),
         )
         .order_by(PrinceJobEntry.id.desc()).limit(12).all()

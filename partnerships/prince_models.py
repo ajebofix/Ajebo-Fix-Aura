@@ -131,6 +131,12 @@ class PrinceJobTransition(db.Model):
             "(new_status <> 'closed' AND closure_disposition IS NULL)",
             name="ck_prince_transition_closure",
         ),
+        db.CheckConstraint(
+            "(closure_disposition = 'follow_up_required' AND follow_up_plan IS NOT NULL) OR "
+            "((closure_disposition IS NULL OR closure_disposition <> 'follow_up_required') "
+            "AND follow_up_plan IS NULL)",
+            name="ck_prince_transition_follow_up",
+        ),
         db.UniqueConstraint("job_id", "new_status", name="uq_prince_transition_job_stage"),
     )
     id = db.Column(db.Integer, primary_key=True)
@@ -142,6 +148,7 @@ class PrinceJobTransition(db.Model):
     new_status = db.Column(db.String(24), nullable=False)
     reason = db.Column(db.Text, nullable=False)
     closure_disposition = db.Column(db.String(32))
+    follow_up_plan = db.Column(db.Text)
     changed_by_user_id = db.Column(
         db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,

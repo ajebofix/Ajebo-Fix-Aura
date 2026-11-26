@@ -10,6 +10,7 @@ from sqlalchemy import inspect
 
 from app import create_app
 from extensions import db
+from models import User
 from partnerships.prince_models import (
     PrinceCustomer, PrinceJob, PrinceMembership, PrinceTenant,
 )
@@ -25,7 +26,7 @@ def verify():
         tables = set(inspect(db.engine).get_table_names())
         assert {"prince_tenants", "prince_memberships", "prince_customers",
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
-                "prince_job_entries"} <= tables
+                "prince_job_entries", "prince_job_assignments"} <= tables
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         assert tenant.active and tenant.intake_enabled
         assert tenant.approved_privacy_notice_version == "synthetic-staging-v1"
@@ -45,6 +46,37 @@ def verify():
         assert len(seeded) == 2
         assert all(c.phone_ciphertext for c in seeded)
         assert PrinceJob.query.filter_by(tenant_id=tenant.id).count() >= 2
+        # Rehearsals must not overwrite genuine trainee actions. Reassigning
+        # fictional jobs is permitted and can change operator job counts.
+        operator_ids = {
+            role: User.query.filter_by(email=email).one().id
+            for role, email in {
+                "operator-a": "prince-demo-operator-a@example.invalid",
+                "operator-b": "prince-demo-operator-b@example.invalid",
+            }.items()
+        }
+        expected_jobs = {
+            role: {
+                job.id for job in (
+                    PrinceJob.query.filter_by(
+                        tenant_id=tenant.id, assigned_user_id=user_id,
+                    ).order_by(PrinceJob.id.desc()).limit(50).all()
+                )
+            }
+            for role, user_id in operator_ids.items()
+        }
+        alpha_job = (
+            PrinceJob.query.join(
+                PrinceCustomer,
+                (PrinceCustomer.id == PrinceJob.customer_id)
+                & (PrinceCustomer.tenant_id == PrinceJob.tenant_id),
+            ).filter(
+                PrinceJob.tenant_id == tenant.id,
+                PrinceCustomer.full_name == "Demo Owner Alpha",
+            ).one()
+        )
+        alpha_job_id = alpha_job.id
+        alpha_assignee = alpha_job.assigned_user_id
 
     def login(role, password_env):
         client = app.test_client()
@@ -66,35 +98,32 @@ def verify():
     assert public.get("/auth/login", base_url=BASE).status_code == 404
 
     op_a = login("operator-a", "PRINCE_DEMO_OPERATOR_A_PASSWORD")
-    jobs_a = op_a.get("/pilot/workshops/prince/jobs", base_url=BASE)
-    assert jobs_a.status_code == 200
-    assert len(jobs_a.json["jobs"]) >= 1
-    assert all(x["full_name"] != "Demo Owner Beta" for x in jobs_a.json["jobs"])
-    alpha = next(x for x in jobs_a.json["jobs"] if x["full_name"] == "Demo Owner Alpha")
-    assert "phone_number" not in jobs_a.json["jobs"][0]
-    history_a = op_a.get(
-        f"/pilot/workshops/prince/jobs/{alpha['job_id']}/entries",
-        base_url=BASE,
-    )
-    assert history_a.status_code == 200
-    assert all(x["review_state"] == "unverified"
-               for x in history_a.json["entries"])
-    assert not any("phone_ciphertext" in x for x in history_a.json["entries"])
-    assert op_a.get("/cars", base_url=BASE).status_code == 404
-    page_a = op_a.get("/pilot/workshops/prince/operator", base_url=BASE)
-    assert page_a.status_code == 200
-    assert "Demo Owner Alpha" in page_a.get_data(as_text=True)
-    assert "Demo Owner Beta" not in page_a.get_data(as_text=True)
-
     op_b = login("operator-b", "PRINCE_DEMO_OPERATOR_B_PASSWORD")
-    jobs_b = op_b.get("/pilot/workshops/prince/jobs", base_url=BASE)
-    assert jobs_b.status_code == 200
-    assert len(jobs_b.json["jobs"]) >= 1
-    assert any(x["full_name"] == "Demo Owner Beta" for x in jobs_b.json["jobs"])
-    assert all(x["full_name"] != "Demo Owner Alpha" for x in jobs_b.json["jobs"])
-    job_a = alpha["job_id"]
-    assert op_b.get(f"/pilot/workshops/prince/jobs/{job_a}", base_url=BASE).status_code == 404
-    assert op_b.get(f"/pilot/workshops/prince/jobs/{job_a}/entries", base_url=BASE).status_code == 404
+    for role, client in (("operator-a", op_a), ("operator-b", op_b)):
+        listing = client.get("/pilot/workshops/prince/jobs", base_url=BASE)
+        assert listing.status_code == 200
+        received = {job["job_id"] for job in listing.json["jobs"]}
+        assert received == expected_jobs[role], f"{role} assignment mismatch"
+        assert "phone_ciphertext" not in str(listing.json)
+        assert "phone_number" not in str(listing.json)
+        assert client.get("/cars", base_url=BASE).status_code == 404
+        assert client.get("/pilot/workshops/prince/manage",
+                          base_url=BASE).status_code == 404
+        page = client.get("/pilot/workshops/prince/operator", base_url=BASE)
+        assert page.status_code == 200
+        assert "Load protected contacts" not in page.get_data(as_text=True)
+        for job in listing.json["jobs"]:
+            history = client.get(
+                f"/pilot/workshops/prince/jobs/{job['job_id']}/entries",
+                base_url=BASE,
+            )
+            assert history.status_code == 200
+            assert all(x["review_state"] == "unverified"
+                       for x in history.json["entries"])
+        if alpha_assignee != operator_ids[role]:
+            assert client.get(
+                f"/pilot/workshops/prince/jobs/{alpha_job_id}", base_url=BASE,
+            ).status_code == 404
 
     principal = login("principal", "PRINCE_DEMO_PRINCIPAL_PASSWORD")
     jobs_all = principal.get("/pilot/workshops/prince/jobs", base_url=BASE)
@@ -105,6 +134,11 @@ def verify():
     }
     assert principal.get("/admin", base_url=BASE).status_code == 404
     assert principal.get("/dashboard", base_url=BASE).status_code == 404
+    management = principal.get("/pilot/workshops/prince/manage", base_url=BASE)
+    assert management.status_code == 200
+    assert "Principal management console" in management.get_data(as_text=True)
+    assert "Demo Owner Alpha" in management.get_data(as_text=True)
+    assert "phone_ciphertext" not in management.get_data(as_text=True)
     stephen = login("stephen", "PRINCE_DEMO_STEPHEN_PASSWORD")
     stephen_jobs = stephen.get("/pilot/workshops/prince/jobs", base_url=BASE)
     assert stephen_jobs.status_code == 200
@@ -112,7 +146,10 @@ def verify():
         x["job_id"] for x in jobs_all.json["jobs"]
     }
     assert stephen.get("/admin", base_url=BASE).status_code == 404
-    print("Prince staged HTTP smoke passed: roles, tenant, redaction, append-only history and legacy-route denial.")
+    assert stephen.get(
+        "/pilot/workshops/prince/manage", base_url=BASE,
+    ).status_code == 200
+    print("Prince staged HTTP smoke passed: dynamic operator assignments, principal management, tenant privacy and legacy route denial.")
 
 
 if __name__ == "__main__":

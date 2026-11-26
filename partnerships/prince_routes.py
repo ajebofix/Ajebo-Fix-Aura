@@ -68,6 +68,18 @@ def pilot_access_gate():
         abort(401)
 
 
+@prince_pilot_bp.teardown_request
+def release_prince_request_transaction(_error):
+    """Every mutation commits explicitly; release any remaining locks at request end.
+
+    Flask normally removes its scoped session at application-context teardown.
+    A caller may retain an outer app context, notably the PostgreSQL test harness.
+    A rejected mutation must not keep its SELECT FOR UPDATE lock in that context.
+    Never commit from teardown.
+    """
+    db.session.rollback()
+
+
 def _scope(slug: str):
     tenant = PrinceTenant.query.populate_existing().filter_by(slug=slug, active=True).first()
     if tenant is None:

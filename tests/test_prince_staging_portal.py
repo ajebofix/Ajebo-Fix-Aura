@@ -645,3 +645,72 @@ def test_operator_sees_work_gate_without_private_evidence(approved_quotation, cl
     page = client.get(P + "/operator").get_data(as_text=True)
     assert "Do not start or continue chargeable work" in page
     assert "confidential withdrawal reference" not in page
+
+
+def _invoice_payload(sequence=1):
+    return {
+        "expected_version": 2, "expected_authorization_sequence": sequence,
+        "issue_reason": "Demo: fictional billing decision for full accepted scope.",
+        "issue_attested": True,
+    }
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_training_invoice_exact_snapshot_and_withdrawal_warning(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    root = approved_quotation.rsplit("/", 1)[0]
+    invoice = root + "/invoice"
+    auth = approved_quotation + "/2/authorization"
+    payload = _invoice_payload()
+    assert client.get(invoice + "/data").json == {"invoice": None}
+    assert client.post(invoice, json=payload, headers=headers).status_code == 409
+    assert client.post(auth, json=_customer_decision(), headers=headers).status_code == 201
+    assert client.post(invoice, json=payload, headers=headers).status_code == 409
+    for old, new in [("draft", "awaiting_approval"), ("awaiting_approval", "approved")]:
+        assert client.post(root + "/lifecycle", json={
+            "expected_status": old, "new_status": new,
+            "reason": "Demo: fictional approval of workshop scope.",
+            "closure_disposition": None, "follow_up_plan": None,
+        }, headers=headers).status_code == 200
+    assert client.post(invoice, json={**payload, "total_kobo": 1}, headers=headers).status_code == 400
+    assert client.post(invoice, json={**payload, "issue_attested": False}, headers=headers).status_code == 400
+    assert client.post(invoice, json=_invoice_payload(0), headers=headers).status_code == 409
+    assert client.post(invoice, json=payload).status_code == 400
+    result = client.post(invoice, json=payload, headers=headers)
+    assert result.status_code == 201
+    saved = result.json["invoice"]
+    assert saved["total_kobo"] == 2400100
+    assert saved["subtotal_kobo"] == 2500100
+    assert saved["discount_kobo"] == 100000
+    assert saved["estimate_version"] == 2
+    assert saved["authorization_sequence"] == 1
+    assert saved["authorization_current"] is True
+    assert saved["reference"].startswith("DEMO-INV-PAC-")
+    assert client.post(invoice, json=payload, headers=headers).status_code == 409
+    assert client.get(root).json["job_status"] == "approved"
+    page = client.get(invoice).get_data(as_text=True)
+    assert "24,001.00" in page
+    assert "Payment verification is not implemented" in page
+    assert client.post(auth, json=_customer_decision(1, "withdrawn"), headers=headers).status_code == 201
+    after = client.get(invoice + "/data").json["invoice"]
+    assert after["reference"] == saved["reference"]
+    assert after["total_kobo"] == saved["total_kobo"]
+    assert after["authorization_current"] is False
+    assert "Authorization has changed since issuance" in client.get(invoice).get_data(as_text=True)
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_operator_cannot_read_or_issue_invoice(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    invoice = approved_quotation.rsplit("/", 1)[0] + "/invoice"
+    assert client.get(invoice).status_code == 404
+    assert client.get(invoice + "/data").status_code == 404
+    assert client.post(invoice, json=_invoice_payload(),
+                       headers={"X-CSRF-Token": token}).status_code == 404

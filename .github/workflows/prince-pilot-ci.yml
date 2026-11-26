@@ -15,6 +15,7 @@ on:
       - "templates/partnerships/prince_estimate.html"
       - "templates/partnerships/prince_invoice.html"
       - "templates/partnerships/prince_finance.html"
+      - "templates/partnerships/prince_clinical.html"
       - "templates/partnerships/prince_receipt_print.html"
       - "templates/partnerships/prince_quotation_print.html"
       - "static/css/prince_quotation_print.css"
@@ -34,6 +35,7 @@ on:
       - "migrations/versions/c93e1f7a204b_prince_invoices.py"
       - "migrations/versions/d04f8a2b615c_prince_payments.py"
       - "migrations/versions/e15a9b3c726d_prince_receipts_reversals.py"
+      - "migrations/versions/f26b0c4d837e_prince_clinical_handoff.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
 
@@ -121,6 +123,7 @@ jobs:
               "prince_job_entries", "prince_entry_reviews", "prince_job_assignments",
               "prince_job_transitions", "prince_estimates", "prince_customer_authorizations", "prince_invoices", "prince_payments",
               "prince_receipts", "prince_payment_reversals",
+              "prince_clinical_handoffs", "prince_clinical_withdrawals",
           }
           assert required <= names, f"Missing Prince tables: {required - names}"
           fields = {c["name"] for c in inspector.get_columns("prince_customers")}
@@ -181,6 +184,10 @@ jobs:
               assert {"id", "payment_id"} <= fields
               fks = inspector.get_foreign_keys(table)
               assert any(fk["referred_table"] == "prince_payments" and fk["constrained_columns"] == ["payment_id"] for fk in fks)
+          handoff_fks = [frozenset(fk["constrained_columns"])
+                         for fk in inspector.get_foreign_keys("prince_clinical_handoffs")]
+          assert frozenset({"job_id", "tenant_id"}) in handoff_fks
+          assert any(fk["referred_table"] == "prince_clinical_handoffs" for fk in inspector.get_foreign_keys("prince_clinical_withdrawals"))
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         env:

@@ -36,6 +36,8 @@ ALLOWED_STATIC = frozenset({
     "/static/css/prince_pilot.css",
     "/static/js/prince_pilot_operator.js",
     "/static/css/prince_management.css",
+    "/static/css/prince_quotation_print.css",
+    "/static/js/prince_quotation_print.js",
     "/static/js/prince_management.js",
     "/static/img/prince-workshop-logo-pilot.jpg",
 })

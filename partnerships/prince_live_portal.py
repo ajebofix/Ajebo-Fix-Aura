@@ -186,7 +186,7 @@ def _locked_staff_admin_actor(principal=False):
 def _staff_email(value):
     email = value.strip().lower()
     if (not 3 <= len(email) <= 120
-            or re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", email) is None
+            or re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) is None
             or email.startswith("prince-demo-")
             or email.endswith((".invalid", ".test", ".example", ".localhost"))):
         abort(400, description="Enter an independently verified email address.")

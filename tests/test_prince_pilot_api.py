@@ -9,7 +9,7 @@ from extensions import db
 from models import User
 from partnerships.prince_models import (
     PrinceAudit, PrinceCustomer, PrinceJob, PrinceJobAssignment, PrinceMembership,
-    PrinceTenant, PrinceVehicle,
+    PrinceTenant, PrinceVehicle, PrinceJobTransition,
 )
 
 URL = "/pilot/workshops/prince"
@@ -677,3 +677,112 @@ def test_principal_management_review_queue_excludes_attested_entry(pilot, app, c
     assert reviewed.status_code == 201
     after = client.get(f"{URL}/manage").get_data(as_text=True)
     assert "No pending principal decisions" in after
+
+
+def _advance(client, token, job_id, old, new, disposition=None):
+    return client.post(
+        f"{URL}/jobs/{job_id}/lifecycle",
+        json={
+            "expected_status": old, "new_status": new,
+            "reason": "Record the workshop decision and next appropriate action.",
+            "closure_disposition": disposition,
+        },
+        headers={"X-CSRF-Token": token},
+    )
+
+
+@pytest.mark.parametrize("principal_key", ["principal_email", "stephen_email"])
+def test_lifecycle_principal_progression_and_audit(pilot, app, client, principal_key):
+    token = _login(client, pilot[principal_key])
+    job_id = pilot["unassigned_id"]
+    assert _advance(client, token, job_id, "draft", "approved").status_code == 409
+    for old, new in [
+        ("draft", "awaiting_approval"),
+        ("awaiting_approval", "approved"),
+        ("approved", "in_progress"),
+    ]:
+        response = _advance(client, token, job_id, old, new)
+        assert response.status_code == 200
+        assert response.json["job_status"] == new
+        assert _advance(client, token, job_id, old, new).status_code == 409
+    assert _advance(
+        client, token, job_id, "in_progress", "closed", "follow_up_required",
+    ).status_code == 409
+    history = client.get(f"{URL}/jobs/{job_id}/lifecycle").json
+    assert len(history["history"]) == 3
+    with app.app_context():
+        assert PrinceJobTransition.query.filter_by(job_id=job_id).count() == 3
+        assert PrinceAudit.query.filter_by(action="job_status_changed", target_id=job_id).count() == 3
+    assert "Job progression" in client.get(f"{URL}/manage").get_data(as_text=True)
+
+
+def test_operator_cannot_change_or_read_private_lifecycle(pilot, client):
+    token = _login(client, pilot["other_email"])
+    job_id = pilot["unassigned_id"]
+    assert client.get(f"{URL}/jobs/{job_id}/lifecycle").status_code == 404
+    assert _advance(client, token, job_id, "draft", "awaiting_approval").status_code == 404
+    assert client.get(f"{URL}/jobs/{job_id}").json["job_status"] == "draft"
+
+
+def test_lifecycle_cross_tenant_and_csrf_denied(pilot, client):
+    token = _login(client, pilot["principal_email"])
+    assert _advance(client, token, pilot["cross_id"], "draft", "awaiting_approval").status_code == 404
+    assert client.get(f"{URL}/jobs/{pilot['cross_id']}/lifecycle").status_code == 404
+    assert client.post(f"{URL}/jobs/{pilot['unassigned_id']}/lifecycle", json={
+        "expected_status": "draft", "new_status": "awaiting_approval",
+        "reason": "A principal should review the proposed scope.",
+        "closure_disposition": None,
+    }).status_code == 400
+
+
+def test_lifecycle_closure_preserves_unresolved_concern(pilot, client):
+    token = _login(client, pilot["stephen_email"])
+    job_id = pilot["unassigned_id"]
+    headers = {"X-CSRF-Token": token}
+    for old, new in [
+        ("draft", "awaiting_approval"), ("awaiting_approval", "approved"),
+        ("approved", "in_progress"),
+    ]:
+        assert _advance(client, token, job_id, old, new).status_code == 200
+    entry = client.post(f"{URL}/jobs/{job_id}/entries", json={
+        "category": "outstanding_concern", "body": "Inspection remains necessary.",
+    }, headers=headers)
+    assert entry.status_code == 201
+    entry_id = entry.json["entry"]["id"]
+    assert _advance(
+        client, token, job_id, "in_progress", "closed", "follow_up_required",
+    ).status_code == 409
+    reviewed = client.post(f"{URL}/jobs/{job_id}/entries/{entry_id}/review", json={
+        "decision": "needs_evidence", "basis": "not_applicable",
+        "review_note": "Further evidence is required; inspection remains pending.",
+    }, headers=headers)
+    assert reviewed.status_code == 201
+    assert _advance(
+        client, token, job_id, "in_progress", "closed", "no_follow_up_identified",
+    ).status_code == 409
+    assert _advance(
+        client, token, job_id, "in_progress", "closed", "follow_up_required",
+    ).status_code == 200
+    state = client.get(f"{URL}/jobs/{job_id}/lifecycle").json
+    assert state["job_status"] == "closed"
+    assert state["next_status"] is None
+    assert state["history"][-1]["closure_disposition"] == "follow_up_required"
+    record = client.get(f"{URL}/jobs/{job_id}/entries").json["entries"][0]
+    assert record["body"] == "Inspection remains necessary."
+    assert record["review_state"] == "unverified"
+    assert client.post(f"{URL}/jobs/{job_id}/entries", json={
+        "category": "next_action", "body": "New note after closure.",
+    }, headers=headers).status_code == 403
+
+
+def test_lifecycle_requires_active_operator_before_start(pilot, app, client):
+    token = _login(client, pilot["principal_email"])
+    job_id = pilot["unassigned_id"]
+    assert _advance(client, token, job_id, "draft", "awaiting_approval").status_code == 200
+    assert _advance(client, token, job_id, "awaiting_approval", "approved").status_code == 200
+    with app.app_context():
+        assigned = db.session.get(PrinceJob, job_id).assigned_user_id
+        member = PrinceMembership.query.filter_by(user_id=assigned).one()
+        member.active = False
+        db.session.commit()
+    assert _advance(client, token, job_id, "approved", "in_progress").status_code == 409

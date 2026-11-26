@@ -278,3 +278,41 @@
     });
   }
 })();
+
+
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  for (const form of document.querySelectorAll(".invoice-form")) {
+    const button = form.querySelector('button[type="submit"]');
+    const feedback = form.querySelector(".invoice-feedback");
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!csrf || button.disabled || !form.reportValidity()) return;
+      button.disabled = true;
+      feedback.textContent = "Recording training invoice…";
+      try {
+        const response = await fetch(form.dataset.url, {
+          method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+          body: JSON.stringify({
+            expected_version: Number(form.dataset.version),
+            expected_authorization_sequence: Number(form.dataset.sequence),
+            issue_reason: form.elements.issue_reason.value.trim(),
+            issue_attested: form.elements.issue_attested.checked,
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.invoice) {
+          feedback.textContent = result.error || "Invoice not recorded. Reload and review the job.";
+          return;
+        }
+        window.location.reload();
+      } catch {
+        feedback.textContent = "Could not confirm invoice creation. Reload before retrying.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+})();

@@ -400,3 +400,40 @@
     });
   }
 })();
+
+
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  for (const form of document.querySelectorAll(".clinical-form")) {
+    const button = form.querySelector('button[type="submit"]');
+    const feedback = form.querySelector(".clinical-feedback");
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!csrf || button.disabled || !form.reportValidity()) return;
+      const payload = form.dataset.action === "create" ? {
+        consent_channel: form.elements.channel.value,
+        consent_reference: form.elements.reference.value.trim(),
+        consent_notice_version: form.dataset.notice,
+        consent_attested: form.elements.attested.checked,
+      } : {reason: form.elements.reason.value.trim(), withdrawal_attested: form.elements.attested.checked};
+      button.disabled = true;
+      feedback.textContent = "Recording fictional consent decision…";
+      try {
+        const response = await fetch(form.dataset.url, {
+          method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.handoff) {
+          feedback.textContent = result.error || "Not recorded. Reload and review.";
+          return;
+        }
+        window.location.reload();
+      } catch {
+        feedback.textContent = "Could not confirm save. Reload before retrying.";
+      } finally { button.disabled = false; }
+    });
+  }
+})();

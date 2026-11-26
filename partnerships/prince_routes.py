@@ -24,7 +24,8 @@ from partnerships.prince_access_policy import (
     redact_operator_job,
 )
 from partnerships.prince_models import (
-    PrinceAudit, PrinceCustomer, PrinceCustomerAuthorization, PrinceEntryReview,
+    PrinceAudit, PrinceClinicalHandoff, PrinceClinicalWithdrawal, PrinceCustomer,
+    PrinceCustomerAuthorization, PrinceEntryReview,
     PrinceEstimate, PrinceInvoice, PrinceJob, PrinceJobAssignment,
     PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrincePayment,
     PrincePaymentReversal, PrinceReceipt, PrinceTenant, PrinceVehicle,
@@ -1695,5 +1696,217 @@ def principal_finance_data(slug):
     if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
         abort(404)
     response = jsonify(_financial_overview(tenant.id))
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
+
+
+CLINICAL_HANDOFF_NOTICE = "synthetic-clinical-handoff-v1"
+
+
+def _clinical_scope(slug, job_id, *, lock=False):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.SERVICE_CONFIRM)
+    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        abort(404)
+    job, customer, vehicle = _find_authorized_job(tenant, actor, job_id, lock=lock)
+    return tenant, actor, job, customer, vehicle
+
+
+def _clinical_candidate(job):
+    """Bounded principal attestation, never inferred from financial events."""
+    if job.status != "closed":
+        return None
+    closure = PrinceJobTransition.query.filter_by(
+        tenant_id=job.tenant_id, job_id=job.id, new_status="closed",
+    ).first()
+    if closure is None:
+        return None
+    records = (
+        db.session.query(PrinceJobEntry, PrinceEntryReview)
+        .outerjoin(PrinceEntryReview,
+                   (PrinceEntryReview.entry_id == PrinceJobEntry.id)
+                   & (PrinceEntryReview.tenant_id == PrinceJobEntry.tenant_id)
+                   & (PrinceEntryReview.job_id == PrinceJobEntry.job_id))
+        .filter(PrinceJobEntry.tenant_id == job.tenant_id, PrinceJobEntry.job_id == job.id)
+        .order_by(PrinceJobEntry.id.asc()).all()
+    )
+    confirmed = []
+    unresolved = []
+    for entry, review in records:
+        if not entry.body.lower().startswith(("demo:", "synthetic:")):
+            return None
+        if PRIVATE_CONTACT_PATTERN.search(entry.body):
+            return None
+        if review is None:
+            return None
+        if (entry.category == "reported_work" and review.decision == "work_confirmed"
+                and review.basis in {"direct_inspection", "documented_evidence", "technician_demonstration"}):
+            confirmed.append({
+                "entry_id": entry.id, "review_id": review.id, "statement": entry.body,
+                "basis": review.basis, "reviewed_at": review.reviewed_at.isoformat(timespec="seconds") + "Z",
+            })
+        elif (entry.category in {"temporary_intervention", "outstanding_concern", "next_action"}
+              or review.decision in {"needs_evidence", "not_confirmed"}
+              or entry.category == "reported_work"):
+            unresolved.append({
+                "entry_id": entry.id, "category": entry.category, "statement": entry.body,
+                "review_decision": review.decision,
+            })
+    if not confirmed:
+        return None
+    plan = closure.follow_up_plan
+    if plan and (PRIVATE_CONTACT_PATTERN.search(plan)
+                 or not plan.lower().startswith(("demo:", "synthetic:"))):
+        return None
+    return {
+        "schema_version": 1, "source_job_id": job.id, "source_vehicle_id": job.vehicle_id,
+        "confirmed_work": confirmed, "unresolved_statements": unresolved,
+        "closure_disposition": closure.closure_disposition,
+        "follow_up_plan": plan, "outcome": "not_independently_assessed",
+        "identity_status": "unlinked", "destination": "isolated_training_register",
+    }
+
+
+def _clinical_record(job):
+    return PrinceClinicalHandoff.query.populate_existing().filter_by(
+        tenant_id=job.tenant_id, job_id=job.id,
+    ).first()
+
+
+def _clinical_response(record):
+    if record is None:
+        return {"state": "not_recorded"}
+    withdrawal = PrinceClinicalWithdrawal.query.populate_existing().filter_by(handoff_id=record.id).first()
+    if withdrawal:
+        return {
+            "state": "withdrawn", "handoff_id": record.id,
+            "withdrawn_at": withdrawal.recorded_at.isoformat(timespec="seconds") + "Z",
+            "withdrawn_by_user_id": withdrawal.recorded_by_user_id,
+            "withdrawal_reason": _public_concern(withdrawal.reason),
+        }
+    return {
+        "state": "candidate", "handoff_id": record.id, "snapshot": record.snapshot,
+        "consent_channel": record.consent_channel, "consent_notice_version": record.consent_notice_version,
+        "consent_reference": _public_concern(record.consent_reference),
+        "recorded_by_user_id": record.recorded_by_user_id,
+        "recorded_at": record.recorded_at.isoformat(timespec="seconds") + "Z",
+    }
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/clinical")
+def clinical_workspace(slug, job_id):
+    tenant, _, job, customer, vehicle = _clinical_scope(slug, job_id)
+    record = _clinical_record(job)
+    response = current_app.make_response(render_template(
+        "partnerships/prince_clinical.html", slug=slug, workshop_name=tenant.display_name,
+        job=_job_response(job, customer, vehicle), handoff=_clinical_response(record),
+        candidate=_clinical_candidate(job) if record is None else None,
+        notice=CLINICAL_HANDOFF_NOTICE,
+    ))
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/clinical/data")
+def clinical_detail(slug, job_id):
+    _, _, job, _, _ = _clinical_scope(slug, job_id)
+    record = _clinical_record(job)
+    response = jsonify({"handoff": _clinical_response(record),
+                        "candidate": _clinical_candidate(job) if record is None else None})
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/clinical")
+def create_clinical_handoff(slug, job_id):
+    tenant, actor, job, customer, _ = _clinical_scope(slug, job_id, lock=True)
+    if request.content_length and request.content_length > 2500:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {
+        "consent_channel", "consent_reference", "consent_notice_version", "consent_attested"
+    }:
+        abort(400)
+    if (data["consent_attested"] is not True
+            or data["consent_notice_version"] != CLINICAL_HANDOFF_NOTICE):
+        abort(400)
+    channel = _text(data, "consent_channel", 24, required=True)
+    reference = _text(data, "consent_reference", 900, required=True)
+    if (channel not in {"written_message", "signed_document"} or len(reference) < 20
+            or PRIVATE_CONTACT_PATTERN.search(reference)
+            or not reference.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    if _clinical_record(job) is not None or not customer.participation_confirmed:
+        abort(409)
+    snapshot = _clinical_candidate(job)
+    if snapshot is None:
+        return jsonify({"error": "A closed, reviewed job with confirmed fictional work is required."}), 409
+    try:
+        record = PrinceClinicalHandoff(
+            tenant_id=tenant.id, job_id=job.id, snapshot=snapshot, consent_channel=channel,
+            consent_reference=reference, consent_notice_version=CLINICAL_HANDOFF_NOTICE,
+            recorded_by_user_id=actor.user_id,
+        )
+        db.session.add(record)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "training_clinical_handoff_created", "clinical_handoff", record.id)
+        result = _clinical_response(record)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Clinical candidate could not be recorded."}), 503
+    return jsonify({"handoff": result}), 201
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/clinical/withdraw")
+def withdraw_clinical_handoff(slug, job_id):
+    tenant, actor, job, _, _ = _clinical_scope(slug, job_id, lock=True)
+    if request.content_length and request.content_length > 2500:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"reason", "withdrawal_attested"}:
+        abort(400)
+    reason = _text(data, "reason", 900, required=True)
+    if (data["withdrawal_attested"] is not True or len(reason) < 20
+            or PRIVATE_CONTACT_PATTERN.search(reason)
+            or not reason.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    record = _clinical_record(job)
+    if record is None or PrinceClinicalWithdrawal.query.filter_by(handoff_id=record.id).first():
+        abort(409)
+    try:
+        event = PrinceClinicalWithdrawal(handoff_id=record.id,
+                                         recorded_by_user_id=actor.user_id, reason=reason)
+        db.session.add(event)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "training_clinical_consent_withdrawn", "clinical_handoff", record.id)
+        result = _clinical_response(record)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Withdrawal could not be recorded."}), 503
+    return jsonify({"handoff": result})
+
+
+@prince_pilot_bp.get("/<slug>/vehicles/<int:vehicle_id>/clinical-history")
+def clinical_vehicle_history(slug, vehicle_id):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.SERVICE_CONFIRM)
+    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        abort(404)
+    vehicle = PrinceVehicle.query.filter_by(id=vehicle_id, tenant_id=tenant.id).first()
+    if vehicle is None:
+        abort(404)
+    records = (
+        db.session.query(PrinceClinicalHandoff)
+        .join(PrinceJob, (PrinceJob.id == PrinceClinicalHandoff.job_id)
+              & (PrinceJob.tenant_id == PrinceClinicalHandoff.tenant_id))
+        .outerjoin(PrinceClinicalWithdrawal, PrinceClinicalWithdrawal.handoff_id == PrinceClinicalHandoff.id)
+        .filter(PrinceClinicalHandoff.tenant_id == tenant.id, PrinceJob.vehicle_id == vehicle.id,
+                PrinceClinicalWithdrawal.id.is_(None))
+        .order_by(PrinceClinicalHandoff.id.desc()).all()
+    )
+    response = jsonify({"vehicle_id": vehicle.id, "identity_status": "unlinked",
+                        "candidates": [r.snapshot for r in records]})
     response.headers["Cache-Control"] = "no-store, private"
     return response

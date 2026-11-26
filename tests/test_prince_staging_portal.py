@@ -1005,3 +1005,105 @@ def test_financial_console_excludes_other_workshop_invoices(stage, app, client):
     assert data["totals"]["invoiced"] == 0
     assert data["rows"] == []
     assert client.get("/pilot/workshops/other-finance/finance/data").status_code == 404
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_clinical_handoff_requires_reviewed_work_and_separate_consent(approved_quotation, client, app, role):
+    from models import Car, VehicleEvent, VehicleHealthSnapshot
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    root = approved_quotation.rsplit("/", 1)[0]
+    endpoint = root + "/clinical"
+    payload = {
+        "consent_channel": "written_message",
+        "consent_reference": "Demo: fictional owner separately agreed to the clinical candidate.",
+        "consent_notice_version": "synthetic-clinical-handoff-v1",
+        "consent_attested": True,
+    }
+    assert client.get(endpoint + "/data").json["candidate"] is None
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 409
+    assert client.post(approved_quotation + "/2/authorization",
+                       json=_customer_decision(), headers=headers).status_code == 201
+    for old, new in [("draft", "awaiting_approval"), ("awaiting_approval", "approved"),
+                     ("approved", "in_progress")]:
+        assert client.post(root + "/lifecycle", json={
+            "expected_status": old, "new_status": new,
+            "reason": "Demo: fictional approval of workshop scope.",
+            "closure_disposition": None, "follow_up_plan": None,
+        }, headers=headers).status_code == 200
+    for category, body, decision, basis in [
+        ("reported_work", "Demo: fictional replacement completed.", "work_confirmed", "direct_inspection"),
+        ("outstanding_concern", "Demo: fictional intermittent symptom remains.", "acknowledged", "not_applicable"),
+    ]:
+        entry = client.post(root + "/entries", json={"category": category, "body": body}, headers=headers)
+        assert entry.status_code == 201
+        entry_id = entry.json["entry"]["id"]
+        assert client.post(root + f"/entries/{entry_id}/review", json={
+            "decision": decision, "basis": basis, "review_note": "Demo: private fictional review context.",
+        }, headers=headers).status_code == 201
+    assert client.post(root + "/lifecycle", json={
+        "expected_status": "in_progress", "new_status": "closed",
+        "reason": "Demo: fictional administrative closure with follow-up.",
+        "closure_disposition": "follow_up_required",
+        "follow_up_plan": "Demo: check the intermittent symptom at next visit.",
+    }, headers=headers).status_code == 200
+    before = client.get(endpoint + "/data").json
+    assert before["handoff"]["state"] == "not_recorded"
+    assert len(before["candidate"]["confirmed_work"]) == 1
+    assert len(before["candidate"]["unresolved_statements"]) == 1
+    assert before["candidate"]["outcome"] == "not_independently_assessed"
+    vehicle_id = before["candidate"]["source_vehicle_id"]
+    history = P + f"/vehicles/{vehicle_id}/clinical-history"
+    assert client.get(history).json["candidates"] == []
+    assert client.post(endpoint, json={**payload, "consent_attested": False},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json={**payload, "consent_notice_version": "old"},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json={**payload, "consent_channel": "phone"},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json=payload).status_code == 400
+    with app.app_context():
+        global_counts = [model.query.count() for model in (Car, VehicleEvent, VehicleHealthSnapshot)]
+    saved = client.post(endpoint, json=payload, headers=headers)
+    assert saved.status_code == 201
+    assert saved.json["handoff"]["state"] == "candidate"
+    snapshot = saved.json["handoff"]["snapshot"]
+    assert snapshot == before["candidate"]
+    assert "private fictional review context" not in str(snapshot)
+    assert "consent_reference" not in snapshot
+    assert "total_kobo" not in snapshot
+    assert client.get(history).json["candidates"] == [snapshot]
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 409
+    page = client.get(endpoint)
+    assert page.status_code == 200
+    assert "Outcome: not independently assessed" in page.get_data(as_text=True)
+    assert "no-store" in page.headers["Cache-Control"]
+    withdrawal = {"reason": "Demo: fictional owner withdrew clinical consent.", "withdrawal_attested": True}
+    assert client.post(endpoint + "/withdraw", json=withdrawal, headers=headers).status_code == 200
+    assert client.get(history).json["candidates"] == []
+    after = client.get(endpoint + "/data").json
+    assert after["handoff"]["state"] == "withdrawn"
+    assert "snapshot" not in after["handoff"]
+    assert after["candidate"] is None
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 409
+    assert client.post(endpoint + "/withdraw", json=withdrawal, headers=headers).status_code == 409
+    with app.app_context():
+        assert [model.query.count() for model in (Car, VehicleEvent, VehicleHealthSnapshot)] == global_counts
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_operator_denied_clinical_handoff_and_history(stage, client, app, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with app.app_context():
+        vehicle_id = db.session.get(PrinceJob, stage["job_id"]).vehicle_id
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    root = P + f"/jobs/{stage['job_id']}/clinical"
+    for path in (root, root + "/data", P + f"/vehicles/{vehicle_id}/clinical-history"):
+        assert client.get(path).status_code == 404
+    for path in (root, root + "/withdraw"):
+        assert client.post(path, json={}, headers={"X-CSRF-Token": token}).status_code == 404

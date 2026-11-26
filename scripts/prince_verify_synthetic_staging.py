@@ -28,7 +28,8 @@ def verify():
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
                 "prince_job_entries", "prince_job_assignments", "prince_job_transitions",
                 "prince_estimates", "prince_customer_authorizations", "prince_invoices", "prince_payments", "prince_receipts",
-                "prince_payment_reversals"} <= tables):
+                "prince_payment_reversals", "prince_clinical_handoffs",
+                "prince_clinical_withdrawals"} <= tables):
             raise RuntimeError("Prince staging verification failed at check 1 (source 27).")
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         if not (tenant.active and tenant.intake_enabled):
@@ -329,7 +330,24 @@ def verify():
         for path in ("/pilot/workshops/prince/finance", "/pilot/workshops/prince/finance/data"):
             if client.get(path, base_url=BASE).status_code != 404:
                 raise RuntimeError("Prince operator received financial dashboard access.")
-    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, invoices, payments, receipts, reversals, finance and privacy.")
+    for job in jobs_all.json["jobs"]:
+        root = f"/pilot/workshops/prince/jobs/{job['job_id']}/clinical"
+        history = f"/pilot/workshops/prince/vehicles/{job['vehicle_id']}/clinical-history"
+        dad = principal.get(root + "/data", base_url=BASE)
+        steph = stephen.get(root + "/data", base_url=BASE)
+        if dad.status_code != 200 or steph.status_code != 200 or dad.json != steph.json:
+            raise RuntimeError("Prince clinical candidate principal parity failed.")
+        for client in (principal, stephen):
+            if client.get(root, base_url=BASE).status_code != 200:
+                raise RuntimeError("Prince clinical workspace unavailable.")
+            result = client.get(history, base_url=BASE)
+            if result.status_code != 200 or result.json["identity_status"] != "unlinked":
+                raise RuntimeError("Prince isolated vehicle history unavailable.")
+        for client in (op_a, op_b):
+            for path in (root, root + "/data", history):
+                if client.get(path, base_url=BASE).status_code != 404:
+                    raise RuntimeError("Prince operator received confidential clinical handoff.")
+    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, invoices, payments, receipts, reversals, finance, clinical handoff and privacy.")
 
 
 if __name__ == "__main__":

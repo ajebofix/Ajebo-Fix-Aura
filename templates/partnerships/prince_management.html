@@ -85,7 +85,7 @@
         <div class="management-job-footer">
           <a href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#job-record-{{ job.job_id }}">
             Open workshop record
-          </a> · <a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">Estimate</a>
+          </a> · <a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">Estimate</a>{% if config.get("PRINCE_STAGING_LOCKDOWN") %} · <a href="{{ url_for('prince_pilot.clinical_workspace', slug=slug, job_id=job.job_id) }}">Clinical handoff</a>{% endif %}
         </div>
         {% if job.job_status != "closed" %}
         <p class="tiny"><strong>Work authorization:</strong> {{ job.work_authorization | replace("_", " ") | title }}.</p>

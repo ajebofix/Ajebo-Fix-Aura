@@ -49,6 +49,9 @@
       <div class="assign-controls"><button type="submit">Save new draft version</button><span class="estimate-feedback" role="status"></span></div>
     </form>
   </section>{% else %}<p class="management-test-banner">This estimate workspace is locked for changes.</p>{% endif %}
+  {% if principal and config.get("PRINCE_STAGING_LOCKDOWN") %}
+  <section class="panel management-panel"><h2>Billing</h2><p><a class="hero-link" href="{{ url_for('prince_pilot.invoice_workspace', slug=slug, job_id=job.job_id) }}">Open invoice workspace</a></p></section>
+  {% endif %}
   {% if principal and latest and latest.internally_approved %}
   <section class="panel management-panel">
     <h2>Customer authorization</h2>

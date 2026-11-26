@@ -27,7 +27,7 @@ def verify():
         if not ({"prince_tenants", "prince_memberships", "prince_customers",
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
                 "prince_job_entries", "prince_job_assignments", "prince_job_transitions",
-                "prince_estimates", "prince_customer_authorizations"} <= tables):
+                "prince_estimates", "prince_customer_authorizations", "prince_invoices"} <= tables):
             raise RuntimeError("Prince staging verification failed at check 1 (source 27).")
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         if not (tenant.active and tenant.intake_enabled):
@@ -267,7 +267,21 @@ def verify():
         for client in (principal, stephen):
             if client.get(root + f"/estimates/{latest['version']}/print", base_url=BASE).status_code != 200:
                 raise RuntimeError("Prince principal print preview unavailable.")
-    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, print access, assignments and privacy.")
+    # Check invoice permissions and both principals' identical frozen snapshots.
+    for job in jobs_all.json["jobs"]:
+        root = f"/pilot/workshops/prince/jobs/{job['job_id']}/invoice"
+        dad = principal.get(root + "/data", base_url=BASE)
+        steph = stephen.get(root + "/data", base_url=BASE)
+        if dad.status_code != 200 or steph.status_code != 200 or dad.json != steph.json:
+            raise RuntimeError("Prince invoice principal parity failed.")
+        for client in (principal, stephen):
+            if client.get(root, base_url=BASE).status_code != 200:
+                raise RuntimeError("Prince invoice workspace unavailable.")
+        for client in (op_a, op_b):
+            if (client.get(root, base_url=BASE).status_code != 404
+                    or client.get(root + "/data", base_url=BASE).status_code != 404):
+                raise RuntimeError("Prince operator received restricted invoice access.")
+    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, invoices, print and privacy.")
 
 
 if __name__ == "__main__":

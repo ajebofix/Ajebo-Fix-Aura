@@ -341,3 +341,78 @@ def test_suspension_scoped_to_operator_and_revokes_access(live, app, client):
         "current_password": PASSWORD}).status_code == 303
     assert not db.session.get(PrinceMembership, operator.id).active
     assert PrinceTenant.query.filter_by(slug="prince").one().intake_enabled is False
+
+
+def test_principal_corrects_another_principals_role(live, app, client):
+    from partnerships.prince_models import PrinceAudit
+    from security.session_registry import UserSession
+
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 200
+    payload = {"name": "Fictional second principal", "email": "second@example.org",
+               "role": "principal", "new_password": PASSWORD,
+               "confirm_password": PASSWORD, "current_password": PASSWORD,
+               "identity_attested": "yes"}
+    assert _staff_post(client, "/prince-staff/accounts/create", payload).status_code == 303
+    user = User.query.filter_by(email=payload["email"]).one()
+    user_id = user.id
+    target_id = PrinceMembership.query.filter_by(user_id=user_id).one().id
+    other = app.test_client()
+    assert other.get("/prince-staff").status_code == 200
+    assert _staff_post(other, "/prince-staff", {
+        "email": payload["email"], "password": PASSWORD}).status_code == 303
+    assert b"Staff roster" in other.get("/prince-staff/accounts").data
+    path = f"/prince-staff/accounts/{target_id}/role"
+    change = {"expected_role": "principal", "role": "operator",
+              "role_confirmed": "yes", "current_password": PASSWORD}
+    assert b"Change staff role" in client.get("/prince-staff/accounts").data
+    assert client.post(path, data=change).status_code == 400
+    assert _staff_post(client, path, {**change, "current_password": "wrong"}).status_code == 403
+    assert _staff_post(client, path, change).status_code == 303
+    assert db.session.get(PrinceMembership, target_id).role == "operator"
+    assert db.session.get(User, user_id).check_password(PASSWORD)
+    assert db.session.get(PrinceMembership, live).role == "principal"
+    assert UserSession.query.filter_by(user_id=user_id, revoked_at=None).count() == 0
+    assert PrinceAudit.query.filter_by(target_id=user_id,
+                                      action="live_staff_demoted_to_operator").count() == 1
+    assert other.get("/prince-staff/accounts").status_code != 200
+    assert _staff_post(client, path, change).status_code == 409
+    assert PrinceTenant.query.filter_by(slug="prince").one().intake_enabled is False
+
+
+def test_staff_role_correction_rejects_self_and_cross_tenant(live, app, client):
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    tenant = PrinceTenant(slug="other", display_name="Other synthetic workshop", active=True)
+    outsider = User(name="Fictional outsider", email="outsider@example.org",
+                    phone_number="other-synthetic", role="user", is_active=True,
+                    email_verified_at=datetime.utcnow())
+    outsider.set_password(PASSWORD)
+    db.session.add_all([tenant, outsider])
+    db.session.flush()
+    foreign = PrinceMembership(tenant_id=tenant.id, user_id=outsider.id,
+                               role="principal", active=True)
+    db.session.add(foreign)
+    db.session.commit()
+    foreign_id = foreign.id
+    assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 200
+    change = {"expected_role": "principal", "role": "operator",
+              "role_confirmed": "yes", "current_password": PASSWORD}
+    assert _staff_post(client, f"/prince-staff/accounts/{live}/role", change).status_code == 404
+    assert _staff_post(client, f"/prince-staff/accounts/{foreign_id}/role", change).status_code == 404
+    assert db.session.get(PrinceMembership, foreign_id).role == "principal"
+    assert db.session.get(PrinceMembership, live).role == "principal"
+
+
+def test_operator_cannot_promote_staff(live, app, client):
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    member = db.session.get(PrinceMembership, live)
+    member.role = "operator"
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 200
+    assert _staff_post(client, f"/prince-staff/accounts/{live}/role", {
+        "expected_role": "operator", "role": "principal",
+        "role_confirmed": "yes", "current_password": PASSWORD}).status_code == 404
+    assert db.session.get(PrinceMembership, live).role == "operator"

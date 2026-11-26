@@ -22,6 +22,17 @@
 <label><input name="identity_attested" value="yes" type="checkbox" required> I independently verified this person's identity and email ownership and approve the selected role.</label>
 <label for="current-password">Your principal password</label><input id="current-password" name="current_password" type="password" required autocomplete="current-password"><button>Create staff account</button></form></section>
 <section><h2>Staff roster</h2>{% for member, user in rows %}<p><strong>{{ user.name }}</strong> · {{ member.role }} · {{ "Active" if member.active else "Suspended" }}<br><small>{{ user.email }}</small></p>
+{% if member.active and user.is_active and user.id != actor.id and user.role == "user" %}
+<details><summary>Change staff role</summary>
+<form method="post" action="{{ url_for('prince_live.change_staff_role', member_id=member.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="expected_role" value="{{ member.role }}">
+<label>New role<select name="role" required><option value="operator"{% if member.role == "operator" %} selected{% endif %}>Operator</option><option value="principal"{% if member.role == "principal" %} selected{% endif %}>Principal — full workshop management</option></select></label>
+<p><small>This updates permissions, not the account or its history. The staff member must sign in again. A principal can manage other staff; choose Operator for ordinary workshop duties.</small></p>
+<label><input type="checkbox" name="role_confirmed" value="yes" required> I authorize the selected role change for {{ user.name }}.</label>
+<label>Confirm your principal password<input type="password" name="current_password" required autocomplete="current-password"></label>
+<button>Save role</button></form></details>
+{% endif %}
 {% if member.role == "operator" and member.active %}<details><summary>Suspend operator access</summary><form method="post" action="{{ url_for('prince_live.suspend_operator', member_id=member.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Confirm your principal password<input type="password" name="current_password" required autocomplete="current-password"></label><button>Suspend operator</button></form></details>{% endif %}{% endfor %}</section>
 <section><h2>Recent account changes</h2>{% for item in activity %}<p>{{ item.created_at }} UTC · {{ item.action.replace("live_staff_", "").replace("_", " ") }} · staff #{{ item.target_id }} · actor #{{ item.actor_user_id }}</p>{% else %}<p>No browser account changes recorded yet.</p>{% endfor %}</section>
 {% endif %}

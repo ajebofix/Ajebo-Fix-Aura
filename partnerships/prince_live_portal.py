@@ -145,6 +145,7 @@ def live_workshop_request_allowed():
 STAFF_ADMIN_ENDPOINTS = frozenset({
     "prince_live.staff_accounts", "prince_live.create_staff",
     "prince_live.change_own_email", "prince_live.suspend_operator",
+    "prince_live.change_staff_role",
 })
 
 
@@ -391,5 +392,43 @@ def suspend_operator(member_id):
     target.active = False
     _revoke_staff_sessions(user.id, "prince_staff_suspended")
     _staff_audit(actor, member, user, "live_staff_suspended")
+    _commit_staff_change()
+    return redirect(url_for("prince_live.staff_accounts"), code=303)
+
+
+@live_bp.post("/accounts/<int:member_id>/role")
+@limiter.limit("5 per minute; 15 per hour")
+def change_staff_role(member_id):
+    actor, member = _locked_staff_admin_actor(principal=True)
+    target = PrinceMembership.query.populate_existing().filter(
+        PrinceMembership.id == member_id,
+        PrinceMembership.tenant_id == member.tenant_id,
+        PrinceMembership.active.is_(True),
+        PrinceMembership.role.in_(("principal", "operator")),
+    ).one_or_none()
+    # Never allow self-role changes; an independently authenticated active
+    # principal must remain in charge of the tenant after any demotion.
+    if target is None or target.user_id == actor.id:
+        abort(404)
+    user = User.query.populate_existing().filter_by(id=target.user_id).one_or_none()
+    if user is None or not user.is_active or user.role != "user":
+        abort(404)
+    old_role = request.form.get("expected_role", "")
+    new_role = request.form.get("role", "")
+    if new_role not in {"principal", "operator"}:
+        abort(400, description="Select an approved workshop role.")
+    if old_role != target.role:
+        abort(409, description="Staff role changed. Refresh the roster before trying again.")
+    if request.form.get("role_confirmed") != "yes":
+        abort(400, description="Confirm the selected permission change.")
+    if new_role == target.role:
+        return redirect(url_for("prince_live.staff_accounts"), code=303)
+    # The tenant lock in _locked_staff_admin_actor serializes staff mutations.
+    # The actor was freshly rechecked under that lock as an active principal.
+    target.role = new_role
+    _revoke_staff_sessions(user.id, "prince_staff_role_changed")
+    action = ("live_staff_demoted_to_operator" if new_role == "operator"
+              else "live_staff_promoted_to_principal")
+    _staff_audit(actor, member, user, action)
     _commit_staff_change()
     return redirect(url_for("prince_live.staff_accounts"), code=303)

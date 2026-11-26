@@ -954,3 +954,54 @@ def test_operator_cannot_view_financial_console(stage, client, role):
     assert client.get(P + "/finance").status_code == 404
     assert client.get(P + "/finance/data").status_code == 404
     assert "Financial console" not in client.get(P + "/operator").get_data(as_text=True)
+
+
+def test_financial_console_excludes_other_workshop_invoices(stage, app, client):
+    from partnerships.prince_models import PrinceCustomerAuthorization, PrinceInvoice
+    with app.app_context():
+        original = db.session.get(PrinceJob, stage["job_id"])
+        tenant = PrinceTenant(slug="other-finance", display_name="Synthetic Foreign Workshop",
+                              active=True, intake_enabled=True,
+                              approved_privacy_notice_version="synthetic-staging-v1")
+        db.session.add(tenant)
+        db.session.flush()
+        customer = PrinceCustomer(tenant_id=tenant.id, full_name="Synthetic Foreign Customer",
+                                  intake_by_user_id=stage["principal"],
+                                  privacy_notice_version="synthetic-staging-v1",
+                                  participation_confirmed=True)
+        db.session.add(customer)
+        db.session.flush()
+        vehicle = PrinceVehicle(tenant_id=tenant.id, customer_id=customer.id,
+                                brand="Toyota", model="Synthetic Foreign Vehicle")
+        db.session.add(vehicle)
+        db.session.flush()
+        job = PrinceJob(tenant_id=tenant.id, customer_id=customer.id, vehicle_id=vehicle.id,
+                        assigned_user_id=original.assigned_user_id, status="approved")
+        db.session.add(PrinceMembership(tenant_id=tenant.id, user_id=original.assigned_user_id,
+                                       role="operator", active=True))
+        db.session.add(job)
+        db.session.flush()
+        items = [{"category": "labour", "description": "Demo: foreign scope",
+                  "quantity": 1, "unit_kobo": 900000, "line_kobo": 900000}]
+        db.session.add(PrinceEstimate(tenant_id=tenant.id, job_id=job.id, version=1,
+                                     items=items, subtotal_kobo=900000, discount_kobo=0,
+                                     total_kobo=900000, created_by_user_id=stage["principal"],
+                                     approved_by_user_id=stage["principal"], approved_at=datetime.utcnow(),
+                                     approval_note="Demo: foreign internal approval."))
+        db.session.flush()
+        db.session.add(PrinceCustomerAuthorization(
+            tenant_id=tenant.id, job_id=job.id, estimate_version=1, sequence=1,
+            decision="accepted", channel="written_message", evidence_reference="Demo: foreign acceptance.",
+            total_kobo=900000, recorded_by_user_id=stage["principal"]))
+        db.session.flush()
+        db.session.add(PrinceInvoice(
+            tenant_id=tenant.id, job_id=job.id, estimate_version=1, authorization_sequence=1,
+            items=items, subtotal_kobo=900000, discount_kobo=0, total_kobo=900000,
+            issued_by_user_id=stage["principal"], issue_reason="Demo: foreign invoice."))
+        db.session.commit()
+    assert _log_in(client, role="principal").status_code == 303
+    data = client.get(P + "/finance/data").json
+    assert data["totals"]["invoice_count"] == 0
+    assert data["totals"]["invoiced"] == 0
+    assert data["rows"] == []
+    assert client.get("/pilot/workshops/other-finance/finance/data").status_code == 404

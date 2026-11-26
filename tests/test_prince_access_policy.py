@@ -67,6 +67,23 @@ class PrinceAccessPolicyTests(unittest.TestCase):
             self.assertTrue(authorize(stephen, tenant_id="prince", action=action))
             self.assertFalse(authorize(admin, tenant_id="prince", action=action))
 
+    def test_dashboard_and_reassignment_are_principal_only(self):
+        for role in (PrinceRole.OPERATOR, PrinceRole.PILOT_ADMIN):
+            actor = PrinceActor(user_id=10, tenant_id="prince", role=role)
+            for action in (PrinceAction.MANAGEMENT_VIEW, PrinceAction.JOB_ASSIGN):
+                self.assertFalse(authorize(
+                    actor, tenant_id="prince", action=action,
+                    assigned_user_ids=frozenset({10}),
+                ))
+        for principal_id in (20, 21):
+            actor = PrinceActor(
+                user_id=principal_id, tenant_id="prince",
+                role=PrinceRole.PRINCIPAL,
+            )
+            for action in (PrinceAction.MANAGEMENT_VIEW, PrinceAction.JOB_ASSIGN):
+                self.assertTrue(authorize(actor, tenant_id="prince", action=action))
+                self.assertFalse(authorize(actor, tenant_id="other", action=action))
+
     def test_admin_cannot_verify_payments_by_default(self):
         admin = PrinceActor(user_id=1, tenant_id="prince", role=PrinceRole.PILOT_ADMIN)
         self.assertFalse(authorize(admin, tenant_id="prince", action=PrinceAction.PAYMENT_VERIFY))

@@ -110,6 +110,45 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrinceClinicalHandoff(db.Model):
+    """Closed-job, synthetic consent-bound clinical candidate, not a VehicleEvent."""
+    __tablename__ = "prince_clinical_handoffs"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_handoff_job_tenant", ondelete="RESTRICT",
+        ),
+        db.UniqueConstraint("job_id", name="uq_prince_handoff_job"),
+        db.CheckConstraint(
+            "consent_channel IN ('written_message', 'signed_document')",
+            name="ck_prince_handoff_consent_channel",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("prince_tenants.id", ondelete="RESTRICT"),
+                          nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    snapshot = db.Column(db.JSON, nullable=False)
+    consent_channel = db.Column(db.String(24), nullable=False)
+    consent_reference = db.Column(db.Text, nullable=False)
+    consent_notice_version = db.Column(db.String(48), nullable=False)
+    recorded_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                    nullable=False)
+    recorded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PrinceClinicalWithdrawal(db.Model):
+    """Separate immutable withdrawal; blocks active use without erasing audit history."""
+    __tablename__ = "prince_clinical_withdrawals"
+    id = db.Column(db.Integer, primary_key=True)
+    handoff_id = db.Column(db.Integer, db.ForeignKey("prince_clinical_handoffs.id", ondelete="RESTRICT"),
+                           nullable=False, unique=True)
+    recorded_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                    nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    recorded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class PrinceReceipt(db.Model):
     """One training receipt per verified payment. Reversal never deletes it."""
     __tablename__ = "prince_receipts"

@@ -35,6 +35,8 @@ DEMO_ROLE = {
 ALLOWED_STATIC = frozenset({
     "/static/css/prince_pilot.css",
     "/static/js/prince_pilot_operator.js",
+    "/static/css/prince_management.css",
+    "/static/js/prince_management.js",
     "/static/img/prince-workshop-logo-pilot.jpg",
 })
 
@@ -121,7 +123,14 @@ def sign_in():
         abort(404)
     if current_user.is_authenticated and session.get("prince_demo_authorized"):
         if _valid_member(current_user):
-            return redirect(url_for("prince_pilot.operator_workspace", slug="prince"))
+            target = (
+                "prince_pilot.principal_management"
+                if (current_user.email or "").lower() in {
+                    DEMO_EMAILS["principal"], DEMO_EMAILS["stephen"]
+                }
+                else "prince_pilot.operator_workspace"
+            )
+            return redirect(url_for(target, slug="prince"))
         logout_user()
         session.clear()
     if request.method == "GET":
@@ -150,7 +159,12 @@ def sign_in():
     login_user(user, remember=False, fresh=True)
     session["prince_demo_authorized"] = True
     session.permanent = False
-    return redirect(url_for("prince_pilot.operator_workspace", slug="prince"), code=303)
+    target = (
+        "prince_pilot.principal_management"
+        if DEMO_ROLE[selector] == "principal"
+        else "prince_pilot.operator_workspace"
+    )
+    return redirect(url_for(target, slug="prince"), code=303)
 
 
 @prince_staging_bp.post("/sign-out")

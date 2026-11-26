@@ -22,6 +22,7 @@ def upgrade():
         sa.Column("new_status", sa.String(24), nullable=False),
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("closure_disposition", sa.String(32)),
+        sa.Column("follow_up_plan", sa.Text()),
         sa.Column("changed_by_user_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["tenant_id"], ["prince_tenants.id"], ondelete="RESTRICT"),
@@ -42,6 +43,12 @@ def upgrade():
             "closure_disposition IN ('follow_up_required', 'no_follow_up_identified')) OR "
             "(new_status <> 'closed' AND closure_disposition IS NULL)",
             name="ck_prince_transition_closure",
+        ),
+        sa.CheckConstraint(
+            "(closure_disposition = 'follow_up_required' AND follow_up_plan IS NOT NULL) OR "
+            "((closure_disposition IS NULL OR closure_disposition <> 'follow_up_required') "
+            "AND follow_up_plan IS NULL)",
+            name="ck_prince_transition_follow_up",
         ),
         sa.UniqueConstraint("job_id", "new_status", name="uq_prince_transition_job_stage"),
     )

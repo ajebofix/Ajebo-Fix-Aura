@@ -174,13 +174,13 @@ def verify():
     management = principal.get("/pilot/workshops/prince/manage", base_url=BASE)
     if not (management.status_code == 200):
         raise RuntimeError("Prince staging verification failed at check 35 (source 141).")
-    if not ("Principal management console" in management.get_data(as_text=True)):
+    if "Principal management console" not in management.get_data(as_text=True):
         raise RuntimeError("Prince staging verification failed at check 36 (source 142).")
-    if not ("Demo Owner Alpha" in management.get_data(as_text=True)):
+    if "Demo Owner Alpha" not in management.get_data(as_text=True):
         raise RuntimeError("Prince staging verification failed at check 37 (source 143).")
     if not ("phone_ciphertext" not in management.get_data(as_text=True)):
         raise RuntimeError("Prince staging verification failed at check 38 (source 144).")
-    if not ("Job progression" in management.get_data(as_text=True)):
+    if "Job progression" not in management.get_data(as_text=True):
         raise RuntimeError("Prince staging verification failed at check 39 (source 145).")
     for job in jobs_all.json["jobs"]:
         state = principal.get(

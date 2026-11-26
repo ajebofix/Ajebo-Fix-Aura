@@ -8,7 +8,8 @@ import pytest
 from extensions import db
 from models import User
 from partnerships.prince_models import (
-    PrinceAudit, PrinceCustomer, PrinceJob, PrinceJobAssignment, PrinceMembership,
+    PrinceAudit, PrinceCustomer, PrinceCustomerAuthorization, PrinceEstimate,
+    PrinceJob, PrinceJobAssignment, PrinceMembership,
     PrinceTenant, PrinceVehicle, PrinceJobTransition,
 )
 
@@ -679,6 +680,32 @@ def test_principal_management_review_queue_excludes_attested_entry(pilot, app, c
     assert "No pending principal decisions" in after
 
 
+
+@pytest.fixture
+def authorized_job(pilot, app):
+    """Seed explicit fictional acceptance for existing lifecycle regression cases."""
+    with app.app_context():
+        job = db.session.get(PrinceJob, pilot["unassigned_id"])
+        principal = User.query.filter_by(email=pilot["principal_email"]).one()
+        db.session.add(PrinceEstimate(
+            tenant_id=job.tenant_id, job_id=job.id, version=1,
+            items=[{"category": "labour", "description": "Synthetic workshop scope",
+                    "quantity": 1, "unit_kobo": 100000, "line_kobo": 100000}],
+            subtotal_kobo=100000, discount_kobo=0, total_kobo=100000,
+            created_by_user_id=principal.id, approved_by_user_id=principal.id,
+            approved_at=datetime.utcnow(), approval_note="Synthetic internal approval.",
+        ))
+        db.session.flush()
+        db.session.add(PrinceCustomerAuthorization(
+            tenant_id=job.tenant_id, job_id=job.id, estimate_version=1,
+            sequence=1, decision="accepted", channel="written_message",
+            evidence_reference="Synthetic customer acceptance for fixture scope.",
+            total_kobo=100000, recorded_by_user_id=principal.id,
+        ))
+        db.session.commit()
+    return pilot["unassigned_id"]
+
+
 def _advance(client, token, job_id, old, new, disposition=None):
     return client.post(
         f"{URL}/jobs/{job_id}/lifecycle",
@@ -696,9 +723,9 @@ def _advance(client, token, job_id, old, new, disposition=None):
 
 
 @pytest.mark.parametrize("principal_key", ["principal_email", "stephen_email"])
-def test_lifecycle_principal_progression_and_audit(pilot, app, client, principal_key):
+def test_lifecycle_principal_progression_and_audit(pilot, app, client, principal_key, authorized_job):
     token = _login(client, pilot[principal_key])
-    job_id = pilot["unassigned_id"]
+    job_id = authorized_job
     assert _advance(client, token, job_id, "draft", "approved").status_code == 409
     for old, new in [
         ("draft", "awaiting_approval"),
@@ -739,9 +766,9 @@ def test_lifecycle_cross_tenant_and_csrf_denied(pilot, client):
     }).status_code == 400
 
 
-def test_lifecycle_closure_preserves_unresolved_concern(pilot, client):
+def test_lifecycle_closure_preserves_unresolved_concern(pilot, client, authorized_job):
     token = _login(client, pilot["stephen_email"])
-    job_id = pilot["unassigned_id"]
+    job_id = authorized_job
     headers = {"X-CSRF-Token": token}
     for old, new in [
         ("draft", "awaiting_approval"), ("awaiting_approval", "approved"),
@@ -783,9 +810,9 @@ def test_lifecycle_closure_preserves_unresolved_concern(pilot, client):
     }, headers=headers).status_code == 403
 
 
-def test_lifecycle_requires_active_operator_before_start(pilot, app, client):
+def test_lifecycle_requires_active_operator_before_start(pilot, app, client, authorized_job):
     token = _login(client, pilot["principal_email"])
-    job_id = pilot["unassigned_id"]
+    job_id = authorized_job
     assert _advance(client, token, job_id, "draft", "awaiting_approval").status_code == 200
     assert _advance(client, token, job_id, "awaiting_approval", "approved").status_code == 200
     with app.app_context():
@@ -796,9 +823,9 @@ def test_lifecycle_requires_active_operator_before_start(pilot, app, client):
     assert _advance(client, token, job_id, "approved", "in_progress").status_code == 409
 
 
-def test_lifecycle_no_follow_up_requires_confirmed_work(pilot, client):
+def test_lifecycle_no_follow_up_requires_confirmed_work(pilot, client, authorized_job):
     token = _login(client, pilot["principal_email"])
-    job_id = pilot["unassigned_id"]
+    job_id = authorized_job
     headers = {"X-CSRF-Token": token}
     for old, new in [
         ("draft", "awaiting_approval"), ("awaiting_approval", "approved"),
@@ -918,3 +945,14 @@ def test_estimate_rejects_inexact_or_forged_amounts_and_closed_job(pilot, app, c
         job.status = "closed"
         db.session.commit()
     assert client.post(endpoint, json=payload, headers=headers).status_code == 409
+
+
+def test_lifecycle_start_fails_closed_without_accepted_estimate(pilot, client):
+    token = _login(client, pilot["principal_email"])
+    job_id = pilot["unassigned_id"]
+    assert _advance(client, token, job_id, "draft", "awaiting_approval").status_code == 200
+    assert _advance(client, token, job_id, "awaiting_approval", "approved").status_code == 200
+    rejected = _advance(client, token, job_id, "approved", "in_progress")
+    assert rejected.status_code == 409
+    assert "customer acceptance" in rejected.json["error"]
+    assert client.get(f"{URL}/jobs/{job_id}").json["work_authorization"] == "estimate_required"

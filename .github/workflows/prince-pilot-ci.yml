@@ -14,6 +14,7 @@ on:
       - "templates/partnerships/prince_management.html"
       - "templates/partnerships/prince_estimate.html"
       - "templates/partnerships/prince_invoice.html"
+      - "templates/partnerships/prince_finance.html"
       - "templates/partnerships/prince_receipt_print.html"
       - "templates/partnerships/prince_quotation_print.html"
       - "static/css/prince_quotation_print.css"
@@ -182,7 +183,10 @@ jobs:
               assert any(fk["referred_table"] == "prince_payments" and fk["constrained_columns"] == ["payment_id"] for fk in fks)
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
-        run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
+        env:
+          PGOPTIONS: "-c lock_timeout=15000 -c statement_timeout=60000"
+          PYTHONUNBUFFERED: "1"
+        run: pytest -vv --tb=short -o faulthandler_timeout=90 tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
 
       - name: Rehearse exact stage provisioning and private HTTP smoke on a second disposable database
         env:

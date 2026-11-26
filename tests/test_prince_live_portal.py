@@ -359,10 +359,15 @@ def test_principal_corrects_another_principals_role(live, app, client):
     user_id = user.id
     target_id = PrinceMembership.query.filter_by(user_id=user_id).one().id
     other = app.test_client()
-    assert other.get("/prince-staff").status_code == 200
-    assert _staff_post(other, "/prince-staff", {
-        "email": payload["email"], "password": PASSWORD}).status_code == 303
-    assert b"Staff roster" in other.get("/prince-staff/accounts").data
+    # The shared fixture keeps an application context open. Give each
+    # simulated browser request its own context, as in real HTTP traffic.
+    with app.app_context():
+        assert other.get("/prince-staff").status_code == 200
+    with app.app_context():
+        assert _staff_post(other, "/prince-staff", {
+            "email": payload["email"], "password": PASSWORD}).status_code == 303
+    with app.app_context():
+        assert b"Staff roster" in other.get("/prince-staff/accounts").data
     path = f"/prince-staff/accounts/{target_id}/role"
     change = {"expected_role": "principal", "role": "operator",
               "role_confirmed": "yes", "current_password": PASSWORD}
@@ -376,7 +381,16 @@ def test_principal_corrects_another_principals_role(live, app, client):
     assert UserSession.query.filter_by(user_id=user_id, revoked_at=None).count() == 0
     assert PrinceAudit.query.filter_by(target_id=user_id,
                                       action="live_staff_demoted_to_operator").count() == 1
-    assert other.get("/prince-staff/accounts").status_code != 200
+    with app.app_context():
+        assert other.get("/prince-staff/accounts").status_code != 200
+    with app.app_context():
+        assert other.get("/prince-staff").status_code == 200
+    with app.app_context():
+        assert _staff_post(other, "/prince-staff", {
+            "email": payload["email"], "password": PASSWORD}).status_code == 303
+    with app.app_context():
+        page = other.get("/prince-staff/accounts")
+        assert page.status_code == 200 and b"Staff roster" not in page.data
     assert _staff_post(client, path, change).status_code == 409
     assert PrinceTenant.query.filter_by(slug="prince").one().intake_enabled is False
 

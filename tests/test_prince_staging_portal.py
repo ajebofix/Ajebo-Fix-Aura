@@ -319,3 +319,58 @@ def test_stage_principal_requires_fictional_review_note(stage, client, app):
     }, headers={"X-CSRF-Token": token})
     assert approved.status_code == 201
     assert approved.json["principal_review"]["decision"] == "work_confirmed"
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_staging_principals_land_on_private_management_dashboard(stage, client, role):
+    response = _log_in(client, role=role)
+    assert response.status_code == 303
+    assert response.headers["Location"].endswith(P + "/manage")
+    page = client.get(P + "/manage")
+    assert page.status_code == 200
+    text = page.get_data(as_text=True)
+    assert "Principal management console" in text
+    assert "Synthetic Principal Owner" in text
+    assert "Job assignments" in text
+    assert "phone_ciphertext" not in text
+    assert 'name="phone_number"' not in text
+    assert "Private Test Address" not in text
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_staging_operators_cannot_visit_management_dashboard(stage, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 404
+    assert client.get(P + "/operator").status_code == 200
+
+
+def test_staging_principal_assignment_requires_demo_reason(stage, client, app):
+    assert _log_in(client, role="stephen").status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        csrf = sess["_csrf_token"]
+    with app.app_context():
+        old = db.session.get(PrinceJob, stage["job_id"]).assigned_user_id
+        target = (
+            PrinceMembership.query.filter_by(
+                role="operator", active=True,
+            ).filter(PrinceMembership.user_id != old).first()
+        )
+        assert target is not None
+        new = target.user_id
+    endpoint = P + f"/jobs/{stage['job_id']}/assignment"
+    payload = {
+        "assignee_user_id": new,
+        "expected_assignee_user_id": old,
+        "reason": "Assignment from genuine workshop information",
+    }
+    assert client.post(endpoint, json=payload,
+                       headers={"X-CSRF-Token": csrf}).status_code == 400
+    payload["reason"] = "Demo: reallocate fictional W221 to an available operator"
+    changed = client.post(endpoint, json=payload,
+                          headers={"X-CSRF-Token": csrf})
+    assert changed.status_code == 200
+    assert changed.json["assigned_user_id"] == new
+    assert client.post(endpoint, json=payload,
+                       headers={"X-CSRF-Token": csrf}).status_code == 409
+    assert client.get(P + "/manage").status_code == 200

@@ -26,6 +26,7 @@ class PrinceAction(str, Enum):
     JOB_TRANSITION = "job_transition"
     ESTIMATE_DRAFT = "estimate_draft"
     ESTIMATE_APPROVE = "estimate_approve"
+    CUSTOMER_AUTHORIZATION = "customer_authorization"
     PAYMENT_REPORT = "payment_report"
     PAYMENT_VERIFY = "payment_verify"
     SERVICE_CONFIRM = "service_confirm"
@@ -84,7 +85,7 @@ def authorize(
         return action not in {
             PrinceAction.PAYMENT_VERIFY, PrinceAction.CONTACT_READ,
             PrinceAction.CONTACT_CORRECT, PrinceAction.SERVICE_CONFIRM,
-            PrinceAction.ESTIMATE_APPROVE, PrinceAction.DIRECTORY_EXPORT,
+            PrinceAction.ESTIMATE_APPROVE, PrinceAction.CUSTOMER_AUTHORIZATION, PrinceAction.DIRECTORY_EXPORT,
             PrinceAction.MANAGEMENT_VIEW, PrinceAction.JOB_ASSIGN, PrinceAction.JOB_TRANSITION,
         }
     if actor.role != PrinceRole.OPERATOR or action not in OPERATOR_ALLOWED_ACTIONS:

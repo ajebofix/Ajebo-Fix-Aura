@@ -110,6 +110,45 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrinceJobTransition(db.Model):
+    """Append-only principal decision; status is not repair or payment proof."""
+    __tablename__ = "prince_job_transitions"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_transition_job_tenant", ondelete="RESTRICT",
+        ),
+        db.CheckConstraint(
+            "(previous_status = 'draft' AND new_status = 'awaiting_approval') OR "
+            "(previous_status = 'awaiting_approval' AND new_status = 'approved') OR "
+            "(previous_status = 'approved' AND new_status = 'in_progress') OR "
+            "(previous_status = 'in_progress' AND new_status = 'closed')",
+            name="ck_prince_transition_path",
+        ),
+        db.CheckConstraint(
+            "(new_status = 'closed' AND closure_disposition IS NOT NULL AND "
+            "closure_disposition IN ('follow_up_required', 'no_follow_up_identified')) OR "
+            "(new_status <> 'closed' AND closure_disposition IS NULL)",
+            name="ck_prince_transition_closure",
+        ),
+        db.UniqueConstraint("job_id", "new_status", name="uq_prince_transition_job_stage"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey(
+        "prince_tenants.id", ondelete="RESTRICT"
+    ), nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    previous_status = db.Column(db.String(24), nullable=False)
+    new_status = db.Column(db.String(24), nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    closure_disposition = db.Column(db.String(32))
+    changed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class PrinceJobAssignment(db.Model):
     """Immutable reassignment event; no customer contacts or banking data."""
     __tablename__ = "prince_job_assignments"

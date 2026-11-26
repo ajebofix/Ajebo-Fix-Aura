@@ -30,6 +30,7 @@ on:
       - "migrations/versions/a91d7c2e450b_prince_estimates.py"
       - "migrations/versions/b82d7f6a109c_prince_customer_authorization.py"
       - "migrations/versions/c93e1f7a204b_prince_invoices.py"
+      - "migrations/versions/d04f8a2b615c_prince_payments.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
 
@@ -115,7 +116,7 @@ jobs:
               "prince_tenants", "prince_memberships", "prince_customers",
               "prince_vehicles", "prince_jobs", "prince_audit_events",
               "prince_job_entries", "prince_entry_reviews", "prince_job_assignments",
-              "prince_job_transitions", "prince_estimates", "prince_customer_authorizations", "prince_invoices",
+              "prince_job_transitions", "prince_estimates", "prince_customer_authorizations", "prince_invoices", "prince_payments",
           }
           assert required <= names, f"Missing Prince tables: {required - names}"
           fields = {c["name"] for c in inspector.get_columns("prince_customers")}
@@ -164,6 +165,13 @@ jobs:
                          for fk in inspector.get_foreign_keys("prince_invoices")]
           assert frozenset({"job_id", "tenant_id"}) in invoice_fks
           assert frozenset({"job_id", "estimate_version", "authorization_sequence"}) in invoice_fks
+          payment_cols = {col["name"] for col in inspector.get_columns("prince_payments")}
+          assert {"tenant_id", "job_id", "reference", "amount_kobo", "decision",
+                  "reported_by_user_id", "reviewed_by_user_id"} <= payment_cols
+          payment_fks = [frozenset(fk["constrained_columns"])
+                         for fk in inspector.get_foreign_keys("prince_payments")]
+          assert frozenset({"job_id", "tenant_id"}) in payment_fks
+          assert frozenset({"job_id"}) in payment_fks
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py

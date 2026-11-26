@@ -27,7 +27,7 @@ def verify():
         if not ({"prince_tenants", "prince_memberships", "prince_customers",
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
                 "prince_job_entries", "prince_job_assignments", "prince_job_transitions",
-                "prince_estimates", "prince_customer_authorizations", "prince_invoices"} <= tables):
+                "prince_estimates", "prince_customer_authorizations", "prince_invoices", "prince_payments"} <= tables):
             raise RuntimeError("Prince staging verification failed at check 1 (source 27).")
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         if not (tenant.active and tenant.intake_enabled):
@@ -281,7 +281,23 @@ def verify():
             if (client.get(root, base_url=BASE).status_code != 404
                     or client.get(root + "/data", base_url=BASE).status_code != 404):
                 raise RuntimeError("Prince operator received restricted invoice access.")
-    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, invoices, print and privacy.")
+    for job in jobs_all.json["jobs"]:
+        root = f"/pilot/workshops/prince/jobs/{job['job_id']}/invoice"
+        has_invoice = principal.get(root + "/data", base_url=BASE).json["invoice"] is not None
+        dad = principal.get(root + "/payments", base_url=BASE)
+        steph = stephen.get(root + "/payments", base_url=BASE)
+        expected = 200 if has_invoice else 404
+        if dad.status_code != expected or steph.status_code != expected:
+            raise RuntimeError("Prince payment ledger availability mismatch.")
+        if has_invoice:
+            if dad.json != steph.json:
+                raise RuntimeError("Prince payment ledger principal parity failed.")
+            if dad.json["outstanding_kobo"] != dad.json["invoice_total_kobo"] - dad.json["verified_kobo"]:
+                raise RuntimeError("Prince payment balance mismatch.")
+        for client in (op_a, op_b):
+            if client.get(root + "/payments", base_url=BASE).status_code != 404:
+                raise RuntimeError("Prince operator received confidential payment ledger.")
+    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, authorization, invoices, payments, print and privacy.")
 
 
 if __name__ == "__main__":

@@ -110,6 +110,44 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrincePayment(db.Model):
+    """Synthetic payment report with a one-time principal review; not a bank feed."""
+    __tablename__ = "prince_payments"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_payment_job_tenant", ondelete="RESTRICT",
+        ),
+        db.ForeignKeyConstraint(
+            ["job_id"], ["prince_invoices.job_id"],
+            name="fk_prince_payment_invoice_job", ondelete="RESTRICT",
+        ),
+        db.UniqueConstraint("tenant_id", "reference", name="uq_prince_payment_reference"),
+        db.CheckConstraint("amount_kobo > 0", name="ck_prince_payment_amount"),
+        db.CheckConstraint("method IN ('transfer', 'cash')", name="ck_prince_payment_method"),
+        db.CheckConstraint(
+            "(decision IS NULL AND reviewed_by_user_id IS NULL AND reviewed_at IS NULL AND review_note IS NULL) OR "
+            "(decision IS NOT NULL AND decision IN ('verified', 'rejected') AND "
+            "reviewed_by_user_id IS NOT NULL AND reviewed_at IS NOT NULL AND review_note IS NOT NULL)",
+            name="ck_prince_payment_review",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("prince_tenants.id", ondelete="RESTRICT"),
+                          nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    reference = db.Column(db.String(64), nullable=False)
+    method = db.Column(db.String(12), nullable=False)
+    amount_kobo = db.Column(db.BigInteger, nullable=False)
+    reported_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                    nullable=False)
+    reported_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    decision = db.Column(db.String(12))
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"))
+    reviewed_at = db.Column(db.DateTime)
+    review_note = db.Column(db.Text)
+
+
 class PrinceInvoice(db.Model):
     """Fictional pilot invoice snapshot; never a payment or work confirmation."""
     __tablename__ = "prince_invoices"

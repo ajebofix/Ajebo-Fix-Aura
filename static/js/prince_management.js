@@ -316,3 +316,53 @@
     });
   }
 })();
+
+
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  function kobo(text) {
+    const match = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(text.trim());
+    if (!match) throw Error("Enter a valid positive naira amount with up to two decimal places.");
+    const result = Number(match[1]) * 100 + Number((match[2] || "").padEnd(2, "0"));
+    if (result <= 0 || result > 10000000000) throw Error("Amount outside the pilot range.");
+    return result;
+  }
+  for (const form of document.querySelectorAll(".payment-report-form, .payment-review-form")) {
+    const button = form.querySelector('button[type="submit"]');
+    const feedback = form.querySelector(".payment-feedback");
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!csrf || button.disabled || !form.reportValidity()) return;
+      try {
+        const payload = form.classList.contains("payment-report-form") ? {
+          reference: form.elements.reference.value.trim(),
+          method: form.elements.method.value,
+          amount_kobo: kobo(form.elements.amount.value),
+        } : {
+          decision: form.elements.decision.value,
+          review_note: form.elements.review_note.value.trim(),
+          review_attested: form.elements.review_attested.checked,
+        };
+        button.disabled = true;
+        feedback.textContent = "Saving fictional payment record…";
+        const response = await fetch(form.dataset.url, {
+          method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !Array.isArray(result.records)) {
+          feedback.textContent = result.error || "Not recorded. Reload before retrying.";
+          return;
+        }
+        window.location.reload();
+      } catch (error) {
+        feedback.textContent = error instanceof Error && /amount|range/.test(error.message)
+          ? error.message : "Could not confirm save. Reload before retrying.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+})();

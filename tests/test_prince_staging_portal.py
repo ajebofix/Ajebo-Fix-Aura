@@ -694,7 +694,7 @@ def test_training_invoice_exact_snapshot_and_withdrawal_warning(approved_quotati
     assert client.get(root).json["job_status"] == "approved"
     page = client.get(invoice).get_data(as_text=True)
     assert "24,001.00" in page
-    assert "Payment verification is not implemented" in page
+    assert "Payment records are fictional" in page
     assert client.post(auth, json=_customer_decision(1, "withdrawn"), headers=headers).status_code == 201
     after = client.get(invoice + "/data").json["invoice"]
     assert after["reference"] == saved["reference"]
@@ -714,3 +714,86 @@ def test_operator_cannot_read_or_issue_invoice(approved_quotation, client, role)
     assert client.get(invoice + "/data").status_code == 404
     assert client.post(invoice, json=_invoice_payload(),
                        headers={"X-CSRF-Token": token}).status_code == 404
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_payment_pending_verified_rejected_and_balance(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    root = approved_quotation.rsplit("/", 1)[0]
+    assert client.post(approved_quotation + "/2/authorization",
+                       json=_customer_decision(), headers=headers).status_code == 201
+    for old, new in [("draft", "awaiting_approval"), ("awaiting_approval", "approved")]:
+        assert client.post(root + "/lifecycle", json={
+            "expected_status": old, "new_status": new,
+            "reason": "Demo: fictional approval of workshop scope.",
+            "closure_disposition": None, "follow_up_plan": None,
+        }, headers=headers).status_code == 200
+    assert client.post(root + "/invoice", json=_invoice_payload(),
+                       headers=headers).status_code == 201
+    endpoint = root + "/invoice/payments"
+    report = {"reference": "DEMO-TRANSFER-A", "method": "transfer", "amount_kobo": 1000050}
+    for invalid in [{**report, "amount_kobo": 0}, {**report, "amount_kobo": 1.5},
+                    {**report, "reference": "real-bank-reference"},
+                    {**report, "decision": "verified"}]:
+        assert client.post(endpoint, json=invalid, headers=headers).status_code == 400
+    assert client.post(endpoint, json=report).status_code == 400
+    pending = client.post(endpoint, json=report, headers=headers)
+    assert pending.status_code == 201
+    assert pending.json["verified_kobo"] == 0
+    assert pending.json["pending_kobo"] == 1000050
+    assert pending.json["outstanding_kobo"] == 2400100
+    assert client.post(endpoint, json={**report, "reference": "demo-transfer-a"},
+                       headers=headers).status_code == 409
+    first = pending.json["records"][0]["id"]
+    review = {"decision": "verified", "review_note": "Demo: fictional transfer matched to training invoice.",
+              "review_attested": True}
+    assert client.post(endpoint + f"/{first}/review", json={**review, "review_attested": False},
+                       headers=headers).status_code == 400
+    verified = client.post(endpoint + f"/{first}/review", json=review, headers=headers)
+    assert verified.status_code == 200
+    assert verified.json["verified_kobo"] == 1000050
+    assert verified.json["outstanding_kobo"] == 1400050
+    assert verified.json["status"] == "part_paid"
+    assert client.post(endpoint + f"/{first}/review", json=review, headers=headers).status_code == 409
+    second = client.post(endpoint, json={**report, "reference": "DEMO-TRANSFER-B",
+                                        "amount_kobo": 1400051}, headers=headers)
+    assert second.status_code == 201
+    second_id = second.json["records"][-1]["id"]
+    assert client.post(endpoint + f"/{second_id}/review", json=review, headers=headers).status_code == 409
+    rejected = client.post(endpoint + f"/{second_id}/review", json={**review, "decision": "rejected"},
+                           headers=headers)
+    assert rejected.status_code == 200
+    assert rejected.json["outstanding_kobo"] == 1400050
+    third = client.post(endpoint, json={**report, "reference": "DEMO-CASH-C", "method": "cash",
+                                       "amount_kobo": 1400050}, headers=headers)
+    assert third.status_code == 201
+    third_id = third.json["records"][-1]["id"]
+    settled = client.post(endpoint + f"/{third_id}/review", json=review, headers=headers)
+    assert settled.status_code == 200
+    assert settled.json["verified_kobo"] == 2400100
+    assert settled.json["outstanding_kobo"] == 0
+    assert settled.json["pending_kobo"] == 0
+    assert settled.json["status"] == "settled"
+    assert len(settled.json["records"]) == 3
+    assert client.get(endpoint).json == settled.json
+    assert client.get(root).json["job_status"] == "approved"
+    assert "Payment records and balance" in client.get(root + "/invoice").get_data(as_text=True)
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_operator_cannot_access_payment_ledger(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    endpoint = approved_quotation.rsplit("/", 1)[0] + "/invoice/payments"
+    assert client.get(endpoint).status_code == 404
+    assert client.post(endpoint, json={"reference": "DEMO-TRANSFER-A", "method": "transfer",
+                                      "amount_kobo": 100}, headers={"X-CSRF-Token": token}).status_code == 404
+    assert client.post(endpoint + "/1/review", json={"decision": "verified",
+                       "review_note": "Demo: fictional unauthorized review attempt.",
+                       "review_attested": True}, headers={"X-CSRF-Token": token}).status_code == 404

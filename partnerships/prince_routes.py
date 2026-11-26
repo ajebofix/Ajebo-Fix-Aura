@@ -585,6 +585,27 @@ def principal_management(slug):
         .scalar() or 0
     )
     operators = _eligible_operators(tenant.id)
+    follow_up_jobs = (
+        db.session.query(PrinceJobTransition, PrinceCustomer, PrinceVehicle)
+        .join(PrinceJob, (PrinceJob.id == PrinceJobTransition.job_id)
+              & (PrinceJob.tenant_id == PrinceJobTransition.tenant_id))
+        .join(PrinceCustomer, (PrinceCustomer.id == PrinceJob.customer_id)
+              & (PrinceCustomer.tenant_id == PrinceJob.tenant_id))
+        .join(PrinceVehicle, (PrinceVehicle.id == PrinceJob.vehicle_id)
+              & (PrinceVehicle.tenant_id == PrinceJob.tenant_id))
+        .filter(PrinceJobTransition.tenant_id == tenant.id,
+                PrinceJob.status == "closed",
+                PrinceJobTransition.new_status == "closed",
+                PrinceJobTransition.closure_disposition == "follow_up_required")
+    )
+    follow_up_count = follow_up_jobs.count()
+    follow_ups = [
+        {"job_id": event.job_id, "customer": customer.full_name,
+         "vehicle": f"{vehicle.brand} {vehicle.model}",
+         "plan": _public_concern(event.follow_up_plan)}
+        for event, customer, vehicle in follow_up_jobs.order_by(
+            PrinceJobTransition.id.desc()).limit(20).all()
+    ]
 
     # One tenant-bound join chain; no cross-company or contact columns.
     records = (
@@ -675,10 +696,12 @@ def principal_management(slug):
             "customers": customers,
             "pending_reviews": pending_reviews,
             "operators": len(operators),
+            "follow_up_count": follow_up_count,
         },
         jobs=jobs,
         operators=operators,
         pending=pending,
+        follow_ups=follow_ups,
         active_principal_id=actor.user_id,
     )
 
@@ -763,6 +786,7 @@ def _transition_response(event):
         "new_status": event.new_status,
         "reason": _public_concern(event.reason),
         "closure_disposition": event.closure_disposition,
+        "follow_up_plan": _public_concern(event.follow_up_plan) if event.follow_up_plan else None,
         "changed_by_user_id": event.changed_by_user_id,
         "created_at": event.created_at.isoformat(timespec="seconds") + "Z",
     }
@@ -783,7 +807,7 @@ def _closure_blockers(tenant_id, job_id):
     )
     pending = sum(review is None for _, review in records)
     unresolved = any(
-        entry.category in {"outstanding_concern", "temporary_intervention"}
+        entry.category in {"outstanding_concern", "temporary_intervention", "next_action"}
         or (review is not None and review.decision in {"needs_evidence", "not_confirmed"})
         or (entry.category == "reported_work" and
             (review is None or review.decision != "work_confirmed"))
@@ -820,7 +844,7 @@ def principal_transition_job(slug, job_id):
         abort(413)
     data = request.get_json(silent=True)
     if (not isinstance(data, dict) or set(data) != {
-            "expected_status", "new_status", "reason", "closure_disposition"}):
+            "expected_status", "new_status", "reason", "closure_disposition", "follow_up_plan"}):
         abort(400)
     old, target = data["expected_status"], data["new_status"]
     disposition = data["closure_disposition"]
@@ -839,6 +863,15 @@ def principal_transition_job(slug, job_id):
                 "follow_up_required", "no_follow_up_identified"}:
             abort(400)
     elif disposition is not None:
+        abort(400)
+    follow_up_plan = _text(data, "follow_up_plan", 1000)
+    if disposition == "follow_up_required":
+        if not follow_up_plan or len(follow_up_plan) < 20 or PRIVATE_CONTACT_PATTERN.search(follow_up_plan):
+            abort(400)
+        if (current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+                and not follow_up_plan.lower().startswith(("demo:", "synthetic:"))):
+            abort(400)
+    elif follow_up_plan is not None:
         abort(400)
 
     try:
@@ -862,7 +895,8 @@ def principal_transition_job(slug, job_id):
         event = PrinceJobTransition(
             tenant_id=tenant.id, job_id=job.id,
             previous_status=old, new_status=target, reason=reason,
-            closure_disposition=disposition, changed_by_user_id=actor.user_id,
+            closure_disposition=disposition, follow_up_plan=follow_up_plan,
+            changed_by_user_id=actor.user_id,
         )
         job.status = target
         db.session.add(event)

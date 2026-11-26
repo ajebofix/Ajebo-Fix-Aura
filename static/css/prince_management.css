@@ -66,3 +66,10 @@
 .lifecycle-event{padding:10px;border:1px solid #e0e9ee;border-radius:8px;margin-top:8px;font-size:11px;overflow-wrap:anywhere}
 .lifecycle-event p{margin:5px 0;white-space:pre-wrap}.lifecycle-event small{color:#668094}
 .lifecycle-feedback{font-size:11px;color:#396b75}
+
+.estimate-line{border:1px solid #c6dce7;border-radius:10px;padding:12px;margin:10px 0;background:#fff}
+.estimate-draft-form input{display:block;width:100%;border:1px solid #bcd1dd;border-radius:9px;padding:12px;font:inherit;font-size:14px}
+.estimate-line button,.add-estimate-line{background:#e5f0f6;color:#214b63;border:1px solid #bdcfda;border-radius:8px;padding:10px;margin:10px 0;cursor:pointer}
+.estimate-table-wrap{overflow:auto}.estimate-table{width:100%;border-collapse:collapse;font-size:12px}
+.estimate-table th,.estimate-table td{text-align:left;padding:9px 5px;border-bottom:1px solid #e1ebef}
+.estimate-table td:not(:first-child){white-space:nowrap}.estimate-totals{margin:12px 0}.estimate-totals p{display:flex;justify-content:space-between;gap:8px;font-size:13px}.estimate-feedback{font-size:12px;color:#315365}

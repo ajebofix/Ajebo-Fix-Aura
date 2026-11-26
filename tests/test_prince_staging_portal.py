@@ -409,3 +409,27 @@ def test_staging_operator_cannot_progress_assigned_job(stage, client):
         "reason": "Demo: operator attempts unauthorized status change.",
         "closure_disposition": None, "follow_up_plan": None,
     }, headers={"X-CSRF-Token": token}).status_code == 404
+
+
+def test_stage_estimate_synthetic_inputs_and_principal_approval(stage, client):
+    assert _log_in(client, role="stephen").status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    endpoint = P + f"/jobs/{stage['job_id']}/estimates"
+    headers = {"X-CSRF-Token": token}
+    payload = {"expected_version": 0, "discount_kobo": 0, "items": [
+        {"category": "labour", "description": "Real workshop labour",
+         "quantity": 1, "unit_kobo": 100050},
+    ]}
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 400
+    payload["items"][0]["description"] = "Demo: fictional workshop labour"
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 201
+    assert client.get(endpoint[:-1]).status_code == 200
+    assert client.post(endpoint + "/1/approve", json={
+        "approval_note": "Real workshop approval is not allowed here.",
+    }, headers=headers).status_code == 400
+    assert client.post(endpoint + "/1/approve", json={
+        "approval_note": "Demo: reviewed fictional estimate for internal approval.",
+    }, headers=headers).status_code == 200
+    assert client.get(endpoint).json["versions"][0]["total_kobo"] == 100050

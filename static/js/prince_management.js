@@ -132,3 +132,110 @@
     });
   }
 })();
+
+
+/* Exact NGN input conversion; server independently verifies every total. */
+(() => {
+  "use strict";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  const max = 10000000000;
+  function kobo(value) {
+    const match = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(value.trim());
+    if (!match) throw Error("Enter a valid naira amount with at most two decimal places.");
+    const amount = Number(match[1]) * 100 + Number((match[2] || "").padEnd(2, "0"));
+    if (amount > max) throw Error("Amount exceeds the pilot limit.");
+    return amount;
+  }
+  async function submit(form, payload) {
+    const feedback = form.querySelector(".estimate-feedback");
+    const button = form.querySelector('button[type="submit"]');
+    if (!csrf || button.disabled || !form.reportValidity()) return;
+    button.disabled = true;
+    feedback.textContent = "Saving…";
+    try {
+      const res = await fetch(form.dataset.url, {
+        method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.estimate) {
+        feedback.textContent = data.error || "Not saved. Check the inputs or reload.";
+        return;
+      }
+      feedback.textContent = "Saved. Refreshing estimate.";
+      window.location.reload();
+    } catch {
+      feedback.textContent = "Could not confirm the save. Reload before retrying.";
+    } finally {
+      button.disabled = false;
+    }
+  }
+  const form = document.querySelector(".estimate-draft-form");
+  if (form) {
+    const container = form.querySelector(".estimate-lines");
+    const preview = form.querySelector(".estimate-preview");
+    const feedback = form.querySelector(".estimate-feedback");
+    const template = container.firstElementChild.cloneNode(true);
+    function read() {
+      const items = [...container.querySelectorAll(".estimate-line")].map(row => {
+        const quantityText = row.querySelector('[name="quantity"]').value.trim();
+        const quantity = Number(quantityText);
+        if (!/^\d+$/.test(quantityText) || !Number.isInteger(quantity) || quantity < 1 || quantity > 1000)
+          throw Error("Quantity must be a whole number from 1 to 1000.");
+        return {
+          category: row.querySelector('[name="category"]').value,
+          description: row.querySelector('[name="description"]').value.trim(),
+          quantity, unit_kobo: kobo(row.querySelector('[name="unit_price"]').value),
+        };
+      });
+      const discount_kobo = kobo(form.elements.discount.value);
+      const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_kobo, 0);
+      if (subtotal > max || discount_kobo > subtotal) throw Error("Check subtotal and discount.");
+      return {items, discount_kobo, subtotal};
+    }
+    function refresh() {
+      try {
+        const result = read();
+        preview.textContent = new Intl.NumberFormat("en-NG", {
+          style: "currency", currency: "NGN",
+        }).format((result.subtotal - result.discount_kobo) / 100);
+      } catch {
+        preview.textContent = "Check amounts";
+      }
+    }
+    form.addEventListener("input", refresh);
+    form.querySelector(".add-estimate-line").addEventListener("click", () => {
+      if (container.children.length >= 30) return;
+      const row = template.cloneNode(true);
+      row.querySelector('[name="category"]').selectedIndex = 0;
+      row.querySelector('[name="description"]').value = "";
+      row.querySelector('[name="quantity"]').value = "1";
+      row.querySelector('[name="unit_price"]').value = "";
+      container.append(row);
+      refresh();
+    });
+    container.addEventListener("click", event => {
+      const button = event.target.closest(".remove-estimate-line");
+      if (button && container.children.length > 1) {
+        button.closest(".estimate-line").remove();
+        refresh();
+      }
+    });
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      try {
+        const result = read();
+        submit(form, {expected_version: Number(form.dataset.version),
+          items: result.items, discount_kobo: result.discount_kobo});
+      } catch (error) { feedback.textContent = error.message; }
+    });
+    refresh();
+  }
+  for (const approval of document.querySelectorAll(".estimate-approve-form")) {
+    approval.addEventListener("submit", event => {
+      event.preventDefault();
+      submit(approval, {approval_note: approval.elements.approval_note.value.trim()});
+    });
+  }
+})();

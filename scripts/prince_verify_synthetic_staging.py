@@ -26,7 +26,8 @@ def verify():
         tables = set(inspect(db.engine).get_table_names())
         if not ({"prince_tenants", "prince_memberships", "prince_customers",
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
-                "prince_job_entries", "prince_job_assignments", "prince_job_transitions"} <= tables):
+                "prince_job_entries", "prince_job_assignments", "prince_job_transitions",
+                "prince_estimates"} <= tables):
             raise RuntimeError("Prince staging verification failed at check 1 (source 27).")
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         if not (tenant.active and tenant.intake_enabled):
@@ -207,7 +208,35 @@ def verify():
         "/pilot/workshops/prince/manage", base_url=BASE,
     ).status_code == 200):
         raise RuntimeError("Prince staging verification failed at check 46 (source 161).")
-    print("Prince staged HTTP smoke passed: all four roles, lifecycle access, assignments, tenant privacy and legacy route denial.")
+    # Read-only estimate checks against the deployed schema and rendered pages.
+    # Drafting and approval mutations are tested on disposable CI databases.
+    for role, client in (("operator-a", op_a), ("operator-b", op_b)):
+        for job in jobs_all.json["jobs"]:
+            job_id = job["job_id"]
+            expected = 200 if job_id in expected_jobs[role] else 404
+            root = f"/pilot/workshops/prince/jobs/{job_id}"
+            history = client.get(root + "/estimates", base_url=BASE)
+            page = client.get(root + "/estimate", base_url=BASE)
+            if history.status_code != expected or page.status_code != expected:
+                raise RuntimeError("Prince estimate operator scope verification failed.")
+            if expected == 200:
+                if "Approve estimate internally" in page.get_data(as_text=True):
+                    raise RuntimeError("Prince operator received an estimate approval control.")
+                for version in history.json["versions"]:
+                    if "approval_note" in version:
+                        raise RuntimeError("Prince operator received a private approval note.")
+    for job in jobs_all.json["jobs"]:
+        root = f"/pilot/workshops/prince/jobs/{job['job_id']}"
+        dad_history = principal.get(root + "/estimates", base_url=BASE)
+        stephen_history = stephen.get(root + "/estimates", base_url=BASE)
+        if dad_history.status_code != 200 or stephen_history.status_code != 200:
+            raise RuntimeError("Prince principal estimate history unavailable.")
+        if dad_history.json != stephen_history.json:
+            raise RuntimeError("Prince principal estimate views differ.")
+        for client in (principal, stephen):
+            if client.get(root + "/estimate", base_url=BASE).status_code != 200:
+                raise RuntimeError("Prince principal estimate page unavailable.")
+    print("Prince staged HTTP smoke passed: four roles, lifecycle, estimates, assignments and privacy.")
 
 
 if __name__ == "__main__":

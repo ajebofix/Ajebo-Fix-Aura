@@ -7,6 +7,7 @@ not caller-supplied role, tenant IDs or assignments.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from flask_login import current_user
@@ -23,7 +24,7 @@ from partnerships.prince_access_policy import (
     redact_operator_job,
 )
 from partnerships.prince_models import (
-    PrinceAudit, PrinceCustomer, PrinceEntryReview, PrinceJob, PrinceJobAssignment,
+    PrinceAudit, PrinceCustomer, PrinceEntryReview, PrinceEstimate, PrinceJob, PrinceJobAssignment,
     PrinceJobEntry, PrinceJobTransition, PrinceMembership, PrinceTenant, PrinceVehicle,
 )
 
@@ -912,3 +913,175 @@ def principal_transition_job(slug, job_id):
         db.session.rollback()
         return jsonify({"error": "Job status could not be saved"}), 503
     return jsonify(response), 200
+
+
+# Monetary inputs are exact integer kobo, never floating-point amounts.
+ESTIMATE_MAX_KOBO = 10_000_000_000
+ESTIMATE_CATEGORIES = {"parts": "Parts", "labour": "Labour", "other": "Other"}
+
+
+def _estimate_amount(value, *, maximum=ESTIMATE_MAX_KOBO):
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+        abort(400)
+    return value
+
+
+def _estimate_latest(tenant_id, job_id):
+    return PrinceEstimate.query.populate_existing().filter_by(
+        tenant_id=tenant_id, job_id=job_id,
+    ).order_by(PrinceEstimate.version.desc()).first()
+
+
+def _estimate_response(record, *, principal=False):
+    return {
+        "version": record.version,
+        "items": [
+            {"category": item["category"], "description": _public_concern(item["description"]),
+             "quantity": item["quantity"], "unit_kobo": item["unit_kobo"],
+             "line_kobo": item["line_kobo"]}
+            for item in record.items
+        ],
+        "subtotal_kobo": record.subtotal_kobo,
+        "discount_kobo": record.discount_kobo,
+        "total_kobo": record.total_kobo,
+        "internally_approved": record.approved_at is not None,
+        "created_at": record.created_at.isoformat(timespec="seconds") + "Z",
+        **({"created_by_user_id": record.created_by_user_id,
+            "approved_by_user_id": record.approved_by_user_id,
+            "approval_note": _public_concern(record.approval_note),
+            "approved_at": record.approved_at.isoformat(timespec="seconds") + "Z"
+            if record.approved_at else None} if principal else {}),
+    }
+
+
+def _estimate_history(tenant, actor, job):
+    records = PrinceEstimate.query.filter_by(
+        tenant_id=tenant.id, job_id=job.id,
+    ).order_by(PrinceEstimate.version.desc()).all()
+    return [_estimate_response(record, principal=actor.role == PrinceRole.PRINCIPAL)
+            for record in records]
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/estimate")
+def estimate_workspace(slug, job_id):
+    tenant, actor = _scope(slug)
+    job, customer, vehicle = _find_authorized_job(tenant, actor, job_id)
+    _allow(actor, tenant, PrinceAction.ESTIMATE_DRAFT, job.assigned_user_id)
+    versions = _estimate_history(tenant, actor, job)
+    return render_template(
+        "partnerships/prince_estimate.html", slug=slug,
+        workshop_name=tenant.display_name,
+        job=_job_response(job, customer, vehicle), versions=versions,
+        latest=versions[0] if versions else None,
+        principal=actor.role == PrinceRole.PRINCIPAL,
+        categories=ESTIMATE_CATEGORIES,
+    )
+
+
+@prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/estimates")
+def estimate_history(slug, job_id):
+    tenant, actor = _scope(slug)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id)
+    _allow(actor, tenant, PrinceAction.ESTIMATE_DRAFT, job.assigned_user_id)
+    return jsonify({"job_id": job.id, "versions": _estimate_history(tenant, actor, job)})
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/estimates")
+def create_estimate_version(slug, job_id):
+    tenant, actor = _scope(slug)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
+    _allow(actor, tenant, PrinceAction.ESTIMATE_DRAFT, job.assigned_user_id)
+    if job.status == "closed":
+        abort(409)
+    if request.content_length and request.content_length > 24000:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"expected_version", "items", "discount_kobo"}:
+        abort(400)
+    expected = _estimate_amount(data["expected_version"], maximum=1_000_000)
+    items = data["items"]
+    if not isinstance(items, list) or not 1 <= len(items) <= 30:
+        abort(400)
+    cleaned = []
+    subtotal = 0
+    for item in items:
+        if not isinstance(item, dict) or set(item) != {
+                "category", "description", "quantity", "unit_kobo"}:
+            abort(400)
+        category = item["category"]
+        if not isinstance(category, str) or category not in ESTIMATE_CATEGORIES:
+            abort(400)
+        description = _text(item, "description", 180, required=True)
+        if len(description) < 3 or PRIVATE_CONTACT_PATTERN.search(description):
+            abort(400)
+        if (current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+                and not description.lower().startswith(("demo:", "synthetic:"))):
+            abort(400)
+        quantity = _estimate_amount(item["quantity"], maximum=1000)
+        if quantity < 1:
+            abort(400)
+        unit = _estimate_amount(item["unit_kobo"])
+        line = quantity * unit
+        subtotal += line
+        if subtotal > ESTIMATE_MAX_KOBO:
+            abort(400)
+        cleaned.append({"category": category, "description": description,
+                        "quantity": quantity, "unit_kobo": unit, "line_kobo": line})
+    discount = _estimate_amount(data["discount_kobo"])
+    if discount > subtotal:
+        abort(400)
+
+    latest = _estimate_latest(tenant.id, job.id)
+    if (latest.version if latest else 0) != expected:
+        return jsonify({"error": "Estimate changed. Reload before saving."}), 409
+    if latest and latest.approved_at is not None:
+        return jsonify({"error": "Approved estimate is locked; revisions require a future correction workflow."}), 409
+    try:
+        record = PrinceEstimate(
+            tenant_id=tenant.id, job_id=job.id, version=expected + 1,
+            items=cleaned, subtotal_kobo=subtotal, discount_kobo=discount,
+            total_kobo=subtotal - discount, created_by_user_id=actor.user_id,
+        )
+        db.session.add(record)
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "estimate_version_created", "estimate", record.id)
+        response = _estimate_response(record, principal=actor.role == PrinceRole.PRINCIPAL)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Estimate could not be saved."}), 503
+    return jsonify({"job_id": job.id, "estimate": response}), 201
+
+
+@prince_pilot_bp.post("/<slug>/jobs/<int:job_id>/estimates/<int:version>/approve")
+def approve_estimate(slug, job_id, version):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.ESTIMATE_APPROVE)
+    job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
+    if job.status == "closed":
+        abort(409)
+    if request.content_length and request.content_length > 1800:
+        abort(413)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"approval_note"}:
+        abort(400)
+    note = _text(data, "approval_note", 700, required=True)
+    if len(note) < 20 or PRIVATE_CONTACT_PATTERN.search(note):
+        abort(400)
+    if (current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+            and not note.lower().startswith(("demo:", "synthetic:"))):
+        abort(400)
+    record = _estimate_latest(tenant.id, job.id)
+    if record is None or record.version != version or record.approved_at is not None:
+        abort(409)
+    try:
+        record.approved_by_user_id = actor.user_id
+        record.approved_at = datetime.utcnow()
+        record.approval_note = note
+        _audit(tenant.id, actor.user_id, "estimate_internally_approved", "estimate", record.id)
+        response = _estimate_response(record, principal=True)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Estimate approval could not be saved."}), 503
+    return jsonify({"job_id": job.id, "estimate": response})

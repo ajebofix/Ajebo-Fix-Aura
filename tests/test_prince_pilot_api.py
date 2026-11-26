@@ -827,3 +827,94 @@ def test_lifecycle_no_follow_up_requires_confirmed_work(pilot, client):
     assert result.json["event"]["follow_up_plan"] is None
     assert client.get(f"{URL}/jobs/{job_id}/entries").json["entries"][0][
         "review_state"] == "unverified"
+
+
+def _estimate_payload(version=0):
+    return {
+        "expected_version": version,
+        "items": [
+            {"category": "parts", "description": "Synthetic replacement part",
+             "quantity": 2, "unit_kobo": 1250050},
+            {"category": "labour", "description": "Synthetic workshop labour",
+             "quantity": 1, "unit_kobo": 3500000},
+        ],
+        "discount_kobo": 500000,
+    }
+
+
+@pytest.mark.parametrize("principal_key", ["principal_email", "stephen_email"])
+def test_estimate_exact_totals_revision_and_principal_approval(pilot, client, principal_key):
+    token = _login(client, pilot[principal_key])
+    endpoint = f"{URL}/jobs/{pilot['unassigned_id']}/estimates"
+    headers = {"X-CSRF-Token": token}
+    payload = _estimate_payload()
+    first = client.post(endpoint, json=payload, headers=headers)
+    assert first.status_code == 201
+    assert first.json["estimate"]["subtotal_kobo"] == 6000100
+    assert first.json["estimate"]["total_kobo"] == 5500100
+    assert first.json["estimate"]["internally_approved"] is False
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 409
+    revised = _estimate_payload(1)
+    revised["discount_kobo"] = 0
+    assert client.post(endpoint, json=revised, headers=headers).status_code == 201
+    note = {"approval_note": "Reviewed fictional scope and price for internal approval."}
+    assert client.post(endpoint + "/1/approve", json=note, headers=headers).status_code == 409
+    assert client.post(endpoint + "/2/approve", json=note, headers=headers).status_code == 200
+    assert client.post(endpoint + "/2/approve", json=note, headers=headers).status_code == 409
+    assert client.post(endpoint, json=_estimate_payload(2), headers=headers).status_code == 409
+    versions = client.get(endpoint).json["versions"]
+    assert [x["version"] for x in versions] == [2, 1]
+    assert versions[0]["internally_approved"]
+    assert versions[1]["total_kobo"] == 5500100
+    assert client.get(f"{URL}/jobs/{pilot['unassigned_id']}").json["job_status"] == "draft"
+    page = client.get(endpoint[:-1])
+    assert page.status_code == 200
+    assert "Internally approved" in page.get_data(as_text=True)
+
+
+def test_assigned_operator_can_draft_but_not_approve_estimate(pilot, client):
+    token = _login(client, pilot["other_email"])
+    endpoint = f"{URL}/jobs/{pilot['unassigned_id']}/estimates"
+    headers = {"X-CSRF-Token": token}
+    assert client.post(endpoint, json=_estimate_payload(), headers=headers).status_code == 201
+    assert client.post(endpoint + "/1/approve", json={
+        "approval_note": "Attempted operator approval not permitted.",
+    }, headers=headers).status_code == 404
+    assert "approval_note" not in client.get(endpoint).json["versions"][0]
+    page = client.get(endpoint[:-1]).get_data(as_text=True)
+    assert "Approve estimate internally" not in page
+    assert "Save new draft version" in page
+
+
+def test_estimate_access_denies_unassigned_and_cross_tenant(pilot, client):
+    token = _login(client, pilot["seun_email"])
+    endpoint = f"{URL}/jobs/{pilot['unassigned_id']}/estimates"
+    assert client.get(endpoint).status_code == 404
+    assert client.get(endpoint[:-1]).status_code == 404
+    assert client.post(endpoint, json=_estimate_payload(),
+                       headers={"X-CSRF-Token": token}).status_code == 404
+    assert client.get(f"{URL}/jobs/{pilot['cross_id']}/estimates").status_code == 404
+
+
+def test_estimate_rejects_inexact_or_forged_amounts_and_closed_job(pilot, app, client):
+    token = _login(client, pilot["principal_email"])
+    job_id = pilot["unassigned_id"]
+    endpoint = f"{URL}/jobs/{job_id}/estimates"
+    headers = {"X-CSRF-Token": token}
+    for field, value in [("unit_kobo", 12.5), ("unit_kobo", -1),
+                         ("quantity", True), ("quantity", 0),
+                         ("description", "Call +2348012345678")]:
+        invalid = _estimate_payload()
+        invalid["items"][0][field] = value
+        assert client.post(endpoint, json=invalid, headers=headers).status_code == 400
+    payload = _estimate_payload()
+    assert client.post(endpoint, json={**payload, "total_kobo": 1},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json={**payload, "discount_kobo": 9000000},
+                       headers=headers).status_code == 400
+    assert client.post(endpoint, json=payload).status_code == 400
+    with app.app_context():
+        job = db.session.get(PrinceJob, job_id)
+        job.status = "closed"
+        db.session.commit()
+    assert client.post(endpoint, json=payload, headers=headers).status_code == 409

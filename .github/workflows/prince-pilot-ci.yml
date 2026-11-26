@@ -12,6 +12,7 @@ on:
       - "static/css/prince_management.css"
       - "static/js/prince_management.js"
       - "templates/partnerships/prince_management.html"
+      - "templates/partnerships/prince_estimate.html"
       - "templates/partnerships/prince_staging_login.html"
       - "scripts/prince_seed_synthetic_staging.py"
       - "scripts/prince_optional_staging_rehearsal.py"
@@ -22,6 +23,7 @@ on:
       - "migrations/versions/d390ab6f021c_prince_principal_entry_review.py"
       - "migrations/versions/e7b204ac9d31_prince_job_assignment_ledger.py"
       - "migrations/versions/f12c9e48a620_prince_job_lifecycle.py"
+      - "migrations/versions/a91d7c2e450b_prince_estimates.py"
       - "app.py"
       - ".github/workflows/prince-pilot-ci.yml"
 
@@ -107,7 +109,7 @@ jobs:
               "prince_tenants", "prince_memberships", "prince_customers",
               "prince_vehicles", "prince_jobs", "prince_audit_events",
               "prince_job_entries", "prince_entry_reviews", "prince_job_assignments",
-              "prince_job_transitions",
+              "prince_job_transitions", "prince_estimates",
           }
           assert required <= names, f"Missing Prince tables: {required - names}"
           fields = {c["name"] for c in inspector.get_columns("prince_customers")}
@@ -136,6 +138,12 @@ jobs:
           lifecycle_fks = [frozenset(fk["constrained_columns"])
                            for fk in inspector.get_foreign_keys("prince_job_transitions")]
           assert frozenset({"job_id", "tenant_id"}) in lifecycle_fks
+          estimate_cols = {col["name"] for col in inspector.get_columns("prince_estimates")}
+          assert {"tenant_id", "job_id", "version", "items", "subtotal_kobo", "discount_kobo",
+                  "total_kobo", "approved_by_user_id"} <= estimate_cols
+          estimate_fks = [frozenset(fk["constrained_columns"])
+                          for fk in inspector.get_foreign_keys("prince_estimates")]
+          assert frozenset({"job_id", "tenant_id"}) in estimate_fks
           PY
       - name: Run Prince API and mobile authorization tests against disposable Postgres
         run: pytest -q --tb=short tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py

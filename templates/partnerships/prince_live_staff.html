@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Prince | Staff Management</title>
+<style>body{font-family:system-ui,sans-serif;background:#f4f6f7;color:#18252e;margin:0}main{max-width:760px;margin:auto;padding:24px}section{background:white;border:1px solid #dce3e7;border-radius:12px;padding:20px;margin:16px 0}label{display:block;margin:12px 0 4px}input:not([type=checkbox]),select{box-sizing:border-box;width:100%;padding:10px;border:1px solid #aab9c4;border-radius:6px;font:inherit}button{padding:10px 14px;background:#173c48;color:white;border:0;border-radius:6px;font:inherit;margin-top:12px}a{color:#17576b}small{color:#475a65}details{margin:12px 0}summary{cursor:pointer}h1,h2{margin-top:0}ul{padding-left:22px}</style></head>
+<body><main><header><small>PRINCE AUTOMOBILE CLINIC · PRIVATE STAFF ACCESS</small><h1>Staff management</h1><p>Signed in as {{ actor.name }}</p><a href="{{ url_for('prince_live.landing') }}">Return to workshop</a></header>
+<section><h2>My account</h2><p>{{ actor.email }}</p><details><summary>Correct my email address</summary>
+<form method="post" action="{{ url_for('prince_live.change_own_email') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label for="own-email">Correct email address</label><input id="own-email" name="email" type="email" maxlength="120" required autocomplete="email">
+<label><input name="identity_attested" value="yes" type="checkbox" required> I have independently confirmed that I control this address.</label>
+<label for="own-password">Current password</label><input id="own-password" name="current_password" type="password" required autocomplete="current-password">
+<p><small>Changing your email signs you out of every session. Sign in again with the corrected email and your existing password. No verification email is sent by this pilot.</small></p><button>Save corrected email</button></form></details></section>
+{% if principal %}
+<section><h2>Register authorized staff</h2><p>In-person setup only. Verify the staff member's identity and email ownership independently before creating the account. The new staff member should enter their own password.</p>
+<form method="post" action="{{ url_for('prince_live.create_staff') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label for="staff-name">Staff name</label><input id="staff-name" name="name" maxlength="120" required autocomplete="off">
+<label for="staff-email">Verified email</label><input id="staff-email" name="email" type="email" maxlength="120" required autocomplete="off">
+<label for="staff-role">Role</label><select id="staff-role" name="role"><option value="operator">Operator</option><option value="principal">Principal — full workshop management</option></select>
+<label for="new-password">New staff password (16 characters minimum)</label><input id="new-password" name="new_password" type="password" minlength="16" maxlength="128" required autocomplete="new-password">
+<label for="confirm-password">Repeat new password</label><input id="confirm-password" name="confirm_password" type="password" minlength="16" maxlength="128" required autocomplete="new-password">
+<label><input name="identity_attested" value="yes" type="checkbox" required> I independently verified this person's identity and email ownership and approve the selected role.</label>
+<label for="current-password">Your principal password</label><input id="current-password" name="current_password" type="password" required autocomplete="current-password"><button>Create staff account</button></form></section>
+<section><h2>Staff roster</h2>{% for member, user in rows %}<p><strong>{{ user.name }}</strong> · {{ member.role }} · {{ "Active" if member.active else "Suspended" }}<br><small>{{ user.email }}</small></p>
+{% if member.role == "operator" and member.active %}<details><summary>Suspend operator access</summary><form method="post" action="{{ url_for('prince_live.suspend_operator', member_id=member.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Confirm your principal password<input type="password" name="current_password" required autocomplete="current-password"></label><button>Suspend operator</button></form></details>{% endif %}{% endfor %}</section>
+<section><h2>Recent account changes</h2>{% for item in activity %}<p>{{ item.created_at }} UTC · {{ item.action.replace("live_staff_", "").replace("_", " ") }} · staff #{{ item.target_id }} · actor #{{ item.actor_user_id }}</p>{% else %}<p>No browser account changes recorded yet.</p>{% endfor %}</section>
+{% endif %}
+<p><small>Staff access only. Customer intake and finance remain subject to separate release controls. No public registration or online password recovery is available yet.</small></p>
+<form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Sign out</button></form></main></body></html>

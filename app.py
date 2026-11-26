@@ -164,6 +164,9 @@ def create_app():
     app.config["PRINCE_LIVE_PILOT_LOCKDOWN"] = _environment_flag(
         "PRINCE_LIVE_PILOT_LOCKDOWN", default=False,
     )
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = _environment_flag(
+        "PRINCE_LIVE_STAFF_ADMIN_APPROVED", default=False,
+    )
     app.config["PRINCE_LIVE_WORKSHOP_APPROVED"] = _environment_flag(
         "PRINCE_LIVE_WORKSHOP_APPROVED", default=False,
     )

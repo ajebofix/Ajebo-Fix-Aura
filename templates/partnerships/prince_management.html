@@ -46,6 +46,7 @@
 
   {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
   <div class="management-test-banner"><strong>Restricted workshop pilot</strong> · Intake, job notes, assignments and estimates. Written customer authorization and job progression require separate approval. Financial ledger requires separate approval. No Aura transfer.
+    {% if config.get("PRINCE_LIVE_STAFF_ADMIN_APPROVED") %}<a href="{{ url_for('prince_live.staff_accounts') }}">Staff management</a>{% endif %}
     <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form>
   </div>
   {% endif %}

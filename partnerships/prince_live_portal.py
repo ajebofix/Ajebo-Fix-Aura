@@ -3,7 +3,10 @@
 Only an explicitly approved, minimal workshop surface is available.
 Finance requires separate release approval. Private contacts, clinical and unrelated Aura routes remain closed.
 """
+from datetime import datetime, timezone
 import os
+import re
+import secrets
 from uuid import UUID
 
 from flask import (
@@ -11,10 +14,14 @@ from flask import (
 )
 from flask_login import current_user, login_fresh, login_user, logout_user
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+
+from extensions import db
 
 from models import User
-from partnerships.prince_models import PrinceMembership, PrinceTenant
+from partnerships.prince_models import PrinceAudit, PrinceMembership, PrinceTenant
 from security.rate_limits import limiter
+from security.session_registry import UserSession
 from partnerships.prince_staging_portal import ALLOWED_STATIC
 
 
@@ -135,6 +142,78 @@ def live_workshop_request_allowed():
     )
 
 
+STAFF_ADMIN_ENDPOINTS = frozenset({
+    "prince_live.staff_accounts", "prince_live.create_staff",
+    "prince_live.change_own_email", "prince_live.suspend_operator",
+})
+
+
+def staff_admin_ready():
+    return bool(current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+                and current_app.config.get("PRINCE_LIVE_STAFF_ADMIN_APPROVED", False)
+                and _dedicated_environment())
+
+
+def _staff_admin_actor(principal=False):
+    if not staff_admin_ready() or not _authorized_staff():
+        abort(404)
+    actor = User.query.populate_existing().filter_by(id=current_user.id).one_or_none()
+    member = _staff_member(actor)
+    if member is None or (principal and member.role != "principal"):
+        abort(404)
+    return actor, member
+
+
+def _locked_staff_admin_actor(principal=False):
+    actor, member = _staff_admin_actor(principal=principal)
+    # Serialize account mutations within the workshop and re-check authority.
+    tenant = PrinceTenant.query.populate_existing().filter_by(
+        id=member.tenant_id, slug="prince", active=True,
+    ).with_for_update().one_or_none()
+    if tenant is None:
+        abort(404)
+    actor, member = _staff_admin_actor(principal=principal)
+    if member.tenant_id != tenant.id:
+        abort(404)
+    if request.content_length and request.content_length > 8192:
+        abort(413)
+    password = request.form.get("current_password", "")
+    if not 0 < len(password) <= 512 or not actor.check_password(password):
+        abort(403, description="Current password confirmation failed.")
+    return actor, member
+
+
+def _staff_email(value):
+    email = value.strip().lower()
+    if (not 3 <= len(email) <= 120
+            or re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", email) is None
+            or email.startswith("prince-demo-")
+            or email.endswith((".invalid", ".test", ".example", ".localhost"))):
+        abort(400, description="Enter an independently verified email address.")
+    return email
+
+
+def _staff_audit(actor, member, target, action):
+    db.session.add(PrinceAudit(tenant_id=member.tenant_id, actor_user_id=actor.id,
+                               target_kind="staff_account", target_id=target.id,
+                               action=action))
+
+
+def _revoke_staff_sessions(user_id, reason):
+    UserSession.query.filter_by(user_id=user_id, revoked_at=None).update({
+        UserSession.revoked_at: datetime.now(timezone.utc).replace(tzinfo=None),
+        UserSession.revoked_reason: reason,
+    }, synchronize_session=False)
+
+
+def _commit_staff_change():
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        abort(409, description="Account details conflict with an existing record.")
+
+
 def register_prince_live_portal(app):
     app.register_blueprint(live_bp)
 
@@ -153,6 +232,8 @@ def register_prince_live_portal(app):
         if request.endpoint in {"prince_live.landing", "prince_live.sign_out"}:
             if _authorized_staff():
                 return None
+        if request.endpoint in STAFF_ADMIN_ENDPOINTS and staff_admin_ready() and _authorized_staff():
+            return None
         if live_workshop_request_allowed():
             return None
         if (request.endpoint == "static" and request.path in ALLOWED_STATIC
@@ -222,3 +303,93 @@ def sign_out():
     logout_user()
     session.clear()
     return redirect(url_for("prince_live.sign_in"), code=303)
+
+
+@live_bp.get("/accounts")
+def staff_accounts():
+    actor, member = _staff_admin_actor()
+    rows = []
+    activity = []
+    if member.role == "principal":
+        rows = (db.session.query(PrinceMembership, User)
+                .join(User, User.id == PrinceMembership.user_id)
+                .filter(PrinceMembership.tenant_id == member.tenant_id,
+                        PrinceMembership.role.in_(("principal", "operator")))
+                .order_by(PrinceMembership.id).all())
+        activity = (PrinceAudit.query.filter_by(tenant_id=member.tenant_id,
+                                               target_kind="staff_account")
+                    .order_by(PrinceAudit.id.desc()).limit(25).all())
+    return render_template("partnerships/prince_live_staff.html", actor=actor,
+                           principal=member.role == "principal", rows=rows, activity=activity)
+
+
+@live_bp.post("/accounts/create")
+@limiter.limit("5 per minute; 15 per hour")
+def create_staff():
+    actor, member = _locked_staff_admin_actor(principal=True)
+    name = request.form.get("name", "").strip()
+    email = _staff_email(request.form.get("email", ""))
+    role = request.form.get("role", "")
+    password = request.form.get("new_password", "")
+    if (not 2 <= len(name) <= 120 or any(ord(ch) < 32 for ch in name)
+            or role not in {"principal", "operator"}
+            or not 16 <= len(password) <= 128 or password.isspace()
+            or password != request.form.get("confirm_password", "")
+            or request.form.get("identity_attested") != "yes"):
+        abort(400, description="Check the staff details, password confirmation and verification.")
+    if User.query.filter(func.lower(User.email) == email).first() is not None:
+        abort(409, description="Account already exists.")
+    user = User(name=name, email=email, role="user", is_active=True,
+                phone_number="staff-" + secrets.token_hex(6),
+                email_verified_at=datetime.now(timezone.utc).replace(tzinfo=None))
+    user.set_password(password)
+    db.session.add(user)
+    try:
+        db.session.flush()
+        db.session.add(PrinceMembership(tenant_id=member.tenant_id, user_id=user.id,
+                                        role=role, active=True))
+        _staff_audit(actor, member, user, "live_staff_created")
+        _commit_staff_change()
+    except IntegrityError:
+        db.session.rollback()
+        abort(409, description="Account details conflict with an existing record.")
+    return redirect(url_for("prince_live.staff_accounts"), code=303)
+
+
+@live_bp.post("/accounts/email")
+@limiter.limit("5 per minute; 15 per hour")
+def change_own_email():
+    actor, member = _locked_staff_admin_actor()
+    email = _staff_email(request.form.get("email", ""))
+    if request.form.get("identity_attested") != "yes":
+        abort(400, description="Confirm control of the corrected email address.")
+    if User.query.filter(func.lower(User.email) == email, User.id != actor.id).first():
+        abort(409, description="Email already exists.")
+    if actor.email.lower() == email:
+        return redirect(url_for("prince_live.staff_accounts"), code=303)
+    actor.email = email
+    actor.email_verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    _revoke_staff_sessions(actor.id, "prince_staff_email_changed")
+    _staff_audit(actor, member, actor, "live_staff_email_changed")
+    _commit_staff_change()
+    logout_user()
+    session.clear()
+    return redirect(url_for("prince_live.sign_in"), code=303)
+
+
+@live_bp.post("/accounts/<int:member_id>/suspend")
+@limiter.limit("5 per minute; 15 per hour")
+def suspend_operator(member_id):
+    actor, member = _locked_staff_admin_actor(principal=True)
+    target = PrinceMembership.query.filter_by(id=member_id, tenant_id=member.tenant_id,
+                                             role="operator", active=True).one_or_none()
+    if target is None or target.user_id == actor.id:
+        abort(404)
+    user = db.session.get(User, target.user_id)
+    if user is None or user.role != "user":
+        abort(404)
+    target.active = False
+    _revoke_staff_sessions(user.id, "prince_staff_suspended")
+    _staff_audit(actor, member, user, "live_staff_suspended")
+    _commit_staff_change()
+    return redirect(url_for("prince_live.staff_accounts"), code=303)

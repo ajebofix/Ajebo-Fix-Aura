@@ -263,3 +263,81 @@ def test_live_finance_requires_release_and_verified_allocation(live, app, client
     assert client.get(job + "/clinical").status_code == 404
     app.config["PRINCE_LIVE_FINANCE_APPROVED"] = False
     assert client.get(root + "/finance").status_code == 404
+
+
+def _staff_post(client, path, payload):
+    with client.session_transaction() as sess:
+        csrf = sess["_csrf_token"]
+    return client.post(path, data={**payload, "csrf_token": csrf})
+
+
+def test_browser_staff_admin_is_separately_gated(live, app, client):
+    assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 404
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    assert client.get("/prince-staff/accounts").status_code == 200
+    assert client.get("/pilot/workshops/prince/operator").status_code == 404
+
+
+def test_principal_creates_staff_and_corrects_own_email(live, app, client):
+    from partnerships.prince_models import PrinceAudit
+    from security.session_registry import UserSession
+
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    assert client.get("/prince-staff/accounts").status_code == 404
+    assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 200
+    payload = {"name": "Fictional new principal", "email": "new-staff@example.org",
+               "role": "principal", "new_password": PASSWORD,
+               "confirm_password": PASSWORD, "current_password": PASSWORD,
+               "identity_attested": "yes"}
+    path = "/prince-staff/accounts/create"
+    assert _staff_post(client, path, {**payload, "current_password": "wrong"}).status_code == 403
+    assert _staff_post(client, path, {**payload, "identity_attested": ""}).status_code == 400
+    assert _staff_post(client, path, payload).status_code == 303
+    assert _staff_post(client, path, payload).status_code == 409
+    user = User.query.filter_by(email=payload["email"]).one()
+    assert user.check_password(PASSWORD)
+    assert PrinceMembership.query.filter_by(user_id=user.id).one().role == "principal"
+    original = User.query.filter_by(email="staff@example.test").one()
+    original_id = original.id
+    assert _staff_post(client, "/prince-staff/accounts/email", {
+        "email": "corrected-staff@example.org", "identity_attested": "yes",
+        "current_password": PASSWORD}).status_code == 303
+    assert db.session.get(User, original_id).email == "corrected-staff@example.org"
+    assert UserSession.query.filter_by(user_id=original_id, revoked_at=None).count() == 0
+    assert PrinceAudit.query.filter_by(target_kind="staff_account").count() == 2
+    assert client.get("/prince-staff/accounts").status_code == 404
+
+
+def test_operator_cannot_create_or_suspend_staff(live, app, client):
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    member = db.session.get(PrinceMembership, live)
+    member.role = "operator"
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    page = client.get("/prince-staff/accounts")
+    assert page.status_code == 200 and b"Staff roster" not in page.data
+    assert _staff_post(client, "/prince-staff/accounts/create", {
+        "current_password": PASSWORD}).status_code == 404
+    assert _staff_post(client, f"/prince-staff/accounts/{live}/suspend", {
+        "current_password": PASSWORD}).status_code == 404
+
+
+def test_suspension_scoped_to_operator_and_revokes_access(live, app, client):
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 200
+    payload = {"name": "Fictional operator", "email": "operator@example.org",
+               "role": "operator", "new_password": PASSWORD,
+               "confirm_password": PASSWORD, "current_password": PASSWORD,
+               "identity_attested": "yes"}
+    assert _staff_post(client, "/prince-staff/accounts/create", payload).status_code == 303
+    user = User.query.filter_by(email=payload["email"]).one()
+    operator = PrinceMembership.query.filter_by(user_id=user.id).one()
+    assert _staff_post(client, f"/prince-staff/accounts/{live}/suspend", {
+        "current_password": PASSWORD}).status_code == 404
+    assert _staff_post(client, f"/prince-staff/accounts/{operator.id}/suspend", {
+        "current_password": PASSWORD}).status_code == 303
+    assert not db.session.get(PrinceMembership, operator.id).active
+    assert PrinceTenant.query.filter_by(slug="prince").one().intake_enabled is False

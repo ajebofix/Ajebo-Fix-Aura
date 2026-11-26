@@ -22,6 +22,7 @@ on:
       - "static/js/prince_quotation_print.js"
       - "templates/partnerships/prince_staging_login.html"
       - "templates/partnerships/prince_live_login.html"
+      - "templates/partnerships/prince_live_staff.html"
       - "scripts/prince_seed_synthetic_staging.py"
       - "scripts/prince_optional_staging_rehearsal.py"
       - "scripts/prince_verify_synthetic_staging.py"

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Prince · Estimate workspace</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_management.css') }}">
+  <script defer src="{{ url_for('static', filename='js/prince_management.js') }}"></script>
+</head>
+<body><main class="pilot-shell management-shell">
+  <header class="pilot-header"><img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince logo" width="52" height="52">
+    <div class="brand-copy"><div class="eyebrow">AURA · WORKSHOP QUOTATIONS</div><h1>{{ workshop_name }}</h1><p>Estimate workspace</p></div></header>
+  <nav class="principal-back-nav"><a href="{{ url_for('prince_pilot.principal_management' if principal else 'prince_pilot.operator_workspace', slug=slug) }}">Back to workshop</a></nav>
+  <section class="management-hero"><div><div class="overline">JOB #{{ job.job_id }} · INTERNAL ESTIMATE</div><h2>{{ job.brand }} {{ job.model }}</h2><p>{{ job.full_name }} · {{ job.job_status | replace("_", " ") | title }}</p><p>Prices are proposed workshop charges, not an invoice, customer authorization or payment record.</p></div></section>
+  {% if config.get("PRINCE_STAGING_LOCKDOWN") %}<div class="management-test-banner"><strong>TRAINING ONLY</strong> · Fictional line items and amounts. Start every description and approval note with Demo: or Synthetic:.</div>{% endif %}
+  {% macro money(kobo) %}₦{{ "{:,}".format(kobo // 100) }}.{{ "%02d"|format(kobo % 100) }}{% endmacro %}
+  {% if latest %}
+  <section class="panel management-panel"><h2>Current estimate · Version {{ latest.version }}</h2><p class="muted">{{ "Internally approved · locked" if latest.internally_approved else "Draft · not approved" }}</p>
+    <div class="estimate-table-wrap"><table class="estimate-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>
+    {% for item in latest.items %}<tr><td>{{ categories[item.category] }} · {{ item.description }}</td><td>{{ item.quantity }}</td><td>{{ money(item.unit_kobo) }}</td><td>{{ money(item.line_kobo) }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="estimate-totals"><p>Subtotal <strong>{{ money(latest.subtotal_kobo) }}</strong></p><p>Discount <strong>{{ money(latest.discount_kobo) }}</strong></p><p>Total <strong>{{ money(latest.total_kobo) }}</strong></p></div>
+    {% if principal and latest.internally_approved %}<p>Approved by principal account #{{ latest.approved_by_user_id }} · {{ latest.approved_at }}</p><p>{{ latest.approval_note }}</p>{% endif %}
+    {% if principal and not latest.internally_approved and job.job_status != "closed" %}
+    <form class="assignment-form estimate-approve-form" data-url="{{ url_for('prince_pilot.approve_estimate', slug=slug, job_id=job.job_id, version=latest.version) }}">
+      <label>Internal approval reason<textarea name="approval_note" minlength="20" maxlength="700" rows="3" required></textarea></label>
+      <p class="tiny">Approval locks this version. A correction or supersession requires a separate future workflow. No customer authorization is implied.</p>
+      <div class="assign-controls"><button type="submit">Approve estimate internally</button><span class="estimate-feedback" role="status"></span></div>
+    </form>{% endif %}
+  </section>{% endif %}
+  {% if job.job_status != "closed" and (not latest or not latest.internally_approved) %}
+  <section class="panel management-panel"><h2>{{ "Revise draft" if latest else "Create estimate" }}</h2><p class="muted">Amounts are in naira. Each save creates a new version. Taxes are not calculated in this pilot.</p>
+    <form class="estimate-draft-form assignment-form" data-url="{{ url_for('prince_pilot.create_estimate_version', slug=slug, job_id=job.job_id) }}" data-version="{{ latest.version if latest else 0 }}">
+      <div class="estimate-lines">
+      {% for item in (latest.items if latest else [none]) %}
+      <div class="estimate-line">
+        <label>Category<select name="category" required>{% for key, label in categories.items() %}<option value="{{ key }}" {% if item and item.category == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        <label>Description<input name="description" required maxlength="180" value="{{ item.description if item else '' }}" placeholder="{{ 'Demo: fictional part or labour' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Part or labour' }}"></label>
+        <label>Quantity<input name="quantity" inputmode="numeric" pattern="[0-9]+" required value="{{ item.quantity if item else 1 }}"></label>
+        <label>Unit price (₦)<input name="unit_price" inputmode="decimal" required value="{{ '%d.%02d'|format(item.unit_kobo // 100, item.unit_kobo % 100) if item else '' }}" placeholder="0.00"></label>
+        <button type="button" class="remove-estimate-line">Remove line</button>
+      </div>{% endfor %}
+      </div>
+      <button type="button" class="add-estimate-line">Add line item</button>
+      <label>Discount (₦)<input name="discount" inputmode="decimal" value="{{ '%d.%02d'|format(latest.discount_kobo // 100, latest.discount_kobo % 100) if latest else '0.00' }}" required></label>
+      <div class="estimate-totals"><p>Preview total <strong class="estimate-preview">₦0.00</strong></p></div>
+      <div class="assign-controls"><button type="submit">Save new draft version</button><span class="estimate-feedback" role="status"></span></div>
+    </form>
+  </section>{% else %}<p class="management-test-banner">This estimate workspace is locked for changes.</p>{% endif %}
+  <section class="panel management-panel"><h2>Version history</h2>
+  {% for version in versions %}<details class="lifecycle-panel"><summary>Version {{ version.version }} · {{ money(version.total_kobo) }} · {{ "Approved" if version.internally_approved else "Draft" }}</summary><p class="tiny">{{ version.created_at }}</p>
+  {% for item in version.items %}<p>{{ item.description }} · {{ item.quantity }} × {{ money(item.unit_kobo) }}</p>{% endfor %}<p>Discount: {{ money(version.discount_kobo) }}</p>{% if principal and version.approval_note %}<p>{{ version.approval_note }}</p>{% endif %}</details>{% else %}<p>No saved estimates.</p>{% endfor %}
+  </section><footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer>
+</main></body></html>

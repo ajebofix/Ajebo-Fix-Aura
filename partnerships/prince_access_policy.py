@@ -21,6 +21,8 @@ class PrinceAction(str, Enum):
     INTAKE_CREATE = "intake_create"
     JOB_READ = "job_read"
     JOB_EDIT = "job_edit"
+    MANAGEMENT_VIEW = "management_view"
+    JOB_ASSIGN = "job_assign"
     ESTIMATE_DRAFT = "estimate_draft"
     ESTIMATE_APPROVE = "estimate_approve"
     PAYMENT_REPORT = "payment_report"
@@ -82,6 +84,7 @@ def authorize(
             PrinceAction.PAYMENT_VERIFY, PrinceAction.CONTACT_READ,
             PrinceAction.CONTACT_CORRECT, PrinceAction.SERVICE_CONFIRM,
             PrinceAction.ESTIMATE_APPROVE, PrinceAction.DIRECTORY_EXPORT,
+            PrinceAction.MANAGEMENT_VIEW, PrinceAction.JOB_ASSIGN,
         }
     if actor.role != PrinceRole.OPERATOR or action not in OPERATOR_ALLOWED_ACTIONS:
         return False

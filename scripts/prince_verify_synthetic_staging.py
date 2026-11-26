@@ -26,7 +26,7 @@ def verify():
         tables = set(inspect(db.engine).get_table_names())
         assert {"prince_tenants", "prince_memberships", "prince_customers",
                 "prince_vehicles", "prince_jobs", "prince_audit_events",
-                "prince_job_entries", "prince_job_assignments"} <= tables
+                "prince_job_entries", "prince_job_assignments", "prince_job_transitions"} <= tables
         tenant = PrinceTenant.query.filter_by(slug="prince").one()
         assert tenant.active and tenant.intake_enabled
         assert tenant.approved_privacy_notice_version == "synthetic-staging-v1"
@@ -118,6 +118,9 @@ def verify():
                 base_url=BASE,
             )
             assert history.status_code == 200
+            assert client.get(
+                f"/pilot/workshops/prince/jobs/{job['job_id']}/lifecycle", base_url=BASE,
+            ).status_code == 404
             assert all(x["review_state"] == "unverified"
                        for x in history.json["entries"])
         if alpha_assignee != operator_ids[role]:
@@ -139,6 +142,15 @@ def verify():
     assert "Principal management console" in management.get_data(as_text=True)
     assert "Demo Owner Alpha" in management.get_data(as_text=True)
     assert "phone_ciphertext" not in management.get_data(as_text=True)
+    assert "Job progression" in management.get_data(as_text=True)
+    for job in jobs_all.json["jobs"]:
+        state = principal.get(
+            f"/pilot/workshops/prince/jobs/{job['job_id']}/lifecycle", base_url=BASE,
+        )
+        assert state.status_code == 200
+        assert state.json["job_status"] == job["job_status"]
+        if state.json["history"]:
+            assert state.json["history"][-1]["new_status"] == job["job_status"]
     stephen = login("stephen", "PRINCE_DEMO_STEPHEN_PASSWORD")
     stephen_jobs = stephen.get("/pilot/workshops/prince/jobs", base_url=BASE)
     assert stephen_jobs.status_code == 200

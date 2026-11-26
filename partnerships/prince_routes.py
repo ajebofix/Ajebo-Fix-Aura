@@ -11,7 +11,7 @@ from datetime import datetime
 
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from flask_login import current_user
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.exc import SQLAlchemyError
 
 from extensions import db
@@ -66,6 +66,18 @@ def pilot_access_gate():
         abort(404)
     if not current_user.is_authenticated or not current_user.is_active:
         abort(401)
+
+
+@prince_pilot_bp.teardown_request
+def release_prince_request_transaction(_error):
+    """Every mutation commits explicitly; release any remaining locks at request end.
+
+    Flask normally removes its scoped session at application-context teardown.
+    A caller may retain an outer app context, notably the PostgreSQL test harness.
+    A rejected mutation must not keep its SELECT FOR UPDATE lock in that context.
+    Never commit from teardown.
+    """
+    db.session.rollback()
 
 
 def _scope(slug: str):
@@ -1575,4 +1587,113 @@ def print_receipt(slug, job_id, payment_id):
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
     response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _financial_overview(tenant_id):
+    """Single statement snapshot: aggregate payments before joining invoices."""
+    payment = PrincePayment
+    reversal = PrincePaymentReversal
+    receipt = PrinceReceipt
+    active = (payment.decision == "verified") & reversal.id.is_(None)
+    rollup = (
+        db.session.query(
+            payment.job_id.label("job_id"),
+            func.sum(case((active, payment.amount_kobo), else_=0)).label("verified"),
+            func.sum(case((payment.decision.is_(None), payment.amount_kobo), else_=0)).label("pending"),
+            func.sum(case((payment.decision == "rejected", payment.amount_kobo), else_=0)).label("rejected"),
+            func.sum(case((reversal.id.isnot(None), payment.amount_kobo), else_=0)).label("reversed"),
+            func.sum(case((receipt.id.isnot(None), 1), else_=0)).label("receipts"),
+            func.sum(case((receipt.id.isnot(None) & reversal.id.isnot(None), 1), else_=0)).label("historical_receipts"),
+            func.sum(case((active & receipt.id.is_(None), 1), else_=0)).label("receipt_pending"),
+            func.sum(case((payment.decision.is_(None), 1), else_=0)).label("pending_count"),
+        )
+        .outerjoin(reversal, reversal.payment_id == payment.id)
+        .outerjoin(receipt, receipt.payment_id == payment.id)
+        .filter(payment.tenant_id == tenant_id)
+        .group_by(payment.job_id).subquery()
+    )
+    auth = PrinceCustomerAuthorization
+    latest = (
+        db.session.query(auth.job_id.label("job_id"), auth.estimate_version.label("version"),
+                         func.max(auth.sequence).label("sequence"))
+        .filter(auth.tenant_id == tenant_id)
+        .group_by(auth.job_id, auth.estimate_version).subquery()
+    )
+    invoice = PrinceInvoice
+    amounts = ("verified", "pending", "rejected", "reversed", "receipts",
+               "historical_receipts", "receipt_pending", "pending_count")
+    rows = (
+        db.session.query(
+            invoice.job_id, invoice.total_kobo, PrinceCustomer.full_name,
+            PrinceVehicle.brand, PrinceVehicle.model, PrinceJob.status,
+            case(((auth.decision == "accepted")
+                  & (auth.sequence == invoice.authorization_sequence)
+                  & (auth.total_kobo == invoice.total_kobo), 1), else_=0).label("current"),
+            *[func.coalesce(rollup.c[key], 0).label(key) for key in amounts],
+        )
+        .join(PrinceJob, (PrinceJob.id == invoice.job_id) & (PrinceJob.tenant_id == invoice.tenant_id))
+        .join(PrinceCustomer, (PrinceCustomer.id == PrinceJob.customer_id)
+              & (PrinceCustomer.tenant_id == PrinceJob.tenant_id))
+        .join(PrinceVehicle, (PrinceVehicle.id == PrinceJob.vehicle_id)
+              & (PrinceVehicle.tenant_id == PrinceJob.tenant_id))
+        .outerjoin(rollup, rollup.c.job_id == invoice.job_id)
+        .outerjoin(latest, (latest.c.job_id == invoice.job_id)
+                   & (latest.c.version == invoice.estimate_version))
+        .outerjoin(auth, (auth.job_id == invoice.job_id)
+                   & (auth.tenant_id == invoice.tenant_id)
+                   & (auth.estimate_version == latest.c.version)
+                   & (auth.sequence == latest.c.sequence))
+        .filter(invoice.tenant_id == tenant_id)
+        .order_by(invoice.job_id.desc()).all()
+    )
+    totals = {key: 0 for key in amounts}
+    totals.update(invoiced=0, outstanding=0, hold_outstanding=0, hold_count=0,
+                  invoice_count=0, settled_count=0)
+    details = []
+    for row in rows:
+        values = {key: int(getattr(row, key)) for key in amounts}
+        outstanding = int(row.total_kobo) - values["verified"]
+        for key, value in values.items():
+            totals[key] += value
+        totals["invoice_count"] += 1
+        totals["invoiced"] += int(row.total_kobo)
+        totals["outstanding"] += outstanding
+        totals["settled_count"] += int(outstanding == 0)
+        if not row.current:
+            totals["hold_count"] += 1
+            totals["hold_outstanding"] += outstanding
+        details.append({
+            "job_id": row.job_id, "reference": f"DEMO-INV-PAC-{row.job_id:06d}",
+            "customer": _public_concern(row.full_name),
+            "vehicle": f"{_public_concern(row.brand)} {_public_concern(row.model)}",
+            "job_status": row.status, "invoiced": int(row.total_kobo),
+            "outstanding": outstanding, "authorization_current": bool(row.current),
+            **values,
+        })
+    return {"totals": totals, "rows": details[:50], "shown": min(len(details), 50)}
+
+
+@prince_pilot_bp.get("/<slug>/finance")
+def principal_finance(slug):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.PAYMENT_VERIFY)
+    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        abort(404)
+    response = current_app.make_response(render_template(
+        "partnerships/prince_finance.html", slug=slug, workshop_name=tenant.display_name,
+        overview=_financial_overview(tenant.id),
+    ))
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
+
+
+@prince_pilot_bp.get("/<slug>/finance/data")
+def principal_finance_data(slug):
+    tenant, actor = _scope(slug)
+    _allow(actor, tenant, PrinceAction.PAYMENT_VERIFY)
+    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+        abort(404)
+    response = jsonify(_financial_overview(tenant.id))
+    response.headers["Cache-Control"] = "no-store, private"
     return response

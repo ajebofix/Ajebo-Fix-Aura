@@ -52,6 +52,7 @@
   </section>
 
   <nav class="management-tabs" aria-label="Management sections">
+    {% if config.get("PRINCE_STAGING_LOCKDOWN") %}<a href="{{ url_for('prince_pilot.principal_finance', slug=slug) }}">Financial console</a>{% endif %}
     <a href="#job-queue">Job queue</a>
     <a href="#review-queue">Pending reviews</a>
     <a href="#staff-roster">Available operators</a>

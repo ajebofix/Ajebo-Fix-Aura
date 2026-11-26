@@ -574,3 +574,74 @@ def test_authorization_denies_old_version_and_forced_amount(approved_quotation, 
                        headers=headers).status_code == 201
     assert client.post(endpoint, json=_customer_decision(1, "accepted"),
                        headers=headers).status_code == 201
+
+
+def test_start_gate_and_withdrawal_work_hold(approved_quotation, client):
+    assert _log_in(client, role="stephen").status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    root = approved_quotation.rsplit("/", 1)[0]
+    authorization = approved_quotation + "/2/authorization"
+
+    def advance(old, new, disposition=None):
+        return client.post(root + "/lifecycle", json={
+            "expected_status": old, "new_status": new,
+            "reason": "Demo: record the fictional workshop lifecycle decision.",
+            "closure_disposition": disposition,
+            "follow_up_plan": "Demo: review withdrawal and agree a new scope." if disposition else None,
+        }, headers=headers)
+
+    assert advance("draft", "awaiting_approval").status_code == 200
+    assert advance("awaiting_approval", "approved").status_code == 200
+    assert advance("approved", "in_progress").status_code == 409
+    assert client.post(authorization, json=_customer_decision(0, "declined"),
+                       headers=headers).status_code == 201
+    assert advance("approved", "in_progress").status_code == 409
+    assert client.post(authorization, json=_customer_decision(1, "accepted"),
+                       headers=headers).status_code == 201
+    assert advance("approved", "in_progress").status_code == 200
+    assert client.get(root).json["work_authorization"] == "accepted"
+    assert client.post(authorization, json=_customer_decision(2, "withdrawn"),
+                       headers=headers).status_code == 201
+    assert client.get(root).json["work_authorization"] == "withdrawn"
+    assert "Work hold:" in client.get(P + "/manage").get_data(as_text=True)
+    entry = client.post(root + "/entries", json={
+        "category": "reported_work", "body": "Demo: fictional work completed before withdrawal.",
+    }, headers=headers)
+    assert entry.status_code == 201
+    entry_id = entry.json["entry"]["id"]
+    assert client.post(root + f"/entries/{entry_id}/review", json={
+        "decision": "work_confirmed", "basis": "direct_inspection",
+        "review_note": "Demo: fictional inspection of work before withdrawal.",
+    }, headers=headers).status_code == 201
+    # No-follow-up closure must fail even when the work is confirmed.
+    assert client.post(root + "/lifecycle", json={
+        "expected_status": "in_progress", "new_status": "closed",
+        "reason": "Demo: fictional closure without current authorization.",
+        "closure_disposition": "no_follow_up_identified", "follow_up_plan": None,
+    }, headers=headers).status_code == 409
+    assert advance("in_progress", "closed", "follow_up_required").status_code == 200
+
+
+def test_operator_sees_work_gate_without_private_evidence(approved_quotation, client, app, stage):
+    from partnerships.prince_models import PrinceCustomerAuthorization
+    with app.app_context():
+        job = db.session.get(PrinceJob, stage["job_id"])
+        db.session.add(PrinceCustomerAuthorization(
+            tenant_id=job.tenant_id, job_id=job.id, estimate_version=2,
+            sequence=1, decision="withdrawn", channel="written_message",
+            evidence_reference="Demo: confidential withdrawal reference.",
+            total_kobo=2400100, recorded_by_user_id=stage["principal"],
+        ))
+        job.status = "in_progress"
+        db.session.commit()
+    assert _log_in(client, role="operator-a").status_code == 303
+    root = approved_quotation.rsplit("/", 1)[0]
+    data = client.get(root).json
+    assert data["work_authorization"] == "withdrawn"
+    assert "confidential withdrawal reference" not in str(data)
+    page = client.get(P + "/operator").get_data(as_text=True)
+    assert "Do not start or continue chargeable work" in page
+    assert "confidential withdrawal reference" not in page

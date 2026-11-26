@@ -86,6 +86,12 @@
             Open workshop record
           </a> · <a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">Estimate</a>
         </div>
+        {% if job.job_status != "closed" %}
+        <p class="tiny"><strong>Work authorization:</strong> {{ job.work_authorization | replace("_", " ") | title }}.</p>
+        {% if job.job_status == "in_progress" and job.work_authorization != "accepted" %}
+        <p class="limit-note"><strong>Work hold:</strong> Current acceptance is missing or withdrawn. Stop additional chargeable work and review the job with a principal. Preserve actual work records.</p>
+        {% endif %}
+        {% endif %}
         <details class="lifecycle-panel">
           <summary>Job progression · {{ job.job_status | replace("_", " ") | title }}</summary>
           <p class="tiny">Workshop status only. Not customer authorization, repair verification, roadworthiness or payment confirmation.</p>
@@ -113,7 +119,7 @@
             {% elif job.next_status == "approved" %}
             <p class="tiny">Record the internally approved work scope. This does not record customer consent to work or charges.</p>
             {% elif job.next_status == "in_progress" %}
-            <p class="tiny">Confirm an active operator is assigned and the approved scope has been communicated.</p>
+            <p class="tiny">Confirm an active operator is assigned and the exact internally approved estimate has recorded customer acceptance.</p>
             {% endif %}
             <label for="stage-reason-{{ job.job_id }}">{{ "Closure summary and follow-up plan" if job.next_status == "closed" else "Decision reason / internal work scope" }}</label>
             <textarea id="stage-reason-{{ job.job_id }}" name="reason" rows="3" minlength="20" maxlength="1000" required placeholder="{{ 'Demo: describe the fictional decision and its basis' if config.get('PRINCE_STAGING_LOCKDOWN') else 'Record the decision and its basis without private customer details' }}"></textarea>

@@ -110,6 +110,46 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrinceInvoice(db.Model):
+    """Fictional pilot invoice snapshot; never a payment or work confirmation."""
+    __tablename__ = "prince_invoices"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"], ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_invoice_job_tenant", ondelete="RESTRICT",
+        ),
+        db.ForeignKeyConstraint(
+            ["job_id", "estimate_version", "authorization_sequence"],
+            ["prince_customer_authorizations.job_id",
+             "prince_customer_authorizations.estimate_version",
+             "prince_customer_authorizations.sequence"],
+            name="fk_prince_invoice_authorization", ondelete="RESTRICT",
+        ),
+        db.UniqueConstraint("job_id", name="uq_prince_invoice_job"),
+        db.CheckConstraint("estimate_version > 0 AND authorization_sequence > 0",
+                           name="ck_prince_invoice_source"),
+        db.CheckConstraint(
+            "subtotal_kobo >= 0 AND discount_kobo >= 0 AND discount_kobo <= subtotal_kobo "
+            "AND total_kobo = subtotal_kobo - discount_kobo",
+            name="ck_prince_invoice_totals",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("prince_tenants.id", ondelete="RESTRICT"),
+                          nullable=False, index=True)
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    estimate_version = db.Column(db.Integer, nullable=False)
+    authorization_sequence = db.Column(db.Integer, nullable=False)
+    items = db.Column(db.JSON, nullable=False)
+    subtotal_kobo = db.Column(db.BigInteger, nullable=False)
+    discount_kobo = db.Column(db.BigInteger, nullable=False)
+    total_kobo = db.Column(db.BigInteger, nullable=False)
+    issued_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+                                  nullable=False)
+    issue_reason = db.Column(db.Text, nullable=False)
+    issued_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class PrinceCustomerAuthorization(db.Model):
     """Principal-recorded customer decision, distinct from internal approval."""
     __tablename__ = "prince_customer_authorizations"

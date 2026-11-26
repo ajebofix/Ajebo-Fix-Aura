@@ -1052,6 +1052,11 @@ def test_clinical_handoff_requires_reviewed_work_and_separate_consent(approved_q
     }, headers=headers).status_code == 200
     before = client.get(endpoint + "/data").json
     assert before["handoff"]["state"] == "not_recorded"
+    assert before["identity_readiness"] == {
+        "state": "blocked", "clinical_candidate_active": False,
+        "workshop_vin_format_present": False, "workshop_vin_verified": False,
+        "owner_confirmation_available": False, "destination_link_enabled": False,
+    }
     assert len(before["candidate"]["confirmed_work"]) == 1
     assert len(before["candidate"]["unresolved_statements"]) == 1
     assert before["candidate"]["outcome"] == "not_independently_assessed"
@@ -1070,6 +1075,10 @@ def test_clinical_handoff_requires_reviewed_work_and_separate_consent(approved_q
     saved = client.post(endpoint, json=payload, headers=headers)
     assert saved.status_code == 201
     assert saved.json["handoff"]["state"] == "candidate"
+    readiness = client.get(endpoint + "/data").json["identity_readiness"]
+    assert readiness["clinical_candidate_active"] is True
+    assert readiness["destination_link_enabled"] is False
+    assert readiness["state"] == "blocked"
     snapshot = saved.json["handoff"]["snapshot"]
     assert snapshot == before["candidate"]
     assert "private fictional review context" not in str(snapshot)
@@ -1086,6 +1095,7 @@ def test_clinical_handoff_requires_reviewed_work_and_separate_consent(approved_q
     assert client.get(history).json["candidates"] == []
     after = client.get(endpoint + "/data").json
     assert after["handoff"]["state"] == "withdrawn"
+    assert after["identity_readiness"]["clinical_candidate_active"] is False
     assert "snapshot" not in after["handoff"]
     assert after["candidate"] is None
     assert client.post(endpoint, json=payload, headers=headers).status_code == 409

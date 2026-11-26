@@ -56,13 +56,12 @@
         if (result.assigned_user_id !== assignee_user_id ||
             !result.assigned_operator_name) throw new Error("unconfirmed");
         display.textContent = result.assigned_operator_name;
+        form.reset();
         expected.value = String(result.assigned_user_id);
+        expected.defaultValue = String(result.assigned_user_id);
         for (const option of select.options) {
           option.disabled = option.value === String(result.assigned_user_id);
         }
-        form.reset();
-        // reset() can restore original selected option; keep new assignee
-        // excluded so that repeated assignments remain intentional.
         select.selectedIndex = 0;
         reason.value = "";
         feedback.textContent = "Assignment recorded. Operator access has changed.";

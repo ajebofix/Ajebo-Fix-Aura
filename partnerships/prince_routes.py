@@ -128,6 +128,7 @@ def _job_response(job: PrinceJob, customer: PrinceCustomer, vehicle: PrinceVehic
         "model": vehicle.model,
         "year": vehicle.year,
         "job_status": job.status,
+        "work_authorization": _work_authorization(job),
         "reported_concern": _public_concern(job.reported_concern),
     })
 
@@ -883,7 +884,12 @@ def principal_transition_job(slug, job_id):
         if target == "in_progress" and job.assigned_user_id not in {
                 person["id"] for person in _eligible_operators(tenant.id)}:
             return jsonify({"error": "Assign an active operator before starting work."}), 409
+        if target == "in_progress" and _work_authorization(job) != "accepted":
+            return jsonify({"error": "Record customer acceptance of the current approved estimate before starting work."}), 409
         if target == "closed":
+            if (disposition == "no_follow_up_identified"
+                    and _work_authorization(job) != "accepted"):
+                return jsonify({"error": "Missing or withdrawn authorization requires documented follow-up."}), 409
             count, pending, unresolved, work_confirmed = _closure_blockers(tenant.id, job.id)
             if not count or pending:
                 return jsonify({
@@ -1221,3 +1227,18 @@ def record_customer_authorization(slug, job_id, version):
         db.session.rollback()
         return jsonify({"error": "Authorization record could not be saved."}), 503
     return jsonify({"state": decision, "event": result}), 201
+
+
+def _work_authorization(job):
+    """Minimal operational state; never expose the private evidence or actor."""
+    estimate = _estimate_latest(job.tenant_id, job.id)
+    if estimate is None or estimate.approved_at is None:
+        return "estimate_required"
+    event = PrinceCustomerAuthorization.query.populate_existing().filter_by(
+        tenant_id=job.tenant_id, job_id=job.id, estimate_version=estimate.version,
+    ).order_by(PrinceCustomerAuthorization.sequence.desc()).first()
+    if event is None:
+        return "not_recorded"
+    if event.total_kobo != estimate.total_kobo:
+        return "not_recorded"
+    return event.decision

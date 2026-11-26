@@ -6,7 +6,7 @@ import pytest
 from extensions import db
 from models import User
 from partnerships.prince_models import (
-    PrinceCustomer, PrinceJob, PrinceJobEntry, PrinceMembership, PrinceTenant, PrinceVehicle
+    PrinceCustomer, PrinceEstimate, PrinceJob, PrinceJobEntry, PrinceMembership, PrinceTenant, PrinceVehicle
 )
 
 P = "/pilot/workshops/prince"
@@ -433,3 +433,70 @@ def test_stage_estimate_synthetic_inputs_and_principal_approval(stage, client):
         "approval_note": "Demo: reviewed fictional estimate for internal approval.",
     }, headers=headers).status_code == 200
     assert client.get(endpoint).json["versions"][0]["total_kobo"] == 100050
+
+
+@pytest.fixture
+def approved_quotation(stage, app):
+    with app.app_context():
+        job = db.session.get(PrinceJob, stage["job_id"])
+        db.session.add(PrinceEstimate(
+            tenant_id=job.tenant_id, job_id=job.id, version=1,
+            items=[{"category": "parts", "description": "Demo: obsolete draft",
+                    "quantity": 1, "unit_kobo": 100, "line_kobo": 100}],
+            subtotal_kobo=100, discount_kobo=0, total_kobo=100,
+            created_by_user_id=stage["principal"],
+        ))
+        db.session.add(PrinceEstimate(
+            tenant_id=job.tenant_id, job_id=job.id, version=2,
+            items=[{"category": "labour", "description": "Demo: fictional workshop labour",
+                    "quantity": 2, "unit_kobo": 1250050, "line_kobo": 2500100}],
+            subtotal_kobo=2500100, discount_kobo=100000, total_kobo=2400100,
+            created_by_user_id=stage["principal"], approved_by_user_id=stage["principal"],
+            approved_at=datetime.utcnow(), approval_note="Demo: internal review note not for quotation.",
+        ))
+        db.session.commit()
+    return P + f"/jobs/{stage['job_id']}/estimates"
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_approved_print_quotation_principal_only_and_safe(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    response = client.get(approved_quotation + "/2/print")
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
+    for required in ("TRAINING SAMPLE", "NOT FOR CUSTOMER ISSUE", "Synthetic Principal Owner",
+                     "24,001.00", "25,001.00", "1,000.00", "Prince Automobile Clinic",
+                     "Customer authorization has not been recorded"):
+        assert required in page
+    for forbidden in ("internal review note not for quotation", "obsolete draft",
+                      "phone_ciphertext", "home_address", "approved_by_user_id"):
+        assert forbidden not in page
+    assert "no-store" in response.headers["Cache-Control"]
+    assert client.get(approved_quotation + "/1/print").status_code == 404
+    assert client.get(approved_quotation + "/999/print").status_code == 404
+    assert client.get("/static/css/prince_quotation_print.css").status_code == 200
+    assert client.get("/static/js/prince_quotation_print.js").status_code == 200
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_operator_cannot_print_quotation(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(approved_quotation + "/2/print").status_code == 404
+
+
+def test_public_cannot_print_quotation(approved_quotation, client):
+    assert client.get(approved_quotation + "/2/print").status_code == 404
+
+
+def test_print_requires_approved_estimate(stage, client):
+    assert _log_in(client, role="principal").status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    endpoint = P + f"/jobs/{stage['job_id']}/estimates"
+    payload = {"expected_version": 0, "discount_kobo": 0, "items": [
+        {"category": "labour", "description": "Demo: fictional work",
+         "quantity": 1, "unit_kobo": 10000},
+    ]}
+    assert client.post(endpoint, json=payload, headers={"X-CSRF-Token": token}).status_code == 201
+    assert client.get(endpoint + "/1/print").status_code == 404

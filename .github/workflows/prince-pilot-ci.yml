@@ -13,6 +13,9 @@ on:
       - "static/js/prince_management.js"
       - "templates/partnerships/prince_management.html"
       - "templates/partnerships/prince_estimate.html"
+      - "templates/partnerships/prince_quotation_print.html"
+      - "static/css/prince_quotation_print.css"
+      - "static/js/prince_quotation_print.js"
       - "templates/partnerships/prince_staging_login.html"
       - "scripts/prince_seed_synthetic_staging.py"
       - "scripts/prince_optional_staging_rehearsal.py"
@@ -59,7 +62,7 @@ jobs:
       - name: Run policy and HTTP authorization tests
         run: pytest -q --tb=short tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py tests/test_prince_staging_portal.py
       - name: Check mobile JavaScript syntax
-        run: node --check static/js/prince_pilot_operator.js && node --check static/js/prince_management.js
+        run: node --check static/js/prince_pilot_operator.js && node --check static/js/prince_management.js && node --check static/js/prince_quotation_print.js
       - name: Lint Prince pilot code
         run: ruff check --output-format=concise partnerships/prince_models.py partnerships/prince_routes.py partnerships/prince_access_policy.py partnerships/prince_staging_portal.py scripts/prince_seed_synthetic_staging.py scripts/prince_optional_staging_rehearsal.py scripts/prince_verify_synthetic_staging.py tests/test_prince_staging_portal.py tests/test_prince_access_policy.py tests/test_prince_pilot_api.py tests/test_prince_pilot_operator_ui.py
 

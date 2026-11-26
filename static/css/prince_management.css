@@ -54,3 +54,15 @@
 .staff-dot{width:9px;height:9px;border-radius:50%;background:#2b9c64}
 .limit-note{font-size:12px;color:#845b14;background:#fff5df;border-radius:10px;padding:10px}
 @media(min-width:700px){.management-hero{flex-direction:row;align-items:center;justify-content:space-between;padding:28px}.management-hero h2{font-size:34px}.hero-actions{justify-content:flex-end;flex-shrink:0;max-width:250px}.management-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.management-job-list{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.management-panel{padding:26px}}
+
+.lifecycle-panel{background:#fff;border:1px solid #d6e7ee;border-radius:11px;margin:0 0 13px;padding:13px}
+.lifecycle-panel summary{font-size:13px;color:#254c60;font-weight:750;cursor:pointer}
+.lifecycle-steps{display:flex;flex-wrap:wrap;gap:5px;margin:12px 0}
+.lifecycle-steps span{font-size:10px;border:1px solid #d5e2eb;border-radius:6px;padding:5px 7px;color:#516c7b}
+.lifecycle-steps .current-stage{background:#184c65;color:#fff;border-color:#184c65}
+.lifecycle-form label{display:block;font-size:12px;font-weight:700;margin:12px 0 5px;color:#315365}
+.lifecycle-form select,.lifecycle-form textarea{display:block;width:100%;font:inherit;font-size:13px;border:1px solid #bcd1dd;border-radius:9px;padding:12px;background:#fff;color:#183e53}
+.lifecycle-panel h3{font-size:12px;margin:16px 0 8px}
+.lifecycle-event{padding:10px;border:1px solid #e0e9ee;border-radius:8px;margin-top:8px;font-size:11px;overflow-wrap:anywhere}
+.lifecycle-event p{margin:5px 0;white-space:pre-wrap}.lifecycle-event small{color:#668094}
+.lifecycle-feedback{font-size:11px;color:#396b75}

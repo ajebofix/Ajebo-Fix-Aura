@@ -48,13 +48,14 @@
     <div class="kpi"><span>Active jobs</span><strong>{{ stats.active_jobs }}</strong><small>Open, any status</small></div>
     <div class="kpi"><span>Awaiting review</span><strong>{{ stats.pending_reviews }}</strong><small>Statements without a principal decision</small></div>
     <div class="kpi"><span>Customers</span><strong>{{ stats.customers }}</strong><small>Prince tenant only</small></div>
-    <div class="kpi"><span>Closed jobs</span><strong>{{ stats.closed_jobs }}</strong><small>Not automatically verified</small></div>
+    <div class="kpi"><span>Closed jobs</span><strong>{{ stats.closed_jobs }}</strong><small>{{ stats.follow_up_count }} require follow-up</small></div>
   </section>
 
   <nav class="management-tabs" aria-label="Management sections">
     <a href="#job-queue">Job queue</a>
     <a href="#review-queue">Pending reviews</a>
     <a href="#staff-roster">Available operators</a>
+    <a href="#follow-up-queue">Follow-up required ({{ stats.follow_up_count }})</a>
   </nav>
 
   <section class="panel management-panel" id="job-queue">
@@ -104,7 +105,11 @@
               <option value="follow_up_required">Follow-up required · concerns remain</option>
               <option value="no_follow_up_identified">No follow-up identified · reviewed work only</option>
             </select>
-            <p class="tiny">Review all recorded statements first. Explain remaining concerns, next actions and any unclassified intake notes. Closing does not certify the vehicle safe.</p>
+            <p class="tiny">Review all recorded statements first. Explain remaining concerns and any unclassified intake notes. Closing does not certify the vehicle safe.</p>
+            <div class="follow-up-fields" hidden>
+              <label for="followup-{{ job.job_id }}">Follow-up plan · required</label>
+              <textarea id="followup-{{ job.job_id }}" name="follow_up_plan" rows="3" minlength="20" maxlength="1000" placeholder="{{ 'Demo: describe the fictional next inspection and responsible person' if config.get('PRINCE_STAGING_LOCKDOWN') else 'State the next action and responsible person; no private contact details' }}"></textarea>
+            </div>
             {% elif job.next_status == "approved" %}
             <p class="tiny">Record the internally approved work scope. This does not record customer consent to work or charges.</p>
             {% elif job.next_status == "in_progress" %}
@@ -123,7 +128,7 @@
           <div class="lifecycle-event">
             <strong>{{ event.previous_status | replace("_", " ") | title }} → {{ event.new_status | replace("_", " ") | title }}</strong>
             {% if event.closure_disposition %}<p>{{ event.closure_disposition | replace("_", " ") | title }}</p>{% endif %}
-            <p>{{ event.reason }}</p><small>Principal account #{{ event.changed_by_user_id }} · {{ event.created_at }}</small>
+            <p>{{ event.reason }}</p>{% if event.follow_up_plan %}<p><strong>Follow-up:</strong> {{ event.follow_up_plan }}</p>{% endif %}<small>Principal account #{{ event.changed_by_user_id }} · {{ event.created_at }}</small>
           </div>
           {% else %}
           <p class="tiny">No recorded progression decisions yet.</p>
@@ -185,6 +190,16 @@
     {% if stats.pending_reviews > pending|length %}
     <p class="tiny">Showing the 12 newest outstanding statements.</p>
     {% endif %}
+  </section>
+
+  <section class="panel management-panel" id="follow-up-queue">
+    <div class="section-top"><div><div class="overline">03 / CONTINUITY</div><h2>Closed jobs requiring follow-up</h2></div><span class="pill">{{ stats.follow_up_count }} recorded</span></div>
+    <p class="muted">Administrative closure does not resolve vehicle concerns. These recorded plans remain visible until a separate follow-up workflow is implemented.</p>
+    {% for item in follow_ups %}
+      <article class="management-job"><strong>{{ item.customer }} · {{ item.vehicle }}</strong><p>{{ item.plan }}</p>
+      <a href="{{ url_for('prince_pilot.operator_workspace', slug=slug) }}#job-record-{{ item.job_id }}">Open workshop record</a></article>
+    {% else %}<p class="tiny">No recorded follow-up closures.</p>{% endfor %}
+    {% if stats.follow_up_count > follow_ups|length %}<p class="tiny">Showing the 20 newest recorded follow-up plans.</p>{% endif %}
   </section>
 
   <section class="panel management-panel" id="staff-roster">

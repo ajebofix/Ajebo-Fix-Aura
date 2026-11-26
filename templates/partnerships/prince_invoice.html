@@ -32,6 +32,7 @@
     <div class="estimate-totals">
       <p>Invoice total <strong>{{ money(payments.invoice_total_kobo) }}</strong></p>
       <p>Verified allocations <strong>{{ money(payments.verified_kobo) }}</strong></p>
+      <p>Reversed allocations <strong>{{ money(payments.reversed_kobo) }}</strong></p>
       <p>Pending reports (not deducted) <strong>{{ money(payments.pending_kobo) }}</strong></p>
       <p>Unallocated invoice balance <strong>{{ money(payments.outstanding_kobo) }}</strong></p>
       <p>Status <strong>{{ payments.status | replace("_", " ") | title }}</strong></p>
@@ -58,9 +59,23 @@
         <div class="assign-controls"><button type="submit">Record review</button><span class="payment-feedback" role="status"></span></div>
       </form>
       {% else %}<p>{{ p.review_note }}</p><small>Reviewed by principal #{{ p.reviewed_by_user_id }} · {{ p.reviewed_at }}</small>{% endif %}
+      {% if p.reversed %}<p class="limit-note"><strong>Allocation reversed</strong> · {{ p.reversal_reason }} · Principal #{{ p.reversed_by_user_id }} · {{ p.reversed_at }}</p>{% endif %}
+      {% if p.receipt_reference %}<p><a href="{{ url_for('prince_pilot.print_receipt', slug=slug, job_id=job.job_id, payment_id=p.id) }}">Preview {{ p.receipt_reference }}{{ " (reversed)" if p.reversed else "" }}</a></p>
+      {% elif p.decision == "verified" and not p.reversed %}
+      <form class="assignment-form receipt-action-form" data-action="receipt" data-url="{{ url_for('prince_pilot.issue_receipt', slug=slug, job_id=job.job_id, payment_id=p.id) }}">
+        <label><input type="checkbox" name="attested" required> I confirm issuance of a fictional receipt for this verified allocation.</label>
+        <div class="assign-controls"><button type="submit">Issue training receipt</button><span class="receipt-feedback" role="status"></span></div>
+      </form>{% endif %}
+      {% if p.decision == "verified" and not p.reversed %}
+      <details><summary>Reverse allocation</summary><form class="assignment-form receipt-action-form" data-action="reverse" data-url="{{ url_for('prince_pilot.reverse_payment_allocation', slug=slug, job_id=job.job_id, payment_id=p.id) }}">
+        <p class="tiny">Reverses the full allocation, restores the unallocated balance and marks any receipt historical. Does not send or refund money. Cannot be undone in this pilot.</p>
+        <label>Reason<textarea name="reason" rows="3" minlength="20" maxlength="900" required placeholder="Demo: fictional correction and evidence reference."></textarea></label>
+        <label><input type="checkbox" name="attested" required> I confirm this fictional full reversal is appropriate.</label>
+        <div class="assign-controls"><button type="submit">Record reversal</button><span class="receipt-feedback" role="status"></span></div>
+      </form></details>{% endif %}
     </div>
     {% else %}<p class="tiny">No payment reports.</p>{% endfor %}
-    <p class="tiny">A verification is a principal's recorded declaration, not independent confirmation from a bank. Reversals, refunds, overpayments, and pre-invoice deposits require separate reconciliation; receipts are not yet issued.</p>
+    <p class="tiny">A verification is a principal's recorded declaration, not independent confirmation from a bank. Full allocation reversals preserve history. Actual refunds, partial reversals, overpayments and pre-invoice deposits require separate reconciliation.</p>
   </section>
   {% elif can_issue %}
   <section class="panel management-panel"><h2>Create training invoice</h2><p>Approved estimate version {{ estimate.version }} · recorded customer acceptance event {{ authorization_sequence }}</p>

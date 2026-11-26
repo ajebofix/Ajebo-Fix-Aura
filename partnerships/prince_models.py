@@ -110,6 +110,44 @@ class PrinceJob(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PrinceJobAssignment(db.Model):
+    """Immutable reassignment event; no customer contacts or banking data."""
+    __tablename__ = "prince_job_assignments"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["job_id", "tenant_id"],
+            ["prince_jobs.id", "prince_jobs.tenant_id"],
+            name="fk_prince_assignment_job_tenant", ondelete="RESTRICT",
+        ),
+        db.ForeignKeyConstraint(
+            ["tenant_id", "new_user_id"],
+            ["prince_memberships.tenant_id", "prince_memberships.user_id"],
+            name="fk_prince_assignment_member_tenant", ondelete="RESTRICT",
+        ),
+        db.CheckConstraint(
+            "previous_user_id <> new_user_id",
+            name="ck_prince_assignment_different_users",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(
+        db.Integer, db.ForeignKey("prince_tenants.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    job_id = db.Column(db.Integer, nullable=False, index=True)
+    previous_user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    new_user_id = db.Column(db.Integer, nullable=False)
+    changed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    reason = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class PrinceJobEntry(db.Model):
     """Append-only, source-labelled workshop statement; never proof of repair."""
     __tablename__ = "prince_job_entries"

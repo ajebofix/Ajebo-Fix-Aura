@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Prince | Private staff access</title></head>
+<body><main><h1>Prince Automobile Clinic</h1>
+{% if ready %}
+<h2>Staff access rehearsal</h2><p>Workshop intake is not open. Do not enter customer information.</p>
+<form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Sign out</button></form>
+{% else %}
+<h2>Private staff sign in</h2><p>Restricted release preparation. Individual authorized staff only.</p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="{{ url_for('prince_live.sign_in') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label for="email">Staff email</label><input id="email" type="email" name="email" maxlength="120" required autocomplete="username">
+<label for="password">Password</label><input id="password" type="password" name="password" required autocomplete="current-password">
+<button>Sign in</button></form>
+{% endif %}</main></body></html>

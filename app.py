@@ -161,6 +161,9 @@ def create_app():
     app.config["PRINCE_STAGING_LOCKDOWN"] = _environment_flag(
         "PRINCE_STAGING_LOCKDOWN", default=False,
     )
+    app.config["PRINCE_LIVE_PILOT_LOCKDOWN"] = _environment_flag(
+        "PRINCE_LIVE_PILOT_LOCKDOWN", default=False,
+    )
     app.config["AURA_GULF_CAMPAIGN_ACTIVE"] = _environment_flag(
         "AURA_GULF_CAMPAIGN_ACTIVE", default=False,
     )
@@ -346,6 +349,8 @@ def create_app():
     app.register_blueprint(prince_pilot_bp)
     from partnerships.prince_staging_portal import register_prince_staging_portal
     register_prince_staging_portal(app)
+    from partnerships.prince_live_portal import register_prince_live_portal
+    register_prince_live_portal(app)
     app.register_blueprint(concern_progression_bp)
     app.register_blueprint(rina_operations_bp)
     app.register_blueprint(chat_bp)

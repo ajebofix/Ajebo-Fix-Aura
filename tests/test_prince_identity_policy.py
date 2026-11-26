@@ -13,8 +13,8 @@ def identity_context():
     # Format-only fictional unit value; not a VIN assigned to a real or staged car.
     return IdentityContext(
         tenant_id=1, job_id=2, customer_id=3, vehicle_id=4, handoff_id=5,
-        source_vin="DEMO123456789ABCD", source_vin_verified=True, handoff_active=True,
-        destination_car_id=6, destination_vin="DEMO123456789ABCD",
+        source_vin="DEMX123456789ABCD", source_vin_verified=True, handoff_active=True,
+        destination_car_id=6, destination_vin="DEMX123456789ABCD",
         ownership_id=7, ownership_car_id=6, ownership_user_id=8,
         ownership_active=True, ownership_ended=False, active_ownership_count=1,
         authenticated_owner_id=8, owner_account_active=True, owner_account_verified=True,

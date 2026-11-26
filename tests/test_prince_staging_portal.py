@@ -880,3 +880,77 @@ def test_operator_cannot_access_receipt_or_reverse_payment(approved_quotation, c
                        headers={"X-CSRF-Token": token}).status_code == 404
     assert client.post(root + "/reverse", json={"reason": "Demo: unauthorized fictional reversal.",
                        "reversal_attested": True}, headers={"X-CSRF-Token": token}).status_code == 404
+
+
+@pytest.mark.parametrize("role", ["principal", "stephen"])
+def test_finance_reconciles_multiple_payments_without_double_counting(approved_quotation, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/manage").status_code == 200
+    with client.session_transaction() as sess:
+        token = sess["_csrf_token"]
+    headers = {"X-CSRF-Token": token}
+    root = approved_quotation.rsplit("/", 1)[0]
+    finance = P + "/finance/data"
+    assert client.get(finance).json["totals"]["invoiced"] == 0
+    assert client.post(approved_quotation + "/2/authorization",
+                       json=_customer_decision(), headers=headers).status_code == 201
+    for old, new in [("draft", "awaiting_approval"), ("awaiting_approval", "approved")]:
+        assert client.post(root + "/lifecycle", json={
+            "expected_status": old, "new_status": new,
+            "reason": "Demo: fictional approval of workshop scope.",
+            "closure_disposition": None, "follow_up_plan": None,
+        }, headers=headers).status_code == 200
+    assert client.post(root + "/invoice", json=_invoice_payload(),
+                       headers=headers).status_code == 201
+    endpoint = root + "/invoice/payments"
+    ids = []
+    for ref, amount in [("DEMO-FINANCE-A", 1000050), ("DEMO-FINANCE-B", 500000),
+                        ("DEMO-FINANCE-C", 200000), ("DEMO-FINANCE-D", 100000)]:
+        saved = client.post(endpoint, json={"reference": ref, "method": "transfer",
+                           "amount_kobo": amount}, headers=headers)
+        assert saved.status_code == 201
+        ids.append(saved.json["records"][-1]["id"])
+    for index, decision in [(0, "verified"), (1, "verified"), (3, "rejected")]:
+        assert client.post(endpoint + f"/{ids[index]}/review", json={
+            "decision": decision, "review_note": "Demo: fictional evidence checked for reconciliation.",
+            "review_attested": True,
+        }, headers=headers).status_code == 200
+    assert client.post(endpoint + f"/{ids[1]}/receipt",
+                       json={"receipt_attested": True}, headers=headers).status_code == 201
+    assert client.post(endpoint + f"/{ids[1]}/reverse", json={
+        "reason": "Demo: fictional correction of allocation.", "reversal_attested": True,
+    }, headers=headers).status_code == 200
+    data = client.get(finance).json
+    totals = data["totals"]
+    assert totals["invoice_count"] == 1
+    assert totals["invoiced"] == 2400100
+    assert totals["verified"] == 1000050
+    assert totals["outstanding"] == 1400050
+    assert totals["pending"] == 200000
+    assert totals["rejected"] == 100000
+    assert totals["reversed"] == 500000
+    assert totals["receipts"] == totals["historical_receipts"] == 1
+    assert totals["receipt_pending"] == 1
+    assert totals["pending_count"] == 1
+    assert totals["hold_count"] == 0
+    assert len(data["rows"]) == 1
+    assert data["rows"][0]["outstanding"] == client.get(endpoint).json["outstanding_kobo"]
+    assert client.post(approved_quotation + "/2/authorization",
+                       json=_customer_decision(1, "withdrawn"), headers=headers).status_code == 201
+    held = client.get(finance).json["totals"]
+    assert held["hold_count"] == 1
+    assert held["hold_outstanding"] == held["outstanding"] == 1400050
+    page = client.get(P + "/finance")
+    assert page.status_code == 200
+    assert "14,000.50" in page.get_data(as_text=True)
+    assert "Authorization review required" in page.get_data(as_text=True)
+    assert "no-store" in page.headers["Cache-Control"]
+    assert "fictional evidence checked" not in page.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("role", ["operator-a", "operator-b"])
+def test_operator_cannot_view_financial_console(stage, client, role):
+    assert _log_in(client, role=role).status_code == 303
+    assert client.get(P + "/finance").status_code == 404
+    assert client.get(P + "/finance/data").status_code == 404
+    assert "Financial console" not in client.get(P + "/operator").get_data(as_text=True)

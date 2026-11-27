@@ -1,0 +1,19 @@
+{% extends "partnerships/prince_live_base.html" %}
+{% block title %}Prince | Workshop launch{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('prince_live.staff_accounts') }}">← Staff management</a>
+<section class="hero"><span class="eyebrow">PRINCIPAL ACCESS · RELEASE</span><h1>Workshop launch</h1><p>Record the final approval for the existing limited workshop pilot. No customer details are collected here.</p></section>
+<section class="panel"><h2>Release status</h2>
+<div class="activity-list"><div><strong>Principal acceptance</strong><span>{{ "Recorded" if approved else "Pending" }}</span></div><div><strong>Workshop operations</strong><span>{{ "Enabled" if workshop_ready else "Locked" }}</span></div><div><strong>Written authorization and job progression</strong><span>{{ "Enabled" if authorization_ready else "Locked" }}</span></div><div><strong>Internal finance</strong><span>{{ "Enabled" if finance_ready else "Locked" }}</span></div></div>
+<p class="fine">Private contact storage, clinical transfer to Aura and customer-facing statutory billing are outside this release.</p></section>
+<section class="panel"><h2>Customer privacy contact</h2><p class="muted">Proposed data controller: Prince Automobile Clinic (confirm its actual legal identity in the final notice). Technology processor: Ajebo Fix Ltd. Hosting: Railway, United States.</p><p><a href="mailto:princeautomobileclinic@gmail.com">princeautomobileclinic@gmail.com</a> · <a href="tel:+2348033305930">08033305930</a></p><p class="fine">The contact details alone do not establish legal compliance. Retain the approved notice and supporting documents privately with Prince.</p></section>
+{% if not approved and not intake_enabled %}
+<section class="panel"><h2>Initial release approval</h2><p class="muted">Only check statements that are actually completed. This is an operational attestation, not legal advice or automatic verification. The approval will be audited and intake will remain inaccessible until the deployment release settings are applied.</p>
+<form method="post" action="{{ url_for('prince_live.release_setup') }}" class="form-stack">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="notice_version" value="{{ notice_version }}">
+{% for key, label in checks %}<label class="check"><input type="checkbox" name="{{ key }}" value="yes" required><span>{{ label }}</span></label>{% endfor %}
+<div class="field"><label for="approval-phrase">Type APPROVE PRINCE PILOT to confirm</label><input id="approval-phrase" name="approval_phrase" required autocomplete="off" maxlength="40"></div>
+<div class="field"><label for="release-password">Your principal password</label><input id="release-password" name="current_password" type="password" required autocomplete="current-password"></div>
+<button class="button primary">Record launch approval</button></form></section>
+{% else %}<section class="notice"><strong>{{ "Initial approval recorded" if approved else "Initial approval unavailable" }}</strong><p>Notice version: {{ approved or "Not recorded" }}. {% if workshop_ready %}The workshop is available from your home page.{% else %}Contact the deployment administrator to complete the release configuration. Do not enter customer information until workshop access is enabled.{% endif %}</p></section>{% endif %}
+{% endblock %}

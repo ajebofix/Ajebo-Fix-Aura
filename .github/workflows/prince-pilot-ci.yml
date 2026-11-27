@@ -24,6 +24,7 @@ on:
       - "templates/partnerships/prince_live_login.html"
       - "templates/partnerships/prince_live_staff.html"
       - "templates/partnerships/prince_live_base.html"
+      - "templates/partnerships/prince_live_release.html"
       - "static/css/prince_live_staff.css"
       - "scripts/prince_seed_synthetic_staging.py"
       - "scripts/prince_optional_staging_rehearsal.py"

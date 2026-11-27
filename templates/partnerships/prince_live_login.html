@@ -9,6 +9,9 @@
 {% if config.get("PRINCE_LIVE_STAFF_ADMIN_APPROVED") %}
 <section class="panel home-action"><div><span class="eyebrow">YOUR WORKSPACE</span><h2>{% if staff_role == "principal" %}Staff management{% else %}My account{% endif %}</h2><p>{% if staff_role == "principal" %}View your team, create staff accounts and manage workshop permissions.{% else %}View your account and correct your email address.{% endif %}</p></div>
 <a class="button primary" href="{{ url_for('prince_live.staff_accounts') }}">Manage staff and account details <span aria-hidden="true">→</span></a></section>
+{% if staff_role == "principal" %}
+<section class="panel home-action"><div><span class="eyebrow">GO LIVE</span><h2>Workshop launch</h2><p>Review and record the final operational approval for the existing workshop features.</p></div><a class="button primary" href="{{ url_for('prince_live.release_setup') }}">Review launch checklist</a></section>
+{% endif %}
 {% endif %}
 <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button secondary">Sign out</button></form>
 {% else %}

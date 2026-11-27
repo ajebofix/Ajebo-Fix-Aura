@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from extensions import db
 
 from models import User
-from partnerships.prince_models import PrinceAudit, PrinceMembership, PrinceTenant
+from partnerships.prince_models import PrinceAudit, PrinceCustomer, PrinceMembership, PrinceTenant
 from security.rate_limits import limiter
 from security.session_registry import UserSession
 from partnerships.prince_staging_portal import ALLOWED_STATIC
@@ -145,7 +145,7 @@ def live_workshop_request_allowed():
 STAFF_ADMIN_ENDPOINTS = frozenset({
     "prince_live.staff_accounts", "prince_live.create_staff",
     "prince_live.change_own_email", "prince_live.suspend_operator",
-    "prince_live.change_staff_role",
+    "prince_live.change_staff_role", "prince_live.release_setup",
 })
 
 
@@ -441,3 +441,61 @@ def change_staff_role(member_id):
     _commit_staff_change()
     flash("Staff role updated. The staff member must sign in again.", "success")
     return redirect(url_for("prince_live.staff_accounts"), code=303)
+
+
+INITIAL_NOTICE_VERSION = "prince-notice-v1"
+INITIAL_RELEASE_CHECKS = (
+    ("privacy", "Prince has approved its final customer notice, legal controller identity, lawful basis, retention schedule and privacy requests procedure."),
+    ("processors", "Prince and Ajebo Fix have documented their processing agreement and verified hosting and international-transfer safeguards."),
+    ("backup", "The tested backup and recovery keys are securely stored, and a recurring backup and incident-response procedure is in place."),
+    ("staff", "Authorized staff have correct roles, have signed in after key rotation and understand the minimum-data and customer participation procedure."),
+    ("billing", "Written customer acceptance is required for chargeable work. The existing billing process remains authoritative; digital invoices and receipts are internal only."),
+    ("scope", "I authorize the initial limited live pilot with one consenting customer, no private contacts or wider Aura transfer, and a review before expansion."),
+)
+
+
+@live_bp.route("/release", methods=["GET", "POST"])
+@limiter.limit("5 per minute; 15 per hour", methods=["POST"])
+def release_setup():
+    actor, member = _staff_admin_actor(principal=True)
+    tenant = PrinceTenant.query.populate_existing().filter_by(
+        id=member.tenant_id, slug="prince", active=True,
+    ).one_or_none()
+    if tenant is None:
+        abort(404)
+    if request.method == "POST":
+        actor, member = _locked_staff_admin_actor(principal=True)
+        tenant = PrinceTenant.query.populate_existing().filter_by(
+            id=member.tenant_id, slug="prince", active=True,
+        ).with_for_update().one_or_none()
+        if tenant is None:
+            abort(404)
+        # Initial approval only. This is not a general privacy-version
+        # editor or a way to overwrite an existing live release.
+        if (tenant.approved_privacy_notice_version or tenant.intake_enabled
+                or PrinceCustomer.query.filter_by(tenant_id=tenant.id).first() is not None):
+            abort(409, description="Initial release approval is no longer available.")
+        if (current_app.config.get("PRINCE_LIVE_WORKSHOP_APPROVED")
+                or current_app.config.get("PRINCE_LIVE_AUTHORIZATION_APPROVED")
+                or current_app.config.get("PRINCE_LIVE_FINANCE_APPROVED")):
+            abort(409, description="Complete initial acceptance before release configuration.")
+        if (any(request.form.get(key) != "yes" for key, _ in INITIAL_RELEASE_CHECKS)
+                or request.form.get("notice_version") != INITIAL_NOTICE_VERSION
+                or request.form.get("approval_phrase", "").strip() != "APPROVE PRINCE PILOT"):
+            abort(400, description="All actual prerequisites and the approval phrase are required.")
+        tenant.approved_privacy_notice_version = INITIAL_NOTICE_VERSION
+        tenant.intake_enabled = True
+        db.session.add(PrinceAudit(tenant_id=tenant.id, actor_user_id=actor.id,
+                                   action="initial_live_release_attested",
+                                   target_kind="prince_tenant", target_id=tenant.id))
+        _commit_staff_change()
+        flash("Initial approval recorded. Workshop access remains locked until deployment release settings are applied.", "success")
+        return redirect(url_for("prince_live.release_setup"), code=303)
+    return render_template("partnerships/prince_live_release.html",
+                           notice_version=INITIAL_NOTICE_VERSION,
+                           checks=INITIAL_RELEASE_CHECKS,
+                           approved=tenant.approved_privacy_notice_version,
+                           intake_enabled=tenant.intake_enabled,
+                           workshop_ready=workshop_release_ready(),
+                           authorization_ready=live_authorization_ready(),
+                           finance_ready=live_finance_ready())

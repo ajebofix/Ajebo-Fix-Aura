@@ -9,7 +9,7 @@
   <p>Signed in as {{ actor.name }}. {% if principal %}Manage people and permissions in one place.{% else %}Manage your individual access details.{% endif %}</p>
 </section>
 <nav class="section-nav" aria-label="Staff page sections">
-{% if principal %}<a href="#roster">Team</a><a href="#add-staff">Add staff</a>{% endif %}<a href="#my-account">My account</a>{% if principal %}<a href="#activity">Activity</a>{% endif %}
+{% if principal %}<a href="{{ url_for('prince_live.release_setup') }}">Workshop launch</a><a href="#roster">Team</a><a href="#add-staff">Add staff</a>{% endif %}<a href="#my-account">My account</a>{% if principal %}<a href="#activity">Activity</a>{% endif %}
 </nav>
 {% if principal %}
 <div class="stats" aria-label="Staff overview">

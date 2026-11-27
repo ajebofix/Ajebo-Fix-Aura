@@ -473,3 +473,46 @@ def test_workshop_ux_keeps_release_locks_visible(live, app, client, monkeypatch)
     assert b"Customer intake is locked" in operator.data
     assert b'id="prince-intake-form"' not in operator.data
     assert client.get("/pilot/workshops/prince/finance").status_code == 404
+
+
+def test_initial_release_approval_is_principal_only_and_preserves_config_gates(live, app, client, monkeypatch):
+    from partnerships.prince_models import PrinceAudit
+    app.config.update(PRINCE_LIVE_STAFF_ADMIN_APPROVED=True,
+                      PRINCE_LIVE_WORKSHOP_APPROVED=False,
+                      PRINCE_LIVE_AUTHORIZATION_APPROVED=False,
+                      PRINCE_LIVE_FINANCE_APPROVED=False)
+    path = "/prince-staff/release"
+    assert client.get(path).status_code == 404
+    assert _sign_in(client).status_code == 303
+    assert client.get(path).status_code == 200
+    assert b"Workshop launch" in client.get(path).data
+    payload = dict(privacy="yes", processors="yes", backup="yes", staff="yes",
+                   billing="yes", scope="yes", notice_version="prince-notice-v1",
+                   approval_phrase="APPROVE PRINCE PILOT", current_password=PASSWORD)
+    assert client.post(path, data=payload).status_code == 400
+    assert _staff_post(client, path, {**payload, "processors": ""}).status_code == 400
+    assert _staff_post(client, path, {**payload, "current_password": "incorrect"}).status_code == 403
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    assert tenant.approved_privacy_notice_version is None and not tenant.intake_enabled
+    assert _staff_post(client, path, payload).status_code == 303
+    assert tenant.approved_privacy_notice_version == "prince-notice-v1"
+    assert tenant.intake_enabled
+    assert PrinceAudit.query.filter_by(action="initial_live_release_attested").count() == 1
+    assert client.get("/pilot/workshops/prince/operator").status_code == 404
+    assert _staff_post(client, path, payload).status_code == 409
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    app.config["PRINCE_LIVE_WORKSHOP_APPROVED"] = True
+    assert client.get("/pilot/workshops/prince/operator").status_code == 200
+    assert client.get("/pilot/workshops/prince/finance").status_code == 404
+
+
+def test_operator_cannot_attest_release(live, app, client):
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    member = db.session.get(PrinceMembership, live)
+    member.role = "operator"
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/ready").status_code == 200
+    assert client.get("/prince-staff/release").status_code == 404
+    assert _staff_post(client, "/prince-staff/release", {"current_password": PASSWORD}).status_code == 404
+    assert PrinceTenant.query.filter_by(slug="prince").one().intake_enabled is False

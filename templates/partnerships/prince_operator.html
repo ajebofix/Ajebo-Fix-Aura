@@ -58,7 +58,7 @@
     <section class="panel" id="returning-vehicle">
       <div class="section-top"><div><div class="overline">01 / RETURN VISIT</div><h2>Find a returning vehicle</h2></div></div>
       <p class="muted">Search an exact VIN, plate or existing vehicle record number. Operators can only access vehicles with jobs assigned to them; ask a principal for other vehicles. Do not search for an unverified visitor.</p>
-      <form id="returning-lookup" data-url="{{ url_for('prince_pilot.returning_vehicle_lookup', slug=slug) }}" autocomplete="off">
+      <form id="returning-lookup" method="post" action="{{ url_for('prince_pilot.returning_vehicle_lookup', slug=slug) }}" data-url="{{ url_for('prince_pilot.returning_vehicle_lookup', slug=slug) }}" autocomplete="off">
         <div class="field"><label for="return-type">Search by</label><select id="return-type" name="identifier_type"><option value="vin">VIN</option><option value="plate">Registration / plate</option><option value="record">Vehicle record number</option></select></div>
         <div class="field"><label for="return-id">Exact identifier</label><input id="return-id" name="identifier" maxlength="50" required autocomplete="off"></div>
         <button class="primary-btn" type="submit">Find vehicle</button>
@@ -67,7 +67,7 @@
       <div id="return-result" hidden>
         <h3 id="return-vehicle-heading"></h3><p id="return-customer"></p>
         <h4>Recent service visits</h4><ul id="return-history"></ul>
-        <form id="return-job" data-url="{{ url_for('prince_pilot.returning_vehicle_job', slug=slug) }}" autocomplete="off" hidden>
+        <form id="return-job" method="post" action="{{ url_for('prince_pilot.returning_vehicle_job', slug=slug) }}" data-url="{{ url_for('prince_pilot.returning_vehicle_job', slug=slug) }}" autocomplete="off" hidden>
           <input type="hidden" name="privacy_notice_version" value="{{ privacy_notice_version }}">
           <div class="field"><label for="return-concern">Current reported concern</label><textarea id="return-concern" name="reported_concern" maxlength="1200" rows="3" required></textarea></div>
           <div class="field"><label for="return-mileage">Current odometer (km, optional)</label><input id="return-mileage" name="odometer_km" type="number" min="0" max="9999999" step="1"></div>

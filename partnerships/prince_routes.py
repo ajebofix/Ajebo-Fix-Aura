@@ -116,6 +116,9 @@ def _vehicle_details(data, tenant):
             values[field] = values[field].upper()
             if not re.fullmatch(r"[A-Z0-9 /._-]+", values[field]):
                 abort(400)
+    if values["registration_number"] and (not re.fullmatch(r"[A-Z0-9 -]+", values["registration_number"])
+                                            or len(_plate_key(values["registration_number"])) < 3):
+        abort(400, description="Enter a valid registration number.")
     values["odometer_km"] = _visit_odometer(data.get("odometer_km"))
     values["details_notice_version"] = VEHICLE_DETAILS_NOTICE
     return values
@@ -619,10 +622,10 @@ def operator_workspace(slug):
         tenant.id, [job["job_id"] for job in jobs],
         include_private_review_note=(actor.role == PrinceRole.PRINCIPAL),
     )
-    for job, (_, _, vehicle) in zip(jobs, records):
+    for job, (stored_job, _, vehicle) in zip(jobs, records):
         job["entries"] = by_job[job["job_id"]]
         if _vehicle_details_ready(tenant):
-            job["visit_odometer_km"] = db.session.get(PrinceJob, job["job_id"]).visit_odometer_km
+            job["visit_odometer_km"] = stored_job.visit_odometer_km
         if _vehicle_details_ready(tenant) and vehicle.details_notice_version == VEHICLE_DETAILS_NOTICE:
             job["vehicle_details"] = {field: getattr(vehicle, field) for field in (*VEHICLE_TEXT_FIELDS, "vin", "odometer_km")}
     return render_template(

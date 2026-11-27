@@ -355,7 +355,7 @@
       const url = new URL(window.location.href);
       url.search = "";
       url.hash = "job-record-" + saved.job_id;
-      window.location.replace(url.toString());
+      window.history.replaceState(null, "", url.toString());
       window.location.reload();
     } catch {
       feedback.textContent = "New job not confirmed. Search again before retrying; an active job may already exist.";

@@ -25,6 +25,13 @@
       const value = String(data.get(field) || "").trim();
       if (value) payload[field] = value;
     }
+    for (const field of ["vin", "registration_number", "colour", "engine_number", "trim", "engine_type", "fuel_type", "transmission", "body_type"]) {
+      const value = String(data.get(field) || "").trim();
+      if (value) payload[field] = value;
+    }
+    const odometer = String(data.get("odometer_km") || "").trim();
+    if (odometer) payload.odometer_km = Number(odometer);
+    if (data.get("vehicle_details_confirmed") === "on") payload.vehicle_details_confirmed = true;
     const yearValue = String(data.get("vehicle_year") || "").trim();
     if (yearValue) {
       if (!/^\d{4}$/.test(yearValue)) {
@@ -45,6 +52,12 @@
         headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
         body: JSON.stringify(payload),
       });
+      if (response.status === 409) {
+        feedback.textContent = "Vehicle may already be registered. Ask a principal to review the existing record before trying again.";
+        submit.disabled = false;
+        submitting = false;
+        return;
+      }
       if (!response.ok) throw new Error("save-failed");
       // Clear sensitive form fields before navigating; do not put PII in URLs.
       form.reset();
@@ -253,4 +266,100 @@
       }
     });
   }
+})();
+
+
+/* Returning vehicle recognition: exact lookup, never put identifiers in a URL or browser storage. */
+(() => {
+  "use strict";
+  const lookup = document.getElementById("returning-lookup");
+  if (!lookup) return;
+  const jobForm = document.getElementById("return-job");
+  const result = document.getElementById("return-result");
+  const feedback = document.getElementById("return-feedback");
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  let selection = null;
+  let busy = false;
+  const clear = () => {
+    selection = null;
+    result.hidden = true;
+    jobForm.hidden = true;
+    jobForm.reset();
+    document.getElementById("return-history").replaceChildren();
+    document.getElementById("return-customer").textContent = "";
+    document.getElementById("return-vehicle-heading").textContent = "";
+  };
+  lookup.addEventListener("input", () => { clear(); feedback.textContent = ""; });
+  const post = (url, payload) => fetch(url, {
+    method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+    body: JSON.stringify(payload),
+  });
+  lookup.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (busy || !csrf || !lookup.reportValidity()) return;
+    clear();
+    const data = new FormData(lookup);
+    const query = {identifier_type: data.get("identifier_type"), identifier: String(data.get("identifier") || "").trim()};
+    busy = true;
+    const button = lookup.querySelector('button[type="submit"]');
+    button.disabled = true;
+    feedback.textContent = "Finding vehicle…";
+    try {
+      const response = await post(lookup.dataset.url, query);
+      if (!response.ok) throw new Error("lookup");
+      const record = await response.json();
+      if (lookup.elements.identifier.value.trim() !== query.identifier ||
+          lookup.elements.identifier_type.value !== query.identifier_type) return;
+      selection = {...query, vehicle_id: record.vehicle_id};
+      document.getElementById("return-vehicle-heading").textContent =
+        [record.brand, record.model, record.year].filter(Boolean).join(" ") + " · Vehicle #" + record.vehicle_id;
+      document.getElementById("return-customer").textContent = "Registered customer: " + record.customer_name;
+      const history = document.getElementById("return-history");
+      for (const visit of record.history) {
+        const li = document.createElement("li");
+        li.textContent = "Job #" + visit.job_id + " · " + visit.date + " · " +
+          visit.status.replaceAll("_", " ") + (visit.odometer_km == null ? "" : " · " + visit.odometer_km + " km") +
+          (visit.reported_concern ? " · " + visit.reported_concern : "");
+        history.append(li);
+      }
+      result.hidden = false;
+      jobForm.hidden = record.active_job_exists;
+      feedback.textContent = record.active_job_exists
+        ? "An active job already exists. Continue the existing job or ask a principal to review."
+        : "Vehicle found. Confirm the current customer before opening a new job.";
+    } catch {
+      clear();
+      feedback.textContent = "No unique accessible vehicle found. Check the identifier or ask a principal. Do not register a duplicate.";
+    } finally { busy = false; button.disabled = false; }
+  });
+  jobForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (busy || !selection || !jobForm.reportValidity()) return;
+    const data = new FormData(jobForm);
+    const payload = {...selection, reported_concern: String(data.get("reported_concern") || "").trim(),
+      privacy_notice_version: data.get("privacy_notice_version"),
+      ownership_confirmed: data.get("ownership_confirmed") === "on",
+      participation_confirmed: data.get("participation_confirmed") === "on"};
+    const km = String(data.get("odometer_km") || "").trim();
+    if (km) payload.odometer_km = Number(km);
+    busy = true;
+    const button = jobForm.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const response = await post(jobForm.dataset.url, payload);
+      if (!response.ok) throw new Error("save");
+      const saved = await response.json();
+      clear();
+      lookup.reset();
+      const url = new URL(window.location.href);
+      url.search = "";
+      url.hash = "job-record-" + saved.job_id;
+      window.history.replaceState(null, "", url.toString());
+      window.location.reload();
+    } catch {
+      feedback.textContent = "New job not confirmed. Search again before retrying; an active job may already exist.";
+      clear();
+    } finally { busy = false; button.disabled = false; }
+  });
 })();

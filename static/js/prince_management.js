@@ -290,7 +290,7 @@
       event.preventDefault();
       if (!csrf || button.disabled || !form.reportValidity()) return;
       button.disabled = true;
-      feedback.textContent = "Recording training invoice…";
+      feedback.textContent = "Recording invoice…";
       try {
         const response = await fetch(form.dataset.url, {
           method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
@@ -345,7 +345,7 @@
           review_attested: form.elements.review_attested.checked,
         };
         button.disabled = true;
-        feedback.textContent = "Saving fictional payment record…";
+        feedback.textContent = "Saving payment record…";
         const response = await fetch(form.dataset.url, {
           method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
           headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},

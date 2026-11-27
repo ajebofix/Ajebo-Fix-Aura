@@ -10,6 +10,7 @@
   <script defer src="{{ url_for('static', filename='js/prince_pilot_operator.js') }}"></script>
 </head>
 <body>
+  <a class="pilot-skip" href="#main">Skip to content</a>
   <main class="pilot-shell" id="main">
     <header class="pilot-header">
       <img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince Automobile Clinic logo" width="52" height="52">
@@ -29,6 +30,12 @@
       </form>
     </div>
     {% endif %}
+    {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
+    <div class="security-note live-release-note" role="note"><strong>Restricted workshop pilot.</strong> Intake, notes and estimate preparation only. Private contact fields and clinical transfer are unavailable. Finance requires separate approval. Customer authorization and job progression require separate approval.
+      {% if config.get("PRINCE_LIVE_STAFF_ADMIN_APPROVED") %}<a class="release-account-link" href="{{ url_for('prince_live.staff_accounts') }}">My account{% if can_manage_private %} / Staff management{% endif %}</a>{% endif %}
+      <form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form>
+    </div>
+    {% endif %}
     {% if can_manage_private %}
     <nav class="principal-back-nav">
       <a href="{{ url_for('prince_pilot.principal_management', slug=slug) }}">← Principal Management Console</a>
@@ -38,14 +45,39 @@
       <div class="overline">PRIVATE WORKSPACE</div>
       <h2>Today at the workshop</h2>
       <p>Register the customer name and vehicle, then continue with your assigned vehicle jobs.</p>
-      <div class="security-note">Operators cannot enter, view or edit customer contact information. Two independently signed-in principals can manage protected contact details.</div>
+      <div class="security-note">Operators cannot enter, view or edit customer contact information. {% if config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Private contacts are disabled in this release.{% else %}Authorized principals can manage protected contact details.{% endif %}</div>
     </section>
 
     <nav class="jump-links" aria-label="Workspace sections">
+      {% if can_intake and vehicle_details_ready %}<a href="#returning-vehicle">Returning vehicle</a>{% endif %}
       <a href="#new-customer">New customer</a>
       <a href="#assigned-jobs">Assigned jobs <span>{{ jobs | length }}</span></a>
     </nav>
 
+    {% if can_intake and vehicle_details_ready %}
+    <section class="panel" id="returning-vehicle">
+      <div class="section-top"><div><div class="overline">01 / RETURN VISIT</div><h2>Find a returning vehicle</h2></div></div>
+      <p class="muted">Search an exact VIN, plate or existing vehicle record number. Operators can only access vehicles with jobs assigned to them; ask a principal for other vehicles. Do not search for an unverified visitor.</p>
+      <form id="returning-lookup" method="post" action="{{ url_for('prince_pilot.returning_vehicle_lookup', slug=slug) }}" data-url="{{ url_for('prince_pilot.returning_vehicle_lookup', slug=slug) }}" autocomplete="off">
+        <div class="field"><label for="return-type">Search by</label><select id="return-type" name="identifier_type"><option value="vin">VIN</option><option value="plate">Registration / plate</option><option value="record">Vehicle record number</option></select></div>
+        <div class="field"><label for="return-id">Exact identifier</label><input id="return-id" name="identifier" maxlength="50" required autocomplete="off"></div>
+        <button class="primary-btn" type="submit">Find vehicle</button>
+      </form>
+      <p id="return-feedback" class="form-message" role="status" aria-live="polite"></p>
+      <div id="return-result" hidden>
+        <h3 id="return-vehicle-heading"></h3><p id="return-customer"></p>
+        <h4>Recent service visits</h4><ul id="return-history"></ul>
+        <form id="return-job" method="post" action="{{ url_for('prince_pilot.returning_vehicle_job', slug=slug) }}" data-url="{{ url_for('prince_pilot.returning_vehicle_job', slug=slug) }}" autocomplete="off" hidden>
+          <input type="hidden" name="privacy_notice_version" value="{{ privacy_notice_version }}">
+          <div class="field"><label for="return-concern">Current reported concern</label><textarea id="return-concern" name="reported_concern" maxlength="1200" rows="3" required></textarea></div>
+          <div class="field"><label for="return-mileage">Current odometer (km, optional)</label><input id="return-mileage" name="odometer_km" type="number" min="0" max="9999999" step="1"></div>
+          <label class="consent-row"><input type="checkbox" name="ownership_confirmed" required><span>I verified the physical vehicle and that the registered customer remains the correct customer. If ownership has changed, stop and ask a principal.</span></label>
+          <label class="consent-row"><input type="checkbox" name="participation_confirmed" required><span>I provided the approved privacy notice and vehicle-details addendum and confirmed participation for this visit.</span></label>
+          <button class="primary-btn" type="submit">Open new service job</button>
+        </form>
+      </div>
+    </section>
+    {% endif %}
     <section class="panel" id="new-customer" aria-labelledby="intake-heading">
       <div class="section-top">
         <div>
@@ -57,14 +89,14 @@
       {% if not can_intake %}
         <p class="muted">Customer intake is locked until the workshop principal approves the pilot privacy notice and intake is enabled.</p>
       {% else %}
-        <p class="muted">{{ "Use fictional details only, including a Demo or Synthetic name. This test site must not contain genuine customer data." if config.get("PRINCE_STAGING_LOCKDOWN") else "Use actual customer details only with documented authorization. Information is encrypted when submitted." }}</p>
+        <p class="muted">{{ "Use fictional details only, including a Demo or Synthetic name. This test site must not contain genuine customer data." if config.get("PRINCE_STAGING_LOCKDOWN") else "Use actual customer details only with documented authorization. Enter only the minimum approved information." }}</p>
         <form id="prince-intake-form" action="{{ url_for('prince_pilot.intake', slug=slug) }}" method="post" data-intake-url="{{ url_for('prince_pilot.intake', slug=slug) }}" autocomplete="off">
           <input type="hidden" name="privacy_notice_version" value="{{ privacy_notice_version }}">
           <div class="field">
             <label for="full-name">Customer full name <em>Required</em></label>
             <input id="full-name" type="text" name="full_name" maxlength="120" required autocomplete="off" placeholder="Customer's full name">
           </div>
-          <p class="muted">Register only a name and the vehicle/job details. Private contact information is managed separately by the two workshop principals.</p>
+          <p class="muted">Register only a name and the vehicle/job details. {% if not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Private contact information is managed separately by the two workshop principals.{% endif %}</p>
           <hr>
           <h3>Vehicle and current concern</h3>
           <div class="field-grid">
@@ -81,6 +113,21 @@
             <label for="year">Year <span>Optional, if verified</span></label>
             <input id="year" name="vehicle_year" type="number" min="1886" max="2100" placeholder="Unknown is okay">
           </div>
+          {% if vehicle_details_ready %}
+          <h3>Verified vehicle identification</h3><p class="tiny">Only record details necessary for service. Leave unverified fields blank. For odometers in miles, convert to kilometres only when verified.</p>
+          <div class="field-grid">
+          <div class="field"><label for="vehicle-vin">VIN (17 characters)</label><input id="vehicle-vin" name="vin" maxlength="17" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-registration_number">Registration / plate number</label><input id="vehicle-registration_number" name="registration_number" maxlength="30" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-colour">Colour</label><input id="vehicle-colour" name="colour" maxlength="60" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-engine_number">Engine number</label><input id="vehicle-engine_number" name="engine_number" maxlength="80" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-trim">Trim / variant</label><input id="vehicle-trim" name="trim" maxlength="100" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-engine_type">Engine type / capacity</label><input id="vehicle-engine_type" name="engine_type" maxlength="60" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-fuel_type">Fuel type</label><input id="vehicle-fuel_type" name="fuel_type" maxlength="30" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-transmission">Transmission</label><input id="vehicle-transmission" name="transmission" maxlength="30" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-body_type">Body type</label><input id="vehicle-body_type" name="body_type" maxlength="40" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-odometer">Odometer (km)</label><input id="vehicle-odometer" name="odometer_km" type="number" min="0" max="9999999" step="1"></div></div>
+          <label class="consent-row"><input type="checkbox" name="vehicle_details_confirmed"><span>I have provided the approved vehicle-details addendum and verified participation before recording any additional vehicle information.</span></label>
+          {% endif %}
           <div class="field">
             <label for="concern">Customer-reported concern <span>Not a diagnosis</span></label>
             <textarea id="concern" name="reported_concern" rows="3" maxlength="1200" placeholder="Describe what the customer reports. Do not enter their phone, address or other private details here."></textarea>
@@ -91,7 +138,7 @@
           </label>
           <div id="intake-message" class="form-message" role="status" aria-live="polite"></div>
           <button class="primary-btn" type="submit" id="submit-intake">Register customer &amp; vehicle</button>
-          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. Only principals can maintain private contact details.</p>
+          <p class="tiny">No phone numbers, emails or home addresses are accepted in this form. {% if not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}Only authorized principals can maintain private contact details.{% endif %}</p>
         </form>
       {% endif %}
     </section>
@@ -111,14 +158,16 @@
         <ul class="job-list">
           {% for job in jobs %}
           <li class="job-card">
-            <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
+            <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}{% if vehicle_details_ready %} · Vehicle #{{ job.vehicle_id }}{% endif %}</small></div>
             <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
+            {% if job.visit_odometer_km is defined and job.visit_odometer_km is not none %}<p class="tiny">Visit odometer: {{ job.visit_odometer_km }} km</p>{% endif %}
+            {% if job.vehicle_details %}<details><summary>Verified vehicle details</summary><dl>{% for key, value in job.vehicle_details.items() %}{% if value is not none %}<dt>{{ key|replace("_", " ")|upper if key == "vin" else key|replace("_", " ")|capitalize }}</dt><dd>{{ value }}</dd>{% endif %}{% endfor %}</dl></details>{% endif %}
             {% if job.job_status != "closed" %}
             <p class="tiny"><strong>Work authorization:</strong> {{ job.work_authorization | replace("_", " ") | title }}.</p>
             {% if job.work_authorization != "accepted" %}<p class="tiny"><strong>Do not start or continue chargeable work.</strong> Ask a principal for authorization. Continue recording actual observations and work history.</p>{% endif %}
             {% endif %}
             <p class="tiny"><a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">View or draft estimate</a></p>
-            {% if can_manage_private %}
+            {% if can_manage_private and not config.get("PRINCE_LIVE_PILOT_LOCKDOWN") %}
             <details class="principal-private-panel">
               <summary>Private customer details · Principals only</summary>
               <p class="tiny">Visible only after you explicitly unlock this customer record. No customer phone or address is rendered on initial page load.</p>
@@ -173,7 +222,7 @@
                     <form class="principal-review-form"
                           data-review-url="{{ url_for('prince_pilot.principal_review_entry', slug=slug, job_id=job.job_id, entry_id=entry.id) }}"
                           autocomplete="off">
-                      <strong class="review-form-heading">Principal review · Dad or Stephen</strong>
+                      <strong class="review-form-heading">Principal review</strong>
                       <label>Decision
                         <select name="decision" required>
                           <option value="">Choose review decision</option>

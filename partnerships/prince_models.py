@@ -19,6 +19,7 @@ class PrinceTenant(db.Model):
     active = db.Column(db.Boolean, nullable=False, default=False)
     intake_enabled = db.Column(db.Boolean, nullable=False, default=False)
     approved_privacy_notice_version = db.Column(db.String(48))
+    vehicle_details_notice_version = db.Column(db.String(48))
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -35,6 +36,8 @@ class PrinceMembership(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("prince_tenants.id", ondelete="RESTRICT"), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     role = db.Column(db.String(20), nullable=False)
+    reset_code_hash = db.Column(db.String(64))
+    reset_code_expires_at = db.Column(db.DateTime)
     active = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
@@ -75,6 +78,16 @@ class PrinceVehicle(db.Model):
     model = db.Column(db.String(100), nullable=False)
     year = db.Column(db.Integer)
     vin = db.Column(db.String(50))  # Unknown means NULL; never fabricate VIN.
+    colour = db.Column(db.String(60))
+    engine_number = db.Column(db.String(80))
+    registration_number = db.Column(db.String(30))
+    trim = db.Column(db.String(100))
+    engine_type = db.Column(db.String(60))
+    fuel_type = db.Column(db.String(30))
+    transmission = db.Column(db.String(30))
+    body_type = db.Column(db.String(40))
+    odometer_km = db.Column(db.Integer)
+    details_notice_version = db.Column(db.String(48))
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -105,6 +118,8 @@ class PrinceJob(db.Model):
     vehicle_id = db.Column(db.Integer, nullable=False)
     assigned_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     reported_concern = db.Column(db.Text)
+    visit_odometer_km = db.Column(db.Integer)
+    visit_notice_version = db.Column(db.String(48))
     status = db.Column(db.String(24), nullable=False, default="draft")
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

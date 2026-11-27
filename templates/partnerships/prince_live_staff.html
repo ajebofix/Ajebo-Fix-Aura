@@ -1,0 +1,68 @@
+{% extends "partnerships/prince_live_base.html" %}
+{% block title %}Prince | Staff management{% endblock %}
+{% block navigation %}<form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button secondary compact">Sign out</button></form>{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('prince_live.landing') }}">← Workshop home</a>
+<section class="hero">
+  <span class="eyebrow">PRINCE WORKSHOP · {% if principal %}PRINCIPAL{% else %}OPERATOR{% endif %} ACCESS</span>
+  <h1>{% if principal %}Staff management{% else %}My account{% endif %}</h1>
+  <p>Signed in as {{ actor.name }}. {% if principal %}Manage people and permissions in one place.{% else %}Manage your individual access details.{% endif %}</p>
+</section>
+<nav class="section-nav" aria-label="Staff page sections">
+{% if principal %}<a href="{{ url_for('prince_live.release_setup') }}">Workshop launch</a><a href="#roster">Team</a><a href="#add-staff">Add staff</a>{% endif %}<a href="#my-account">My account</a>{% if principal %}<a href="#activity">Activity</a>{% endif %}
+</nav>
+{% if principal %}
+<div class="stats" aria-label="Staff overview">
+<div class="stat"><span>Team members</span><strong>{{ rows|length }}</strong></div>
+<div class="stat"><span>Active principals</span><strong>{{ rows|selectattr('0.active')|selectattr('0.role','equalto','principal')|list|length }}</strong></div>
+<div class="stat"><span>Active operators</span><strong>{{ rows|selectattr('0.active')|selectattr('0.role','equalto','operator')|list|length }}</strong></div>
+</div>
+<section id="roster" class="panel">
+<div class="section-heading"><div><span class="eyebrow">YOUR TEAM</span><h2>Staff roster</h2><p class="muted">Review access before making changes.</p></div><a class="button primary compact" href="#add-staff">+ Add staff</a></div>
+<div class="role-legend"><div><strong>Principal</strong><span>Full workshop management and staff administration.</span></div><div><strong>Operator</strong><span>Ordinary workshop duties. Cannot administer staff.</span></div></div>
+<div class="roster">
+{% for member, user in rows %}
+<article class="staff-card">
+<div class="staff-identity"><div class="avatar" aria-hidden="true">{{ (user.name or '?')[:1]|upper }}</div>
+<div class="person"><h3>{{ user.name }} {% if user.id == actor.id %}<span class="you">You</span>{% endif %}</h3><p>{{ user.email }}</p><div class="badges"><span class="tag {% if member.role == 'principal' %}tag-principal{% endif %}">{{ member.role|capitalize }}</span><span class="tag {% if member.active and user.is_active %}tag-active{% else %}tag-inactive{% endif %}">{{ "Active" if member.active and user.is_active else "Suspended / inactive" }}</span></div></div></div>
+{% if member.active and user.is_active and user.id != actor.id and user.role == "user" %}
+<details class="action"><summary>Issue password recovery code <span aria-hidden="true">+</span></summary><form class="form-stack" method="post" action="{{ url_for('prince_live.issue_recovery_code', member_id=member.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><p class="fine">A one-time code expires after 15 minutes. Hand it to the verified staff member privately. A new code invalidates the previous one.</p><label class="check"><input type="checkbox" name="identity_attested" value="yes" required><span>I have independently verified this staff member in person.</span></label><div class="field"><label>Current principal password<input type="password" name="current_password" required autocomplete="current-password"></label></div><button class="button primary">Issue recovery code</button></form></details>
+<details class="action"><summary>Change staff role <span aria-hidden="true">+</span></summary>
+<form class="form-stack" method="post" action="{{ url_for('prince_live.change_staff_role', member_id=member.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="expected_role" value="{{ member.role }}">
+<div class="field"><label for="role-{{ member.id }}">New role for {{ user.name }}</label><select id="role-{{ member.id }}" name="role" required><option value="operator"{% if member.role == "operator" %} selected{% endif %}>Operator — workshop duties</option><option value="principal"{% if member.role == "principal" %} selected{% endif %}>Principal — full management</option></select></div>
+<p class="fine">Changes permissions only. Existing records stay intact and the staff member must sign in again.</p>
+<label class="check"><input type="checkbox" name="role_confirmed" value="yes" required><span>I authorize this role change for {{ user.name }}.</span></label>
+<div class="field"><label for="role-password-{{ member.id }}">Your principal password</label><input id="role-password-{{ member.id }}" type="password" name="current_password" required autocomplete="current-password"></div>
+<button class="button primary">Save role</button>
+</form></details>{% endif %}
+{% if member.role == "operator" and member.active and user.id != actor.id %}<details class="action danger-action"><summary>Suspend operator access <span aria-hidden="true">+</span></summary>
+<form class="form-stack" method="post" action="{{ url_for('prince_live.suspend_operator', member_id=member.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><p class="fine">This removes workshop access and signs the operator out. Existing records are preserved.</p>
+<div class="field"><label for="suspend-password-{{ member.id }}">Your principal password</label><input id="suspend-password-{{ member.id }}" type="password" name="current_password" required autocomplete="current-password"></div><button class="button danger">Suspend operator</button></form></details>{% endif %}
+</article>{% else %}<p class="muted">No staff accounts to display.</p>{% endfor %}
+</div></section>
+<section id="add-staff" class="panel">
+<span class="eyebrow">ONBOARDING</span><h2>Add a staff member</h2><p class="muted">Register only authorized staff in person. The new staff member should enter their own password.</p>
+<form method="post" action="{{ url_for('prince_live.create_staff') }}" class="form-stack">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="form-grid"><div class="field"><label for="staff-name">Full name</label><input id="staff-name" name="name" maxlength="120" required autocomplete="off"></div><div class="field"><label for="staff-email">Verified email address</label><input id="staff-email" name="email" type="email" maxlength="120" required autocomplete="off" autocapitalize="none" spellcheck="false"></div></div>
+<fieldset class="role-picker"><legend>Workshop role</legend><label><input type="radio" name="role" value="operator" checked required><span><strong>Operator <small>Recommended for staff</small></strong><span>Workshop duties without staff administration.</span></span></label><label><input type="radio" name="role" value="principal" required><span><strong>Principal</strong><span>Full management, including creating accounts and changing other staff roles. Reserve for authorized management.</span></span></label></fieldset>
+<div class="form-grid"><div class="field"><label for="new-password">New staff password</label><input id="new-password" name="new_password" type="password" minlength="16" maxlength="128" required autocomplete="new-password" aria-describedby="password-help"><small id="password-help">At least 16 characters.</small></div><div class="field"><label for="confirm-password">Repeat new password</label><input id="confirm-password" name="confirm_password" type="password" minlength="16" maxlength="128" required autocomplete="new-password"></div></div>
+<label class="check"><input name="identity_attested" value="yes" type="checkbox" required><span>I independently verified this person's identity and email ownership and approve the selected role.</span></label>
+<div class="field"><label for="current-password">Your principal password</label><input id="current-password" name="current_password" type="password" required autocomplete="current-password"><small>Confirms you authorize this account.</small></div>
+<button class="button primary">Create staff account</button></form>
+</section>{% endif %}
+<section id="my-account" class="panel"><span class="eyebrow">PROFILE</span><h2>My account</h2><p class="account-email">{{ actor.email }}</p>
+<details class="action"><summary>Change my password <span aria-hidden="true">+</span></summary><form method="post" class="form-stack" action="{{ url_for('prince_live.change_password') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label>Current password<input name="current_password" type="password" required autocomplete="current-password"></label></div><div class="field"><label>New password (16 characters minimum)<input name="new_password" type="password" required minlength="16" maxlength="128" autocomplete="new-password"></label></div><div class="field"><label>Repeat new password<input name="confirm_password" type="password" required minlength="16" maxlength="128" autocomplete="new-password"></label></div><button class="button primary">Change password and sign out</button></form></details>
+<details class="action"><summary>Correct my email address <span aria-hidden="true">+</span></summary>
+<form class="form-stack" method="post" action="{{ url_for('prince_live.change_own_email') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="field"><label for="own-email">Correct email address</label><input id="own-email" name="email" type="email" maxlength="120" required autocomplete="email"></div>
+<label class="check"><input name="identity_attested" value="yes" type="checkbox" required><span>I have independently confirmed that I control this address.</span></label>
+<div class="field"><label for="own-password">Current password</label><input id="own-password" name="current_password" type="password" required autocomplete="current-password"></div>
+<p class="fine">Changing your email signs you out everywhere. Sign in with the corrected email and existing password. No verification email is sent.</p><button class="button primary">Save corrected email</button></form></details></section>
+{% if principal %}<section id="activity" class="panel"><span class="eyebrow">ACCOUNT HISTORY</span><h2>Recent account changes</h2>
+<div class="activity-list">{% for item in activity %}<div><strong>{{ item.action.replace("live_staff_", "").replace("_", " ")|capitalize }}</strong><small>Staff #{{ item.target_id }} · Actor #{{ item.actor_user_id }}</small><time>{{ item.created_at.strftime('%d %b %Y · %H:%M') }} UTC</time></div>{% else %}<p class="muted">No browser account changes recorded yet.</p>{% endfor %}</div></section>{% endif %}
+<p class="fine">Staff access only. Customer intake and finance require separate approval. No public registration. Password recovery requires a principal-issued one-time code.</p>
+{% endblock %}

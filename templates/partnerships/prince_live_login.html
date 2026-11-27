@@ -1,0 +1,28 @@
+{% extends "partnerships/prince_live_base.html" %}
+{% block title %}Prince | {% if ready %}Workshop home{% else %}Staff sign in{% endif %}{% endblock %}
+{% block main_class %}shell {% if not ready %}auth-shell{% endif %}{% endblock %}
+{% block content %}
+{% if ready %}
+<section class="hero"><span class="eyebrow">STAFF WORKSPACE</span>
+<h1>Welcome, {{ staff_name }}</h1><p>You're signed in as {{ staff_role|capitalize }}. Manage your account and prepare for workshop operations.</p></section>
+<section class="notice"><strong>Staff access only</strong><p>Customer intake is not open. Please do not enter customer or vehicle information.</p></section>
+{% if config.get("PRINCE_LIVE_STAFF_ADMIN_APPROVED") %}
+<section class="panel home-action"><div><span class="eyebrow">YOUR WORKSPACE</span><h2>{% if staff_role == "principal" %}Staff management{% else %}My account{% endif %}</h2><p>{% if staff_role == "principal" %}View your team, create staff accounts and manage workshop permissions.{% else %}View your account and correct your email address.{% endif %}</p></div>
+<a class="button primary" href="{{ url_for('prince_live.staff_accounts') }}">Manage staff and account details <span aria-hidden="true">→</span></a></section>
+{% if staff_role == "principal" %}
+<section class="panel home-action"><div><span class="eyebrow">GO LIVE</span><h2>Workshop launch</h2><p>Review and record the final operational approval for the existing workshop features.</p></div><a class="button primary" href="{{ url_for('prince_live.release_setup') }}">Review launch checklist</a></section>
+{% endif %}
+{% endif %}
+<form method="post" action="{{ url_for('prince_live.sign_out') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button secondary">Sign out</button></form>
+{% else %}
+<section class="auth-intro"><span class="eyebrow">PRINCE · PRIVATE WORKSPACE</span><h1>Every vehicle.<br>Every job.<br>One workshop.</h1><p>A dedicated workspace for authorized Prince Automobile Clinic staff.</p><div class="auth-foot">Individual staff accounts · Restricted workshop access</div></section>
+<section class="panel login-panel"><span class="eyebrow">STAFF ACCESS</span><h2>Welcome back</h2><p class="muted">Sign in to your individual staff account.</p>
+{% if error %}<p class="notice notice-error" role="alert">{{ error }} Check your email and password.</p>{% endif %}
+<form method="post" action="{{ url_for('prince_live.sign_in') }}" class="form-stack">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="field"><label for="email">Email address</label><input id="email" type="email" name="email" maxlength="120" required autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Your staff email"></div>
+<div class="field"><label for="password">Password</label><input id="password" type="password" name="password" maxlength="512" required autocomplete="current-password" placeholder="Your password"></div>
+<button class="button primary full">Sign in <span aria-hidden="true">→</span></button>
+</form><p class="fine">Need access or help with your account? Speak with your workshop principal. Public registration is not available. <a href="{{ url_for('prince_live.reset_password') }}">Forgot password? Use a recovery code.</a></p></section>
+{% endif %}
+{% endblock %}

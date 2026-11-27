@@ -1,0 +1,21 @@
+# Prince live-pilot deployment runbook
+
+## Deployment preparation — 26 November 2026
+Release tracker #361; draft PR #362. Validated application revision `88f216dfa4b24e561e5683e8b7cd58d7d9f93c14`: 16/16 reported PR-triggered CI workflows succeeded, including Prince Pilot Security CI run 45777706376.
+
+Dedicated private Railway project: `1bd12284-d667-4655-8484-3c1e03136432` (Prince Live Workshop Pilot). Environment `7b3c3fc4-2b24-4e4a-ba37-6fde7293bcd1` (prince-live-pilot). App `bbcf9e7a-9005-4118-b5f6-7ab3d02ce76b`. Staged patch `4e8a8e9e-b7c2-4d1f-8e88-b97d9278ad6a` contains a new PostgreSQL service with persistent volume and app pinned to the validated revision. No existing resources modified, no patch applied, no public app domain created.
+
+## Before applying
+- Review ongoing Railway costs and confirm deployment. Set a unique strong SECRET_KEY and valid independent Fernet PROFILE_ENCRYPTION_KEY in the Railway secret controls; never reuse staging or production values or paste them in GitHub/chat. Set PROFILE_ENCRYPTION_KEY_VERSION consistently and preserve secure recovery copies. Confirm the database reference points only to this project's private PostgreSQL service, without public database exposure.
+- Use shared rate-limit storage or a single application worker for rehearsal; validate the actual rate-limit behavior before public access.
+- Keep `PRINCE_LIVE_PILOT_LOCKDOWN=true`, `AURA_PRINCE_PILOT_API_ENABLED=false`, both staging switches false, and all three live approval flags false. Do not populate the notice-version variable until the privacy notice is approved. No automatic seed.
+- Apply only the dedicated project's staged patch after configuration review. Verify migration head, service health, clean database, exact pinned revision, HTTPS/cookie flags and denial of global Aura routes. Do not use existing production credentials or databases.
+
+## Provision staff
+Obtain the approved roster and independently confirm each person's identity and controlled email, with principal/operator roles. Provision named accounts and tenant memberships through an authorized administrator in the isolated environment. No shared passwords, demo accounts, or automatic email verification based on unverified input. Keep tenant intake disabled. Verify individual access and revocation before release. Staff should set strong unique passwords via a secure provisioning method; never include credentials in issue comments or deployment logs.
+
+## Acceptance and release
+Run the twelve acceptance scenarios in the release contract with fictional records in a separate disposable rehearsal environment; verify backup/restore including audit and ledger reconciliation. Clear or discard rehearsal data; verify live database contains no synthetic customer records. Obtain principal sign-off on privacy notice, retention, incident handling, backup recovery, manual customer approval and existing customer-facing billing/tax procedure. Initial pilot documents are internal-only; existing external documents remain authoritative. Record approval evidence without personal details in issue #361. Only then enable the corresponding live flags and tenant intake with matching approved notice version. Launch with a single consenting customer and keep existing records in parallel. Disable intake or live release switches if an incident occurs. Global Aura linking, clinical transfer and private contact routes remain blocked.
+
+## Initial staff provisioning implementation
+The guarded `python -m scripts.prince_provision_live_staff` command is intended for an authorized private service shell, after independent staff identity and email-control verification. It refuses all other Railway projects/environments, existing customer records, existing account identities and enabled release flags. It creates no customer records and leaves intake disabled. This is initial setup only, not password recovery or ongoing administration. CI validation is required before use. Initial app configuration now uses one worker (four threads) for consistent per-process rate limiting during rehearsal. Public access still requires rate-limit validation. Independent application secrets and paid deployment approval remain outstanding.

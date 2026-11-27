@@ -12,10 +12,11 @@ from datetime import datetime
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from flask_login import current_user
 from sqlalchemy import case, func
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from extensions import db
 from models import User
+from security.rate_limits import limiter
 from security.field_encryption import (
     ProfileEncryptionError, decrypt_profile_value, encrypt_profile_value,
 )
@@ -61,9 +62,75 @@ INTAKE_FIELDS = frozenset({
 })
 
 
+VEHICLE_DETAILS_NOTICE = "prince-vehicle-details-v1"
+VEHICLE_TEXT_FIELDS = {
+    "colour": 60, "engine_number": 80, "registration_number": 30,
+    "trim": 100, "engine_type": 60, "fuel_type": 30, "transmission": 30,
+    "body_type": 40,
+}
+VEHICLE_EXTRA_FIELDS = frozenset(VEHICLE_TEXT_FIELDS) | {
+    "vin", "odometer_km", "vehicle_details_confirmed",
+}
+
+
+def _vehicle_details_ready(tenant):
+    return bool(current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+                and tenant.vehicle_details_notice_version == VEHICLE_DETAILS_NOTICE)
+
+
+def _visit_odometer(value):
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                              or not 0 <= value <= 9999999):
+        abort(400)
+    return value
+
+
+def _plate_key(value):
+    return re.sub(r"[ -]", "", value.upper())
+
+
+def _plate_expression():
+    return func.replace(func.replace(func.upper(PrinceVehicle.registration_number), " ", ""), "-", "")
+
+
+def _vehicle_details(data, tenant):
+    if not (set(data) & VEHICLE_EXTRA_FIELDS):
+        return {}
+    if not _vehicle_details_ready(tenant) or data.get("vehicle_details_confirmed") is not True:
+        abort(400, description="Expanded vehicle details require approved notice and participation.")
+    values = {}
+    for field, limit in VEHICLE_TEXT_FIELDS.items():
+        value = _text(data, field, limit)
+        if value and (any(ord(ch) < 32 for ch in value) or
+                      (field not in {"engine_number", "registration_number"} and PRIVATE_CONTACT_PATTERN.search(value))):
+            abort(400)
+        values[field] = value
+    vin = _text(data, "vin", 17)
+    if vin:
+        vin = vin.upper()
+        if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin):
+            abort(400, description="VIN must have 17 valid characters; leave unknown VIN blank.")
+    values["vin"] = vin
+    for field in ("engine_number", "registration_number"):
+        if values[field]:
+            values[field] = values[field].upper()
+            if not re.fullmatch(r"[A-Z0-9 /._-]+", values[field]):
+                abort(400)
+    if values["registration_number"] and (not re.fullmatch(r"[A-Z0-9 -]+", values["registration_number"])
+                                            or len(_plate_key(values["registration_number"])) < 3):
+        abort(400, description="Enter a valid registration number.")
+    values["odometer_km"] = _visit_odometer(data.get("odometer_km"))
+    values["details_notice_version"] = VEHICLE_DETAILS_NOTICE
+    return values
+
+
 @prince_pilot_bp.before_request
 def pilot_access_gate():
-    if not current_app.config.get("AURA_PRINCE_PILOT_API_ENABLED", False):
+    if current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False):
+        from partnerships.prince_live_portal import live_workshop_request_allowed
+        if not live_workshop_request_allowed():
+            abort(404)
+    elif not current_app.config.get("AURA_PRINCE_PILOT_API_ENABLED", False):
         abort(404)
     if not current_user.is_authenticated or not current_user.is_active:
         abort(401)
@@ -161,10 +228,13 @@ def intake(slug):
     if (not tenant.intake_enabled or not tenant.approved_privacy_notice_version):
         abort(403)  # Requires explicit separate provisioning and approved notice.
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or set(data) - INTAKE_FIELDS:
+    if not isinstance(data, dict) or set(data) - (INTAKE_FIELDS | VEHICLE_EXTRA_FIELDS):
         abort(400)
     full_name = _text(data, "full_name", 120, required=True)
     if len(full_name) < 2:
+        abort(400)
+    if (current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+            and PRIVATE_CONTACT_PATTERN.search(full_name)):
         abort(400)
     version = _text(data, "privacy_notice_version", 48, required=True)
     if version != tenant.approved_privacy_notice_version:
@@ -180,7 +250,8 @@ def intake(slug):
     year = data.get("vehicle_year")
     if (brand is None) != (model is None):
         abort(400)
-    if not brand and (year is not None or concern is not None):
+    details = _vehicle_details(data, tenant)
+    if not brand and (year is not None or concern is not None or details):
         abort(400)
     if year is not None and (isinstance(year, bool) or not isinstance(year, int) or
                              not 1886 <= year <= 2100):
@@ -192,6 +263,20 @@ def intake(slug):
     if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
         if not full_name.lower().startswith(("demo ", "synthetic ")):
             abort(400)
+
+    # Serialize intake and repeat visits within this small workshop. The VIN
+    # constraint is an additional defense against conflicting writes.
+    tenant = PrinceTenant.query.populate_existing().filter_by(id=tenant.id, active=True).with_for_update().one()
+    if not tenant.intake_enabled or tenant.approved_privacy_notice_version != version:
+        abort(403)
+    if details and not _vehicle_details_ready(tenant):
+        abort(403)
+    if details.get("registration_number") and PrinceVehicle.query.filter(
+            PrinceVehicle.tenant_id == tenant.id,
+            _plate_expression() == _plate_key(details["registration_number"])).first():
+        return jsonify({"error": "Vehicle registration already exists. Ask a principal to review."}), 409
+    if details.get("vin") and PrinceVehicle.query.filter_by(tenant_id=tenant.id, vin=details["vin"]).first():
+        return jsonify({"error": "Vehicle already registered. Ask a principal to review the existing record."}), 409
 
     customer = PrinceCustomer(
         tenant_id=tenant.id, full_name=full_name,
@@ -206,7 +291,7 @@ def intake(slug):
         if brand and model:
             vehicle = PrinceVehicle(
                 tenant_id=tenant.id, customer_id=customer.id,
-                brand=brand, model=model, year=year, vin=None,
+                brand=brand, model=model, year=year, **details,
             )
             db.session.add(vehicle)
             db.session.flush()
@@ -214,6 +299,8 @@ def intake(slug):
                 tenant_id=tenant.id, customer_id=customer.id,
                 vehicle_id=vehicle.id, assigned_user_id=actor.user_id,
                 reported_concern=concern, status="draft",
+                visit_odometer_km=details.get("odometer_km"),
+                visit_notice_version=version,
             )
             db.session.add(job)
             db.session.flush()
@@ -225,10 +312,140 @@ def intake(slug):
             "job_id": job_id,
         })
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Conflicting record. Ask a principal to review existing vehicles."}), 409
     except SQLAlchemyError:
         db.session.rollback()
         return jsonify({"error": "Intake could not be saved"}), 503
     return jsonify(response), 201
+
+
+
+def _returning_scope(slug):
+    tenant, actor = _scope(slug)
+    if (not current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+            or not tenant.intake_enabled
+            or not _vehicle_details_ready(tenant)
+            or actor.role not in (PrinceRole.PRINCIPAL, PrinceRole.OPERATOR)):
+        abort(404)
+    _allow(actor, tenant, PrinceAction.INTAKE_CREATE)
+    return tenant, actor
+
+
+def _returning_vehicle(tenant, actor, data):
+    kind = data.get("identifier_type")
+    value = _text(data, "identifier", 50, required=True)
+    q = PrinceVehicle.query.filter_by(tenant_id=tenant.id)
+    if kind == "vin":
+        value = value.upper()
+        if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", value):
+            abort(400, description="Enter the exact 17-character VIN.")
+        q = q.filter(PrinceVehicle.vin == value,
+                     PrinceVehicle.details_notice_version == VEHICLE_DETAILS_NOTICE)
+    elif kind == "plate":
+        if len(value) > 30 or not re.fullmatch(r"[A-Za-z0-9 -]+", value):
+            abort(400, description="Enter the exact vehicle plate number.")
+        value = _plate_key(value)
+        if len(value) < 3:
+            abort(400)
+        q = q.filter(_plate_expression() == value,
+                     PrinceVehicle.details_notice_version == VEHICLE_DETAILS_NOTICE)
+    elif kind == "record":
+        if not re.fullmatch(r"[1-9][0-9]{0,8}", value):
+            abort(400)
+        q = q.filter(PrinceVehicle.id == int(value))
+    else:
+        abort(400)
+    matches = q.limit(2).all()
+    if len(matches) != 1:
+        # No distinction between missing and ambiguous records for operators.
+        abort(404, description="No unique accessible vehicle. Ask a principal to review.")
+    vehicle = matches[0]
+    if actor.role == PrinceRole.OPERATOR:
+        assigned = PrinceJob.query.filter_by(tenant_id=tenant.id, vehicle_id=vehicle.id,
+                                              assigned_user_id=actor.user_id).first()
+        if assigned is None:
+            abort(404)
+    customer = PrinceCustomer.query.filter_by(tenant_id=tenant.id, id=vehicle.customer_id).one_or_none()
+    if customer is None or not customer.participation_confirmed:
+        abort(404)
+    return vehicle, customer
+
+
+@prince_pilot_bp.post("/<slug>/returning-vehicle/lookup")
+@limiter.limit("15 per minute; 100 per hour")
+def returning_vehicle_lookup(slug):
+    tenant, actor = _returning_scope(slug)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"identifier_type", "identifier"}:
+        abort(400)
+    vehicle, customer = _returning_vehicle(tenant, actor, data)
+    all_jobs = PrinceJob.query.filter_by(tenant_id=tenant.id, vehicle_id=vehicle.id)
+    jobs = all_jobs
+    if actor.role == PrinceRole.OPERATOR:
+        jobs = jobs.filter_by(assigned_user_id=actor.user_id)
+    history = jobs.order_by(PrinceJob.id.desc()).limit(20).all()
+    active = all_jobs.filter(PrinceJob.status != "closed").first() is not None
+    # Only return history the current role may already read, not other operators' details.
+    _audit(tenant.id, actor.user_id, "returning_vehicle_lookup", "vehicle", vehicle.id)
+    db.session.commit()
+    return jsonify({
+        "vehicle_id": vehicle.id, "brand": vehicle.brand, "model": vehicle.model,
+        "year": vehicle.year, "customer_name": customer.full_name,
+        "active_job_exists": active,
+        "history": [{"job_id": job.id, "status": job.status,
+                     "date": job.created_at.strftime("%Y-%m-%d"),
+                     "odometer_km": job.visit_odometer_km,
+                     "reported_concern": _public_concern(job.reported_concern)}
+                    for job in history],
+    })
+
+
+@prince_pilot_bp.post("/<slug>/returning-vehicle/jobs")
+@limiter.limit("10 per minute; 50 per hour")
+def returning_vehicle_job(slug):
+    tenant, actor = _returning_scope(slug)
+    data = request.get_json(silent=True)
+    allowed = {"identifier_type", "identifier", "vehicle_id", "reported_concern",
+               "odometer_km", "privacy_notice_version", "ownership_confirmed",
+               "participation_confirmed"}
+    if not isinstance(data, dict) or set(data) - allowed:
+        abort(400)
+    if (data.get("ownership_confirmed") is not True
+            or data.get("participation_confirmed") is not True):
+        abort(400, description="Verify vehicle identity, current customer and participation.")
+    version = _text(data, "privacy_notice_version", 48, required=True)
+    concern = _text(data, "reported_concern", 1200, required=True)
+    if PRIVATE_CONTACT_PATTERN.search(concern):
+        abort(400)
+    odometer = _visit_odometer(data.get("odometer_km"))
+    # Serialize with new registrations and other returning visits; re-check release
+    # and record access after acquiring the lock.
+    tenant = PrinceTenant.query.populate_existing().filter_by(id=tenant.id, active=True).with_for_update().one()
+    if not tenant.intake_enabled or version != tenant.approved_privacy_notice_version or not _vehicle_details_ready(tenant):
+        abort(403)
+    tenant, actor = _returning_scope(slug)
+    vehicle, customer = _returning_vehicle(tenant, actor, data)
+    if type(data.get("vehicle_id")) is not int or data["vehicle_id"] != vehicle.id:
+        abort(409, description="Vehicle selection changed. Search again.")
+    if PrinceJob.query.filter(PrinceJob.tenant_id == tenant.id, PrinceJob.vehicle_id == vehicle.id,
+                              PrinceJob.status != "closed").first():
+        return jsonify({"error": "An active job exists. Continue it or ask a principal to review."}), 409
+    job = PrinceJob(tenant_id=tenant.id, customer_id=customer.id,
+                    vehicle_id=vehicle.id, assigned_user_id=actor.user_id,
+                    reported_concern=concern, status="draft",
+                    visit_odometer_km=odometer, visit_notice_version=version)
+    db.session.add(job)
+    try:
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "returning_vehicle_job_created", "job", job.id)
+        result = {"job_id": job.id, "vehicle_id": vehicle.id}
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Unable to confirm new job. Refresh before retrying."}), 503
+    return jsonify(result), 201
 
 
 def _find_authorized_job(tenant, actor, job_id, *, lock=False):
@@ -405,8 +622,12 @@ def operator_workspace(slug):
         tenant.id, [job["job_id"] for job in jobs],
         include_private_review_note=(actor.role == PrinceRole.PRINCIPAL),
     )
-    for job in jobs:
+    for job, (stored_job, _, vehicle) in zip(jobs, records):
         job["entries"] = by_job[job["job_id"]]
+        if _vehicle_details_ready(tenant):
+            job["visit_odometer_km"] = stored_job.visit_odometer_km
+        if _vehicle_details_ready(tenant) and vehicle.details_notice_version == VEHICLE_DETAILS_NOTICE:
+            job["vehicle_details"] = {field: getattr(vehicle, field) for field in (*VEHICLE_TEXT_FIELDS, "vin", "odometer_km")}
     return render_template(
         "partnerships/prince_operator.html",
         workshop_name=tenant.display_name,
@@ -414,6 +635,7 @@ def operator_workspace(slug):
         jobs=jobs,
         entry_categories=ENTRY_CATEGORIES,
         privacy_notice_version=tenant.approved_privacy_notice_version,
+        vehicle_details_ready=_vehicle_details_ready(tenant),
         can_intake=bool(tenant.intake_enabled and
                         tenant.approved_privacy_notice_version),
         can_manage_private=actor.role == PrinceRole.PRINCIPAL,
@@ -564,6 +786,9 @@ def _eligible_operators(tenant_id):
         }
         rows = [(member, user) for member, user in rows
                 if (user.email or "").lower() in allowed]
+    if current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False):
+        from partnerships.prince_live_portal import _staff_member
+        rows = [(member, user) for member, user in rows if _staff_member(user) is not None]
     return [{"id": user.id, "name": user.name} for _, user in rows]
 
 
@@ -1117,13 +1342,36 @@ def approve_estimate(slug, job_id, version):
     return jsonify({"job_id": job.id, "estimate": response})
 
 
+def _finance_available():
+    from partnerships.prince_live_portal import live_finance_ready
+    return bool(current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+                or live_finance_ready())
+
+
+def _finance_training():
+    return current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+
+
+def _finance_ref(value):
+    return f"DEMO-{value}" if _finance_training() else value
+
+
+def _finance_note_valid(value):
+    training_note = value.lower().startswith(("demo:", "synthetic:"))
+    return training_note if _finance_training() else not training_note
+
+
+def _finance_audit(action):
+    return ("training_" if _finance_training() else "live_") + action
+
+
 @prince_pilot_bp.get("/<slug>/jobs/<int:job_id>/estimates/<int:version>/print")
 def print_estimate(slug, job_id, version):
     """Principal-only, approved-version quotation preview for synthetic training."""
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.ESTIMATE_APPROVE)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
-        abort(404)  # Real customer document issuance requires separate approval.
+    if not _finance_available():
+        abort(404)
     job, customer, vehicle = _find_authorized_job(tenant, actor, job_id)
     record = _estimate_latest(tenant.id, job.id)
     if record is None or record.version != version or record.approved_at is None:
@@ -1138,7 +1386,7 @@ def print_estimate(slug, job_id, version):
              "brand": _public_concern(vehicle.brand),
              "model": _public_concern(vehicle.model), "year": vehicle.year},
         quotation=quotation,
-        quotation_ref=f"DEMO-PAC-{job.id:06d}-V{record.version:02d}",
+        quotation_ref=_finance_ref(f"PAC-{job.id:06d}-V{record.version:02d}"),
         approved_date=record.approved_at.strftime("%d %B %Y"),
         categories=ESTIMATE_CATEGORIES,
     ))
@@ -1194,7 +1442,9 @@ def record_customer_authorization(slug, job_id, version):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.CUSTOMER_AUTHORIZATION)
     job, _, _ = _find_authorized_job(tenant, actor, job_id, lock=True)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    from partnerships.prince_live_portal import live_authorization_ready
+    training = current_app.config.get("PRINCE_STAGING_LOCKDOWN", False)
+    if not training and not live_authorization_ready():
         abort(404)
     estimate = _estimate_latest(tenant.id, job.id)
     if estimate is None or estimate.version != version or estimate.approved_at is None:
@@ -1215,7 +1465,10 @@ def record_customer_authorization(slug, job_id, version):
     if (decision not in {"accepted", "declined", "withdrawn"}
             or channel not in AUTHORIZATION_CHANNELS or len(evidence) < 20
             or PRIVATE_CONTACT_PATTERN.search(evidence)
-            or not evidence.lower().startswith(("demo:", "synthetic:"))):
+            or (training and not evidence.lower().startswith(("demo:", "synthetic:")))):
+        abort(400)
+    if not training and (channel not in {"written_message", "signed_document"}
+                         or evidence.lower().startswith(("demo:", "synthetic:"))):
         abort(400)
     events = _customer_authorization_events(tenant.id, job.id, version)
     previous = events[0] if events else None
@@ -1276,7 +1529,7 @@ def _invoice_response(record, job):
         and current.total_kobo == record.total_kobo
     )
     return {
-        "reference": f"DEMO-INV-PAC-{record.job_id:06d}",
+        "reference": _finance_ref(f"INV-PAC-{record.job_id:06d}"),
         "estimate_version": record.estimate_version,
         "authorization_sequence": record.authorization_sequence,
         "authorization_current": authorization_current,
@@ -1296,7 +1549,7 @@ def _invoice_response(record, job):
 def _invoice_scope(slug, job_id, *, lock=False):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.INVOICE_ISSUE)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    if not _finance_available():
         abort(404)
     job, customer, vehicle = _find_authorized_job(tenant, actor, job_id, lock=lock)
     return tenant, actor, job, customer, vehicle
@@ -1347,10 +1600,10 @@ def issue_invoice(slug, job_id):
     expected_sequence = _estimate_amount(data["expected_authorization_sequence"], maximum=1_000_000)
     reason = _text(data, "issue_reason", 900, required=True)
     if (len(reason) < 20 or PRIVATE_CONTACT_PATTERN.search(reason)
-            or not reason.lower().startswith(("demo:", "synthetic:"))):
+            or not _finance_note_valid(reason)):
         abort(400)
     if _invoice_for_job(job) is not None:
-        return jsonify({"error": "A training invoice already exists for this job."}), 409
+        return jsonify({"error": "An invoice already exists for this job."}), 409
     if job.status not in {"approved", "in_progress", "closed"}:
         return jsonify({"error": "Internal job approval is required before invoicing."}), 409
     estimate = _estimate_latest(tenant.id, job.id)
@@ -1370,12 +1623,12 @@ def issue_invoice(slug, job_id):
         )
         db.session.add(record)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_invoice_created", "invoice", record.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("invoice_created"), "invoice", record.id)
         result = _invoice_response(record, job)
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        return jsonify({"error": "Training invoice could not be created."}), 503
+        return jsonify({"error": "Invoice could not be created."}), 503
     return jsonify({"invoice": result}), 201
 
 
@@ -1405,7 +1658,7 @@ def _payment_summary(job, invoice):
             "reversal_reason": _public_concern(reversals[p.id].reason) if p.id in reversals else None,
             "reversed_at": reversals[p.id].reversed_at.isoformat(timespec="seconds") + "Z" if p.id in reversals else None,
             "reversed_by_user_id": reversals[p.id].reversed_by_user_id if p.id in reversals else None,
-            "receipt_reference": f"DEMO-RCT-PAC-{receipts[p.id].id:06d}" if p.id in receipts else None,
+            "receipt_reference": _finance_ref(f"RCT-PAC-{receipts[p.id].id:06d}") if p.id in receipts else None,
             "reported_by_user_id": p.reported_by_user_id,
             "reported_at": p.reported_at.isoformat(timespec="seconds") + "Z",
             "reviewed_by_user_id": p.reviewed_by_user_id,
@@ -1439,7 +1692,9 @@ def report_payment(slug, job_id):
     if not isinstance(data, dict) or set(data) != {"reference", "method", "amount_kobo"}:
         abort(400)
     reference = _text(data, "reference", 64, required=True).upper()
-    if not re.fullmatch(r"DEMO-[A-Z][A-Z0-9-]{2,47}", reference):
+    pattern = (r"DEMO-[A-Z][A-Z0-9-]{2,47}" if _finance_training()
+               else r"PAC-PAY-[A-Z][A-Z0-9-]{2,39}")
+    if not re.fullmatch(pattern, reference):
         abort(400)
     method = _text(data, "method", 12, required=True)
     amount = _estimate_amount(data["amount_kobo"])
@@ -1448,7 +1703,7 @@ def report_payment(slug, job_id):
     if amount > invoice.total_kobo:
         return jsonify({"error": "Overpayments require a separate reconciliation workflow."}), 409
     if PrincePayment.query.filter_by(tenant_id=tenant.id, reference=reference).first():
-        return jsonify({"error": "This fictional payment reference has already been recorded."}), 409
+        return jsonify({"error": "This payment reference has already been recorded."}), 409
     try:
         payment = PrincePayment(
             tenant_id=tenant.id, job_id=job.id, reference=reference,
@@ -1456,7 +1711,7 @@ def report_payment(slug, job_id):
         )
         db.session.add(payment)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_payment_reported", "payment", payment.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("payment_reported"), "payment", payment.id)
         result = _payment_summary(job, invoice)
         db.session.commit()
     except SQLAlchemyError:
@@ -1477,7 +1732,7 @@ def review_payment(slug, job_id, payment_id):
     note = _text(data, "review_note", 900, required=True)
     if (decision not in {"verified", "rejected"} or data["review_attested"] is not True
             or len(note) < 20 or PRIVATE_CONTACT_PATTERN.search(note)
-            or not note.lower().startswith(("demo:", "synthetic:"))):
+            or not _finance_note_valid(note)):
         abort(400)
     payment = PrincePayment.query.populate_existing().filter_by(
         id=payment_id, tenant_id=tenant.id, job_id=job.id,
@@ -1495,7 +1750,7 @@ def review_payment(slug, job_id, payment_id):
         payment.reviewed_by_user_id = actor.user_id
         payment.reviewed_at = datetime.utcnow()
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_payment_" + decision, "payment", payment.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("payment_" + decision), "payment", payment.id)
         result = _payment_summary(job, invoice)
         db.session.commit()
     except SQLAlchemyError:
@@ -1528,8 +1783,8 @@ def issue_receipt(slug, job_id, payment_id):
         receipt = PrinceReceipt(payment_id=payment.id, issued_by_user_id=actor.user_id)
         db.session.add(receipt)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_receipt_issued", "receipt", receipt.id)
-        result = {"reference": f"DEMO-RCT-PAC-{receipt.id:06d}", "payment_id": payment.id}
+        _audit(tenant.id, actor.user_id, _finance_audit("receipt_issued"), "receipt", receipt.id)
+        result = {"reference": _finance_ref(f"RCT-PAC-{receipt.id:06d}"), "payment_id": payment.id}
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
@@ -1548,7 +1803,7 @@ def reverse_payment_allocation(slug, job_id, payment_id):
     reason = _text(data, "reason", 900, required=True)
     if (data["reversal_attested"] is not True or len(reason) < 20
             or PRIVATE_CONTACT_PATTERN.search(reason)
-            or not reason.lower().startswith(("demo:", "synthetic:"))):
+            or not _finance_note_valid(reason)):
         abort(400)
     if payment.decision != "verified" or PrincePaymentReversal.query.filter_by(payment_id=payment.id).first():
         abort(409)
@@ -1558,7 +1813,7 @@ def reverse_payment_allocation(slug, job_id, payment_id):
         )
         db.session.add(reversal)
         db.session.flush()
-        _audit(tenant.id, actor.user_id, "training_payment_allocation_reversed", "payment", payment.id)
+        _audit(tenant.id, actor.user_id, _finance_audit("payment_allocation_reversed"), "payment", payment.id)
         result = _payment_summary(job, invoice)
         db.session.commit()
     except SQLAlchemyError:
@@ -1580,8 +1835,8 @@ def print_receipt(slug, job_id, payment_id):
         "partnerships/prince_receipt_print.html", slug=slug, workshop_name=tenant.display_name,
         job_id=job.id, customer=_public_concern(customer.full_name),
         vehicle=f"{_public_concern(vehicle.brand)} {_public_concern(vehicle.model)}",
-        reference=f"DEMO-RCT-PAC-{receipt.id:06d}",
-        invoice_reference=f"DEMO-INV-PAC-{invoice.job_id:06d}",
+        reference=_finance_ref(f"RCT-PAC-{receipt.id:06d}"),
+        invoice_reference=_finance_ref(f"INV-PAC-{invoice.job_id:06d}"),
         amount_kobo=payment.amount_kobo, method=payment.method,
         issued_date=receipt.issued_at.strftime("%d %B %Y"), reversed=bool(reversal),
     ))
@@ -1665,7 +1920,7 @@ def _financial_overview(tenant_id):
             totals["hold_count"] += 1
             totals["hold_outstanding"] += outstanding
         details.append({
-            "job_id": row.job_id, "reference": f"DEMO-INV-PAC-{row.job_id:06d}",
+            "job_id": row.job_id, "reference": _finance_ref(f"INV-PAC-{row.job_id:06d}"),
             "customer": _public_concern(row.full_name),
             "vehicle": f"{_public_concern(row.brand)} {_public_concern(row.model)}",
             "job_status": row.status, "invoiced": int(row.total_kobo),
@@ -1679,7 +1934,7 @@ def _financial_overview(tenant_id):
 def principal_finance(slug):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.PAYMENT_VERIFY)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    if not _finance_available():
         abort(404)
     response = current_app.make_response(render_template(
         "partnerships/prince_finance.html", slug=slug, workshop_name=tenant.display_name,
@@ -1693,7 +1948,7 @@ def principal_finance(slug):
 def principal_finance_data(slug):
     tenant, actor = _scope(slug)
     _allow(actor, tenant, PrinceAction.PAYMENT_VERIFY)
-    if not current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
+    if not _finance_available():
         abort(404)
     response = jsonify(_financial_overview(tenant.id))
     response.headers["Cache-Control"] = "no-store, private"

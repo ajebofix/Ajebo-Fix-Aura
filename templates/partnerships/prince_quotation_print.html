@@ -8,15 +8,15 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_quotation_print.css') }}">
   <script defer src="{{ url_for('static', filename='js/prince_quotation_print.js') }}"></script>
 </head>
-<body>
+<body>{% set training = config.get("PRINCE_STAGING_LOCKDOWN") %}
 {% macro money(kobo) %}₦{{ "{:,}".format(kobo // 100) }}.{{ "%02d"|format(kobo % 100) }}{% endmacro %}
 <nav class="print-toolbar" aria-label="Print options">
   <a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">Back to estimate</a>
   <button type="button" id="print-quotation">Print / Save as PDF</button>
-  <p>Use your browser's print menu to save a PDF. This is a fictional training document only; do not send it to customers.</p>
+  <p>Use your browser's print menu to save a PDF. {% if training %}This is a fictional training document only; do not send it to customers.{% else %}Internal estimate preview; continue the approved customer quotation procedure.{% endif %}</p>
 </nav>
 <main class="quotation">
-  <div class="demo-notice">TRAINING SAMPLE · NOT FOR CUSTOMER ISSUE</div>
+  <div class="demo-notice">{% if training %}TRAINING SAMPLE · NOT FOR CUSTOMER ISSUE{% else %}INTERNAL PILOT ESTIMATE · NOT FOR CUSTOMER ISSUE{% endif %}</div>
   <header class="letterhead">
     <div class="brand"><img src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince Automobile Clinic logo" width="68" height="68">
       <div><h1>{{ workshop_name }}</h1><p>Workshop services · Powered by Aura</p></div>
@@ -40,8 +40,8 @@
     <div><span>Discount</span><strong>{{ money(quotation.discount_kobo) }}</strong></div>
     <div class="grand-total"><span>Estimated total</span><strong>{{ money(quotation.total_kobo) }}</strong></div>
   </section>
-  <section class="terms"><h2>Quotation status</h2><p>This fictional estimate has been approved internally for training. This document does not establish customer authorization; any customer decision is recorded separately. It is not an invoice, receipt, payment request or proof of completed work.</p><p>Taxes have not been assessed in this pilot. Real quotation issuance, validity and applicable taxes must be confirmed separately.</p></section>
-  <footer>Prince Automobile Clinic · Aura workshop pilot · TRAINING SAMPLE</footer>
+  <section class="terms"><h2>Quotation status</h2><p>{% if training %}This fictional estimate has been approved internally for training.{% else %}This estimate has been approved internally for the restricted pilot.{% endif %} This document does not establish customer authorization; any customer decision is recorded separately. It is not an invoice, receipt, payment request or proof of completed work.</p><p>Taxes have not been assessed in this pilot. Real quotation issuance, validity and applicable taxes must be confirmed separately.</p></section>
+  <footer>Prince Automobile Clinic · Aura workshop pilot · {{ "TRAINING SAMPLE" if training else "INTERNAL PILOT RECORD" }}</footer>
 </main>
 </body>
 </html>

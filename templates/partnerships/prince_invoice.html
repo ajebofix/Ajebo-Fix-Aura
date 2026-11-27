@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow"><meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>Prince · Training invoice</title>
+  <title>Prince · Invoice workspace</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_pilot.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/prince_management.css') }}">
   <script defer src="{{ url_for('static', filename='js/prince_management.js') }}"></script>
 </head>
-<body><main class="pilot-shell management-shell">
+<body>{% set training = config.get("PRINCE_STAGING_LOCKDOWN") %}<main class="pilot-shell management-shell">
   <header class="pilot-header"><img class="brand-logo" src="{{ url_for('static', filename='img/prince-workshop-logo-pilot.jpg') }}" alt="Prince logo" width="52" height="52">
     <div class="brand-copy"><div class="eyebrow">AURA · WORKSHOP BILLING</div><h1>{{ workshop_name }}</h1><p>Invoice workspace</p></div></header>
   <nav class="principal-back-nav"><a href="{{ url_for('prince_pilot.estimate_workspace', slug=slug, job_id=job.job_id) }}">Back to estimate</a></nav>
-  <div class="management-test-banner"><strong>TRAINING ONLY</strong> · Not a payable invoice. Do not send to customers or use real banking information.</div>
+  <div class="management-test-banner">{% if training %}<strong>TRAINING ONLY</strong> · Not a payable invoice. Do not send to customers or use real banking information.{% else %}<strong>RESTRICTED LIVE PILOT</strong> · Internal reconciliation only. Continue existing customer-facing billing and tax procedures; no banking credentials.{% endif %}</div>
   <section class="management-hero"><div><div class="overline">JOB #{{ job.job_id }}</div><h2>{{ job.brand }} {{ job.model }}</h2><p>{{ job.full_name }} · {{ job.job_status | replace("_", " ") | title }}</p><p>Current authorization: {{ job.work_authorization | replace("_", " ") | title }}</p></div></section>
   {% macro money(kobo) %}₦{{ "{:,}".format(kobo // 100) }}.{{ "%02d"|format(kobo % 100) }}{% endmacro %}
   {% if invoice %}
-  <section class="panel management-panel"><h2>Recorded training invoice</h2><p><strong>{{ invoice.reference }}</strong> · {{ invoice.issued_at }}</p>
+  <section class="panel management-panel"><h2>{% if training %}Recorded training invoice{% else %}Recorded workshop invoice{% endif %}</h2><p><strong>{{ invoice.reference }}</strong> · {{ invoice.issued_at }}</p>
     {% if not invoice.authorization_current %}<p class="limit-note">Authorization has changed since issuance. Principal review is required; this invoice does not represent a currently authorized payment request.</p>{% endif %}
     <p>Source estimate version {{ invoice.estimate_version }} · Authorization event {{ invoice.authorization_sequence }}</p>
     <div class="estimate-table-wrap"><table class="estimate-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>
@@ -24,11 +24,11 @@
     </tbody></table></div>
     <div class="estimate-totals"><p>Subtotal <strong>{{ money(invoice.subtotal_kobo) }}</strong></p><p>Discount <strong>{{ money(invoice.discount_kobo) }}</strong></p><p>Recorded invoice total <strong>{{ money(invoice.total_kobo) }}</strong></p></div>
     <p>Principal account #{{ invoice.issued_by_user_id }} · {{ invoice.issue_reason }}</p>
-    <p class="tiny">Payment records are fictional. This is not a receipt, tax invoice or evidence of completed repairs. Corrections and voiding require a future audited workflow.</p>
+    <p class="tiny">{% if training %}Payment records are fictional.{% else %}Payment records are manually reconciled.{% endif %} This is not a receipt, tax invoice or evidence of completed repairs. Corrections and voiding require a future audited workflow.</p>
   </section>
   <section class="panel management-panel">
     <h2>Payment records and balance</h2>
-    <p class="muted">Fictional ledger only. A reported transfer or cash payment does not reduce the balance until a principal records a verification decision. No live bank connection.</p>
+    <p class="muted">{% if training %}Fictional ledger only.{% else %}Workshop ledger only.{% endif %} A reported transfer or cash payment does not reduce the balance until a principal records a verification decision. No live bank connection.</p>
     <div class="estimate-totals">
       <p>Invoice total <strong>{{ money(payments.invoice_total_kobo) }}</strong></p>
       <p>Verified allocations <strong>{{ money(payments.verified_kobo) }}</strong></p>
@@ -37,14 +37,14 @@
       <p>Unallocated invoice balance <strong>{{ money(payments.outstanding_kobo) }}</strong></p>
       <p>Status <strong>{{ payments.status | replace("_", " ") | title }}</strong></p>
     </div>
-    {% if not invoice.authorization_current %}<p class="limit-note">Authorization changed. Record factual payment reports only; do not request additional payment on the basis of this training invoice.</p>{% endif %}
+    {% if not invoice.authorization_current %}<p class="limit-note">Authorization changed. Record factual payment reports only; do not request additional payment on the basis of {% if training %}this training invoice{% else %}this workshop invoice{% endif %}.</p>{% endif %}
     {% if payments.invoice_total_kobo > 0 %}
     <form class="assignment-form payment-report-form" data-url="{{ url_for('prince_pilot.report_payment', slug=slug, job_id=job.job_id) }}">
-      <h3>Report fictional payment</h3>
-      <label>Training reference<input name="reference" maxlength="53" required placeholder="DEMO-TRANSFER-A"></label>
+      <h3>{% if training %}Report fictional payment{% else %}Report payment{% endif %}</h3>
+      <label>{% if training %}Training reference{% else %}Internal payment reference{% endif %}<input name="reference" maxlength="53" required placeholder="{{ 'DEMO-TRANSFER-A' if training else 'PAC-PAY-TRANSFER-A' }}"></label>
       <label>Method<select name="method" required><option value="transfer">Transfer</option><option value="cash">Cash</option></select></label>
       <label>Amount (₦)<input name="amount" inputmode="decimal" required placeholder="0.00"></label>
-      <p class="tiny">Use unique invented DEMO- references only. Deposits and installments are supported after an invoice exists.</p>
+      <p class="tiny">{% if training %}Use unique invented DEMO- references only.{% else %}Use unique PAC-PAY- references from the workshop ledger; never enter bank account details.{% endif %} Deposits and installments are supported after an invoice exists.</p>
       <div class="assign-controls"><button type="submit">Record pending payment</button><span class="payment-feedback" role="status"></span></div>
     </form>
     {% endif %}
@@ -53,9 +53,9 @@
     <div class="lifecycle-event"><strong>{{ p.reference }} · {{ money(p.amount_kobo) }} · {{ p.decision | title }}</strong><p>{{ p.method | title }} · Reported {{ p.reported_at }} · Principal #{{ p.reported_by_user_id }}</p>
       {% if p.decision == "pending" %}
       <form class="assignment-form payment-review-form" data-url="{{ url_for('prince_pilot.review_payment', slug=slug, job_id=job.job_id, payment_id=p.id) }}">
-        <label>Review decision<select name="decision" required><option value="">Select decision</option><option value="verified">Verified (training)</option><option value="rejected">Rejected</option></select></label>
-        <label>Evidence reference / reason<textarea name="review_note" minlength="20" maxlength="900" rows="3" required placeholder="Demo: fictional reconciliation evidence."></textarea></label>
-        <label><input type="checkbox" name="review_attested" required> I confirm this review reflects fictional payment evidence.</label>
+        <label>Review decision<select name="decision" required><option value="">Select decision</option><option value="verified">{% if training %}Verified (training){% else %}Verified by principal{% endif %}</option><option value="rejected">Rejected</option></select></label>
+        <label>Evidence reference / reason<textarea name="review_note" minlength="20" maxlength="900" rows="3" required placeholder="{{ 'Demo: fictional reconciliation evidence.' if training else 'Reference the separately retained reconciliation evidence.' }}"></textarea></label>
+        <label><input type="checkbox" name="review_attested" required> {% if training %}I confirm this review reflects fictional payment evidence.{% else %}I confirm I independently checked the workshop payment evidence.{% endif %}</label>
         <div class="assign-controls"><button type="submit">Record review</button><span class="payment-feedback" role="status"></span></div>
       </form>
       {% else %}<p>{{ p.review_note }}</p><small>Reviewed by principal #{{ p.reviewed_by_user_id }} · {{ p.reviewed_at }}</small>{% endif %}
@@ -63,14 +63,14 @@
       {% if p.receipt_reference %}<p><a href="{{ url_for('prince_pilot.print_receipt', slug=slug, job_id=job.job_id, payment_id=p.id) }}">Preview {{ p.receipt_reference }}{{ " (reversed)" if p.reversed else "" }}</a></p>
       {% elif p.decision == "verified" and not p.reversed %}
       <form class="assignment-form receipt-action-form" data-action="receipt" data-url="{{ url_for('prince_pilot.issue_receipt', slug=slug, job_id=job.job_id, payment_id=p.id) }}">
-        <label><input type="checkbox" name="attested" required> I confirm issuance of a fictional receipt for this verified allocation.</label>
-        <div class="assign-controls"><button type="submit">Issue training receipt</button><span class="receipt-feedback" role="status"></span></div>
+        <label><input type="checkbox" name="attested" required> {% if training %}I confirm issuance of a fictional receipt for this verified allocation.{% else %}I confirm recording an internal receipt for this verified allocation.{% endif %}</label>
+        <div class="assign-controls"><button type="submit">{% if training %}Issue training receipt{% else %}Record receipt{% endif %}</button><span class="receipt-feedback" role="status"></span></div>
       </form>{% endif %}
       {% if p.decision == "verified" and not p.reversed %}
       <details><summary>Reverse allocation</summary><form class="assignment-form receipt-action-form" data-action="reverse" data-url="{{ url_for('prince_pilot.reverse_payment_allocation', slug=slug, job_id=job.job_id, payment_id=p.id) }}">
         <p class="tiny">Reverses the full allocation, restores the unallocated balance and marks any receipt historical. Does not send or refund money. Cannot be undone in this pilot.</p>
-        <label>Reason<textarea name="reason" rows="3" minlength="20" maxlength="900" required placeholder="Demo: fictional correction and evidence reference."></textarea></label>
-        <label><input type="checkbox" name="attested" required> I confirm this fictional full reversal is appropriate.</label>
+        <label>Reason<textarea name="reason" rows="3" minlength="20" maxlength="900" required placeholder="{{ 'Demo: fictional correction and evidence reference.' if training else 'Record the correction reason and internal evidence reference.' }}"></textarea></label>
+        <label><input type="checkbox" name="attested" required> {% if training %}I confirm this fictional full reversal is appropriate.{% else %}I confirm this full ledger reversal is appropriate; this does not refund money.{% endif %}</label>
         <div class="assign-controls"><button type="submit">Record reversal</button><span class="receipt-feedback" role="status"></span></div>
       </form></details>{% endif %}
     </div>
@@ -78,17 +78,17 @@
     <p class="tiny">A verification is a principal's recorded declaration, not independent confirmation from a bank. Full allocation reversals preserve history. Actual refunds, partial reversals, overpayments and pre-invoice deposits require separate reconciliation.</p>
   </section>
   {% elif can_issue %}
-  <section class="panel management-panel"><h2>Create training invoice</h2><p>Approved estimate version {{ estimate.version }} · recorded customer acceptance event {{ authorization_sequence }}</p>
+  <section class="panel management-panel"><h2>{% if training %}Create training invoice{% else %}Record workshop invoice{% endif %}</h2><p>Approved estimate version {{ estimate.version }} · recorded customer acceptance event {{ authorization_sequence }}</p>
     <div class="estimate-totals"><p>Quoted total <strong>{{ money(estimate.total_kobo) }}</strong></p></div>
     <p class="muted">Only create the invoice if the full accepted amount is appropriate to bill. Partial charges, changed scope, taxes and corrections are not supported yet.</p>
     <form class="assignment-form invoice-form" data-url="{{ url_for('prince_pilot.issue_invoice', slug=slug, job_id=job.job_id) }}" data-version="{{ estimate.version }}" data-sequence="{{ authorization_sequence }}">
-      <label>Reason for creating the invoice<textarea name="issue_reason" minlength="20" maxlength="900" rows="3" required placeholder="Demo: fictional decision to invoice the exact authorized scope."></textarea></label>
-      <label><input type="checkbox" name="issue_attested" required> I confirm this is a fictional invoice for the full accepted amount.</label>
-      <div class="assign-controls"><button type="submit">Create training invoice</button><span class="invoice-feedback" role="status" aria-live="polite"></span></div>
+      <label>Reason for creating the invoice<textarea name="issue_reason" minlength="20" maxlength="900" rows="3" required placeholder="{{ 'Demo: fictional decision to invoice the exact authorized scope.' if training else 'Record the basis for invoicing the exact accepted scope.' }}"></textarea></label>
+      <label><input type="checkbox" name="issue_attested" required> {% if training %}I confirm this is a fictional invoice for the full accepted amount.{% else %}I confirm this internal invoice matches the full accepted amount.{% endif %}</label>
+      <div class="assign-controls"><button type="submit">{% if training %}Create training invoice{% else %}Record workshop invoice{% endif %}</button><span class="invoice-feedback" role="status" aria-live="polite"></span></div>
     </form>
   </section>
   {% else %}
-  <section class="panel management-panel"><h2>Invoice not available</h2><p>An internally approved job and current customer acceptance of the exact approved quotation are required before creating a training invoice.</p></section>
+  <section class="panel management-panel"><h2>Invoice not available</h2><p>An internally approved job and current customer acceptance of the exact approved quotation are required before {% if training %}creating a training invoice{% else %}recording a workshop invoice{% endif %}.</p></section>
   {% endif %}
   <footer class="pilot-footer">Prince Automobile Clinic · Powered by Aura · Internal pilot only</footer>
 </main></body></html>

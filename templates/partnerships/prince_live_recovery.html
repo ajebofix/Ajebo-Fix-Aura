@@ -1,0 +1,9 @@
+{% extends "partnerships/prince_live_base.html" %}
+{% block title %}Prince | Password recovery{% endblock %}
+{% block content %}
+<section class="panel"><h1>Password recovery</h1>
+{% if issued_code %}<p>One-time code for {{ staff_name }}. Valid for 15 minutes. Give it directly to the verified staff member. Do not save or publish it.</p><p><code>{{ issued_code }}</code></p><a class="button secondary" href="{{ url_for('prince_live.staff_accounts') }}">Return to staff accounts</a>
+{% elif reset_complete %}<p>Password changed. Previous sessions have been revoked. Sign in with your new password.</p><a class="button primary" href="{{ url_for('prince_live.sign_in') }}">Sign in</a>
+{% else %}<p>Ask an active workshop principal to verify your identity and issue a one-time recovery code. Principals can recover through another active principal. No email is sent.</p>{% if error %}<p class="notice notice-error" role="alert">{{ error }}</p>{% endif %}
+<form class="form-stack" method="post" action="{{ url_for('prince_live.reset_password') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label>Email<input type="email" name="email" maxlength="120" required autocomplete="email"></label></div><div class="field"><label>Recovery code<input name="recovery_code" maxlength="128" required autocomplete="off" autocapitalize="none" spellcheck="false"></label></div><div class="field"><label>New password (16 characters minimum)<input type="password" name="new_password" minlength="16" maxlength="128" required autocomplete="new-password"></label></div><div class="field"><label>Repeat new password<input type="password" name="confirm_password" minlength="16" maxlength="128" required autocomplete="new-password"></label></div><button class="button primary">Reset password</button></form><a href="{{ url_for('prince_live.sign_in') }}">Back to sign in</a>{% endif %}</section>
+{% endblock %}

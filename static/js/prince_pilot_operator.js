@@ -25,6 +25,13 @@
       const value = String(data.get(field) || "").trim();
       if (value) payload[field] = value;
     }
+    for (const field of ["vin", "registration_number", "colour", "engine_number", "trim", "engine_type", "fuel_type", "transmission", "body_type"]) {
+      const value = String(data.get(field) || "").trim();
+      if (value) payload[field] = value;
+    }
+    const odometer = String(data.get("odometer_km") || "").trim();
+    if (odometer) payload.odometer_km = Number(odometer);
+    if (data.get("vehicle_details_confirmed") === "on") payload.vehicle_details_confirmed = true;
     const yearValue = String(data.get("vehicle_year") || "").trim();
     if (yearValue) {
       if (!/^\d{4}$/.test(yearValue)) {
@@ -45,6 +52,12 @@
         headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
         body: JSON.stringify(payload),
       });
+      if (response.status === 409) {
+        feedback.textContent = "Vehicle may already be registered. Ask a principal to review the existing record before trying again.";
+        submit.disabled = false;
+        submitting = false;
+        return;
+      }
       if (!response.ok) throw new Error("save-failed");
       // Clear sensitive form fields before navigating; do not put PII in URLs.
       form.reset();

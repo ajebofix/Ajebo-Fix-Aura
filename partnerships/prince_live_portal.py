@@ -3,7 +3,9 @@
 Only an explicitly approved, minimal workshop surface is available.
 Finance requires separate release approval. Private contacts, clinical and unrelated Aura routes remain closed.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
 import os
 import re
 import secrets
@@ -146,6 +148,7 @@ STAFF_ADMIN_ENDPOINTS = frozenset({
     "prince_live.staff_accounts", "prince_live.create_staff",
     "prince_live.change_own_email", "prince_live.suspend_operator",
     "prince_live.change_staff_role", "prince_live.release_setup",
+    "prince_live.change_password", "prince_live.issue_recovery_code", "prince_live.approve_vehicle_details",
 })
 
 
@@ -232,7 +235,7 @@ def register_prince_live_portal(app):
                 and request.path in {"/static/css/prince_live_staff.css",
                                      "/static/img/prince-workshop-logo-pilot.jpg"}):
             return None
-        if request.endpoint == "prince_live.sign_in":
+        if request.endpoint in {"prince_live.sign_in", "prince_live.reset_password"}:
             return None
         if request.endpoint in {"prince_live.landing", "prince_live.sign_out"}:
             if _authorized_staff():
@@ -374,6 +377,7 @@ def change_own_email():
         abort(409, description="Email already exists.")
     if actor.email.lower() == email:
         return redirect(url_for("prince_live.staff_accounts"), code=303)
+    _clear_recovery(member)
     actor.email = email
     actor.email_verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
     _revoke_staff_sessions(actor.id, "prince_staff_email_changed")
@@ -396,6 +400,7 @@ def suspend_operator(member_id):
     user = db.session.get(User, target.user_id)
     if user is None or user.role != "user":
         abort(404)
+    _clear_recovery(target)
     target.active = False
     _revoke_staff_sessions(user.id, "prince_staff_suspended")
     _staff_audit(actor, member, user, "live_staff_suspended")
@@ -433,6 +438,7 @@ def change_staff_role(member_id):
         return redirect(url_for("prince_live.staff_accounts"), code=303)
     # The tenant lock in _locked_staff_admin_actor serializes staff mutations.
     # The actor was freshly rechecked under that lock as an active principal.
+    _clear_recovery(target)
     target.role = new_role
     _revoke_staff_sessions(user.id, "prince_staff_role_changed")
     action = ("live_staff_demoted_to_operator" if new_role == "operator"
@@ -492,6 +498,7 @@ def release_setup():
         flash("Initial approval recorded. Workshop access remains locked until deployment release settings are applied.", "success")
         return redirect(url_for("prince_live.release_setup"), code=303)
     return render_template("partnerships/prince_live_release.html",
+                           vehicle_details_approved=tenant.vehicle_details_notice_version,
                            notice_version=INITIAL_NOTICE_VERSION,
                            checks=INITIAL_RELEASE_CHECKS,
                            approved=tenant.approved_privacy_notice_version,
@@ -499,3 +506,116 @@ def release_setup():
                            workshop_ready=workshop_release_ready(),
                            authorization_ready=live_authorization_ready(),
                            finance_ready=live_finance_ready())
+
+
+def _clear_recovery(member):
+    member.reset_code_hash = None
+    member.reset_code_expires_at = None
+
+
+def _checked_new_password():
+    password = request.form.get("new_password", "")
+    if (not 16 <= len(password) <= 128 or password.isspace()
+            or password != request.form.get("confirm_password", "")):
+        abort(400, description="Use matching passwords of at least 16 characters.")
+    return password
+
+
+def _recovery_hash(code):
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+@live_bp.post("/accounts/password")
+@limiter.limit("5 per minute; 15 per hour")
+def change_password():
+    actor, member = _locked_staff_admin_actor()
+    password = _checked_new_password()
+    if actor.check_password(password):
+        abort(400, description="Choose a different password.")
+    actor.set_password(password)
+    _clear_recovery(member)
+    _revoke_staff_sessions(actor.id, "prince_staff_password_changed")
+    _staff_audit(actor, member, actor, "live_staff_password_changed")
+    _commit_staff_change()
+    logout_user()
+    session.clear()
+    return redirect(url_for("prince_live.sign_in"), code=303)
+
+
+@live_bp.post("/accounts/<int:member_id>/recovery")
+@limiter.limit("5 per minute; 15 per hour")
+def issue_recovery_code(member_id):
+    actor, member = _locked_staff_admin_actor(principal=True)
+    target = PrinceMembership.query.populate_existing().filter_by(
+        id=member_id, tenant_id=member.tenant_id, active=True).one_or_none()
+    user = db.session.get(User, target.user_id) if target else None
+    if not target or target.user_id == actor.id or _staff_member(user) is None:
+        abort(404)
+    if request.form.get("identity_attested") != "yes":
+        abort(400, description="Verify the staff member in person before issuing a recovery code.")
+    code = secrets.token_urlsafe(24)
+    target.reset_code_hash = _recovery_hash(code)
+    target.reset_code_expires_at = datetime.utcnow() + timedelta(minutes=15)
+    _staff_audit(actor, member, user, "live_staff_recovery_issued")
+    _commit_staff_change()
+    return render_template("partnerships/prince_live_recovery.html",
+                           issued_code=code, staff_name=user.name)
+
+
+@live_bp.route("/reset-password", methods=["GET", "POST"])
+@limiter.limit("5 per minute; 15 per hour", methods=["POST"])
+def reset_password():
+    if not staff_admin_ready():
+        abort(404)
+    if request.method == "GET":
+        return render_template("partnerships/prince_live_recovery.html")
+    if request.content_length and request.content_length > 8192:
+        abort(413)
+    password = _checked_new_password()
+    email = request.form.get("email", "").strip().lower()
+    code = request.form.get("recovery_code", "").strip()
+    tenant = PrinceTenant.query.populate_existing().filter_by(
+        slug="prince", active=True).with_for_update().one_or_none()
+    user = None
+    if tenant and 0 < len(email) <= 120 and 0 < len(code) <= 128:
+        matches = User.query.populate_existing().filter(func.lower(User.email) == email).limit(2).all()
+        if len(matches) == 1:
+            user = matches[0]
+    target = _staff_member(user)
+    if (not target or not target.reset_code_hash or not target.reset_code_expires_at
+            or target.reset_code_expires_at <= datetime.utcnow()
+            or not hmac.compare_digest(target.reset_code_hash, _recovery_hash(code))):
+        return render_template("partnerships/prince_live_recovery.html",
+                               error="Recovery details are invalid or expired."), 400
+    if user.check_password(password):
+        abort(400, description="Choose a different password.")
+    user.set_password(password)
+    _clear_recovery(target)
+    _revoke_staff_sessions(user.id, "prince_staff_password_reset")
+    _staff_audit(user, target, user, "live_staff_password_reset")
+    _commit_staff_change()
+    if current_user.is_authenticated:
+        logout_user()
+    session.clear()
+    return render_template("partnerships/prince_live_recovery.html", reset_complete=True)
+
+
+@live_bp.post("/release/vehicle-details")
+@limiter.limit("5 per minute; 15 per hour")
+def approve_vehicle_details():
+    from partnerships.prince_routes import VEHICLE_DETAILS_NOTICE
+    actor, member = _locked_staff_admin_actor(principal=True)
+    if not workshop_release_ready():
+        abort(409, description="Complete the initial workshop release first.")
+    tenant = PrinceTenant.query.populate_existing().filter_by(
+        id=member.tenant_id, slug="prince", active=True).one_or_none()
+    if tenant.vehicle_details_notice_version:
+        abort(409, description="Vehicle details already approved.")
+    if request.form.get("vehicle_details_attested") != "yes":
+        abort(400, description="Confirm actual approval of the vehicle-details addendum.")
+    tenant.vehicle_details_notice_version = VEHICLE_DETAILS_NOTICE
+    db.session.add(PrinceAudit(tenant_id=tenant.id, actor_user_id=actor.id,
+                               action="vehicle_details_release_attested",
+                               target_kind="prince_tenant", target_id=tenant.id))
+    _commit_staff_change()
+    return redirect(url_for("prince_live.release_setup"), code=303)

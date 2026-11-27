@@ -12,7 +12,7 @@ from datetime import datetime
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
 from flask_login import current_user
 from sqlalchemy import case, func
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from extensions import db
 from models import User
@@ -59,6 +59,50 @@ INTAKE_FIELDS = frozenset({
     "reported_concern",
     "privacy_notice_version", "participation_confirmed",
 })
+
+
+VEHICLE_DETAILS_NOTICE = "prince-vehicle-details-v1"
+VEHICLE_TEXT_FIELDS = {'colour':60,'engine_number':80,'registration_number':30,'trim':100,'engine_type':60,'fuel_type':30,'transmission':30,'body_type':40}
+VEHICLE_EXTRA_FIELDS = frozenset(VEHICLE_TEXT_FIELDS) | {
+    "vin", "odometer_km", "vehicle_details_confirmed",
+}
+
+
+def _vehicle_details_ready(tenant):
+    return bool(current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+                and tenant.vehicle_details_notice_version == VEHICLE_DETAILS_NOTICE)
+
+
+def _vehicle_details(data, tenant):
+    if not (set(data) & VEHICLE_EXTRA_FIELDS):
+        return {}
+    if not _vehicle_details_ready(tenant) or data.get("vehicle_details_confirmed") is not True:
+        abort(400, description="Expanded vehicle details require approved notice and participation.")
+    values = {}
+    for field, limit in VEHICLE_TEXT_FIELDS.items():
+        value = _text(data, field, limit)
+        if value and (any(ord(ch) < 32 for ch in value) or
+                      (field not in {"engine_number", "registration_number"} and PRIVATE_CONTACT_PATTERN.search(value))):
+            abort(400)
+        values[field] = value
+    vin = _text(data, "vin", 17)
+    if vin:
+        vin = vin.upper()
+        if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin):
+            abort(400, description="VIN must have 17 valid characters; leave unknown VIN blank.")
+    values["vin"] = vin
+    for field in ("engine_number", "registration_number"):
+        if values[field]:
+            values[field] = values[field].upper()
+            if not re.fullmatch(r"[A-Z0-9 /._-]+", values[field]):
+                abort(400)
+    odometer = data.get("odometer_km")
+    if odometer is not None and (isinstance(odometer, bool) or not isinstance(odometer, int)
+                                 or not 0 <= odometer <= 9999999):
+        abort(400)
+    values["odometer_km"] = odometer
+    values["details_notice_version"] = VEHICLE_DETAILS_NOTICE
+    return values
 
 
 @prince_pilot_bp.before_request
@@ -165,7 +209,7 @@ def intake(slug):
     if (not tenant.intake_enabled or not tenant.approved_privacy_notice_version):
         abort(403)  # Requires explicit separate provisioning and approved notice.
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or set(data) - INTAKE_FIELDS:
+    if not isinstance(data, dict) or set(data) - (INTAKE_FIELDS | VEHICLE_EXTRA_FIELDS):
         abort(400)
     full_name = _text(data, "full_name", 120, required=True)
     if len(full_name) < 2:
@@ -187,7 +231,8 @@ def intake(slug):
     year = data.get("vehicle_year")
     if (brand is None) != (model is None):
         abort(400)
-    if not brand and (year is not None or concern is not None):
+    details = _vehicle_details(data, tenant)
+    if not brand and (year is not None or concern is not None or details):
         abort(400)
     if year is not None and (isinstance(year, bool) or not isinstance(year, int) or
                              not 1886 <= year <= 2100):
@@ -199,6 +244,9 @@ def intake(slug):
     if current_app.config.get("PRINCE_STAGING_LOCKDOWN", False):
         if not full_name.lower().startswith(("demo ", "synthetic ")):
             abort(400)
+
+    if details.get("vin") and PrinceVehicle.query.filter_by(tenant_id=tenant.id, vin=details["vin"]).first():
+        return jsonify({"error": "Vehicle already registered. Ask a principal to review the existing record."}), 409
 
     customer = PrinceCustomer(
         tenant_id=tenant.id, full_name=full_name,
@@ -213,7 +261,7 @@ def intake(slug):
         if brand and model:
             vehicle = PrinceVehicle(
                 tenant_id=tenant.id, customer_id=customer.id,
-                brand=brand, model=model, year=year, vin=None,
+                brand=brand, model=model, year=year, **details,
             )
             db.session.add(vehicle)
             db.session.flush()
@@ -232,6 +280,9 @@ def intake(slug):
             "job_id": job_id,
         })
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Conflicting record. Ask a principal to review existing vehicles."}), 409
     except SQLAlchemyError:
         db.session.rollback()
         return jsonify({"error": "Intake could not be saved"}), 503
@@ -412,8 +463,10 @@ def operator_workspace(slug):
         tenant.id, [job["job_id"] for job in jobs],
         include_private_review_note=(actor.role == PrinceRole.PRINCIPAL),
     )
-    for job in jobs:
+    for job, (_, _, vehicle) in zip(jobs, records):
         job["entries"] = by_job[job["job_id"]]
+        if _vehicle_details_ready(tenant) and vehicle.details_notice_version == VEHICLE_DETAILS_NOTICE:
+            job["vehicle_details"] = {field: getattr(vehicle, field) for field in (*VEHICLE_TEXT_FIELDS, "vin", "odometer_km")}
     return render_template(
         "partnerships/prince_operator.html",
         workshop_name=tenant.display_name,
@@ -421,6 +474,7 @@ def operator_workspace(slug):
         jobs=jobs,
         entry_categories=ENTRY_CATEGORIES,
         privacy_notice_version=tenant.approved_privacy_notice_version,
+        vehicle_details_ready=_vehicle_details_ready(tenant),
         can_intake=bool(tenant.intake_enabled and
                         tenant.approved_privacy_notice_version),
         can_manage_private=actor.role == PrinceRole.PRINCIPAL,

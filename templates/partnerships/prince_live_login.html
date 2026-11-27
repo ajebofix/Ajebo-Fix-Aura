@@ -23,6 +23,6 @@
 <div class="field"><label for="email">Email address</label><input id="email" type="email" name="email" maxlength="120" required autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Your staff email"></div>
 <div class="field"><label for="password">Password</label><input id="password" type="password" name="password" maxlength="512" required autocomplete="current-password" placeholder="Your password"></div>
 <button class="button primary full">Sign in <span aria-hidden="true">→</span></button>
-</form><p class="fine">Need access or help with your account? Speak with your workshop principal. Public registration and online password recovery are not available.</p></section>
+</form><p class="fine">Need access or help with your account? Speak with your workshop principal. Public registration is not available. <a href="{{ url_for('prince_live.reset_password') }}">Forgot password? Use a recovery code.</a></p></section>
 {% endif %}
 {% endblock %}

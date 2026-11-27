@@ -26,6 +26,7 @@
 <div class="staff-identity"><div class="avatar" aria-hidden="true">{{ (user.name or '?')[:1]|upper }}</div>
 <div class="person"><h3>{{ user.name }} {% if user.id == actor.id %}<span class="you">You</span>{% endif %}</h3><p>{{ user.email }}</p><div class="badges"><span class="tag {% if member.role == 'principal' %}tag-principal{% endif %}">{{ member.role|capitalize }}</span><span class="tag {% if member.active and user.is_active %}tag-active{% else %}tag-inactive{% endif %}">{{ "Active" if member.active and user.is_active else "Suspended / inactive" }}</span></div></div></div>
 {% if member.active and user.is_active and user.id != actor.id and user.role == "user" %}
+<details class="action"><summary>Issue password recovery code <span aria-hidden="true">+</span></summary><form class="form-stack" method="post" action="{{ url_for('prince_live.issue_recovery_code', member_id=member.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><p class="fine">A one-time code expires after 15 minutes. Hand it to the verified staff member privately. A new code invalidates the previous one.</p><label class="check"><input type="checkbox" name="identity_attested" value="yes" required><span>I have independently verified this staff member in person.</span></label><div class="field"><label>Current principal password<input type="password" name="current_password" required autocomplete="current-password"></label></div><button class="button primary">Issue recovery code</button></form></details>
 <details class="action"><summary>Change staff role <span aria-hidden="true">+</span></summary>
 <form class="form-stack" method="post" action="{{ url_for('prince_live.change_staff_role', member_id=member.id) }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="expected_role" value="{{ member.role }}">
@@ -53,6 +54,7 @@
 <button class="button primary">Create staff account</button></form>
 </section>{% endif %}
 <section id="my-account" class="panel"><span class="eyebrow">PROFILE</span><h2>My account</h2><p class="account-email">{{ actor.email }}</p>
+<details class="action"><summary>Change my password <span aria-hidden="true">+</span></summary><form method="post" class="form-stack" action="{{ url_for('prince_live.change_password') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="field"><label>Current password<input name="current_password" type="password" required autocomplete="current-password"></label></div><div class="field"><label>New password (16 characters minimum)<input name="new_password" type="password" required minlength="16" maxlength="128" autocomplete="new-password"></label></div><div class="field"><label>Repeat new password<input name="confirm_password" type="password" required minlength="16" maxlength="128" autocomplete="new-password"></label></div><button class="button primary">Change password and sign out</button></form></details>
 <details class="action"><summary>Correct my email address <span aria-hidden="true">+</span></summary>
 <form class="form-stack" method="post" action="{{ url_for('prince_live.change_own_email') }}">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -62,5 +64,5 @@
 <p class="fine">Changing your email signs you out everywhere. Sign in with the corrected email and existing password. No verification email is sent.</p><button class="button primary">Save corrected email</button></form></details></section>
 {% if principal %}<section id="activity" class="panel"><span class="eyebrow">ACCOUNT HISTORY</span><h2>Recent account changes</h2>
 <div class="activity-list">{% for item in activity %}<div><strong>{{ item.action.replace("live_staff_", "").replace("_", " ")|capitalize }}</strong><small>Staff #{{ item.target_id }} · Actor #{{ item.actor_user_id }}</small><time>{{ item.created_at.strftime('%d %b %Y · %H:%M') }} UTC</time></div>{% else %}<p class="muted">No browser account changes recorded yet.</p>{% endfor %}</div></section>{% endif %}
-<p class="fine">Staff access only. Customer intake and finance require separate approval. No public registration or online password recovery.</p>
+<p class="fine">Staff access only. Customer intake and finance require separate approval. No public registration. Password recovery requires a principal-issued one-time code.</p>
 {% endblock %}

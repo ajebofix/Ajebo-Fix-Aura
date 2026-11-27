@@ -88,6 +88,21 @@
             <label for="year">Year <span>Optional, if verified</span></label>
             <input id="year" name="vehicle_year" type="number" min="1886" max="2100" placeholder="Unknown is okay">
           </div>
+          {% if vehicle_details_ready %}
+          <h3>Verified vehicle identification</h3><p class="tiny">Only record details necessary for service. Leave unverified fields blank. For odometers in miles, convert to kilometres only when verified.</p>
+          <div class="field-grid">
+          <div class="field"><label for="vehicle-vin">VIN (17 characters)</label><input id="vehicle-vin" name="vin" maxlength="17" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-registration_number">Registration / plate number</label><input id="vehicle-registration_number" name="registration_number" maxlength="30" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-colour">Colour</label><input id="vehicle-colour" name="colour" maxlength="60" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-engine_number">Engine number</label><input id="vehicle-engine_number" name="engine_number" maxlength="80" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-trim">Trim / variant</label><input id="vehicle-trim" name="trim" maxlength="100" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-engine_type">Engine type / capacity</label><input id="vehicle-engine_type" name="engine_type" maxlength="60" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-fuel_type">Fuel type</label><input id="vehicle-fuel_type" name="fuel_type" maxlength="30" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-transmission">Transmission</label><input id="vehicle-transmission" name="transmission" maxlength="30" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-body_type">Body type</label><input id="vehicle-body_type" name="body_type" maxlength="40" autocomplete="off"></div>
+          <div class="field"><label for="vehicle-odometer">Odometer (km)</label><input id="vehicle-odometer" name="odometer_km" type="number" min="0" max="9999999" step="1"></div></div>
+          <label class="consent-row"><input type="checkbox" name="vehicle_details_confirmed"><span>I have provided the approved vehicle-details addendum and verified participation before recording any additional vehicle information.</span></label>
+          {% endif %}
           <div class="field">
             <label for="concern">Customer-reported concern <span>Not a diagnosis</span></label>
             <textarea id="concern" name="reported_concern" rows="3" maxlength="1200" placeholder="Describe what the customer reports. Do not enter their phone, address or other private details here."></textarea>
@@ -120,6 +135,7 @@
           <li class="job-card">
             <div class="job-heading"><strong>{{ job.full_name }}</strong><small>Job #{{ job.job_id }}</small></div>
             <div class="job-vehicle">{{ job.brand }} {{ job.model }}{% if job.year %} · {{ job.year }}{% endif %}</div>
+            {% if job.vehicle_details %}<details><summary>Verified vehicle details</summary><dl>{% for key, value in job.vehicle_details.items() %}{% if value is not none %}<dt>{{ key|replace("_", " ")|upper if key == "vin" else key|replace("_", " ")|capitalize }}</dt><dd>{{ value }}</dd>{% endif %}{% endfor %}</dl></details>{% endif %}
             {% if job.job_status != "closed" %}
             <p class="tiny"><strong>Work authorization:</strong> {{ job.work_authorization | replace("_", " ") | title }}.</p>
             {% if job.work_authorization != "accepted" %}<p class="tiny"><strong>Do not start or continue chargeable work.</strong> Ask a principal for authorization. Continue recording actual observations and work history.</p>{% endif %}

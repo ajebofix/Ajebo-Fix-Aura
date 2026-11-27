@@ -516,3 +516,82 @@ def test_operator_cannot_attest_release(live, app, client):
     assert client.get("/prince-staff/release").status_code == 404
     assert _staff_post(client, "/prince-staff/release", {"current_password": PASSWORD}).status_code == 404
     assert PrinceTenant.query.filter_by(slug="prince").one().intake_enabled is False
+
+
+def test_vehicle_details_require_addendum_and_reject_duplicate_vin(live, app, client, monkeypatch):
+    from partnerships.prince_models import PrinceVehicle, PrinceCustomer
+    app.config.update(PRINCE_LIVE_WORKSHOP_APPROVED=True, PRINCE_LIVE_STAFF_ADMIN_APPROVED=True)
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "prince-notice-v1"
+    tenant.intake_enabled = True
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    root = "/pilot/workshops/prince"
+    client.get(root + "/operator")
+    with client.session_transaction() as sess:
+        csrf = sess["_csrf_token"]
+    data = {"full_name": "Synthetic customer", "vehicle_brand": "Mercedes-Benz",
+            "vehicle_model": "C300", "privacy_notice_version": "prince-notice-v1",
+            "participation_confirmed": True, "vin": "WDDGF8AB1CA000001",
+            "colour": "Silver", "engine_number": "M272-TEST", "odometer_km": 0,
+            "vehicle_details_confirmed": True}
+    def post(payload):
+        return client.post(root + "/intake", json=payload, headers={"X-CSRF-Token": csrf})
+    assert post(data).status_code == 400
+    assert _staff_post(client, "/prince-staff/release/vehicle-details",
+                       {"current_password": PASSWORD, "vehicle_details_attested": "yes"}).status_code == 303
+    assert post({**data, "vehicle_details_confirmed": False}).status_code == 400
+    assert post({**data, "vin": "INVALID"}).status_code == 400
+    assert post(data).status_code == 201
+    vehicle = PrinceVehicle.query.one()
+    assert vehicle.vin == data["vin"] and vehicle.colour == "Silver" and vehicle.odometer_km == 0
+    assert post({**data, "vin": data["vin"].lower()}).status_code == 409
+    assert PrinceCustomer.query.count() == 1
+    assert b"WDDGF8AB1CA000001" in client.get(root + "/operator").data
+
+
+def test_prince_self_password_change(live, app, client):
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    assert _sign_in(client).status_code == 303
+    new = "DifferentSyntheticPassphrase!"
+    response = _staff_post(client, "/prince-staff/accounts/password",
+                           {"current_password": PASSWORD, "new_password": new, "confirm_password": new})
+    assert response.status_code == 303
+    assert _sign_in(client).status_code == 401
+    assert _sign_in(client, new).status_code == 303
+
+
+def test_recovery_code_is_one_use_and_principal_issued(live, app, client):
+    import re
+    from security.session_registry import UserSession
+    app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    user = User(name="Synthetic second staff", email="second@staff.test",
+                phone_number="synthetic-second", role="user", is_active=True,
+                email_verified_at=datetime.utcnow())
+    user.set_password(PASSWORD)
+    db.session.add(user)
+    db.session.flush()
+    member = PrinceMembership(tenant_id=tenant.id, user_id=user.id,
+                              role="operator", active=True)
+    db.session.add(member)
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    path = f"/prince-staff/accounts/{member.id}/recovery"
+    response = _staff_post(client, path, {"current_password": PASSWORD, "identity_attested": "yes"})
+    assert response.status_code == 200
+    code = re.search(rb"<code>([A-Za-z0-9_-]+)</code>", response.data).group(1).decode()
+    assert member.reset_code_hash and member.reset_code_hash != code
+    assert _staff_post(client, "/prince-staff/sign-out", {}).status_code == 303
+    path = "/prince-staff/reset-password"
+    assert client.get(path).status_code == 200
+    new = "RecoveredSyntheticPassphrase!"
+    payload = {"email": user.email, "recovery_code": code,
+               "new_password": new, "confirm_password": new}
+    assert _staff_post(client, path, {**payload, "recovery_code": "invalid"}).status_code == 400
+    assert _staff_post(client, path, payload).status_code == 200
+    assert user.check_password(new) and member.reset_code_hash is None
+    assert UserSession.query.filter_by(user_id=user.id, revoked_at=None).count() == 0
+    client.get(path)
+    assert _staff_post(client, path, payload).status_code == 400

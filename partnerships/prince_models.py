@@ -118,6 +118,8 @@ class PrinceJob(db.Model):
     vehicle_id = db.Column(db.Integer, nullable=False)
     assigned_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     reported_concern = db.Column(db.Text)
+    visit_odometer_km = db.Column(db.Integer)
+    visit_notice_version = db.Column(db.String(48))
     status = db.Column(db.String(24), nullable=False, default="draft")
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

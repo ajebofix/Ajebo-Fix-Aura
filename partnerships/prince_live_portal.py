@@ -86,6 +86,7 @@ def _authorized_staff():
 WORKSHOP_ENDPOINTS = frozenset({
     "prince_pilot.operator_workspace", "prince_pilot.principal_management",
     "prince_pilot.intake", "prince_pilot.assigned_jobs", "prince_pilot.job_detail",
+    "prince_pilot.returning_vehicle_lookup", "prince_pilot.returning_vehicle_job",
     "prince_pilot.job_entries", "prince_pilot.record_job_entry",
     "prince_pilot.principal_review_entry", "prince_pilot.principal_assign_job",
     "prince_pilot.estimate_workspace", "prince_pilot.estimate_history",

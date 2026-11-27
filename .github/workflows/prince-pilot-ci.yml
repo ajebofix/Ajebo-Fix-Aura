@@ -27,6 +27,7 @@ on:
       - "templates/partnerships/prince_live_release.html"
       - "templates/partnerships/prince_live_recovery.html"
       - "migrations/versions/a731df4e902b_prince_vehicle_registration_recovery.py"
+      - "migrations/versions/b842df5e013c_prince_return_visit.py"
       - "static/css/prince_live_staff.css"
       - "scripts/prince_seed_synthetic_staging.py"
       - "scripts/prince_optional_staging_rehearsal.py"

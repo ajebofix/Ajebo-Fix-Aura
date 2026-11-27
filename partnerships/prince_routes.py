@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from extensions import db
 from models import User
+from security.rate_limits import limiter
 from security.field_encryption import (
     ProfileEncryptionError, decrypt_profile_value, encrypt_profile_value,
 )
@@ -62,7 +63,11 @@ INTAKE_FIELDS = frozenset({
 
 
 VEHICLE_DETAILS_NOTICE = "prince-vehicle-details-v1"
-VEHICLE_TEXT_FIELDS = {'colour':60,'engine_number':80,'registration_number':30,'trim':100,'engine_type':60,'fuel_type':30,'transmission':30,'body_type':40}
+VEHICLE_TEXT_FIELDS = {
+    "colour": 60, "engine_number": 80, "registration_number": 30,
+    "trim": 100, "engine_type": 60, "fuel_type": 30, "transmission": 30,
+    "body_type": 40,
+}
 VEHICLE_EXTRA_FIELDS = frozenset(VEHICLE_TEXT_FIELDS) | {
     "vin", "odometer_km", "vehicle_details_confirmed",
 }
@@ -71,6 +76,21 @@ VEHICLE_EXTRA_FIELDS = frozenset(VEHICLE_TEXT_FIELDS) | {
 def _vehicle_details_ready(tenant):
     return bool(current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
                 and tenant.vehicle_details_notice_version == VEHICLE_DETAILS_NOTICE)
+
+
+def _visit_odometer(value):
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                              or not 0 <= value <= 9999999):
+        abort(400)
+    return value
+
+
+def _plate_key(value):
+    return re.sub(r"[ -]", "", value.upper())
+
+
+def _plate_expression():
+    return func.replace(func.replace(func.upper(PrinceVehicle.registration_number), " ", ""), "-", "")
 
 
 def _vehicle_details(data, tenant):
@@ -96,11 +116,7 @@ def _vehicle_details(data, tenant):
             values[field] = values[field].upper()
             if not re.fullmatch(r"[A-Z0-9 /._-]+", values[field]):
                 abort(400)
-    odometer = data.get("odometer_km")
-    if odometer is not None and (isinstance(odometer, bool) or not isinstance(odometer, int)
-                                 or not 0 <= odometer <= 9999999):
-        abort(400)
-    values["odometer_km"] = odometer
+    values["odometer_km"] = _visit_odometer(data.get("odometer_km"))
     values["details_notice_version"] = VEHICLE_DETAILS_NOTICE
     return values
 
@@ -245,6 +261,17 @@ def intake(slug):
         if not full_name.lower().startswith(("demo ", "synthetic ")):
             abort(400)
 
+    # Serialize intake and repeat visits within this small workshop. The VIN
+    # constraint is an additional defense against conflicting writes.
+    tenant = PrinceTenant.query.populate_existing().filter_by(id=tenant.id, active=True).with_for_update().one()
+    if not tenant.intake_enabled or tenant.approved_privacy_notice_version != version:
+        abort(403)
+    if details and not _vehicle_details_ready(tenant):
+        abort(403)
+    if details.get("registration_number") and PrinceVehicle.query.filter(
+            PrinceVehicle.tenant_id == tenant.id,
+            _plate_expression() == _plate_key(details["registration_number"])).first():
+        return jsonify({"error": "Vehicle registration already exists. Ask a principal to review."}), 409
     if details.get("vin") and PrinceVehicle.query.filter_by(tenant_id=tenant.id, vin=details["vin"]).first():
         return jsonify({"error": "Vehicle already registered. Ask a principal to review the existing record."}), 409
 
@@ -269,6 +296,8 @@ def intake(slug):
                 tenant_id=tenant.id, customer_id=customer.id,
                 vehicle_id=vehicle.id, assigned_user_id=actor.user_id,
                 reported_concern=concern, status="draft",
+                visit_odometer_km=details.get("odometer_km"),
+                visit_notice_version=version,
             )
             db.session.add(job)
             db.session.flush()
@@ -287,6 +316,133 @@ def intake(slug):
         db.session.rollback()
         return jsonify({"error": "Intake could not be saved"}), 503
     return jsonify(response), 201
+
+
+
+def _returning_scope(slug):
+    tenant, actor = _scope(slug)
+    if (not current_app.config.get("PRINCE_LIVE_PILOT_LOCKDOWN", False)
+            or not tenant.intake_enabled
+            or not _vehicle_details_ready(tenant)
+            or actor.role not in (PrinceRole.PRINCIPAL, PrinceRole.OPERATOR)):
+        abort(404)
+    _allow(actor, tenant, PrinceAction.INTAKE_CREATE)
+    return tenant, actor
+
+
+def _returning_vehicle(tenant, actor, data):
+    kind = data.get("identifier_type")
+    value = _text(data, "identifier", 50, required=True)
+    q = PrinceVehicle.query.filter_by(tenant_id=tenant.id)
+    if kind == "vin":
+        value = value.upper()
+        if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", value):
+            abort(400, description="Enter the exact 17-character VIN.")
+        q = q.filter(PrinceVehicle.vin == value,
+                     PrinceVehicle.details_notice_version == VEHICLE_DETAILS_NOTICE)
+    elif kind == "plate":
+        if len(value) > 30 or not re.fullmatch(r"[A-Za-z0-9 -]+", value):
+            abort(400, description="Enter the exact vehicle plate number.")
+        value = _plate_key(value)
+        if len(value) < 3:
+            abort(400)
+        q = q.filter(_plate_expression() == value,
+                     PrinceVehicle.details_notice_version == VEHICLE_DETAILS_NOTICE)
+    elif kind == "record":
+        if not re.fullmatch(r"[1-9][0-9]{0,8}", value):
+            abort(400)
+        q = q.filter(PrinceVehicle.id == int(value))
+    else:
+        abort(400)
+    matches = q.limit(2).all()
+    if len(matches) != 1:
+        # No distinction between missing and ambiguous records for operators.
+        abort(404, description="No unique accessible vehicle. Ask a principal to review.")
+    vehicle = matches[0]
+    if actor.role == PrinceRole.OPERATOR:
+        assigned = PrinceJob.query.filter_by(tenant_id=tenant.id, vehicle_id=vehicle.id,
+                                              assigned_user_id=actor.user_id).first()
+        if assigned is None:
+            abort(404)
+    customer = PrinceCustomer.query.filter_by(tenant_id=tenant.id, id=vehicle.customer_id).one_or_none()
+    if customer is None or not customer.participation_confirmed:
+        abort(404)
+    return vehicle, customer
+
+
+@prince_pilot_bp.post("/<slug>/returning-vehicle/lookup")
+@limiter.limit("15 per minute; 100 per hour")
+def returning_vehicle_lookup(slug):
+    tenant, actor = _returning_scope(slug)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"identifier_type", "identifier"}:
+        abort(400)
+    vehicle, customer = _returning_vehicle(tenant, actor, data)
+    all_jobs = PrinceJob.query.filter_by(tenant_id=tenant.id, vehicle_id=vehicle.id)
+    jobs = all_jobs
+    if actor.role == PrinceRole.OPERATOR:
+        jobs = jobs.filter_by(assigned_user_id=actor.user_id)
+    history = jobs.order_by(PrinceJob.id.desc()).limit(20).all()
+    active = all_jobs.filter(PrinceJob.status != "closed").first() is not None
+    # Only return history the current role may already read, not other operators' details.
+    _audit(tenant.id, actor.user_id, "returning_vehicle_lookup", "vehicle", vehicle.id)
+    db.session.commit()
+    return jsonify({
+        "vehicle_id": vehicle.id, "brand": vehicle.brand, "model": vehicle.model,
+        "year": vehicle.year, "customer_name": customer.full_name,
+        "active_job_exists": active,
+        "history": [{"job_id": job.id, "status": job.status,
+                     "date": job.created_at.strftime("%Y-%m-%d"),
+                     "odometer_km": job.visit_odometer_km,
+                     "reported_concern": _public_concern(job.reported_concern)}
+                    for job in history],
+    })
+
+
+@prince_pilot_bp.post("/<slug>/returning-vehicle/jobs")
+@limiter.limit("10 per minute; 50 per hour")
+def returning_vehicle_job(slug):
+    tenant, actor = _returning_scope(slug)
+    data = request.get_json(silent=True)
+    allowed = {"identifier_type", "identifier", "vehicle_id", "reported_concern",
+               "odometer_km", "privacy_notice_version", "ownership_confirmed",
+               "participation_confirmed"}
+    if not isinstance(data, dict) or set(data) - allowed:
+        abort(400)
+    if (data.get("ownership_confirmed") is not True
+            or data.get("participation_confirmed") is not True):
+        abort(400, description="Verify vehicle identity, current customer and participation.")
+    version = _text(data, "privacy_notice_version", 48, required=True)
+    concern = _text(data, "reported_concern", 1200, required=True)
+    if PRIVATE_CONTACT_PATTERN.search(concern):
+        abort(400)
+    odometer = _visit_odometer(data.get("odometer_km"))
+    # Serialize with new registrations and other returning visits; re-check release
+    # and record access after acquiring the lock.
+    tenant = PrinceTenant.query.populate_existing().filter_by(id=tenant.id, active=True).with_for_update().one()
+    if not tenant.intake_enabled or version != tenant.approved_privacy_notice_version or not _vehicle_details_ready(tenant):
+        abort(403)
+    tenant, actor = _returning_scope(slug)
+    vehicle, customer = _returning_vehicle(tenant, actor, data)
+    if type(data.get("vehicle_id")) is not int or data["vehicle_id"] != vehicle.id:
+        abort(409, description="Vehicle selection changed. Search again.")
+    if PrinceJob.query.filter(PrinceJob.tenant_id == tenant.id, PrinceJob.vehicle_id == vehicle.id,
+                              PrinceJob.status != "closed").first():
+        return jsonify({"error": "An active job exists. Continue it or ask a principal to review."}), 409
+    job = PrinceJob(tenant_id=tenant.id, customer_id=customer.id,
+                    vehicle_id=vehicle.id, assigned_user_id=actor.user_id,
+                    reported_concern=concern, status="draft",
+                    visit_odometer_km=odometer, visit_notice_version=version)
+    db.session.add(job)
+    try:
+        db.session.flush()
+        _audit(tenant.id, actor.user_id, "returning_vehicle_job_created", "job", job.id)
+        result = {"job_id": job.id, "vehicle_id": vehicle.id}
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"error": "Unable to confirm new job. Refresh before retrying."}), 503
+    return jsonify(result), 201
 
 
 def _find_authorized_job(tenant, actor, job_id, *, lock=False):
@@ -465,6 +621,8 @@ def operator_workspace(slug):
     )
     for job, (_, _, vehicle) in zip(jobs, records):
         job["entries"] = by_job[job["job_id"]]
+        if _vehicle_details_ready(tenant):
+            job["visit_odometer_km"] = db.session.get(PrinceJob, job["job_id"]).visit_odometer_km
         if _vehicle_details_ready(tenant) and vehicle.details_notice_version == VEHICLE_DETAILS_NOTICE:
             job["vehicle_details"] = {field: getattr(vehicle, field) for field in (*VEHICLE_TEXT_FIELDS, "vin", "odometer_km")}
     return render_template(

@@ -554,6 +554,7 @@ def test_vehicle_details_require_addendum_and_reject_duplicate_vin(live, app, cl
 def test_prince_self_password_change(live, app, client):
     app.config["PRINCE_LIVE_STAFF_ADMIN_APPROVED"] = True
     assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 200
     new = "DifferentSyntheticPassphrase!"
     response = _staff_post(client, "/prince-staff/accounts/password",
                            {"current_password": PASSWORD, "new_password": new, "confirm_password": new})
@@ -578,6 +579,7 @@ def test_recovery_code_is_one_use_and_principal_issued(live, app, client):
     db.session.add(member)
     db.session.commit()
     assert _sign_in(client).status_code == 303
+    assert client.get("/prince-staff/accounts").status_code == 200
     path = f"/prince-staff/accounts/{member.id}/recovery"
     response = _staff_post(client, path, {"current_password": PASSWORD, "identity_attested": "yes"})
     assert response.status_code == 200
@@ -595,3 +597,93 @@ def test_recovery_code_is_one_use_and_principal_issued(live, app, client):
     assert UserSession.query.filter_by(user_id=user.id, revoked_at=None).count() == 0
     client.get(path)
     assert _staff_post(client, path, payload).status_code == 400
+
+
+def test_returning_vehicle_reuses_records_and_preserves_history(live, app, client, monkeypatch):
+    from partnerships.prince_models import PrinceCustomer, PrinceJob, PrinceVehicle, PrinceAudit
+    app.config.update(PRINCE_LIVE_WORKSHOP_APPROVED=True, PRINCE_LIVE_STAFF_ADMIN_APPROVED=True)
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "prince-notice-v1"
+    tenant.vehicle_details_notice_version = "prince-vehicle-details-v1"
+    tenant.intake_enabled = True
+    db.session.commit()
+    root = "/pilot/workshops/prince"
+    assert _sign_in(client).status_code == 303
+    assert client.get(root + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        csrf = sess["_csrf_token"]
+    def post(path, data):
+        return client.post(root + path, json=data, headers={"X-CSRF-Token": csrf})
+    intake = {"full_name": "Synthetic driver", "vehicle_brand": "Mercedes-Benz",
+              "vehicle_model": "C300", "privacy_notice_version": "prince-notice-v1",
+              "participation_confirmed": True, "vehicle_details_confirmed": True,
+              "vin": "WDDGF8AB1CA000001", "registration_number": "ABC-123-XY",
+              "odometer_km": 50000, "reported_concern": "Initial service"}
+    assert post("/intake", intake).status_code == 201
+    old_job = PrinceJob.query.one()
+    vehicle = PrinceVehicle.query.one()
+    query = {"identifier_type": "plate", "identifier": "abc 123 xy"}
+    lookup = post("/returning-vehicle/lookup", query)
+    assert lookup.status_code == 200 and lookup.json["active_job_exists"]
+    assert lookup.json["history"][0]["odometer_km"] == 50000
+    payload = {**query, "vehicle_id": vehicle.id, "reported_concern": "New concern",
+               "odometer_km": 51000, "privacy_notice_version": "prince-notice-v1",
+               "ownership_confirmed": True, "participation_confirmed": True}
+    assert post("/returning-vehicle/jobs", payload).status_code == 409
+    old_job.status = "closed"
+    db.session.commit()
+    assert post("/returning-vehicle/jobs", {**payload, "ownership_confirmed": False}).status_code == 400
+    assert post("/returning-vehicle/jobs", {**payload, "vehicle_id": vehicle.id + 1}).status_code == 409
+    assert post("/returning-vehicle/jobs", payload).status_code == 201
+    assert PrinceCustomer.query.count() == 1 and PrinceVehicle.query.count() == 1
+    assert PrinceJob.query.count() == 2
+    assert old_job.reported_concern == "Initial service" and old_job.visit_odometer_km == 50000
+    assert PrinceJob.query.order_by(PrinceJob.id.desc()).first().visit_odometer_km == 51000
+    assert PrinceAudit.query.filter_by(action="returning_vehicle_job_created").count() == 1
+    assert post("/returning-vehicle/jobs", payload).status_code == 409
+    assert post("/intake", {**intake, "vin": "WDDGF8AB1CA000002",
+                            "registration_number": "abc 123 xy"}).status_code == 409
+
+
+def test_returning_vehicle_operator_cannot_lookup_unassigned(live, app, client, monkeypatch):
+    from partnerships.prince_models import PrinceCustomer, PrinceJob, PrinceVehicle
+    app.config.update(PRINCE_LIVE_WORKSHOP_APPROVED=True, PRINCE_LIVE_STAFF_ADMIN_APPROVED=True)
+    monkeypatch.setenv("PRINCE_LIVE_PRIVACY_NOTICE_VERSION", "prince-notice-v1")
+    tenant = PrinceTenant.query.filter_by(slug="prince").one()
+    tenant.approved_privacy_notice_version = "prince-notice-v1"
+    tenant.vehicle_details_notice_version = "prince-vehicle-details-v1"
+    tenant.intake_enabled = True
+    member = db.session.get(PrinceMembership, live)
+    member.role = "operator"
+    other = User(name="Synthetic other staff", email="other@staff.test",
+                 phone_number="synthetic-other", role="user", is_active=True,
+                 email_verified_at=datetime.utcnow())
+    other.set_password(PASSWORD)
+    db.session.add(other)
+    db.session.flush()
+    db.session.add(PrinceMembership(tenant_id=tenant.id, user_id=other.id, role="principal", active=True))
+    customer = PrinceCustomer(tenant_id=tenant.id, full_name="Synthetic other customer",
+                              intake_by_user_id=other.id, privacy_notice_version="prince-notice-v1",
+                              participation_confirmed=True)
+    db.session.add(customer)
+    db.session.flush()
+    vehicle = PrinceVehicle(tenant_id=tenant.id, customer_id=customer.id, brand="Toyota",
+                            model="Camry", vin="WDDGF8AB1CA000001",
+                            details_notice_version="prince-vehicle-details-v1")
+    db.session.add(vehicle)
+    db.session.flush()
+    db.session.add(PrinceJob(tenant_id=tenant.id, customer_id=customer.id, vehicle_id=vehicle.id,
+                             assigned_user_id=other.id, status="closed"))
+    db.session.commit()
+    assert _sign_in(client).status_code == 303
+    root = "/pilot/workshops/prince"
+    assert client.get(root + "/operator").status_code == 200
+    with client.session_transaction() as sess:
+        csrf = sess["_csrf_token"]
+    for query in ({"identifier_type": "vin", "identifier": vehicle.vin},
+                  {"identifier_type": "record", "identifier": str(vehicle.id)}):
+        response = client.post(root + "/returning-vehicle/lookup", json=query,
+                               headers={"X-CSRF-Token": csrf})
+        assert response.status_code == 404
+        assert b"Synthetic other customer" not in response.data
